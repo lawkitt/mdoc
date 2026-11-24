@@ -1,10 +1,10 @@
 use crate::{
-    document_view::{Save, SaveAs},
+    document_view::{ExportMarkdown, Save},
     markdown_search::SearchInput,
     models,
     style::Theme,
     ui, updater,
-    workspace::{Close, Import, New, NextTab, Open, PreviousTab},
+    workspace::{Close, Import, New, Open, SwitchDocument, SwitchDocumentBack},
 };
 use gpui::{
     AnyElement, App, Context, Entity, FocusHandle, KeyBinding, PromptLevel, Window, actions, div,
@@ -26,6 +26,7 @@ use std::{cell::Cell, rc::Rc, sync::atomic::Ordering, time::Duration};
 mod categories;
 pub(crate) mod dictionary;
 pub(crate) mod lists;
+mod vault;
 pub(crate) use categories::Category;
 
 fn status_label(status: &Status) -> String {
@@ -59,15 +60,16 @@ pub enum Event {
     Finished(Model, Result<Option<ocr::Installed>, String>),
     /// Restart now: quit through the workspace, then relaunch.
     RestartToUpdate,
-    /// Forget the recent files Home lists.
-    ClearRecents,
     Shortcuts,
     /// Saved: Settings › Detection stopped detecting these.
     CategoriesUnticked(std::collections::HashSet<mdoc_pii::Category>),
-    /// The user-wide lists changed: save them with the cases.
+    /// The user-wide lists changed: save them in the Vault.
     UserListsChanged(mdoc_store::lists::Lists),
-    /// The lists wait for locked cases: unlock them.
+    /// The lists wait for the locked Vault: unlock it.
     UnlockLists,
+    /// Settings › Vault's Show: read the key and hand it back with
+    /// [`Panel::show_recovery_key`].
+    ShowRecoveryKey,
 }
 
 struct SetupCompletion {
@@ -176,6 +178,8 @@ pub struct Panel {
     pub dictionary: Option<dictionary::DictionaryView>,
     /// Settings › Detection's user-wide Always and Never lists.
     user_lists: lists::UserListsUi,
+    /// Settings › Vault's recovery key, while it shows.
+    recovery: vault::RecoveryUi,
 }
 impl gpui::EventEmitter<Event> for Panel {}
 pub fn bind_keys(cx: &mut App) {
@@ -212,10 +216,10 @@ pub(crate) fn block_document_commands<E: gpui::InteractiveElement>(element: E) -
         .on_action(|_: &New, _, cx| cx.stop_propagation())
         .on_action(|_: &Open, _, cx| cx.stop_propagation())
         .on_action(|_: &Close, _, cx| cx.stop_propagation())
-        .on_action(|_: &NextTab, _, cx| cx.stop_propagation())
-        .on_action(|_: &PreviousTab, _, cx| cx.stop_propagation())
+        .on_action(|_: &SwitchDocument, _, cx| cx.stop_propagation())
+        .on_action(|_: &SwitchDocumentBack, _, cx| cx.stop_propagation())
         .on_action(|_: &Save, _, cx| cx.stop_propagation())
-        .on_action(|_: &SaveAs, _, cx| cx.stop_propagation())
+        .on_action(|_: &ExportMarkdown, _, cx| cx.stop_propagation())
         .on_action(|_: &Import, _, cx| cx.stop_propagation())
 }
 
@@ -362,6 +366,7 @@ impl Panel {
             controls: Default::default(),
             dictionary: None,
             user_lists,
+            recovery: vault::RecoveryUi::default(),
         }
     }
     /// A Settings › General choice changed and saved outside the panel (the
@@ -389,6 +394,7 @@ impl Panel {
         }
         self.category = Category::General;
         self.dictionary = None;
+        self.recovery.forget();
         self.number_errors = [None, None];
         self.scroll.set_offset(gpui::point(px(0.), px(0.)));
         self.error = self
@@ -615,6 +621,7 @@ impl Panel {
         self.refresh_watch = None;
         self.open = false;
         self.dictionary = None;
+        self.recovery.forget();
         self.commit_visible_number(cx);
         if let Some(focus) = self.previous.take() {
             window.focus(&focus, cx);
@@ -830,8 +837,7 @@ impl Panel {
                 self.number_errors[1] = None;
             }
             Category::Spelling => self.draft.spelling = defaults.spelling,
-            Category::Cases => self.draft.cases = defaults.cases,
-            Category::About => return,
+            Category::About | Category::Vault => return,
         }
         if self.category == Category::General {
             self.reset_theme = Some(self.theme_revision);

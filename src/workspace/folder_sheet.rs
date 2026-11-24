@@ -14,7 +14,7 @@ pub(super) const CAP_NOTE: &str = "Up to 20 files at a time";
 
 /// A dropped folder: its supported files, read off the UI thread.
 pub(super) struct DroppedFolder {
-    /// The folder's identity, to match a case's members by.
+    /// The folder's identity.
     pub path: PathBuf,
     pub name: String,
     pub files: Vec<PathBuf>,
@@ -97,18 +97,17 @@ fn plural(n: usize, one: &str, many: &str) -> String {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Status {
     New,
-    /// Open without a case: it joins a case the sheet makes or names.
+    /// Open and Unfiled: it moves into the Project the sheet makes or names.
     Open,
-    /// Open in a case, by name when the case is loaded. It stays there.
-    InCase(Option<String>),
+    /// Open in a Project, by name. It stays there.
+    InProject(String),
 }
 impl Status {
     pub fn label(&self) -> Option<String> {
         match self {
             Self::New => None,
             Self::Open => Some("Already open".into()),
-            Self::InCase(Some(name)) => Some(format!("In “{name}”")),
-            Self::InCase(None) => Some("In a locked case".into()),
+            Self::InProject(name) => Some(format!("In “{name}”")),
         }
     }
 }
@@ -120,19 +119,17 @@ pub(super) struct Row {
     pub ticked: bool,
 }
 
-/// The loaded case the primary button adds to.
+/// The Project the primary button adds to.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Target {
     pub id: String,
     pub name: String,
 }
 
-/// A folder waiting for its sheet: the drop's case header, if any, and
-/// where in the sidebar the drop landed.
+/// A folder waiting for its sheet, and the Project row it was dropped on.
 pub(super) struct Pending {
     pub folder: DroppedFolder,
-    pub case: Option<String>,
-    pub at: Option<usize>,
+    pub project: Option<String>,
 }
 
 pub(super) struct Sheet {
@@ -145,16 +142,10 @@ pub(super) struct Sheet {
     target: Option<Target>,
     cursor: usize,
     refused: bool,
-    at: Option<usize>,
 }
 impl Sheet {
     /// Every file starts ticked, except new files past the cap.
-    pub fn new(
-        folder: &DroppedFolder,
-        statuses: Vec<Status>,
-        target: Option<Target>,
-        at: Option<usize>,
-    ) -> Self {
+    pub fn new(folder: &DroppedFolder, statuses: Vec<Status>, target: Option<Target>) -> Self {
         let mut new = 0;
         let rows = folder
             .files
@@ -183,7 +174,6 @@ impl Sheet {
             target,
             cursor: 0,
             refused: false,
-            at,
         }
     }
     pub fn id(&self) -> u64 {
@@ -204,9 +194,6 @@ impl Sheet {
     pub fn cursor(&self) -> usize {
         self.cursor
     }
-    pub fn at(&self) -> Option<usize> {
-        self.at
-    }
     /// A tick went over the cap since the last change.
     pub fn refused(&self) -> bool {
         self.refused
@@ -218,7 +205,7 @@ impl Sheet {
     pub fn primary_label(&self) -> String {
         match &self.target {
             Some(target) => format!("Add to “{}”", target.name),
-            None => "Open as case".into(),
+            None => "Open as New Project".into(),
         }
     }
     pub fn ticked(&self) -> Vec<PathBuf> {
@@ -275,7 +262,7 @@ pub(super) struct FolderSheets {
     shown: Option<Sheet>,
     queue: VecDeque<Pending>,
     shown_count: u64,
-    /// The shown sheet's case action waits on the Keychain explainer.
+    /// The shown sheet's Project action waits on the Keychain explainer.
     key_wait: bool,
 }
 impl FolderSheets {

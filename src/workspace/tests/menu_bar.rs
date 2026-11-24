@@ -38,6 +38,15 @@ fn shelf_open(cx: &mut VisualTestContext) -> bool {
 }
 
 /// A workspace with one unsaved tab.
+/// The workspace window is gone: the app quit.
+fn quit(cx: &mut VisualTestContext) -> bool {
+    cx.cx.read(|cx| {
+        cx.windows()
+            .iter()
+            .all(|w| w.downcast::<Workspace>().is_none())
+    })
+}
+
 fn unsaved(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTestContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_input("unsaved text");
@@ -51,9 +60,8 @@ fn with_the_item_off_closing_the_window_quits_as_before(cx: &mut TestAppContext)
     install(&tabs, false, cx);
     tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
-    assert!(cx.has_pending_prompt());
-    assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
+    assert!(!cx.has_pending_prompt());
+    assert!(quit(cx));
 }
 
 /// Windows has no tray yet: the setting changes nothing there.
@@ -99,8 +107,9 @@ fn with_the_item_on_closing_hides_the_window_and_keeps_every_tab(cx: &mut TestAp
 
 #[cfg(target_os = "macos")]
 #[gpui::test]
-fn quitting_while_hidden_shows_the_window_before_it_asks(cx: &mut TestAppContext) {
+fn quitting_while_hidden_writes_the_edit_and_quits(cx: &mut TestAppContext) {
     let (tabs, cx) = unsaved(cx);
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
     install(&tabs, true, cx);
     tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
     cx.run_until_parked();
@@ -108,11 +117,13 @@ fn quitting_while_hidden_shows_the_window_before_it_asks(cx: &mut TestAppContext
     // The shelf's Quit and ⌘Q dispatch Quit.
     cx.dispatch_action(Quit);
     cx.run_until_parked();
-    assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
-    assert!(cx.has_pending_prompt());
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    assert!(!cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
+    assert!(!cx.has_pending_prompt());
+    assert!(quit(cx));
+    let summary = &vault.documents()[0];
+    assert_eq!(
+        vault.document(&summary.id).unwrap().markdown,
+        "unsaved text"
+    );
 }
 
 #[cfg(target_os = "macos")]
@@ -127,31 +138,7 @@ fn turning_the_setting_off_shows_a_hidden_window_and_closing_quits_again(cx: &mu
     assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
     tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
-}
-
-/// Review of #264: a case save that fails while quitting asks in a window
-/// that shows, even when no tab was at risk.
-#[cfg(target_os = "macos")]
-#[gpui::test]
-fn a_failed_case_save_while_quitting_shows_the_hidden_window(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
-    install(&tabs, true, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
-    cx.run_until_parked();
-    assert!(cx.update(|_, cx| menu_bar::window_hidden(cx)));
-    // A case change whose save fails; the quit's final save asks.
-    tabs.update(cx, |tabs, cx| {
-        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
-    });
-    cx.run_until_parked();
-    cx.dispatch_action(Quit);
-    cx.run_until_parked();
-    assert!(cx.has_pending_prompt(), "the save failure asks");
-    assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
+    assert!(quit(cx));
 }
 
 /// Review of #264: a file opened from Finder shows a hidden window.
@@ -170,10 +157,11 @@ fn opening_a_file_from_the_os_shows_the_hidden_window(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
+    // The file became a document, opened from it.
     assert!(
         cx.update(|_, cx| tabs
             .read(cx)
-            .find_path(&session_store::identity(&path), None, cx))
+            .open_tab_for(&session_store::identity(&path), cx))
             .is_some()
     );
 }
@@ -248,14 +236,16 @@ fn quit_when_windows_close_turns_the_switch_off_and_quits(cx: &mut TestAppContex
         })
         .unwrap();
     cx.run_until_parked();
-    assert!(note(cx).is_none());
-    assert!(!cx.update(|_, cx| tabs.read(cx).menu_bar_setting()));
-    assert!(!cx.update(|_, cx| menu_bar::keeps_running(cx)));
-    assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
-    assert!(cx.has_pending_prompt(), "the unsaved tab asks");
-    assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
+    // The window is gone with the quit, so look at the app's windows.
+    assert!(cx.cx.read(|cx| {
+        cx.windows()
+            .iter()
+            .all(|window| window.downcast::<crate::shelf_ui::NoteView>().is_none())
+    }));
+    assert!(!cx.cx.read(menu_bar::keeps_running));
+    // Nothing asks: the edit is written and the app quits.
+    assert!(!cx.has_pending_prompt());
+    assert!(quit(cx));
 }
 
 /// Review of #280: Quit when windows close with nothing unsaved, whose

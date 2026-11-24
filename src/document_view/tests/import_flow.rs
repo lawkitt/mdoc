@@ -20,7 +20,6 @@ fn inline_ocr_skip_imports_native_content_and_keeps_page_warning(cx: &mut TestAp
         assert!(!app.lifecycle.prompting());
         assert!(app.editor.read(cx).text().contains("Readable page three"));
         assert!(app.session.warning.as_ref().unwrap().contains("2, 5"));
-        assert!(app.session.document.path.is_none());
         assert_eq!(app.session.source.as_ref(), Some(&source));
     });
 }
@@ -270,7 +269,7 @@ fn ocr_without_text_stays_with_its_document(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn import_action_converts_and_saves_without_touching_source(cx: &mut TestAppContext) {
+fn import_action_converts_and_exports_without_touching_source(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("table.csv");
     let output = dir.path().join("table.md");
@@ -286,95 +285,33 @@ fn import_action_converts_and_saves_without_touching_source(cx: &mut TestAppCont
     let markdown = cx.update(|_, cx| {
         let app = app.read(cx);
         assert!(!app.import.busy());
-        assert!(app.dirty(cx));
-        assert!(app.session.document.path.is_none());
         assert_eq!(app.save_directory(), dir.path());
         app.editor.read(cx).text().to_owned()
     });
     assert!(markdown.contains("| Apples | 2 |"));
-    cx.dispatch_action(Save);
+    cx.dispatch_action(ExportMarkdown);
     cx.run_until_parked();
     cx.simulate_new_path_selection(|_| Some(output.clone()));
     cx.run_until_parked();
     assert_eq!(std::fs::read_to_string(output).unwrap(), markdown);
     assert_eq!(std::fs::read_to_string(source).unwrap(), original);
-    assert!(!cx.update(|_, cx| app.read(cx).dirty(cx)));
+    // The export is a copy: the document is still not that file.
 }
 
 #[gpui::test]
-fn import_completion_protects_edits_and_cancel_preserves_pdf(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("source.pdf");
-    std::fs::write(&source, b"placeholder").unwrap();
-    let (app, cx) = boot(cx);
-    cx.simulate_input("edits made during conversion");
-    app.update_in(cx, |app, window, cx| {
-        let mut result = converted(source.clone());
-        result.is_pdf = true;
-        assert!(app.import.job_mut().begin(false));
-        app.import
-            .job_mut()
-            .complete(app.session.generation, Ok(result));
-        app.resume_import(window, cx);
-    });
-    cx.run_until_parked();
-    assert!(cx.has_pending_prompt());
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    cx.update(|_, cx| {
-        let app = app.read(cx);
-        assert_eq!(app.editor.read(cx).text(), "edits made during conversion");
-        assert!(app.preview.pdf().is_none());
-        assert!(app.session.source.is_none());
-        assert!(!app.import.busy());
-    });
-}
-
-#[gpui::test]
-fn import_save_then_replace_preserves_original_edits(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let saved = dir.path().join("before.md");
-    let (app, cx) = boot(cx);
-    cx.simulate_input("save these edits");
-    app.update_in(cx, |app, window, cx| {
-        app.request(
-            Next::Import(Box::new(converted(dir.path().join("source.docx")))),
-            window,
-            cx,
-        );
-    });
-    cx.run_until_parked();
-    cx.simulate_prompt_answer("Save");
-    cx.run_until_parked();
-    cx.simulate_new_path_selection(|_| Some(saved.clone()));
-    cx.run_until_parked();
-    assert_eq!(std::fs::read_to_string(saved).unwrap(), "save these edits");
-    cx.update(|_, cx| {
-        let app = app.read(cx);
-        assert_eq!(app.editor.read(cx).text(), "# Imported\n");
-        assert!(app.dirty(cx));
-        assert!(app.session.document.path.is_none());
-    });
-}
-
-#[gpui::test]
-fn import_waits_for_dialog_and_discards_result_after_document_change(cx: &mut TestAppContext) {
+fn a_completion_after_the_tab_closed_is_discarded(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (app, cx) = boot(cx);
     cx.simulate_input("before");
     let generation = cx.update(|_, cx| app.read(cx).session.generation);
-    cx.dispatch_action(Close);
+    app.update(cx, |app, _| assert!(app.import.job_mut().begin(false)));
+    let _ = close_document(&app, cx);
     cx.run_until_parked();
-    app.update_in(cx, |app, window, cx| {
-        assert!(app.import.job_mut().begin(false));
+    app.update(cx, |app, _| {
         app.import
             .job_mut()
             .complete(generation, Ok(converted(dir.path().join("source.docx"))));
-        app.resume_import(window, cx);
-        assert!(app.import.job_mut().has_pending());
     });
-    cx.simulate_prompt_answer("Don't Save");
-    cx.run_until_parked();
     // Deliver the delayed completion after the shell has released the tab.
     // The retained test handle lets us verify the old generation is rejected.
     app.update_in(cx, |app, window, cx| app.resume_import(window, cx));
@@ -426,18 +363,10 @@ fn imported_warning_survives_save_and_stays_with_its_tab_until_dismissed(cx: &mu
             window,
             cx,
         );
-        app.write(dir.path().join("output.md"), None, cx);
     });
-    // The window checks for another tab with the file, then saves.
+    cx.dispatch_action(Save);
     cx.run_until_parked();
-    cx.update(|_, cx| {
-        let app = app.read(cx);
-        assert_eq!(
-            app.session.document.path,
-            Some(session_store::identity(&dir.path().join("output.md")))
-        );
-        assert!(app.session.warning.is_some());
-    });
+    cx.update(|_, cx| assert!(app.read(cx).session.warning.is_some()));
     cx.dispatch_action(DismissImportWarning);
     cx.run_until_parked();
     assert!(cx.update(|_, cx| app.read(cx).session.warning.is_none()));
@@ -453,7 +382,7 @@ fn imported_warning_survives_save_and_stays_with_its_tab_until_dismissed(cx: &mu
 }
 
 #[gpui::test]
-fn empty_import_is_unsaved_and_source_cannot_be_overwritten(cx: &mut TestAppContext) {
+fn an_export_never_overwrites_the_imported_source(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("disguised.md");
     std::fs::write(&source, "source bytes").unwrap();
@@ -462,19 +391,18 @@ fn empty_import_is_unsaved_and_source_cannot_be_overwritten(cx: &mut TestAppCont
         let mut result = converted(source.clone());
         result.markdown.clear();
         app.proceed(Next::Import(Box::new(result)), window, cx);
-        assert!(app.dirty(cx));
-        // The window checks for another tab with the file, then saves.
-        app.write(source.clone(), None, cx);
     });
+    cx.dispatch_action(ExportMarkdown);
     cx.run_until_parked();
-    app.update(cx, |app, cx| {
+    cx.simulate_new_path_selection(|_| Some(source.clone()));
+    cx.run_until_parked();
+    app.update(cx, |app, _| {
         assert!(
             app.error
                 .as_ref()
                 .unwrap()
                 .contains("preserve the imported source")
         );
-        assert!(app.dirty(cx));
     });
     assert_eq!(std::fs::read_to_string(source).unwrap(), "source bytes");
 }

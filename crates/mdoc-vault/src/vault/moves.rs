@@ -54,7 +54,8 @@ pub enum ProjectDocuments {
 /// Where a move goes.
 enum Target<'a> {
     Project(&'a str),
-    New(NewProject),
+    /// A new Project, set up before its first write.
+    New(NewProject, Box<dyn FnOnce(&mut Project) + 'a>),
     /// Unfiled, starting from this mapping of its own.
     Unfiled(Mapping),
 }
@@ -103,8 +104,21 @@ impl Vault {
         document: &str,
         new: NewProject,
     ) -> Result<Moved, VaultError> {
+        self.move_document_to_new_project_with(document, new, |_| {})
+    }
+
+    /// [`Self::move_document_to_new_project`], the new Project set up by
+    /// `setup` (its categories, its dismissed hints) before its first
+    /// write: one move, so a failure leaves neither the Project nor the
+    /// move behind.
+    pub fn move_document_to_new_project_with(
+        &self,
+        document: &str,
+        new: NewProject,
+        setup: impl FnOnce(&mut Project),
+    ) -> Result<Moved, VaultError> {
         let lock = self.write_lock()?;
-        self.move_locked(&lock, document, Target::New(new), &[])
+        self.move_locked(&lock, document, Target::New(new, Box::new(setup)), &[])
     }
 
     /// Undo a move: the Document moves back as [`Self::move_document`]
@@ -129,6 +143,28 @@ impl Vault {
     /// as it may be in the Project; one that never will (another key,
     /// damaged) is passed over.
     pub fn delete_project(&self, id: &str, documents: ProjectDocuments) -> Result<(), VaultError> {
+        self.delete_project_of(id, documents, None).map(|_| ())
+    }
+
+    /// [`Self::delete_project`], only while the Project's Documents are
+    /// still `members`, the ones the user was asked about: compared under
+    /// the write lock, so a Document filed in meanwhile is never deleted
+    /// unasked. `Ok(false)` when they differ, and nothing is changed.
+    pub fn delete_project_with(
+        &self,
+        id: &str,
+        documents: ProjectDocuments,
+        members: &[String],
+    ) -> Result<bool, VaultError> {
+        self.delete_project_of(id, documents, Some(members))
+    }
+
+    fn delete_project_of(
+        &self,
+        id: &str,
+        documents: ProjectDocuments,
+        members: Option<&[String]>,
+    ) -> Result<bool, VaultError> {
         if !is_id(id) {
             return Err(VaultError::InvalidId);
         }
@@ -141,6 +177,17 @@ impl Vault {
             match self.load_record::<Document>(&document) {
                 Err(VaultError::Io(error)) => return Err(VaultError::Io(error)),
                 _ => continue,
+            }
+        }
+        if let Some(members) = members {
+            let mut now: Vec<String> = (self.documents_in(Some(id)).into_iter())
+                .map(|summary| summary.id)
+                .collect();
+            let mut asked = members.to_vec();
+            now.sort();
+            asked.sort();
+            if now != asked {
+                return Ok(false);
             }
         }
         for document in self.documents_in(Some(id)) {
@@ -156,7 +203,8 @@ impl Vault {
         self.delete_replies_of(&lock, &ReplyOwner::Project(id.to_string()))?;
         self.check_alive()?;
         super::remove_sealed(&crate::manifest::project_path(&self.root, id))?;
-        self.forget_deleted::<Project>(id)
+        self.forget_deleted::<Project>(id)?;
+        Ok(true)
     }
 
     fn move_locked(
@@ -183,8 +231,8 @@ impl Vault {
                 return Err(VaultError::AlreadyThere);
             }
             Target::Project(id) => (Landing::Project(self.load_record(id)?), None),
-            Target::New(new) => {
-                let project = self.create_project_locked(lock, new)?;
+            Target::New(new, setup) => {
+                let project = self.create_project_locked(lock, new, setup)?;
                 (Landing::Project(project.clone()), Some(project.id))
             }
             Target::Unfiled(_) if stored.project.is_none() => return Err(VaultError::AlreadyThere),
@@ -256,6 +304,8 @@ impl Vault {
         // too: the next open scans again.
         moved.review = None;
         moved.counts = None;
+        // Its text is still to be made, though the move writes it.
+        moved.unconverted = stored.pending_conversion();
         let moved = match self.place_document(lock, moved) {
             Ok(moved) => moved,
             Err(error) => {
@@ -465,4 +515,61 @@ fn realias(
     }
     out.push_str(&text[at..]);
     Ok((out, exported, ids))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        DocumentOrigin, NewDocument, NewProject, OriginalInfo, ProjectDocuments, SourceKind, Vault,
+    };
+
+    /// A Document imported before `unconverted` existed (revision 1, no
+    /// text, the flag absent) reads as waiting for its conversion, and
+    /// stays so through a write of something else and the move a Project
+    /// delete makes.
+    #[test]
+    fn an_import_from_before_the_flag_stays_unconverted_through_a_move() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (project, id) = {
+            let vault = Vault::open(&root, &[7; 32]).unwrap();
+            let project = (vault.create_project(NewProject {
+                name: "Lease".into(),
+                ..NewProject::default()
+            }))
+            .unwrap();
+            let new = NewDocument {
+                project: Some(project.id.clone()),
+                title: "Brief".into(),
+                source_kind: SourceKind::Pdf,
+                origin: DocumentOrigin::Ordinary,
+                markdown: String::new(),
+            };
+            let info = OriginalInfo {
+                file_name: "a.pdf".into(),
+                ..OriginalInfo::default()
+            };
+            let mut legacy = vault.import_document(new, &b"source"[..], info).unwrap();
+            // As an import wrote it before the flag.
+            legacy.unconverted = false;
+            let lock = vault.write_lock().unwrap();
+            vault.write_record(&lock, &legacy).unwrap();
+            (project.id, legacy.id)
+        };
+        let vault = Vault::open(&root, &[7; 32]).unwrap();
+        let stored = vault.document(&id).unwrap();
+        assert!(stored.unconverted && stored.revision == 1, "filled in");
+        let renamed = (vault.update_document(&id, |d| d.title = "Lease brief".into())).unwrap();
+        assert!(renamed.revision > 1);
+        assert!(renamed.unconverted && renamed.pending_conversion());
+        vault
+            .delete_project(&project, ProjectDocuments::MoveToUnfiled)
+            .unwrap();
+        let moved = vault.document(&id).unwrap();
+        assert!(moved.revision > 1 && moved.project.is_none());
+        assert!(moved.unconverted && moved.pending_conversion());
+        // A save of text clears it, whoever saves.
+        let saved = (vault.update_document(&id, |d| d.markdown = "# Brief".into())).unwrap();
+        assert!(!saved.unconverted && !saved.pending_conversion());
+    }
 }

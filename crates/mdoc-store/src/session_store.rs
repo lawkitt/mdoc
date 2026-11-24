@@ -1,5 +1,6 @@
-//! Small, versioned, paths-only session manifest. No document content is stored.
-use crate::document_id::DocumentId;
+//! Small, versioned session manifest: Vault documents by id, never their
+//! titles or contents.
+use crate::document_id::{DocumentId, VaultId};
 use serde::{Deserialize, Serialize};
 use std::{
     io::{self, Read, Write},
@@ -39,7 +40,10 @@ impl ThemeChoice {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TabRecord {
-    pub markdown: PathBuf,
+    /// The Vault document this tab shows; such a tab keeps no name or
+    /// attachment. A tab names a Vault document, a source, or nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document: Option<VaultId>,
     pub source_only: bool,
     pub blank: bool,
     pub blank_disposable: bool,
@@ -54,32 +58,29 @@ pub struct TabRecord {
     pub preview_zoom: Option<f32>,
     pub preview_fit: PreviewFit,
     pub preview_split: Option<f32>,
-    /// The saved case this document belongs to; never its contents.
-    pub case: Option<String>,
 }
 
 impl TabRecord {
     /// The document this tab names: none for a blank or a source tab.
     pub fn document(&self) -> Option<DocumentId> {
-        self.names_document()
-            .then(|| DocumentId::File(self.markdown.clone()))
+        self.document.clone().map(DocumentId::Vault)
     }
 
     /// Whether this tab names a document, without building its id.
     pub fn names_document(&self) -> bool {
-        !self.markdown.as_os_str().is_empty()
+        self.document.is_some()
     }
 
     /// Whether both tabs name the same document.
     pub fn same_document(&self, other: &TabRecord) -> bool {
-        self.names_document() && self.markdown == other.markdown
+        self.names_document() && self.document == other.document
     }
 
     /// The tab names `document` from now on.
     pub fn set_document(&mut self, document: DocumentId) {
-        match document {
-            DocumentId::File(path) => self.markdown = path,
-        }
+        let DocumentId::Vault(id) = document;
+        self.document = Some(id);
+        self.name = None;
     }
 }
 
@@ -91,26 +92,28 @@ pub struct Session {
     pub sidebar_visible: bool,
     #[serde(default)]
     pub sidebar_choice: Option<bool>,
-    /// Saved cases folded in the sidebar, by id.
+    /// Projects expanded in the sidebar, by id; the rest start collapsed.
     #[serde(default)]
-    pub collapsed_cases: Vec<String>,
-    /// Case labels and counts for locked pages; never originals or member contents.
-    #[serde(default)]
-    pub cases: Vec<crate::cases::CaseSummary>,
+    pub expanded_projects: Vec<String>,
     /// The sidebar's System / Light / Dark pick.
     #[serde(default)]
     pub theme_choice: ThemeChoice,
 }
+/// The session format: 2 names Vault documents by id. A version 1 session's
+/// tabs, but for blank ones, are dropped on load, with no migration; their
+/// files stay on disk. A tab that still names a Markdown file (a key serde
+/// ignores now) names nothing and is dropped too.
+pub const VERSION: u32 = 2;
+
 impl Default for Session {
     fn default() -> Self {
         Self {
-            version: 1,
+            version: VERSION,
             tabs: Vec::new(),
             active: 0,
             sidebar_visible: true,
             sidebar_choice: None,
-            collapsed_cases: Vec::new(),
-            cases: Vec::new(),
+            expanded_projects: Vec::new(),
             theme_choice: Default::default(),
         }
     }
@@ -128,37 +131,49 @@ pub fn load(path: &Path) -> io::Result<Session> {
     if bytes.len() > 4 * 1024 * 1024 {
         return Err(io::Error::other("Session file is too large"));
     }
-    let session: Session = serde_json::from_slice(&bytes)?;
-    if session.version != 1 {
-        return Err(io::Error::other("Unsupported session version"));
+    let mut session: Session = serde_json::from_slice(&bytes)?;
+    match session.version {
+        1 => {
+            session.tabs.retain(|tab| {
+                tab.blank && !tab.source_only && tab.document.is_none() && tab.attachment.is_none()
+            });
+            session.active = 0;
+            session.version = VERSION;
+        }
+        VERSION => {}
+        _ => return Err(io::Error::other("Unsupported session version")),
     }
     if session
-        .collapsed_cases
+        .expanded_projects
         .iter()
-        .chain(session.cases.iter().map(|case| &case.id))
         .any(|id| id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()))
     {
-        return Err(io::Error::other("Invalid case id in session"));
+        return Err(io::Error::other("Invalid Project id in session"));
     }
+    // A file tab, from an earlier build, names nothing now: it goes, and
+    // the active tab is still the one it was, or the first.
+    let names = |tab: &TabRecord| tab.document.is_some() || tab.source_only || tab.blank;
+    let active = session.tabs.get(session.active).filter(|tab| names(tab));
+    session.active = active.map_or(0, |_| {
+        session.tabs[..session.active]
+            .iter()
+            .filter(|tab| names(tab))
+            .count()
+    });
+    session.tabs.retain(names);
     if session.tabs.iter().any(|tab| {
-        !(if tab.source_only {
-            tab.markdown.as_os_str().is_empty()
-                && tab
-                    .attachment
-                    .as_ref()
-                    .is_some_and(|path| path.is_absolute())
-        } else if tab.blank {
-            tab.markdown.as_os_str().is_empty() && tab.attachment.is_none()
+        !(if tab.document.is_some() {
+            !tab.source_only && !tab.blank && tab.attachment.is_none()
+        } else if tab.source_only {
+            tab.attachment
+                .as_ref()
+                .is_some_and(|path| path.is_absolute())
         } else {
-            tab.markdown.is_absolute()
+            tab.attachment.is_none()
         }) || tab
             .attachment
             .as_ref()
             .is_some_and(|path| !path.is_absolute())
-            || tab
-                .case
-                .as_ref()
-                .is_some_and(|id| id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()))
             || !tab.scroll_y.is_finite()
             || tab.preview_zoom.is_some_and(|z| !z.is_finite())
             || tab
@@ -210,8 +225,8 @@ mod tests {
         assert_eq!(load(&path).unwrap(), Session::default());
         let mut session = Session::default();
         session.tabs.push(TabRecord {
-            markdown: dir.path().join("note.md"),
-            source_only: false,
+            document: None,
+            source_only: true,
             blank: false,
             blank_disposable: false,
             name: None,
@@ -223,31 +238,20 @@ mod tests {
             preview_zoom: Some(1.25),
             preview_fit: PreviewFit::Manual,
             preview_split: Some(0.6),
-            case: Some("ab".repeat(16)),
         });
         save(&path, &session).unwrap();
         assert_eq!(load(&path).unwrap(), session);
-        // A case is referenced by id only; anything else is rejected.
-        session.tabs[0].case = Some("../secret".into());
-        save(&path, &session).unwrap();
-        assert!(load(&path).is_err());
-        session.tabs[0].case = Some("ab".repeat(16));
         session.tabs.clear();
         save(&path, &session).unwrap();
         assert_eq!(load(&path).unwrap(), session);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
     #[test]
-    fn cached_case_summary_ids_are_validated_on_load() {
+    fn expanded_project_ids_are_validated_on_load() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("session.json");
         let mut session = Session {
-            cases: vec![crate::cases::CaseSummary {
-                id: "aB0123456789cdef".repeat(2),
-                name: "Example case".into(),
-                documents: 3,
-                color: None,
-            }],
+            expanded_projects: vec!["aB0123456789cdef".repeat(2)],
             ..Session::default()
         };
         save(&path, &session).unwrap();
@@ -260,16 +264,128 @@ mod tests {
             format!("{}é", "a".repeat(30)),
             "../secret".into(),
         ] {
-            session.cases[0].id = invalid.clone();
+            session.expanded_projects[0] = invalid.clone();
             save(&path, &session).unwrap();
             let error = load(&path).unwrap_err();
             assert_eq!(
                 error.to_string(),
-                "Invalid case id in session",
+                "Invalid Project id in session",
                 "{invalid:?}"
             );
         }
     }
+    #[test]
+    fn a_vault_tab_round_trips_by_id_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        let id = VaultId::parse(&"c0".repeat(16)).unwrap();
+        let mut tab = TabRecord {
+            name: Some("Contract.md".into()),
+            caret: 5,
+            ..TabRecord::default()
+        };
+        tab.set_document(DocumentId::Vault(id.clone()));
+        let session = Session {
+            tabs: vec![tab],
+            ..Session::default()
+        };
+        save(&path, &session).unwrap();
+        let json = std::fs::read_to_string(&path).unwrap();
+        assert!(json.contains(id.as_str()) && !json.contains("Contract"));
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded, session);
+        assert_eq!(loaded.version, 2);
+        assert_eq!(loaded.tabs[0].document(), Some(DocumentId::Vault(id)));
+        assert!(loaded.tabs[0].same_document(&session.tabs[0]));
+    }
+
+    #[test]
+    fn a_vault_tab_with_a_bad_id_or_a_path_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        let tab = |document: &str, markdown: &str| {
+            format!(
+                r#"{{"version":2,"tabs":[{{"document":"{document}","markdown":{markdown:?}}}],"active":0,"sidebar_visible":true}}"#
+            )
+        };
+        let good = "ab".repeat(16);
+        std::fs::write(&path, tab(&good, "")).unwrap();
+        assert!(load(&path).is_ok());
+        let elsewhere = dir.path().join("note.md").display().to_string();
+        for json in [
+            tab(&"AB".repeat(16), ""),
+            tab("../../secret", ""),
+            tab(&good[1..], ""),
+        ] {
+            std::fs::write(&path, &json).unwrap();
+            assert!(load(&path).is_err(), "{json}");
+        }
+        // A path beside a Vault id is a key no build reads now.
+        std::fs::write(&path, tab(&good, &elsewhere)).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(
+            loaded.tabs[0].document.as_ref().map(VaultId::as_str),
+            Some(&*good)
+        );
+    }
+
+    #[test]
+    fn a_file_tab_names_nothing_and_is_dropped_keeping_the_active_tab() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        let note = dir.path().join("note.md");
+        let good = "ab".repeat(16);
+        let json = format!(
+            r#"{{"version":2,"tabs":[{{"markdown":{note:?}}},{{"document":"{good}"}}],"active":1,"sidebar_visible":true}}"#,
+            note = note.display().to_string()
+        );
+        std::fs::write(&path, json).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded.tabs.len(), 1);
+        assert_eq!(
+            loaded.tabs[0].document.as_ref().map(VaultId::as_str),
+            Some(&*good)
+        );
+        assert_eq!(loaded.active, 0);
+    }
+
+    #[test]
+    fn a_version_1_session_keeps_its_layout_but_not_its_file_tabs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        let blank = TabRecord {
+            blank: true,
+            name: Some("Untitled 2.md".into()),
+            ..TabRecord::default()
+        };
+        let session = Session {
+            version: 1,
+            tabs: vec![
+                TabRecord {
+                    source_only: true,
+                    attachment: Some(dir.path().join("scan.pdf")),
+                    ..TabRecord::default()
+                },
+                blank.clone(),
+            ],
+            active: 1,
+            theme_choice: ThemeChoice::Dark,
+            ..Session::default()
+        };
+        // A version 1 file tab, as that build wrote it.
+        let mut json = serde_json::to_value(&session).unwrap();
+        json["tabs"].as_array_mut().unwrap().insert(
+            0,
+            serde_json::json!({"markdown": dir.path().join("note.md")}),
+        );
+        std::fs::write(&path, json.to_string()).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded.version, 2);
+        assert_eq!(loaded.tabs, vec![blank]);
+        assert_eq!(loaded.active, 0);
+        assert_eq!(loaded.theme_choice, ThemeChoice::Dark);
+    }
+
     #[test]
     fn corrupt_or_future_manifest_is_not_silently_accepted() {
         let dir = tempfile::tempdir().unwrap();

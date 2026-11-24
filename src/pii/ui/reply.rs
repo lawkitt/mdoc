@@ -1,10 +1,11 @@
 //! Restore in place: the Share panel's "AI reply" box restores a
 //! pasted reply at once, with Restore's matching rules, and the
 //! view switcher's read-only Reply segment shows the result, following the
-//! mapping live. One reply per document: kept in the case file when the tab
-//! has a case, otherwise only while the tab is open.
+//! mapping live. A reply in the box is saved to the Vault once it settles
+//! (the workspace saves it); edits while the box holds it replace that
+//! saved reply, and clearing the box keeps it.
 use super::{compare::CompareMode, restore::UNRESOLVED_ID};
-use crate::{document_view::DocumentView, workspace};
+use crate::document_view::DocumentView;
 use gpui::{Context, Entity, Focusable, Window, prelude::*};
 use mdoc_pii::restore::{ExportedIdentity, RestoreMap, RestoredText};
 use std::ops::Range;
@@ -12,7 +13,7 @@ use std::ops::Range;
 /// What the document view carries out for a reply-box transition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ReplyEffect {
-    /// Keep the reply in the tab's case, or remove it there.
+    /// The reply changed: its tokens name today's identities.
     Store,
     /// The box holds a changed reply: show the Reply view.
     ShowReply,
@@ -38,6 +39,10 @@ pub(crate) struct ReplyBox {
     /// changes, the reply's tokens for it follow.
     bound: Vec<(u64, ExportedIdentity)>,
     bound_at: Option<u64>,
+    /// The revision of the box's text last saved, and the AI Reply it
+    /// saved: none once that reply was deleted, so the text is not saved
+    /// again until it changes.
+    saved: Option<(Option<String>, u64)>,
 }
 
 impl ReplyBox {
@@ -56,11 +61,6 @@ impl ReplyBox {
         self.revision
     }
 
-    /// What the case keeps for this member: the reply, or nothing.
-    pub(crate) fn stored(&self) -> Option<String> {
-        self.exists().then(|| self.text.clone())
-    }
-
     /// The user typed, pasted or cleared the box. Any change that leaves a
     /// reply shows the Reply view unless it is already showing, a paste over
     /// an earlier reply included; clearing leaves it.
@@ -70,6 +70,10 @@ impl ReplyBox {
         }
         let had = self.exists();
         self.set(text.to_owned());
+        if !self.exists() {
+            // A cleared box keeps the reply it saved and starts a new one.
+            self.saved = None;
+        }
         let mut effects = vec![ReplyEffect::Store];
         if self.exists() {
             if !showing_reply {
@@ -81,11 +85,14 @@ impl ReplyBox {
         effects
     }
 
-    /// A reopened case member gets its kept reply back: nothing to store,
-    /// and the view stays as it is.
-    pub(crate) fn loaded(&mut self, text: String) {
-        if text != self.text {
-            self.set(text);
+    /// A move gave the document's names other aliases: the reply's tokens
+    /// follow, as they follow a rename.
+    pub(crate) fn realias(&mut self, names: Vec<ExportedIdentity>, aliases: &[Option<String>]) {
+        if !self.exists() || aliases.iter().all(Option::is_none) {
+            return;
+        }
+        if let Some(text) = RestoreMap::new(names).realias(&self.text, aliases) {
+            self.set_followed(text);
         }
     }
 
@@ -93,6 +100,51 @@ impl ReplyBox {
         self.text = text;
         self.revision += 1;
         self.next = 0;
+    }
+
+    /// Rewrite the text's aliases, naming the same people: a reply saved as
+    /// it was stays saved, since it restores by identity.
+    fn set_followed(&mut self, text: String) {
+        let current = self
+            .saved
+            .as_ref()
+            .is_some_and(|(_, at)| *at == self.revision);
+        self.set(text);
+        if current && let Some((_, at)) = self.saved.as_mut() {
+            *at = self.revision;
+        }
+    }
+
+    /// The saved reply this box holds.
+    pub(crate) fn saved_id(&self) -> Option<String> {
+        self.saved.as_ref().and_then(|(id, _)| id.clone())
+    }
+
+    /// The text and revision to save, when the box holds a reply not
+    /// saved as it is now.
+    pub(crate) fn unsaved(&self) -> Option<(String, u64)> {
+        let current = self
+            .saved
+            .as_ref()
+            .is_some_and(|(_, at)| *at == self.revision);
+        (self.exists() && !current).then(|| (self.text.clone(), self.revision))
+    }
+
+    /// Reply `id` saved this box's text at `revision`.
+    pub(crate) fn mark_saved(&mut self, id: &str, revision: u64) {
+        if self.exists() {
+            self.saved = Some((Some(id.to_string()), revision));
+        }
+    }
+
+    /// Reply `id` was deleted: the text as it is stays unsaved, and a
+    /// change makes a new reply.
+    pub(crate) fn forget_saved(&mut self, id: &str) {
+        if let Some((saved, _)) = self.saved.as_mut()
+            && saved.as_deref() == Some(id)
+        {
+            *saved = None;
+        }
     }
 
     /// Read the reply's alias tokens against the mapping at `review` (its
@@ -104,7 +156,7 @@ impl ReplyBox {
 
     /// The mapping moved on to `review`: rewrite the reply's alias tokens
     /// whose identity now has another alias, so the reply keeps naming the
-    /// same people whatever renumbered them (a join, a case-wide rename, an
+    /// same people whatever renumbered them (a join, a Project-wide rename, an
     /// undo of either). The reply stays in alias form; nothing restored is
     /// kept. Returns whether the reply changed.
     pub(crate) fn follow(
@@ -139,7 +191,7 @@ impl ReplyBox {
         let map = RestoreMap::new(before.into_iter().map(|(_, e)| e).collect());
         match map.realias(&self.text, &aliases) {
             Some(text) => {
-                self.set(text);
+                self.set_followed(text);
                 true
             }
             None => false,
@@ -284,12 +336,16 @@ impl DocumentView {
         self.compare.as_ref().map(|c| c.mode) == Some(CompareMode::Reply)
     }
 
-    /// The case gave this reopened member its reply.
-    pub(crate) fn load_reply(&mut self, text: String, cx: &mut Context<Self>) {
-        self.reply.loaded(text);
-        self.bind_reply();
+    /// A move renumbered this document's names (`aliases`, beside `names`
+    /// as they were): its reply's tokens follow.
+    pub(crate) fn realias_reply(
+        &mut self,
+        names: Vec<ExportedIdentity>,
+        aliases: &[Option<String>],
+        cx: &mut Context<Self>,
+    ) {
+        self.reply.realias(names, aliases);
         self.show_reply_text(cx);
-        cx.notify();
     }
 
     /// The box shows the reply as it is now.
@@ -302,12 +358,6 @@ impl DocumentView {
         }
     }
 
-    fn store_reply(&self, cx: &mut Context<Self>) {
-        if self.case.link().is_some() {
-            cx.emit(workspace::TabEvent::Case(workspace::CaseEvent::Reply));
-        }
-    }
-
     fn bind_reply(&mut self) {
         let review = &self.pii.review;
         self.reply
@@ -316,7 +366,7 @@ impl DocumentView {
 
     /// The mapping may have changed: once this update settles (a join or an
     /// undo commits its identities last), the reply's alias tokens follow
-    /// any identity whose alias changed, and the case keeps the result.
+    /// any identity whose alias changed, and the Project keeps the result.
     pub(crate) fn follow_reply_aliases_soon(&mut self, cx: &mut Context<Self>) {
         if !self.reply.exists() {
             return;
@@ -336,7 +386,6 @@ impl DocumentView {
             return;
         }
         self.show_reply_text(cx);
-        self.store_reply(cx);
         cx.notify();
     }
 
@@ -351,7 +400,7 @@ impl DocumentView {
                 ReplyEffect::Store => {
                     // A new reply's tokens name today's identities.
                     self.bind_reply();
-                    self.store_reply(cx);
+                    self.save_reply_soon(cx);
                 }
                 ReplyEffect::ShowReply => {
                     // Typing goes on in the box while the view opens beside it.
@@ -397,14 +446,34 @@ impl DocumentView {
         self.show_copy_feedback(cx);
     }
 
-    /// Open as tab: the restore tab Paste AI Response makes, from this reply,
-    /// with its guard when no identities are left to restore.
-    pub(crate) fn open_reply_as_tab(&mut self, cx: &mut Context<Self>) {
-        if !self.reply.exists() || !self.has_identities_to_restore("Open as tab", cx) {
+    /// Open reply: the box's reply, saved now if it changed, on the Reply
+    /// page.
+    pub(crate) fn open_saved_reply(&mut self, cx: &mut Context<Self>) {
+        if !self.reply.exists() {
             return;
         }
-        let text = self.reply.text().to_owned();
-        self.open_restore_tab(text, cx);
+        self.reply_save = None;
+        cx.emit(crate::workspace::TabEvent::Reply(
+            crate::workspace::ReplyEvent::Settled { open: true },
+        ));
+    }
+
+    /// Once the box's text settles, the workspace saves it; a cleared box
+    /// saves nothing.
+    fn save_reply_soon(&mut self, cx: &mut Context<Self>) {
+        if self.reply.unsaved().is_none() {
+            self.reply_save = None;
+            return;
+        }
+        self.reply_save = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(REPLY_SETTLE).await;
+            let _ = this.update(cx, |this, cx| {
+                this.reply_save = None;
+                cx.emit(crate::workspace::TabEvent::Reply(
+                    crate::workspace::ReplyEvent::Settled { open: false },
+                ));
+            });
+        }));
     }
 
     /// Next unrecognised: show the Reply view at the next unresolved token.
@@ -427,32 +496,7 @@ impl DocumentView {
     /// The reply editor's annotations: restored values in the original's
     /// gold, unresolved tokens red as in the restore tab.
     pub(super) fn reply_annotations(&self) -> Vec<mdoc_editor::SourceAnnotation> {
-        let theme = self.theme.get();
-        let gold = theme.proposed();
-        let red = crate::style::markdown_style(theme).alert_caution;
-        let mark = |id, range, accent: gpui::Hsla| mdoc_editor::SourceAnnotation {
-            id,
-            range,
-            color: gpui::Hsla { a: 0.16, ..accent },
-            active_color: gpui::Hsla { a: 0.34, ..accent },
-            border: gpui::Hsla { a: 0.5, ..accent },
-            text_color: Some(accent),
-            underline: None,
-            dotted: false,
-        };
-        let restored = self.reply.restored();
-        restored
-            .restored
-            .iter()
-            .enumerate()
-            .map(|(i, (range, _))| mark(i as u64, range.clone(), gold))
-            .chain(
-                restored
-                    .unresolved
-                    .iter()
-                    .map(|range| mark(UNRESOLVED_ID | range.start as u64, range.clone(), red)),
-            )
-            .collect()
+        reply_marks(self.reply.restored(), self.theme.get())
     }
 
     /// Focus the box (a click on its padding).
@@ -461,6 +505,45 @@ impl DocumentView {
             window.focus(&editor.read(cx).focus_handle(cx), cx);
         }
     }
+}
+
+/// How long the box's text rests before it is saved, as a document's.
+const REPLY_SETTLE: std::time::Duration = std::time::Duration::from_millis(700);
+
+/// A saved reply as Share lists it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SavedReplyRow {
+    pub id: String,
+    pub title: String,
+    /// Where it came from and when.
+    pub detail: String,
+}
+
+/// A restored reply's marks: restored values in the original's gold,
+/// unresolved tokens red, as the restore tab marked them.
+pub(crate) fn reply_marks(
+    restored: &RestoredText,
+    theme: crate::style::Theme,
+) -> Vec<mdoc_editor::SourceAnnotation> {
+    let gold = theme.proposed();
+    let red = crate::style::markdown_style(theme).alert_caution;
+    let mark = |id, range, accent: gpui::Hsla| mdoc_editor::SourceAnnotation {
+        id,
+        range,
+        color: gpui::Hsla { a: 0.16, ..accent },
+        active_color: gpui::Hsla { a: 0.34, ..accent },
+        border: gpui::Hsla { a: 0.5, ..accent },
+        text_color: Some(accent),
+        underline: None,
+        dotted: false,
+    };
+    (restored.restored.iter().enumerate())
+        .map(|(i, (range, _))| mark(i as u64, range.clone(), gold))
+        .chain(
+            (restored.unresolved.iter())
+                .map(|range| mark(UNRESOLVED_ID | range.start as u64, range.clone(), red)),
+        )
+        .collect()
 }
 
 #[cfg(test)]
@@ -481,7 +564,7 @@ mod tests {
     #[test]
     fn filling_shows_the_reply_and_clearing_leaves_it() {
         let mut reply = ReplyBox::default();
-        assert!(!reply.exists() && reply.stored().is_none());
+        assert!(!reply.exists());
         assert_eq!(
             reply.edited("PERSON_1", false),
             [ReplyEffect::Store, ReplyEffect::ShowReply]
@@ -494,15 +577,13 @@ mod tests {
             reply.edited("PERSON_1 came back", false),
             [ReplyEffect::Store, ReplyEffect::ShowReply]
         );
-        assert_eq!(reply.stored().as_deref(), Some("PERSON_1 came back"));
+        assert_eq!(reply.text(), "PERSON_1 came back");
         assert_eq!(
             reply.edited("  ", true),
             [ReplyEffect::Store, ReplyEffect::LeaveReply]
         );
-        assert!(reply.stored().is_none(), "a blank box keeps nothing");
+        assert!(!reply.exists(), "a blank box keeps nothing");
         assert_eq!(reply.edited("", false), [ReplyEffect::Store]);
-        reply.loaded("PERSON_1".into());
-        assert!(reply.exists(), "a kept reply comes back without effects");
     }
 
     #[test]

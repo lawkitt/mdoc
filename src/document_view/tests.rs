@@ -1,8 +1,8 @@
 use crate::{
     bind_app_keys,
     document_view::{
-        ClosePdf, CopyMarkdown, DismissImportWarning, DocumentView, Next, OcrState, Save, SaveAs,
-        bind_markdown_search_keys, find_counter,
+        ClosePdf, CopyMarkdown, DismissImportWarning, DocumentView, ExportMarkdown, Next, OcrState,
+        Save, bind_markdown_search_keys, find_counter,
     },
     markdown_search, pii,
     pii::ui::PiiApplyAll,
@@ -15,7 +15,7 @@ use crate::{
     spelling::{NextMisspelling, PreviousMisspelling, ToggleDocumentSpelling},
     style::{self, Theme},
     ui,
-    workspace::{self, Close, Import, New, Open},
+    workspace::{self, Import, New, Open},
 };
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
 use mdoc_import::{import, ocr};
@@ -59,15 +59,15 @@ pub(crate) fn active_document(
     })
 }
 
+/// Import the Markdown file `path` as a Vault document, as Open does.
 pub(crate) fn open_document(
     app: &Entity<DocumentView>,
     path: PathBuf,
     cx: &mut VisualTestContext,
 ) -> Entity<DocumentView> {
-    app.update(cx, |_, cx| {
-        cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::Open(vec![
-            path,
-        ])))
+    cx.update(|window, cx| {
+        let tabs = window.root::<workspace::Workspace>().flatten().unwrap();
+        tabs.update(cx, |tabs, cx| tabs.open_paths(vec![path], window, cx));
     });
     cx.run_until_parked();
     active_document(app, cx)
@@ -88,8 +88,10 @@ pub(crate) fn close_document(
     app: &Entity<DocumentView>,
     cx: &mut VisualTestContext,
 ) -> Entity<DocumentView> {
-    app.update(cx, |_, cx| {
-        cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Requested))
+    let _ = app;
+    cx.update(|window, cx| {
+        let tabs = window.root::<workspace::Workspace>().flatten().unwrap();
+        tabs.update(cx, |tabs, cx| tabs.release_active(window, cx));
     });
     cx.run_until_parked();
     if cx.has_pending_prompt() {
@@ -121,9 +123,9 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
         app.apply_all_pii(&PiiApplyAll, window, cx);
         assert_eq!(app.editor.read(cx).text(), "# Contract\n\nPERSON_1 represents **PERSON_1**. [contact](https://x.invalid/Alice_Morgan)\n");
         assert_eq!(app.pii.review().remaining(), 0);
-        assert_eq!(app.session.document.path.as_ref(), Some(&source_path));
+        assert!(app.session.document.vault.is_some());
         assert!(app.session.warning.is_some());
-        assert!(app.dirty(cx));
+        assert!(app.unsaved(cx));
         app.copy_markdown(&CopyMarkdown, window, cx);
         assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), app.editor.read(cx).text());
         window.focus(&app.editor.read(cx).focus_handle(cx), cx);
@@ -133,7 +135,7 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
     app.update_in(cx, |app, window, cx| {
         assert_eq!(app.editor.read(cx).text(), source);
         assert_eq!(app.pii.review().remaining(), 2);
-        assert!(!app.dirty(cx));
+        assert!(!app.unsaved(cx));
         let id = app.pii.review().variants()[0].id;
         let range = app.pii.review().variant(id).unwrap().mentions[0].clone();
         let annotation = app
@@ -147,9 +149,7 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
         assert_eq!(app.pii.review().remaining(), 0);
         assert_eq!(app.editor.read(cx).text(), "# Contract\n\nAlice Morgan represents **PERSON_1**. [contact](https://x.invalid/Alice_Morgan)\n");
         let text = app.editor.read(cx).text().to_owned();
-        app.session
-            .save(dir.path().join("prepared.md"), &text)
-            .unwrap();
+        mdoc_store::document::export(&dir.path().join("prepared.md"), &text).unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.path().join("prepared.md")).unwrap(),
             text
@@ -254,9 +254,9 @@ fn copy_markdown_preserves_source_selection_undo_and_warning(cx: &mut TestAppCon
         );
         assert!(cx.read_from_clipboard().unwrap().metadata().is_none());
         assert_eq!(app.editor.read(cx).text(), current);
-        assert!(app.dirty(cx));
+        assert!(app.unsaved(cx));
         assert_eq!(app.session.document.saved, saved);
-        assert_eq!(app.session.document.path.as_ref(), Some(&path));
+        assert!(app.session.document.vault.is_some());
         assert_eq!(app.session.generation, generation);
         assert!(app.session.warning.as_ref().unwrap().contains("page 2"));
         assert!(app.copy_feedback.is_some());
@@ -273,7 +273,7 @@ fn copy_markdown_preserves_source_selection_undo_and_warning(cx: &mut TestAppCon
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(app.read(cx).editor.read(cx).text(), saved);
-        assert!(!app.read(cx).dirty(cx));
+        assert!(!app.read(cx).unsaved(cx));
     });
 }
 
@@ -358,7 +358,7 @@ fn search_wraps_and_preserves_document_and_selection(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(cx.update(|_, cx| app.read(cx).search.active()), Some(1));
     assert_eq!(cx.update(|_, cx| app.read(cx).editor.read(cx).cursor()), 3);
-    assert!(!cx.update(|_, cx| app.read(cx).dirty(cx)));
+    assert!(!cx.update(|_, cx| app.read(cx).unsaved(cx)));
     assert_eq!(
         cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
         "alpha **alpha**"
@@ -460,7 +460,7 @@ fn automatic_table_cells_keep_readable_wrapping_when_original_is_toggled(cx: &mu
             let editor = app.editor.read(cx);
             assert_eq!(editor.text(), source);
             assert_eq!(editor.revision(), revision);
-            assert!(!app.dirty(cx));
+            assert!(!app.unsaved(cx));
             for index in [0, 2] {
                 let first = editor.search_match_bounds(index).expect("first cell glyph");
                 let last = editor.search_match_bounds(index + 1).expect("last cell glyph");
@@ -581,7 +581,7 @@ fn search_preserves_selection_undo_and_save_as_state(cx: &mut TestAppContext) {
         })
     });
     assert_eq!(selected, after);
-    cx.dispatch_action(SaveAs);
+    cx.dispatch_action(ExportMarkdown);
     cx.run_until_parked();
     cx.simulate_new_path_selection(|_| Some(dir.path().join("search.md")));
     cx.run_until_parked();
@@ -700,9 +700,7 @@ fn accepted_document_transition_resets_search_state(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.simulate_input("alpha");
     cx.run_until_parked();
-    cx.dispatch_action(Close);
-    cx.run_until_parked();
-    cx.simulate_prompt_answer("Don't Save");
+    let _ = close_document(&app, cx);
     cx.run_until_parked();
 
     let app = active_document(&app, cx);
@@ -745,34 +743,6 @@ fn editing_refreshes_search_without_auto_scrolling_or_moving_the_query(cx: &mut 
     assert_eq!(cx.update(|_, cx| app.read(cx).scroll.offset()), before);
     assert_eq!(
         cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().to_owned()),
-        "alpha"
-    );
-}
-
-#[gpui::test]
-fn cancelled_document_transition_preserves_search_state(cx: &mut TestAppContext) {
-    let (app, cx) = boot(cx);
-    app.update_in(cx, |app, _, cx| {
-        app.editor
-            .update(cx, |editor, cx| editor.set_text("alpha", cx));
-    });
-    cx.dispatch_action(FindMarkdown);
-    cx.run_until_parked();
-    cx.simulate_input("alpha");
-    cx.run_until_parked();
-    cx.dispatch_action(Close);
-    cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).search.open()));
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-
-    assert!(cx.update(|_, cx| app.read(cx).search.open()));
-    assert_eq!(
-        cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().to_owned()),
-        "alpha"
-    );
-    assert_eq!(
-        cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
         "alpha"
     );
 }
@@ -845,7 +815,6 @@ fn accepted_pdf_import_opens_source_pane(cx: &mut TestAppContext) {
         imported.is_pdf = true;
         app.proceed(Next::Import(Box::new(imported)), window, cx);
         assert!(app.preview.loading());
-        assert!(app.dirty(cx));
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
@@ -1054,7 +1023,6 @@ fn accepted_docx_import_opens_source_pane(cx: &mut TestAppContext) {
         let mut imported = converted(source);
         imported.is_docx = true;
         app.proceed(Next::Import(Box::new(imported)), window, cx);
-        assert!(app.dirty(cx));
     });
     cx.run_until_parked();
     assert!(cx.update(|_, cx| {
@@ -1142,7 +1110,6 @@ fn failed_replacement_preserves_loaded_preview_and_markdown(cx: &mut TestAppCont
             assert_eq!(app.preview.pdf(), Some(&old));
             assert!(app.preview.retryable());
             assert_eq!(app.editor.read(cx).text(), "unsaved text");
-            assert!(app.dirty(cx));
         });
     }
 }
@@ -1162,7 +1129,6 @@ fn accepted_import_failure_clears_old_preview_and_pdf_retry_works(cx: &mut TestA
         imported.is_pdf = true;
         app.proceed(Next::Import(Box::new(imported)), window, cx);
         assert!(app.preview.pdf().is_none());
-        assert!(app.dirty(cx));
     });
     cx.run_until_parked();
     assert!(cx.update(|_, cx| app.read(cx).preview.retryable()));
@@ -1173,7 +1139,6 @@ fn accepted_import_failure_clears_old_preview_and_pdf_retry_works(cx: &mut TestA
         let app = app.read(cx);
         assert!(app.preview.pdf().unwrap().read(cx).is_loaded());
         assert!(!app.preview.retryable());
-        assert!(app.dirty(cx));
     });
 }
 

@@ -4,9 +4,8 @@ use crate::workspace::folder_sheet::{DroppedFolder, Pending};
 use std::path::Path;
 
 /// Synthetic folders in the temporary profile: a small one, one over the
-/// 20-file cap, and Add to a loaded case. Each is cancelled: nothing opens
-/// and no key is read.
-pub(super) fn scenes(d: &mut Driver, document: &Path, case: &str) -> Result<()> {
+/// 20-file cap, and Add to a Project. Each is cancelled: nothing opens.
+pub(super) fn scenes(d: &mut Driver, document: &Path, project: &str) -> Result<()> {
     let root = document.parent().ok_or("fixture directory")?;
     let write = |folder: &Path, names: &[String]| -> Result<()> {
         std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
@@ -35,19 +34,19 @@ pub(super) fn scenes(d: &mut Driver, document: &Path, case: &str) -> Result<()> 
             .map(|n| format!("Exhibit {n:02}.md"))
             .collect::<Vec<_>>(),
     )?;
-    for (name, folder, case) in [
+    for (name, folder, project) in [
         ("folder-sheet", &matter, None),
         ("folder-sheet-over-cap", &exhibits, None),
-        ("folder-sheet-add-to-case", &matter, Some(case.to_string())),
+        (
+            "folder-sheet-add-to-project",
+            &matter,
+            Some(project.to_string()),
+        ),
     ] {
         let folder = DroppedFolder::read(folder, mdoc_store::document::is_markdown)
             .ok_or("fixture folder")?;
         d.change(|w, window, cx| {
-            let pending = Pending {
-                folder,
-                case,
-                at: None,
-            };
+            let pending = Pending { folder, project };
             w.queue_folder(pending, window, cx)
         })?;
         d.capture(name)?;

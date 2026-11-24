@@ -154,6 +154,9 @@ pub(crate) trait Record: Clone + Serialize + DeserializeOwned {
     /// Before a write over `stored`: keep the fields only the Vault
     /// changes, and stamp `revision` and `now`.
     fn settle(&mut self, stored: &Self, revision: u64, now: u64);
+    /// As read from its file, before anyone sees it: fill in what an older
+    /// build left out.
+    fn loaded(&mut self) {}
 }
 
 impl Record for Project {
@@ -202,17 +205,32 @@ impl Record for Document {
     }
     /// A Document's Project changes only by a move, so a stale copy saved
     /// after a move cannot undo it; in a Project it keeps no mapping of its
-    /// own; its original never changes.
+    /// own; its original's source (hash, length, file name) never changes,
+    /// while a conversion may note its warning, what it left out and that
+    /// it took a password; once converted it stays so.
     fn settle(&mut self, stored: &Self, revision: u64, now: u64) {
         self.id.clone_from(&stored.id);
         self.project.clone_from(&stored.project);
+        let noted = self.original.take().map(|original| original.info);
         self.original.clone_from(&stored.original);
+        if let (Some(original), Some(noted)) = (self.original.as_mut(), noted) {
+            original.info.import_warning = noted.import_warning;
+            original.info.left_out = noted.left_out;
+            original.info.password_protected |= noted.password_protected;
+        }
+        self.from_reply.clone_from(&stored.from_reply);
+        self.unconverted &= stored.pending_conversion() && self.markdown.is_empty();
         if self.project.is_some() {
             self.mapping = crate::mapping::Mapping::default();
         }
         self.created = stored.created;
         self.revision = revision;
         self.updated = now;
+    }
+    /// A Document imported before `unconverted` existed says so here, so a
+    /// write that changes something else keeps it waiting.
+    fn loaded(&mut self) {
+        self.unconverted = self.pending_conversion();
     }
 }
 
@@ -263,7 +281,8 @@ pub(crate) fn load<R: Record>(
     let bytes = read_limited(&mut file).map_err(unseal_error)?;
     let stamp = metadata.and_then(|metadata| Stamp::of(&metadata, &bytes));
     let plain = sealer.open(R::KIND, id, &bytes).map_err(unseal_error)?;
-    let record: R = serde_json::from_slice(&plain).map_err(|_| LoadError::Damaged)?;
+    let mut record: R = serde_json::from_slice(&plain).map_err(|_| LoadError::Damaged)?;
+    record.loaded();
     if record.id() != id {
         return Err(LoadError::Damaged);
     }

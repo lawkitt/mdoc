@@ -93,13 +93,13 @@ fn navigation_keys_resolve_by_focus_on_both_platforms_keymaps(cx: &mut TestAppCo
     });
 }
 
-/// A focused sidebar tab opens its menu with ⌃↩ (no fn on MacBook keyboards)
+/// A focused sidebar row opens its menu with ⌃↩ (no fn on MacBook keyboards)
 /// or ⇧F10 on both platforms, and the Menu key on Windows, ahead of the
 /// window-wide Ctrl+Enter (Apply all) there.
 #[gpui::test]
-fn ctrl_enter_opens_a_sidebar_tabs_menu_on_both_platforms(cx: &mut TestAppContext) {
+fn ctrl_enter_opens_a_sidebar_rows_menu_on_both_platforms(cx: &mut TestAppContext) {
     cx.update(|cx| {
-        let tab: Vec<gpui::KeyContext> = ["Workspace", "SidebarRegion", "UiControl SidebarTab"]
+        let tab: Vec<gpui::KeyContext> = ["Workspace", "SidebarRegion", "UiControl SidebarRow"]
             .iter()
             .map(|name| gpui::KeyContext::parse(name).unwrap())
             .collect();
@@ -160,6 +160,9 @@ const PLUMBING: &[&str] = &[
     "mdoc_shell::PaletteUp",
     "mdoc_shell::PaletteDown",
     "mdoc_shell::PaletteConfirm",
+    "mdoc_switcher::SwitcherUp",
+    "mdoc_switcher::SwitcherDown",
+    "mdoc_switcher::SwitcherConfirm",
     "pdf_view::MenuNext",
     "pdf_view::MenuPrevious",
     "shelf::CloseShelf",

@@ -1,10 +1,12 @@
 //! The menu bar shelf's model, GPUI-free: which documents it
 //! lists and whether each is ready, the pseudonymized row it shows, the
 //! text Copy for AI and a drag carry, the temporary `.md` exports a drag
-//! drops, and Restore Clipboard. The window collects what it lists; the
-//! shelf's view shows it.
+//! drops, and Restore Clipboard. The window collects what it lists, from
+//! its open tabs and the Vault; the shelf's view shows it.
 //!
-//! Invariants: nothing leaves through the shelf that is not ready; rows and
+//! Invariants: nothing leaves through the shelf that is not ready, and a
+//! row is ready only once the Vault's outbound check passes
+//! (`Vault::text_for_ai`), whose text is all a row hands out; rows and
 //! exports carry pseudonymized text only; no document text goes to app
 //! data, and exports live in a private temporary folder until quit.
 
@@ -12,19 +14,15 @@ mod exports;
 #[cfg(test)]
 mod tests;
 
+use crate::workspace::ProjectLink;
 pub(crate) use exports::ShelfExports;
 use mdoc_markdown::{lines, spans, tables};
 use mdoc_pii::{
     Category,
     restore::{ExportedIdentity, RestoreMap},
 };
-use mdoc_store::cases::{Case, CaseLink};
-use sha2::Digest;
-use std::{
-    ops::Range,
-    path::{Path, PathBuf},
-    time::SystemTime,
-};
+use mdoc_store::document_id::VaultId;
+use std::{ops::Range, time::SystemTime};
 
 /// The shelf lists at most this many documents.
 pub(crate) const MAX_DOCUMENTS: usize = 8;
@@ -40,8 +38,6 @@ const PARAGRAPH_BYTES: usize = 32 * 1024;
 /// rules, "Page 1 of 5").
 const PROSE_WORDS: usize = 3;
 const PROSE_LETTERS: usize = 12;
-/// A closed member larger than this is not read; it lists as changed.
-pub(crate) const MAX_MEMBER_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Whether a listed document may leave through the shelf.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,13 +46,15 @@ pub(crate) enum Readiness {
     Ready,
     /// An open tab with this many proposals still to review.
     LeftToReview(usize),
-    /// An open tab just edited: its proposals are being found again.
+    /// An open tab just edited: its proposals are being found again, or
+    /// its text, or a document's Project names, are not written to the
+    /// Vault yet.
     Checking,
     /// A document whose text still holds this many known names by an
-    /// original wording: a kept mention in an open tab, or a closed member
-    /// that gained one.
+    /// original wording: a kept mention, or a name another document added
+    /// to its Project since.
     NamesNotReplaced(usize),
-    /// A closed member whose file is not the text it saved while ready.
+    /// A document whose stored text is not the text it saved while ready.
     ChangedSinceReview,
 }
 
@@ -78,11 +76,28 @@ impl Readiness {
     }
 }
 
-/// What a row opens: an open tab, or a closed member of a case.
+/// What a row opens: an open tab, or a Vault document no tab shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ShelfKey {
     Tab(u64),
-    Member { case: String, path: PathBuf },
+    Document(VaultId),
+}
+
+/// What the Vault's outbound check (`Vault::text_for_ai`) gave for a
+/// document as stored: the text Copy for AI sends, or why it may not leave.
+pub(crate) type Outbound = Result<String, mdoc_vault::Readiness>;
+
+/// A stored document's state as the shelf shows it, when the outbound
+/// check refused it.
+fn refused(readiness: mdoc_vault::Readiness) -> Readiness {
+    match readiness {
+        mdoc_vault::Readiness::NamesNotReplaced(n) => Readiness::NamesNotReplaced(n),
+        // Never saved while ready, or changed since: as a case member with
+        // no or another fingerprint showed.
+        mdoc_vault::Readiness::Ready
+        | mdoc_vault::Readiness::NotReviewed
+        | mdoc_vault::Readiness::ChangedSinceReview => Readiness::ChangedSinceReview,
+    }
 }
 
 /// A ready document's preview: its first real prose as one paragraph,
@@ -103,10 +118,10 @@ pub(crate) struct ShelfDocument {
     pub key: ShelfKey,
     /// The title with known originals pseudonymized.
     pub title: String,
-    pub case: Option<CaseLink>,
-    /// The case's name as the row shows it, pseudonymized with the names
-    /// the document knows: a case is often named after a person.
-    pub case_label: Option<String>,
+    pub project: Option<ProjectLink>,
+    /// The Project's name as the row shows it, pseudonymized with the
+    /// names the document knows: a Project is often named after a person.
+    pub project_label: Option<String>,
     pub readiness: Readiness,
     pub edited: SystemTime,
     pub words: usize,
@@ -140,105 +155,120 @@ pub(crate) struct OpenTab<'a> {
     /// the title and preview, and any left in the text keeps it from
     /// leaving.
     pub names: Vec<ExportedIdentity>,
-    pub case: Option<CaseLink>,
+    pub project: Option<ProjectLink>,
     pub edited: SystemTime,
+    /// The outbound check of its Vault document, asked only once its review
+    /// is ready; `None` while its text or review is not written yet.
+    pub stored: Option<Outbound>,
 }
 
-/// A closed member's file, read while the shelf is open.
-pub(crate) struct ClosedMember<'a> {
-    pub case: &'a Case,
-    /// The member as in [`Case::members`].
-    pub path: &'a Path,
-    /// The file's text; `None` when it could not be read or is too large.
-    pub text: Option<&'a str>,
-    pub edited: SystemTime,
+impl OpenTab<'_> {
+    /// Its review's readiness, as a write records it: an applied alias
+    /// assumed, nothing pending or still being found, and no known name
+    /// left as written. The Vault is not asked.
+    pub(crate) fn review_readiness(&self) -> Readiness {
+        self.review_readiness_with(&RestoreMap::new(self.names.clone()))
+    }
+
+    /// As if what it shows was written and the outbound check passed with
+    /// the editor's Copy for AI text, for tests and renders.
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
+    pub(crate) fn checked(mut self) -> Self {
+        let text = mdoc_pii::handoff::for_ai(self.text, self.aliases.iter().copied());
+        self.stored = Some(Ok(text));
+        self
+    }
+
+    fn review_readiness_with(&self, names: &RestoreMap) -> Readiness {
+        if self.pending > 0 {
+            Readiness::LeftToReview(self.pending)
+        } else if self.checking {
+            Readiness::Checking
+        } else {
+            match names.known_names(self.text) {
+                0 => Readiness::Ready,
+                missed => Readiness::NamesNotReplaced(missed),
+            }
+        }
+    }
 }
 
-/// The fingerprint of a text saved while ready: SHA-256, hex.
-pub(crate) fn fingerprint(text: &str) -> String {
-    sha2::Sha256::digest(text.as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+/// A Vault document no open tab shows, as stored.
+pub(crate) struct StoredDocument<'a> {
+    pub id: VaultId,
+    pub title: &'a str,
+    /// Its Markdown as stored.
+    pub text: &'a str,
+    /// The names it lives with: its Project's as stored, or its own while
+    /// Unfiled.
+    pub names: Vec<ExportedIdentity>,
+    pub project: Option<ProjectLink>,
+    /// When it was last written.
+    pub edited: SystemTime,
+    /// `None` while a move of it, or a change to its Project's names, is
+    /// not written yet.
+    pub outbound: Option<Outbound>,
 }
 
 impl ShelfDocument {
     /// An open tab's row; `None` without an applied alias (not listed).
+    /// Ready only when its review is and the outbound check of what it
+    /// wrote passes; Copy for AI's text is that check's.
     pub(crate) fn of_tab(tab: OpenTab<'_>) -> Option<Self> {
         if tab.aliases.is_empty() {
             return None;
         }
-        let names = RestoreMap::new(tab.names);
-        let readiness = if tab.pending > 0 {
-            Readiness::LeftToReview(tab.pending)
-        } else if tab.checking {
-            Readiness::Checking
-        } else {
-            match names.known_names(tab.text) {
-                0 => Readiness::Ready,
-                missed => Readiness::NamesNotReplaced(missed),
-            }
+        let names = RestoreMap::new(tab.names.clone());
+        let (readiness, for_ai) = match (tab.review_readiness_with(&names), tab.stored) {
+            (Readiness::Ready, Some(Ok(text))) => (Readiness::Ready, Some(text)),
+            (Readiness::Ready, Some(Err(readiness))) => (refused(readiness), None),
+            // Its last edit is still on its way to the Vault.
+            (Readiness::Ready, None) => (Readiness::Checking, None),
+            (readiness, _) => (readiness, None),
         };
-        let for_ai = readiness
-            .is_ready()
-            .then(|| mdoc_pii::handoff::for_ai(tab.text, tab.aliases.iter().copied()));
         Some(Self::new(
             ShelfKey::Tab(tab.id),
             tab.title,
             tab.text,
             &names,
-            tab.case,
+            tab.project,
             readiness,
             tab.edited,
             for_ai,
         ))
     }
 
-    /// A closed member's row: ready only while its file matches the
-    /// fingerprint saved while ready, and holds none of the case's names.
-    pub(crate) fn of_member(member: ClosedMember<'_>) -> Self {
-        let names = RestoreMap::new(member.case.exported());
-        let title = title_of(member.path);
-        let key = ShelfKey::Member {
-            case: member.case.id.clone(),
-            path: member.path.to_path_buf(),
+    /// A stored document's row: ready only when the outbound check passes,
+    /// as it leaves with that check's text. `None` when its text holds no
+    /// alias its names know (not listed), as a tab without an applied
+    /// alias is not: reopened, it would have none.
+    pub(crate) fn of_stored(document: StoredDocument<'_>) -> Option<Self> {
+        let names = RestoreMap::new(document.names);
+        if names.exact_aliases(document.text).is_empty() {
+            return None;
+        }
+        let (readiness, for_ai) = match document.outbound {
+            Some(Ok(text)) => (Readiness::Ready, Some(text)),
+            Some(Err(readiness)) => (refused(readiness), None),
+            None => (Readiness::Checking, None),
         };
-        let link = Some(CaseLink::of(member.case));
-        let Some(text) = member.text else {
-            return Self::new(
-                key,
-                &title,
-                "",
-                &names,
-                link,
-                Readiness::ChangedSinceReview,
-                member.edited,
-                None,
-            );
-        };
-        let missed = names.known_names(text);
-        let readiness = if missed > 0 {
-            Readiness::NamesNotReplaced(missed)
-        } else if member.case.reviewed(member.path) == Some(fingerprint(text).as_str()) {
-            Readiness::Ready
-        } else {
-            Readiness::ChangedSinceReview
-        };
-        let for_ai = readiness.is_ready().then(|| {
-            // The aliases reopening it relinks as applied, as the editor's
-            // Copy for AI would name them.
-            mdoc_pii::handoff::for_ai(text, names.exact_aliases(text))
-        });
-        Self::new(
-            key,
-            &title,
-            text,
+        Some(Self::new(
+            ShelfKey::Document(document.id),
+            document.title,
+            document.text,
             &names,
-            link,
+            document.project,
             readiness,
-            member.edited,
+            document.edited,
             for_ai,
-        )
+        ))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -247,7 +277,7 @@ impl ShelfDocument {
         title: &str,
         text: &str,
         names: &RestoreMap,
-        case: Option<CaseLink>,
+        project: Option<ProjectLink>,
         readiness: Readiness,
         edited: SystemTime,
         for_ai: Option<String>,
@@ -260,8 +290,8 @@ impl ShelfDocument {
         Self {
             key,
             title: names.pseudonymize(title).0,
-            case_label: case.as_ref().map(|case| names.pseudonymize(&case.name).0),
-            case,
+            project_label: (project.as_ref()).map(|project| names.pseudonymize(&project.name).0),
+            project,
             readiness,
             edited,
             words: text
@@ -349,13 +379,6 @@ impl ShelfDocument {
     }
 }
 
-/// A document's title from its path: the file name, as the sidebar shows it.
-pub(crate) fn title_of(path: &Path) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.display().to_string())
-}
-
 /// The mentions `text` holds by an alias, and the distinct names they are,
 /// per category.
 fn replaced(text: &str, names: &RestoreMap) -> (usize, Vec<(Category, usize)>) {
@@ -368,7 +391,7 @@ fn replaced(text: &str, names: &RestoreMap) -> (usize, Vec<(Category, usize)>) {
             continue;
         };
         mentions += 1;
-        // The tab's names list one person in its mapping and its case.
+        // The tab's names list one person in its mapping and its Project.
         if seen.contains(&identity.alias.as_str()) {
             continue;
         }
@@ -1079,61 +1102,26 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     })
 }
 
-/// The shelf's list: open tabs, most recently edited first, then closed
-/// members, most recently saved first; at most [`MAX_DOCUMENTS`].
+/// The shelf's list: open tabs, most recently edited first, then stored
+/// documents no tab shows, most recently written first; at most
+/// [`MAX_DOCUMENTS`].
 pub(crate) fn list(
     mut tabs: Vec<ShelfDocument>,
-    mut members: Vec<ShelfDocument>,
+    mut stored: Vec<ShelfDocument>,
 ) -> Vec<ShelfDocument> {
     tabs.sort_by_key(|row| std::cmp::Reverse(row.edited));
-    members.sort_by_key(|row| std::cmp::Reverse(row.edited));
-    tabs.into_iter()
-        .chain(members)
-        .take(MAX_DOCUMENTS)
-        .collect()
-}
-
-/// Closed members worth reading for a shelf with `room` rows left: every
-/// member of `cases` that is not `open`, whose file exists, most recently
-/// modified first. Only their metadata is read here.
-pub(crate) fn closed_members<'a>(
-    cases: &'a [Case],
-    open: &[PathBuf],
-    room: usize,
-) -> Vec<(&'a Case, &'a Path, SystemTime)> {
-    let mut found: Vec<_> = cases
-        .iter()
-        .flat_map(|case| case.members.iter().map(move |path| (case, path)))
-        .filter(|(_, path)| !open.contains(path))
-        .filter_map(|(case, path)| {
-            let metadata = std::fs::metadata(path).ok().filter(|m| m.is_file())?;
-            Some((case, path.as_path(), metadata.modified().ok()?))
-        })
-        .collect();
-    found.sort_by_key(|a| std::cmp::Reverse(a.2));
-    found.dedup_by(|a, b| a.1 == b.1);
-    found.truncate(room);
-    found
-}
-
-/// Read a closed member's text while the shelf is open; `None` when it
-/// cannot be read as UTF-8 or is larger than [`MAX_MEMBER_BYTES`].
-pub(crate) fn read_member(path: &Path) -> Option<String> {
-    let metadata = std::fs::metadata(path).ok()?;
-    if metadata.len() > MAX_MEMBER_BYTES {
-        return None;
-    }
-    std::fs::read_to_string(path).ok()
+    stored.sort_by_key(|row| std::cmp::Reverse(row.edited));
+    tabs.into_iter().chain(stored).take(MAX_DOCUMENTS).collect()
 }
 
 /// What Restore Clipboard did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ClipboardRestore {
-    /// The clipboard text with the case's aliases restored.
+    /// The clipboard text with the Project's aliases restored.
     pub text: String,
     /// Distinct names restored, as the reply box counts them.
     pub restored: usize,
-    /// Alias-shaped tokens naming none of the case's identities.
+    /// Alias-shaped tokens naming none of the Project's identities.
     pub unrecognised: usize,
 }
 
@@ -1149,8 +1137,8 @@ impl ClipboardRestore {
     }
 }
 
-/// Restore Clipboard: replace one case's aliases in `text` with their
-/// primary wordings, matching as Restore does. Cases are never mixed.
+/// Restore Clipboard: replace one Project's aliases in `text` with their
+/// primary wordings, matching as Restore does. Projects are never mixed.
 pub(crate) fn restore_clipboard(text: &str, names: Vec<ExportedIdentity>) -> ClipboardRestore {
     let restored = RestoreMap::new(names).restore_in_place(text);
     ClipboardRestore {

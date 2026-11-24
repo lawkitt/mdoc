@@ -1,6 +1,6 @@
 use super::DocumentView;
 use crate::{
-    document_view::{CopyMarkdown, Save, SaveAs, TogglePreview},
+    document_view::{CopyMarkdown, ExportMarkdown, Save, TogglePreview},
     pii::ui::{CopyForAi, PiiApplyAll},
     spelling::ToggleDocumentSpelling,
     style, ui,
@@ -17,7 +17,6 @@ enum Primary {
     Apply(usize),
     /// Applied: the header opens the Inspector's Share tab.
     Share,
-    Copy,
 }
 
 impl DocumentView {
@@ -145,9 +144,6 @@ impl DocumentView {
         if self.lifecycle.loading() || self.lifecycle.unavailable() || !self.can_copy_markdown() {
             return Primary::None;
         }
-        if self.pii.restore().is_some() {
-            return Primary::Copy;
-        }
         if self.pii.scanning() {
             return Primary::Scanning;
         }
@@ -167,7 +163,6 @@ impl DocumentView {
 
     fn primary_button(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let theme = self.theme.get();
-        let copied = self.copy_feedback.is_some();
         let modifier = if cfg!(target_os = "macos") {
             "⌘"
         } else {
@@ -211,6 +206,10 @@ impl DocumentView {
                         if fresh {
                             this.start_pii_scan(cx);
                         }
+                        // A scan is reviewed in Review, not beside Notes.
+                        if this.inspector == super::Inspector::Notes {
+                            this.inspector = super::Inspector::Review;
+                        }
                         if !this.replacements_open() {
                             this.toggle_replacements_panel(window, cx);
                         }
@@ -230,25 +229,13 @@ impl DocumentView {
                 .when(cfg!(test), |v| v.debug_selector(|| "primary-share".into()))
                 .h(px(28.))
                 .on_click(cx.listener(|this, _, window, cx| {
-                    this.inspector_share = true;
+                    this.inspector = crate::document_view::Inspector::Share;
                     if !this.replacements_open() {
                         this.toggle_replacements_panel(window, cx);
                     }
                     cx.notify();
                 }))
                 .into_any_element(),
-            Primary::Copy => ui::filled_button(
-                "primary-action",
-                if copied { "Copied" } else { "Copy" },
-                theme,
-                true,
-            )
-            .when(cfg!(test), |v| v.debug_selector(|| "primary-copy".into()))
-            .min_w(px(72.))
-            .on_click(
-                cx.listener(|this, _, window, cx| this.copy_markdown(&CopyMarkdown, window, cx)),
-            )
-            .into_any_element(),
         })
     }
 
@@ -261,10 +248,12 @@ impl DocumentView {
     ) -> gpui::AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let has_preview = self.preview.pdf().is_some() || self.preview.source().is_some();
+        // A source that didn't open still has its pane, which says why.
+        let has_preview = self.preview.pdf().is_some()
+            || self.preview.source().is_some()
+            || self.preview.failed();
         let reviewable = self.can_show_replacements();
         let name = self.display_name();
-        let dirty = self.lifecycle.dirty();
         let crumb = div()
             .flex()
             .items_center()
@@ -272,13 +261,13 @@ impl DocumentView {
             .min_w_0()
             .flex_shrink(1.)
             .text_size(px(13.))
-            .when_some(self.case.link().cloned(), |v, link| {
+            .when_some(self.project.link().cloned(), |v, link| {
                 v.child(
                     div()
                         .size(px(7.))
                         .rounded_full()
                         .flex_shrink_0()
-                        .bg(style::case_color(link.hue(), theme)),
+                        .bg(style::project_color(link.hue(), theme)),
                 )
                 .child(
                     div()
@@ -296,15 +285,6 @@ impl DocumentView {
                         .text_color(p.header_muted),
                 )
             })
-            .when(self.pii.restore().is_some(), |v| {
-                v.child(
-                    gpui::svg()
-                        .data(ui::Icon::Reply.data())
-                        .size(px(14.))
-                        .flex_shrink_0()
-                        .text_color(p.header_muted),
-                )
-            })
             .child(
                 div()
                     .min_w(px(40.))
@@ -312,16 +292,6 @@ impl DocumentView {
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .child(name),
             )
-            .when(dirty, |v| {
-                v.child(
-                    div()
-                        .when(cfg!(test), |v| v.debug_selector(|| "header-dirty".into()))
-                        .size(px(6.))
-                        .flex_shrink_0()
-                        .rounded_full()
-                        .bg(p.header_muted),
-                )
-            })
             .when_some(self.left_out(), |v, line| {
                 // The left-out line: quiet counts, never a warning.
                 v.child(
@@ -344,7 +314,12 @@ impl DocumentView {
                         .child(div().min_w_0().truncate().child(line.clone()))
                         .tooltip(crate::style::tooltip(line, theme)),
                 )
-            });
+            })
+            // A control in the drag row takes its own clicks.
+            .children(
+                (self.reply_origin_line(cx))
+                    .map(|line| ui::no_drag(div().flex_shrink_0().child(line))),
+            );
         let controls = div()
             .flex()
             .items_center()
@@ -491,6 +466,8 @@ impl DocumentView {
         let has_text = copy && !self.editor.read(cx).text().is_empty();
         let alias_reason = self.alias_actions_reason();
         let aliases = copy && alias_reason.is_none();
+        // Notes live in the Inspector, beside the text.
+        let notes = copy && self.notes_available();
         let spelling_on = !self.spelling_control_off() && !self.spelling.off_here();
         let misspelled = self.editor.read(cx).diagnostics().len();
         // A menu choice hands focus back to the document first, so the action
@@ -582,13 +559,13 @@ impl DocumentView {
                         )
                         .child(
                             row(
-                                "more-save-as",
-                                "Save as…".into(),
+                                "more-export",
+                                "Export Markdown…".into(),
                                 Some(modifier("⇧⌘S", "Ctrl+Shift+S")),
                                 None,
                                 copy,
                             )
-                            .on_click(cx.listener(guard(copy, || Box::new(SaveAs)))),
+                            .on_click(cx.listener(guard(copy, || Box::new(ExportMarkdown)))),
                         )
                         .child(ui::menu_divider(theme))
                         .child(
@@ -630,6 +607,16 @@ impl DocumentView {
                                 v.debug_selector(|| "more-paste-reply".into())
                             })
                             .on_click(cx.listener(guard(aliases, || Box::new(PasteAiResponse)))),
+                        )
+                        .child(
+                            row("more-notes", "Notes".into(), None, None, notes).on_click(
+                                cx.listener(move |this, _, window, cx| {
+                                    if notes {
+                                        this.more_open = false;
+                                        this.show_notes(window, cx);
+                                    }
+                                }),
+                            ),
                         )
                         .child(ui::menu_divider(theme))
                         .child(
@@ -676,7 +663,7 @@ impl DocumentView {
                         .child(
                             row(
                                 "more-close",
-                                "Close tab".into(),
+                                "Close".into(),
                                 Some(modifier("⌘W", "Ctrl+W")),
                                 None,
                                 true,
@@ -744,7 +731,7 @@ fn local_note(theme: crate::style::Theme) -> impl IntoElement {
         "this computer"
     };
     let detail = format!(
-        "Detection, conversion and saved cases run on {machine}. mdoc goes online only \
+        "Detection, conversion and Projects run on {machine}. mdoc goes online only \
          to check for updates and to download models you choose."
     );
     div()

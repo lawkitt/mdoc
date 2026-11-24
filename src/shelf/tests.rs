@@ -32,17 +32,27 @@ fn tab<'a>(id: u64, title: &'a str, text: &'a str, pending: usize) -> OpenTab<'a
         pending,
         checking: false,
         names: names(),
-        case: None,
+        project: None,
         edited: at(id),
+        stored: None,
     }
+    .checked()
 }
 
-fn case_with(member: &Path, text: Option<&str>) -> Case {
-    let mut case = Case::new("Petrova".into(), &names(), Some(member.to_path_buf()));
-    if let Some(text) = text {
-        case.set_reviewed(member, Some(fingerprint(text)));
+fn document_id(n: u8) -> VaultId {
+    VaultId::parse(&format!("{n:032x}")).unwrap()
+}
+
+fn stored<'a>(n: u8, title: &'a str, text: &'a str, outbound: Outbound) -> StoredDocument<'a> {
+    StoredDocument {
+        id: document_id(n),
+        title,
+        text,
+        names: names(),
+        project: None,
+        edited: at(n.into()),
+        outbound: Some(outbound),
     }
-    case
 }
 
 #[test]
@@ -129,147 +139,125 @@ fn a_lone_word_of_a_known_full_name_is_a_name_not_replaced() {
     assert_eq!(row.text_for_ai(), None);
     let row = ShelfDocument::of_tab(tab(2, "b.md", "PERSON_1 met Northwind staff.", 0));
     assert_eq!(row.unwrap().readiness, Readiness::Ready);
-    // A closed member gains one the same way.
-    let path = Path::new("/cases/letter.md");
-    let case = case_with(path, Some("PERSON_1 paid ORG_1."));
-    let row = ShelfDocument::of_member(ClosedMember {
-        case: &case,
-        path,
-        text: Some("PERSON_1 paid ORG_1. Petrova agreed."),
-        edited: at(3),
-    });
-    assert_eq!(row.readiness, Readiness::NamesNotReplaced(1));
 }
 
+/// An open tab is ready only once what it shows is written and the
+/// Vault's outbound check passes; what leaves is that check's text.
 #[test]
-fn a_closed_member_names_the_aliases_its_editor_would() {
-    let path = Path::new("/docs/a.md");
-    // Only the exact alias is relinked as applied when it reopens.
-    let text = "person 1 met PERSON_1 and ORG_1.";
-    let case = case_with(path, Some(text));
-    let row = ShelfDocument::of_member(ClosedMember {
-        case: &case,
-        path,
-        text: Some(text),
-        edited: at(1),
-    });
-    assert_eq!(
-        row.text_for_ai(),
-        Some(mdoc_pii::handoff::for_ai(text, ["PERSON_1", "ORG_1"]).as_str())
-    );
-}
-
-#[test]
-fn a_closed_member_is_ready_only_while_it_matches_its_reviewed_text() {
-    let path = Path::new("/docs/Anna Petrova.md");
+fn an_open_tab_is_ready_only_once_its_written_text_passes_the_outbound_check() {
     let text = "PERSON_1 met ORG_1.";
-    let member = |case: &Case, text: Option<&str>| {
-        ShelfDocument::of_member(ClosedMember {
-            case,
-            path,
-            text,
-            edited: at(5),
-        })
-    };
-    let reviewed = case_with(path, Some(text));
-    let row = member(&reviewed, Some(text));
-    assert_eq!(row.readiness, Readiness::Ready);
-    assert_eq!(row.title, "PERSON_1.md");
-    assert_eq!(
-        row.key,
-        ShelfKey::Member {
-            case: reviewed.id.clone(),
-            path: path.into()
-        }
-    );
-    assert_eq!(row.case.as_ref().unwrap().id, reviewed.id);
-    assert_eq!(
-        row.text_for_ai(),
-        Some(mdoc_pii::handoff::for_ai(text, ["PERSON_1", "ORG_1"]).as_str())
-    );
-
-    let edited = member(&reviewed, Some("PERSON_1 met ORG_1 again."));
-    assert_eq!(edited.readiness, Readiness::ChangedSinceReview);
-    assert_eq!(edited.readiness.label(), "Changed since review");
-    assert_eq!(edited.text_for_ai(), None);
-
-    let never = member(&case_with(path, None), Some(text));
-    assert_eq!(never.readiness, Readiness::ChangedSinceReview);
-
-    let unreadable = member(&reviewed, None);
-    assert_eq!(unreadable.readiness, Readiness::ChangedSinceReview);
-
-    // A known original wins even over a matching fingerprint.
-    let leaked = "Anna Petrova met Northwind Ltd and Anna Petrova.";
-    let row = member(&case_with(path, Some(leaked)), Some(leaked));
-    assert_eq!(row.readiness, Readiness::NamesNotReplaced(2));
-    assert_eq!(row.readiness.label(), "2 names not replaced");
+    let mut unwritten = tab(1, "a.md", text, 0);
+    unwritten.stored = None;
+    let row = ShelfDocument::of_tab(unwritten).unwrap();
+    assert_eq!(row.readiness, Readiness::Checking);
     assert_eq!(row.text_for_ai(), None);
     assert!(row.preview.is_none());
+
+    // A name another document added to its Project since.
+    let mut refused = tab(2, "b.md", text, 0);
+    refused.stored = Some(Err(mdoc_vault::Readiness::NamesNotReplaced(1)));
+    let row = ShelfDocument::of_tab(refused).unwrap();
+    assert_eq!(row.readiness, Readiness::NamesNotReplaced(1));
+    assert_eq!(row.text_for_ai(), None);
+    assert_eq!(row.drag_card(), None);
+
+    let mut changed = tab(3, "c.md", text, 0);
+    changed.stored = Some(Err(mdoc_vault::Readiness::ChangedSinceReview));
+    let row = ShelfDocument::of_tab(changed).unwrap();
+    assert_eq!(row.readiness, Readiness::ChangedSinceReview);
+
+    let mut checked = tab(4, "d.md", text, 0);
+    checked.stored = Some(Ok("the Vault's text".into()));
+    let row = ShelfDocument::of_tab(checked).unwrap();
+    assert_eq!(row.readiness, Readiness::Ready);
+    assert_eq!(row.text_for_ai(), Some("the Vault's text"));
+
+    // A review not ready stays so, whatever the Vault says.
+    let mut pending = tab(5, "e.md", text, 1);
+    pending.stored = Some(Ok("the Vault's text".into()));
+    let row = ShelfDocument::of_tab(pending).unwrap();
+    assert_eq!(row.readiness, Readiness::LeftToReview(1));
+    assert_eq!(row.text_for_ai(), None);
+}
+
+#[test]
+fn a_stored_document_is_ready_only_when_the_outbound_check_passes() {
+    let text = "PERSON_1 met ORG_1.";
+    let sent = mdoc_pii::handoff::for_ai(text, ["PERSON_1", "ORG_1"]);
+    let mut ready = stored(5, "Anna Petrova", text, Ok(sent.clone()));
+    ready.project = Some(ProjectLink {
+        id: "p".repeat(32),
+        name: "Anna Petrova v Northwind Ltd".into(),
+        colour: None,
+    });
+    let row = ShelfDocument::of_stored(ready).unwrap();
+    assert_eq!(row.readiness, Readiness::Ready);
+    assert_eq!(row.key, ShelfKey::Document(document_id(5)));
+    assert_eq!(row.title, "PERSON_1");
+    assert_eq!(row.project_label.as_deref(), Some("PERSON_1 v ORG_1"));
+    assert_eq!(row.text_for_ai(), Some(sent.as_str()));
+    assert_eq!(row.preview.as_ref().unwrap().text, text);
+    assert_eq!(row.file_name(), "PERSON_1.md");
+
+    let refused = |outbound| ShelfDocument::of_stored(stored(6, "a", text, Err(outbound))).unwrap();
+    let changed = refused(mdoc_vault::Readiness::ChangedSinceReview);
+    assert_eq!(changed.readiness, Readiness::ChangedSinceReview);
+    assert_eq!(changed.readiness.label(), "Changed since review");
+    assert_eq!(changed.text_for_ai(), None);
+    assert!(changed.preview.is_none());
+    assert_eq!(changed.drag_card(), None);
+    // Never saved while ready: as a case member with no fingerprint was.
+    let never = refused(mdoc_vault::Readiness::NotReviewed);
+    assert_eq!(never.readiness, Readiness::ChangedSinceReview);
+    let missed = refused(mdoc_vault::Readiness::NamesNotReplaced(2));
+    assert_eq!(missed.readiness, Readiness::NamesNotReplaced(2));
+    assert_eq!(missed.readiness.label(), "2 names not replaced");
+    assert_eq!(missed.text_for_ai(), None);
+    // Its Project's names, or a move of it, not written yet: not asked.
+    let mut waiting = stored(7, "a", text, Ok(sent));
+    waiting.outbound = None;
+    let row = ShelfDocument::of_stored(waiting).unwrap();
+    assert_eq!(row.readiness, Readiness::Checking);
+    assert_eq!(row.text_for_ai(), None);
+}
+
+/// A stored document whose text holds no alias its names know would reopen
+/// with none applied: like such a tab, it is not listed.
+#[test]
+fn a_stored_document_without_an_alias_is_not_listed() {
+    let not_reviewed = || Err(mdoc_vault::Readiness::NotReviewed);
+    let plain = stored(
+        1,
+        "Notes",
+        "Anna Petrova met Northwind Ltd.",
+        not_reviewed(),
+    );
+    assert!(ShelfDocument::of_stored(plain).is_none());
+    // Only an alias written exactly counts, as reopening relinks it.
+    let loose = stored(2, "Notes", "person 1 met them.", not_reviewed());
+    assert!(ShelfDocument::of_stored(loose).is_none());
 }
 
 #[test]
 fn the_list_puts_open_tabs_first_and_stops_at_eight() {
-    let tabs: Vec<_> = (1..=5)
-        .map(|id| ShelfDocument::of_tab(tab(id, "t.md", "PERSON_1", 0)).unwrap())
-        .collect();
-    let case = case_with(Path::new("/m.md"), None);
-    let members: Vec<_> = (0..6)
+    let tab_row = |id| ShelfDocument::of_tab(tab(id, "t.md", "PERSON_1", 0)).unwrap();
+    // Stored documents are newer than every tab; tabs still come first.
+    let documents: Vec<_> = (100..106)
         .map(|n| {
-            ShelfDocument::of_member(ClosedMember {
-                case: &case,
-                path: Path::new("/m.md"),
-                text: Some("PERSON_1"),
-                // Members are newer than every tab; tabs still come first.
-                edited: at(100 + n),
-            })
+            ShelfDocument::of_stored(stored(n, "s", "PERSON_1", Ok("PERSON_1".into()))).unwrap()
         })
         .collect();
-    let list = list(tabs, members);
-    assert_eq!(list.len(), MAX_DOCUMENTS);
-    let keys: Vec<_> = list[..5].iter().map(|r| r.key.clone()).collect();
-    assert_eq!(keys, (1..=5).rev().map(ShelfKey::Tab).collect::<Vec<_>>());
-    let edited: Vec<_> = list[5..].iter().map(|r| r.edited).collect();
-    assert_eq!(edited, [at(105), at(104), at(103)]);
-}
-
-#[test]
-fn closed_members_skip_open_and_missing_files_newest_first() {
-    let dir = tempfile::tempdir().unwrap();
-    let old = dir.path().join("old.md");
-    let new = dir.path().join("new.md");
-    let open = dir.path().join("open.md");
-    for path in [&old, &new, &open] {
-        std::fs::write(path, "PERSON_1").unwrap();
-    }
-    let set = |path: &Path, seconds| {
-        std::fs::File::options()
-            .write(true)
-            .open(path)
-            .unwrap()
-            .set_modified(at(seconds))
-            .unwrap()
-    };
-    set(&old, 1_000);
-    set(&new, 2_000);
-    let mut case = Case::new("c".into(), &names(), None);
-    case.members = vec![
-        old.clone(),
-        dir.path().join("missing.md"),
-        new.clone(),
-        open.clone(),
-    ];
-    let cases = [case];
-    let found = closed_members(&cases, std::slice::from_ref(&open), 8);
-    let paths: Vec<_> = found.iter().map(|(_, p, _)| p.to_path_buf()).collect();
-    assert_eq!(paths, [new.clone(), old]);
-    assert_eq!(
-        closed_members(&cases, &[], 1).len(),
-        1,
-        "only as many as there is room"
-    );
-    assert_eq!(read_member(&new).as_deref(), Some("PERSON_1"));
-    assert_eq!(read_member(&dir.path().join("missing.md")), None);
+    let list = list((1..=5).map(tab_row).collect(), documents);
+    let keys: Vec<_> = list.iter().map(|r| r.key.clone()).collect();
+    let mut expected: Vec<_> = (1..=5).rev().map(ShelfKey::Tab).collect();
+    expected.extend((103..106).rev().map(|n| ShelfKey::Document(document_id(n))));
+    assert_eq!(keys, expected);
+    // Tabs alone: the latest edited eight.
+    let keys: Vec<_> = super::list((1..=10).map(tab_row).collect(), Vec::new())
+        .into_iter()
+        .map(|r| r.key)
+        .collect();
+    assert_eq!(keys, (3..=10).rev().map(ShelfKey::Tab).collect::<Vec<_>>());
 }
 
 #[test]
@@ -304,7 +292,7 @@ fn exports_are_private_fresh_files_cleared_at_quit() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(exports.root()), 0o700);
         assert_eq!(mode(&first), 0o600);
     }
@@ -340,7 +328,7 @@ fn a_launch_removes_exports_a_crashed_process_left() {
 }
 
 #[test]
-fn restore_clipboard_uses_one_case_and_counts_what_it_did() {
+fn restore_clipboard_uses_one_project_and_counts_what_it_did() {
     let restored = restore_clipboard("PERSON_1 and person 1 thank ORG_1 and PERSON_9.", names());
     assert_eq!(
         restored.text,

@@ -47,6 +47,8 @@ fn a_closed_tab_s_docx_job_ending_frees_the_worker(cx: &mut TestAppContext) {
     // A closed document can't emit; the window waits on its running jobs.
     let (tabs, cx) = boot(cx, Session::default());
     let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    // Typed into, it stays live when the next New is shown.
+    cx.simulate_input("first");
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.new_tab(window, cx);
         tabs.docx_queue.occupy(id, 4);

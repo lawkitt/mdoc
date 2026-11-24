@@ -130,9 +130,9 @@ presentation and installers need a native run; headless tests do not
 establish them.
 
 **Tests and OS services.** A test never asks the OS's security or identity
-services (the code signature, the case key, the build identity built on
-them): tests inject a case store (`Store::with_key`) and take the build
-label as `Dev`. `mdoc-store`'s `deny-os-services` feature makes those calls
+services (the code signature, the Vault key, the build identity built on
+them): tests open a Vault with an injected key and take the build label as
+`Dev`. `mdoc-store`'s `deny-os-services` feature makes those calls
 panic in every test build; a new call into such a service goes behind the
 same guard.
 

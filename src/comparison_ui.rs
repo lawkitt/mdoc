@@ -297,8 +297,7 @@ impl View {
                     );
                 }
                 if let Some(text) = text {
-                    let mut d = document::Document::default();
-                    d.save(path, &text).map_err(|e| e.to_string())
+                    document::export(&path, &text).map_err(|e| e.to_string())
                 } else {
                     comparison::save_report(&path, &records)
                 }

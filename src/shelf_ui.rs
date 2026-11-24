@@ -124,11 +124,11 @@ impl Fit {
     }
 }
 
-/// Case `id` among the sources, named as the shelf shows it.
-fn case_source(sources: &[ClipboardSource], id: &str) -> Option<ClipboardSource> {
+/// Project `id` among the sources, named as the shelf shows it.
+fn project_source(sources: &[ClipboardSource], id: &str) -> Option<ClipboardSource> {
     sources
         .iter()
-        .find(|s| matches!(s, ClipboardSource::Case { id: case, .. } if case == id))
+        .find(|s| matches!(s, ClipboardSource::Project { id: case, .. } if case == id))
         .cloned()
 }
 
@@ -150,7 +150,7 @@ pub(crate) struct ShelfContent {
     pub drag_hint: bool,
 }
 
-/// The clipboard rows' case, as last picked on the shelf this session.
+/// The clipboard rows' Project, as last picked on the shelf this session.
 #[derive(Default)]
 struct PickedSource(Option<ClipboardSource>);
 impl Global for PickedSource {}
@@ -184,14 +184,14 @@ impl ShelfContent {
             .and_then(|picked| picked.0.clone())
             .filter(|picked| sources.contains(picked));
         // The document used last: a pick on the shelf, the active tab, or
-        // the case of the most recent row.
+        // the Project of the most recent row.
         let source = picked
             .or_else(|| workspace.active_clipboard_source(cx))
             .or_else(|| {
                 documents
                     .iter()
-                    .find_map(|d| d.case.as_ref())
-                    .and_then(|case| case_source(&sources, &case.id))
+                    .find_map(|d| d.project.as_ref())
+                    .and_then(|project| project_source(&sources, &project.id))
             })
             .or_else(|| sources.first().cloned());
         let update = match crate::updater::state(cx).install {
@@ -477,33 +477,47 @@ impl ShelfView {
         let Some(document) = self.content.documents.get(index) else {
             return;
         };
-        let source = match (&document.case, &document.key) {
-            (Some(case), _) => case_source(&self.content.sources, &case.id),
+        let source = match (&document.project, &document.key) {
+            (Some(project), _) => project_source(&self.content.sources, &project.id),
             (None, ShelfKey::Tab(id)) => self
                 .content
                 .sources
                 .iter()
                 .find(|s| matches!(s, ClipboardSource::Tab { id: tab, .. } if tab == id))
                 .cloned(),
-            (None, ShelfKey::Member { .. }) => None,
+            // A stored Unfiled document is no clipboard source.
+            (None, ShelfKey::Document(_)) => None,
         };
         if let Some(source) = source {
             self.pick(source, cx);
         }
     }
 
+    /// Row `index`, if listed ready, checked again as its text is about to
+    /// leave: the Vault's outbound check runs now, and a row it refuses
+    /// shows why and hands out nothing.
+    fn checked_again(&mut self, index: usize, window: &mut Window, cx: &App) -> Option<String> {
+        let listed = self.content.documents.get(index)?;
+        listed.text_for_ai()?;
+        let now = (self.workspace.read(cx).ok())
+            .and_then(|workspace| workspace.shelf_row(&listed.key, cx))
+            .filter(|now| now.key == listed.key)?;
+        let text = now.text_for_ai().map(str::to_owned);
+        self.fitted[index] = (now.preview.as_ref())
+            .map(|preview| row::fit_preview(preview, row::PREVIEW_WIDTH, window));
+        self.titles[index] = row::fit_title(&now, window);
+        self.content.documents[index] = now;
+        text
+    }
+
     /// Copy for AI on a ready row: the text a drag carries, then ✓ "Copied"
     /// and the shelf closes after [`COPIED_FOR`].
     pub(crate) fn copy(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(text) = self
-            .content
-            .documents
-            .get(index)
-            .and_then(ShelfDocument::text_for_ai)
-        else {
+        let Some(text) = self.checked_again(index, window, cx) else {
+            cx.notify();
             return;
         };
-        cx.write_to_clipboard(ClipboardItem::new_string(text.to_owned()));
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
         self.copied = Some(index);
         self.used(index, cx);
         self.closing = Some(cx.spawn_in(window, async move |this, cx| {
@@ -594,10 +608,11 @@ impl ShelfView {
     /// on one pasteboard item, under a card with its title and preview. The
     /// first drop retires the hint.
     pub(crate) fn drag(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(document) = self.content.documents.get(index) else {
+        let Some(text) = self.checked_again(index, window, cx) else {
+            cx.notify();
             return;
         };
-        let Some(text) = document.text_for_ai().map(str::to_owned) else {
+        let Some(document) = self.content.documents.get(index) else {
             return;
         };
         let card = document.drag_card();
@@ -829,7 +844,7 @@ impl ShelfView {
     }
 
     /// "Clipboard", Pseudonymize and Restore (or one Unlock button for a
-    /// locked case), then the quiet source line with its ▾.
+    /// locked Vault), then the quiet source line with its ▾.
     fn clipboard_section(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
@@ -837,7 +852,7 @@ impl ShelfView {
         let buttons = if enabled && self.clipboard_locked(cx) {
             div().flex().flex_row().child(self.clipboard_button(
                 "shelf-unlock",
-                "Unlock cases in mdoc…",
+                "Unlock in mdoc…",
                 true,
                 cx,
                 |this, window, cx| this.clipboard(ClipboardRow::Restore, window, cx),

@@ -3,8 +3,15 @@
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Stop {
     Home,
+    /// A Vault document, live or not: going back to an evicted one opens it
+    /// again.
+    Document(mdoc_store::document_id::VaultId),
+    /// A live view no document names yet (a new document before its first
+    /// keystroke).
     Tab(u64),
-    Case(String),
+    Project(String),
+    /// A saved AI Reply's page.
+    Reply(String),
 }
 
 /// How the history records arriving at a place.
@@ -66,7 +73,17 @@ impl History {
         self.before = false;
     }
 
-    /// A tab closed or a case was deleted: drop its stops. The position stays
+    /// `from` is known as `to` from now on: a New document got its id.
+    pub(super) fn rename(&mut self, from: &Stop, to: Stop) {
+        for stop in &mut self.stops {
+            if stop == from {
+                *stop = to.clone();
+            }
+        }
+        self.normalize(|_| true);
+    }
+
+    /// A tab closed or a Project was deleted: drop its stops. The position stays
     /// on the stop it was on, or on the one before when that one went, or
     /// before the rest when nothing preceded it.
     pub(super) fn forget(&mut self, gone: &Stop) {
@@ -179,23 +196,23 @@ mod tests {
         let mut history = visited([
             Stop::Home,
             Stop::Tab(1),
-            Stop::Case("raman".into()),
+            Stop::Project("raman".into()),
             Stop::Tab(2),
         ]);
         assert_eq!(
             travel(&mut history, true, |_| true),
-            Some(Stop::Case("raman".into()))
+            Some(Stop::Project("raman".into()))
         );
         assert_eq!(travel(&mut history, true, |_| true), Some(Stop::Tab(1)));
         assert_eq!(
             travel(&mut history, false, |_| true),
-            Some(Stop::Case("raman".into()))
+            Some(Stop::Project("raman".into()))
         );
         history.arrive(Stop::Home, Arrival::Visit);
         assert_eq!(target(&history, false), None);
         // Re-selecting the current place doesn't add a stop or destroy Forward.
         travel(&mut history, true, |_| true);
-        history.arrive(Stop::Case("raman".into()), Arrival::Visit);
+        history.arrive(Stop::Project("raman".into()), Arrival::Visit);
         assert_eq!(travel(&mut history, false, |_| true), Some(Stop::Home));
     }
 
@@ -208,6 +225,17 @@ mod tests {
         assert_eq!(travel(&mut history, true, live), None);
         assert_eq!(travel(&mut history, false, live), Some(Stop::Tab(3)));
         assert_eq!(travel(&mut history, false, live), None);
+    }
+
+    #[test]
+    fn a_renamed_stop_keeps_its_place_and_forward() {
+        let id = mdoc_store::document_id::VaultId::parse(&"a".repeat(32)).unwrap();
+        let mut history = visited([Stop::Home, Stop::Tab(1), Stop::Tab(2)]);
+        history.go(1);
+        history.rename(&Stop::Tab(1), Stop::Document(id.clone()));
+        assert_eq!(history.current(), Some(&Stop::Document(id)));
+        assert_eq!(target(&history, false), Some(&Stop::Tab(2)));
+        assert_eq!(target(&history, true), Some(&Stop::Home));
     }
 
     #[test]
@@ -254,7 +282,7 @@ mod tests {
 
     #[test]
     fn forgetting_drops_every_stop_of_a_place_and_keeps_the_cursor_on_its_stop() {
-        let case = || Stop::Case("raman".into());
+        let case = || Stop::Project("raman".into());
         let mut history = visited([
             Stop::Tab(1),
             case(),

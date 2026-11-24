@@ -1,7 +1,7 @@
 //! Accepted document identity and import provenance. Preview identity is separate:
 //! opening Markdown does not close a reference PDF.
 use crate::document::Document;
-use std::{io, path::PathBuf};
+use std::path::{Path, PathBuf};
 
 #[derive(Default)]
 pub struct DocumentSession {
@@ -16,8 +16,16 @@ pub struct DocumentSession {
     /// join the left-out line while no rendering of the source shows them.
     pub comments_left_out: Option<String>,
     pub ocr_configuration: Option<crate::settings::OcrConfig>,
-    /// Fallback name before a file loads, or for an unsaved document without a source.
+    /// Fallback name before a file loads, a Vault document's title, or the
+    /// name of a document not yet created.
     pub name: Option<String>,
+    /// A new document's title follows its first line.
+    pub follows_first_line: bool,
+    /// Pasted text: its document is an ordinary one, not a new one.
+    pub pasted: bool,
+    /// A conversion replaced the text: it is written even if it reads as
+    /// the text last written, so the document is known to be converted.
+    pub write_due: bool,
 }
 
 impl DocumentSession {
@@ -30,6 +38,9 @@ impl DocumentSession {
         self.comments_left_out = None;
         self.ocr_configuration = None;
         self.name = None;
+        self.follows_first_line = false;
+        self.pasted = false;
+        self.write_due = false;
     }
 
     pub fn import(&mut self, source: PathBuf, warning: Option<String>) {
@@ -38,33 +49,33 @@ impl DocumentSession {
         self.warning = warning;
     }
 
-    pub fn dirty(&self, text: &str) -> bool {
-        (self.document.path.is_none() && self.source.is_some()) || text != self.document.saved
+    /// Whether `text` differs from what was last written: an autosave is
+    /// due. A document not yet created has nothing written.
+    pub fn unsaved(&self, text: &str) -> bool {
+        self.write_due || text != self.document.saved
     }
 
-    /// Save As keeps the existing import-based suggestion even after a save.
+    /// Export Markdown's suggested file name: the source's, else the
+    /// document's own.
     pub fn suggested_name(&self) -> String {
         self.source
             .as_ref()
             .map(|path| path.with_extension("md"))
             .and_then(|path| path.file_name()?.to_str().map(str::to_owned))
-            .or_else(|| {
-                self.document
-                    .path
-                    .as_ref()
-                    .and_then(|path| path.file_name())
-                    .map(|name| name.to_string_lossy().into_owned())
-            })
             .or_else(|| self.name.clone())
             .unwrap_or_else(|| "Untitled.md".into())
     }
 
     pub fn display_name(&self) -> String {
+        // A Vault document goes by its title.
+        if self.document.vault.is_some()
+            && let Some(name) = &self.name
+        {
+            return name.clone();
+        }
         let suggested = self.source.as_ref().map(|path| path.with_extension("md"));
-        self.document
-            .path
+        suggested
             .as_deref()
-            .or(suggested.as_deref())
             .and_then(|path| path.file_name())
             .map(|name| name.to_string_lossy().into_owned())
             .or_else(|| self.name.clone())
@@ -72,40 +83,26 @@ impl DocumentSession {
     }
 
     pub fn directory(&self) -> PathBuf {
-        if self.document.path.is_none()
-            && let Some(parent) = self.source.as_ref().and_then(|path| path.parent())
-        {
+        if let Some(parent) = self.source.as_ref().and_then(|path| path.parent()) {
             return parent.to_path_buf();
         }
-        self.document.directory()
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     }
 
-    /// Where Save As starts (#180): the document's folder, or its source's
-    /// for an unsaved conversion. A document with neither (Untitled, pasted
-    /// text, an AI reply), or whose folder is gone, starts in the first of
-    /// `recent_folders` that exists (Recents, most recent first), then
-    /// Documents, then home: never the process's working directory, which
-    /// for a launched app is its install folder.
-    pub fn save_as_directory(&self, recent_folders: &[PathBuf]) -> PathBuf {
-        let own = (self.document.path.is_some() || self.source.is_some()).then(|| self.directory());
+    /// Where Export Markdown starts (#180): the document's folder, or its
+    /// source's for a conversion. A document with neither (Untitled, pasted
+    /// text, an AI reply), or whose folder is gone, starts in `last_folder`
+    /// (the folder of the last file imported or exported this run) when it
+    /// exists, then Documents, then home: never the process's working
+    /// directory, which for a launched app is its install folder.
+    pub fn export_directory(&self, last_folder: Option<&Path>) -> PathBuf {
+        let own = self.source.is_some().then(|| self.directory());
         own.into_iter()
-            .chain(recent_folders.iter().cloned())
+            .chain(last_folder.map(Path::to_path_buf))
             .chain(dirs::document_dir())
             .chain(dirs::home_dir())
             .find(|dir| dir.is_dir())
             .unwrap_or_else(|| self.directory())
-    }
-
-    pub fn save(&mut self, path: PathBuf, text: &str) -> io::Result<()> {
-        if let Some(source) = &self.source
-            && (std::path::absolute(&path).ok().as_ref() == Some(source)
-                || (path.exists() && path.canonicalize().ok() == source.canonicalize().ok()))
-        {
-            return Err(io::Error::other(
-                "Choose a different path to preserve the imported source.",
-            ));
-        }
-        self.document.save(path, text)
     }
 }
 
@@ -113,7 +110,7 @@ impl DocumentSession {
 mod tests {
     use super::*;
 
-    /// Where Save As starts with no folder of its own and no Recents.
+    /// Where Export Markdown starts with no folder of its own.
     fn fallback() -> PathBuf {
         dirs::document_dir()
             .filter(|dir| dir.is_dir())
@@ -122,53 +119,36 @@ mod tests {
     }
 
     #[test]
-    fn save_as_starts_in_the_document_or_source_folder() {
+    fn a_conversion_exports_from_its_source_folder() {
         let dir = tempfile::tempdir().unwrap();
-        let recent = tempfile::tempdir().unwrap();
-        let recents = [recent.path().to_path_buf()];
+        let last = tempfile::tempdir().unwrap();
         let mut session = DocumentSession::default();
         session.import(dir.path().join("scan.pdf"), None);
-        assert_eq!(session.save_as_directory(&recents), dir.path());
-        session.save(dir.path().join("scan.md"), "text").unwrap();
-        assert_eq!(session.save_as_directory(&recents), dir.path());
+        assert_eq!(session.export_directory(Some(last.path())), dir.path());
     }
 
     #[test]
-    fn untitled_save_as_starts_in_a_recent_folder_then_documents() {
-        let recent = tempfile::tempdir().unwrap();
-        let gone = recent.path().join("gone");
+    fn a_document_without_a_folder_exports_from_the_last_folder_then_documents() {
+        let last = tempfile::tempdir().unwrap();
+        let gone = last.path().join("gone");
         let session = DocumentSession::default();
-        let recents = [gone.clone(), recent.path().to_path_buf()];
-        assert_eq!(session.save_as_directory(&recents), recent.path());
-        assert_eq!(session.save_as_directory(&[gone]), fallback());
-        assert_eq!(session.save_as_directory(&[]), fallback());
+        assert_eq!(session.export_directory(Some(last.path())), last.path());
+        assert_eq!(session.export_directory(Some(&gone)), fallback());
+        assert_eq!(session.export_directory(None), fallback());
         assert_ne!(
-            session.save_as_directory(&[]),
+            session.export_directory(None),
             std::env::current_dir().unwrap()
         );
     }
 
     #[test]
-    fn a_conversion_whose_source_folder_is_gone_starts_in_a_recent_folder() {
+    fn a_conversion_whose_source_folder_is_gone_exports_from_the_last_folder() {
         let dir = tempfile::tempdir().unwrap();
-        let recent = tempfile::tempdir().unwrap();
+        let last = tempfile::tempdir().unwrap();
         let mut session = DocumentSession::default();
         session.import(dir.path().join("gone").join("scan.pdf"), None);
-        let recents = [recent.path().to_path_buf()];
-        assert_eq!(session.save_as_directory(&recents), recent.path());
-    }
-
-    #[test]
-    fn saved_untitled_tab_suggests_its_current_filename() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut session = DocumentSession {
-            name: Some("Untitled 2.md".into()),
-            ..DocumentSession::default()
-        };
-        assert_eq!(session.suggested_name(), "Untitled 2.md");
-        session.save(dir.path().join("notes.md"), "notes").unwrap();
-        assert_eq!(session.display_name(), "notes.md");
-        assert_eq!(session.suggested_name(), "notes.md");
+        assert_eq!(session.export_directory(Some(last.path())), last.path());
+        assert_eq!(session.export_directory(None), fallback());
     }
 
     #[test]
@@ -177,34 +157,28 @@ mod tests {
         session.import("source.docx".into(), Some("conversion warning".into()));
         session.left_out = Some("1 picture not imported.".into());
         session.comments_left_out = Some("1 comment not shown.".into());
+        session.follows_first_line = true;
         assert_eq!(session.generation, 1);
-        assert!(session.dirty(""), "even an empty import is unsaved");
+        assert_eq!(session.display_name(), "source.md");
+        assert_eq!(session.suggested_name(), "source.md");
         session.replace(Document::default());
         assert_eq!(session.generation, 2);
         assert!(session.source.is_none());
         assert!(session.warning.is_none());
         assert!(session.left_out.is_none() && session.comments_left_out.is_none());
-        assert!(!session.dirty(""));
+        assert!(!session.follows_first_line);
+        assert_eq!(session.display_name(), "Untitled.md");
     }
 
     #[test]
-    fn saving_changes_display_name_but_preserves_import_suggestion_and_provenance() {
-        let dir = tempfile::tempdir().unwrap();
+    fn a_vault_document_is_named_by_its_title() {
         let mut session = DocumentSession::default();
-        session.import(dir.path().join("source.docx"), Some("warning".into()));
-        assert_eq!(session.display_name(), "source.md");
-        assert_eq!(session.suggested_name(), "source.md");
-        let generation = session.generation;
-        session
-            .save(dir.path().join("renamed.md"), "# preserved\n")
-            .unwrap();
-        assert_eq!(session.display_name(), "renamed.md");
-        assert_eq!(session.suggested_name(), "source.md");
-        assert_eq!(session.generation, generation);
-        assert!(session.warning.is_some());
-        assert!(!session.dirty("# preserved\n"));
-        session.replace(Document::default());
-        assert_eq!(session.display_name(), "Untitled.md");
-        assert_eq!(session.suggested_name(), "Untitled.md");
+        let id = crate::document_id::VaultId::parse(&"0b".repeat(16)).unwrap();
+        session.replace(Document::in_vault(id, "# Lease".into()));
+        session.name = Some("Lease".into());
+        assert_eq!(session.display_name(), "Lease");
+        assert_eq!(session.suggested_name(), "Lease");
+        assert!(!session.unsaved("# Lease"));
+        assert!(session.unsaved("# Lease 2"));
     }
 }

@@ -1,19 +1,32 @@
-//! The window's live views in sidebar order, one per tab: each one's id,
-//! the document it names, its saved record and its document view, which one
-//! is active, and whether Home covers it. Generic over the view, so the order
-//! rules run without a window; the workspace view creates, releases and
-//! focuses the documents.
+//! The window's live views, most recently viewed first: each one's id, the
+//! document it names, its saved record and its document view, which one is
+//! active, and whether Home covers it. At most `LIMIT` documents stay live;
+//! the least recently viewed beyond them is evicted. Generic over the view,
+//! so the recency rules run without a window; the workspace view creates,
+//! releases and focuses the documents.
 
 use mdoc_store::{document_id::DocumentId, session_store::TabRecord};
-use std::{collections::HashSet, path::PathBuf};
+use std::collections::HashSet;
+
+/// How many documents stay live for their undo and scroll.
+pub(super) const LIMIT: usize = 8;
 
 /// What the workspace view carries out for a live-view transition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum LiveViewsEffect {
-    /// The sidebar order changed.
-    Repaint,
-    /// Activate this tab: the closed tab's neighbour, or a new placeholder.
+    /// Activate this view: the next most recent, or a new placeholder.
     Activate(u64),
+}
+
+/// How eviction weighs a live view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Weight {
+    /// Not a document (Home's placeholder): never counted nor evicted.
+    Ignored,
+    /// Counted, but kept while it works (a conversion, a prompt, a write).
+    Busy,
+    /// Counted, and evicted when it is the least recent beyond the limit.
+    Idle,
 }
 
 pub(super) struct LiveView<V> {
@@ -22,8 +35,6 @@ pub(super) struct LiveView<V> {
     /// The document this view holds, for finding it again.
     document: Option<DocumentId>,
     view: Option<V>,
-    /// Last opened/saved path observed, independent of the capped recent list.
-    recent_path: Option<PathBuf>,
 }
 
 impl<V> LiveView<V> {
@@ -35,7 +46,6 @@ impl<V> LiveView<V> {
             record,
             document: None,
             view: None,
-            recent_path: None,
         }
     }
 
@@ -77,7 +87,7 @@ impl<V> Default for LiveViews<V> {
     }
 }
 
-/// Sidebar order: `tabs[0]` is the first row.
+/// Recency order: `tabs[0]` is the most recently viewed.
 impl<V> std::ops::Index<usize> for LiveViews<V> {
     type Output = LiveView<V>;
 
@@ -113,17 +123,6 @@ impl<V> LiveViews<V> {
         self.tabs.last()
     }
 
-    /// Drop every tab, keeping the active id and the id counter.
-    #[cfg(test)]
-    pub(super) fn clear(&mut self) {
-        self.tabs.clear();
-    }
-
-    /// The tab at sidebar position `index`.
-    pub(super) fn at(&self, index: usize) -> Option<&LiveView<V>> {
-        self.tabs.get(index)
-    }
-
     pub(super) fn get(&self, id: u64) -> Option<&LiveView<V>> {
         self.tabs.iter().find(|tab| tab.id == id)
     }
@@ -154,7 +153,8 @@ impl<V> LiveViews<V> {
         self.home
     }
 
-    /// Add a tab for `record` at the end of the list; returns its id.
+    /// Add a view for `record` as the least recent; activating it brings it
+    /// to the front. Returns its id.
     pub(super) fn push(&mut self, record: TabRecord) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
@@ -164,7 +164,6 @@ impl<V> LiveViews<V> {
             record,
             document,
             view: None,
-            recent_path: None,
         });
         id
     }
@@ -201,22 +200,6 @@ impl<V> LiveViews<V> {
         }
     }
 
-    /// Tab `id` joined case `case`, or left its case (none).
-    pub(super) fn set_case(&mut self, id: u64, case: Option<String>) {
-        if let Some(tab) = self.get_mut(id) {
-            tab.record.case = case;
-        }
-    }
-
-    /// Case `case` is gone: no tab belongs to it any more.
-    pub(super) fn forget_case(&mut self, case: &str) {
-        for tab in &mut self.tabs {
-            if tab.record.case.as_deref() == Some(case) {
-                tab.record.case = None;
-            }
-        }
-    }
-
     /// The user acted on blank tab `id` (none: on every tab), so it is no
     /// longer a placeholder that Home may replace.
     pub(super) fn keep_blank(&mut self, id: Option<u64>) {
@@ -224,6 +207,13 @@ impl<V> LiveViews<V> {
             if id.is_none_or(|id| id == tab.id) {
                 tab.record.blank_disposable = false;
             }
+        }
+    }
+
+    /// Tab `id` is shown as `name` until its document loads.
+    pub(super) fn set_name(&mut self, id: u64, name: Option<String>) {
+        if let Some(tab) = self.get_mut(id) {
+            tab.record.name = name;
         }
     }
 
@@ -237,68 +227,58 @@ impl<V> LiveViews<V> {
         std::mem::replace(&mut tab.document, document)
     }
 
-    /// Tab `id` shows `path` now. Returns whether that is a different path
-    /// from the last one seen, so it counts as opened again.
-    pub(super) fn note_recent(&mut self, id: u64, path: Option<&PathBuf>) -> bool {
-        let Some(tab) = self.get_mut(id) else {
+    /// Make `id` the active view, the most recent, and leave Home. False for
+    /// an unknown view.
+    pub(super) fn activate(&mut self, id: u64) -> bool {
+        let Some(index) = self.position(id) else {
             return false;
         };
-        let opened = path != tab.recent_path.as_ref();
-        if opened {
-            tab.recent_path = path.cloned();
-        }
-        opened
-    }
-
-    /// Make `id` the active tab and leave Home. False for an unknown tab.
-    pub(super) fn activate(&mut self, id: u64) -> bool {
-        if !self.contains(id) {
-            return false;
-        }
+        let tab = self.tabs.remove(index);
+        self.tabs.insert(0, tab);
         self.active = id;
         self.home = false;
         true
+    }
+
+    /// The views `weigh` counts, most recent first.
+    pub(super) fn recent(&self, weigh: impl Fn(&LiveView<V>) -> Weight) -> Vec<u64> {
+        (self.tabs.iter())
+            .filter(|tab| weigh(tab) != Weight::Ignored)
+            .map(|tab| tab.id)
+            .collect()
+    }
+
+    /// The views to evict so that at most `limit` counted ones stay: the
+    /// least recent idle ones, never the active one.
+    pub(super) fn evictable(
+        &self,
+        limit: usize,
+        weigh: impl Fn(&LiveView<V>) -> Weight,
+    ) -> Vec<u64> {
+        let weights: Vec<_> = self.tabs.iter().map(|tab| (tab.id, weigh(tab))).collect();
+        let mut over = (weights.iter())
+            .filter(|(_, weight)| *weight != Weight::Ignored)
+            .count()
+            .saturating_sub(limit);
+        let mut evicted = Vec::new();
+        for (id, weight) in weights.iter().rev() {
+            if over == 0 {
+                break;
+            }
+            if *weight == Weight::Idle && *id != self.active {
+                evicted.push(*id);
+                over -= 1;
+            }
+        }
+        evicted
     }
 
     pub(super) fn show_home(&mut self) {
         self.home = true;
     }
 
-    /// The tab `delta` places from the active one, wrapping.
-    pub(super) fn cycle(&self, delta: isize) -> Option<LiveViewsEffect> {
-        if self.tabs.is_empty() {
-            return None;
-        }
-        let index = self.position(self.active).unwrap_or(0);
-        let next = (index as isize + delta).rem_euclid(self.tabs.len() as isize) as usize;
-        Some(LiveViewsEffect::Activate(self.tabs[next].id))
-    }
-
-    /// Move tab `from` to tab `to`'s place; nothing when either is gone.
-    pub(super) fn reorder(&mut self, from: u64, to: u64) -> Option<LiveViewsEffect> {
-        let from = self.position(from)?;
-        let to = self.position(to)?;
-        let tab = self.tabs.remove(from);
-        self.tabs.insert(to, tab);
-        Some(LiveViewsEffect::Repaint)
-    }
-
-    /// Move the `created` tabs, keeping their sidebar order, before tab
-    /// `anchor`, or to the end when it is gone.
-    pub(super) fn place(&mut self, created: &[u64], anchor: Option<u64>) {
-        let (moved, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.tabs)
-            .into_iter()
-            .partition(|tab| created.contains(&tab.id));
-        self.tabs = kept;
-        let index = anchor
-            .and_then(|anchor| self.position(anchor))
-            .unwrap_or(self.tabs.len());
-        self.tabs.splice(index..index, moved);
-    }
-
-    /// Close tab `id`. The last tab leaves a placeholder for Home; closing the
-    /// active tab activates the one in its place, else
-    /// the one before it.
+    /// Release view `id`. The last one leaves a placeholder for Home;
+    /// releasing the active view activates the next most recent.
     pub(super) fn remove(&mut self, id: u64) -> Option<(LiveView<V>, Option<LiveViewsEffect>)> {
         let index = self.position(id)?;
         let tab = self.tabs.remove(index);
@@ -323,24 +303,23 @@ impl<V> LiveViews<V> {
 mod tests {
     use super::*;
 
-    fn file(path: &str) -> DocumentId {
-        DocumentId::File(path.into())
+    fn vault(hex: &str) -> DocumentId {
+        DocumentId::Vault(mdoc_store::document_id::VaultId::parse(&hex.repeat(16)).unwrap())
     }
 
-    fn markdown(path: &str) -> TabRecord {
-        TabRecord {
-            markdown: path.into(),
-            ..TabRecord::default()
-        }
+    fn named(hex: &str) -> TabRecord {
+        let mut record = TabRecord::default();
+        record.set_document(vault(hex));
+        record
     }
 
     #[test]
-    fn tabs_get_new_ids_in_order_and_markdown_names_their_document() {
+    fn tabs_get_new_ids_in_order_and_a_record_names_its_document() {
         let mut tabs = LiveViews::<u8>::default();
-        let a = tabs.push(markdown("/cases/a.md"));
+        let a = tabs.push(named("0a"));
         let b = tabs.push(TabRecord::default());
         assert!(b > a);
-        assert_eq!(tabs.get(a).unwrap().document(), Some(&file("/cases/a.md")));
+        assert_eq!(tabs.get(a).unwrap().document(), Some(&vault("0a")));
         assert_eq!(tabs.get(b).unwrap().document(), None);
         assert_eq!(tabs.get(a).unwrap().view(), None);
         tabs.open(a, 7);
@@ -356,9 +335,11 @@ mod tests {
     }
 
     #[test]
-    fn closing_activates_the_tab_in_its_place_and_the_last_leaves_a_placeholder() {
+    fn releasing_activates_the_next_most_recent_and_the_last_leaves_a_placeholder() {
         let mut tabs = LiveViews::<u8>::default();
         let [a, b, c] = [(); 3].map(|_| tabs.push(TabRecord::default()));
+        tabs.activate(a);
+        tabs.activate(c);
         tabs.activate(b);
         let (closed, effect) = tabs.remove(b).unwrap();
         assert_eq!(closed.id(), b);
@@ -393,26 +374,9 @@ mod tests {
         assert!(tabs.get(b).unwrap().record().blank_disposable);
         tabs.keep_blank(None);
         assert!(!tabs.get(b).unwrap().record().blank_disposable);
-        tabs.set_case(a, Some("case-1".into()));
-        tabs.set_case(b, Some("case-1".into()));
-        tabs.forget_case("case-2");
-        assert_eq!(
-            tabs.get(a).unwrap().record().case.as_deref(),
-            Some("case-1")
-        );
-        tabs.forget_case("case-1");
-        assert!(tabs.iter().all(|tab| tab.record().case.is_none()));
-        assert_eq!(tabs.set_document(a, Some(file("/cases/a.md"))), None);
-        assert_eq!(
-            tabs.set_document(a, Some(file("/cases/b.md"))),
-            Some(file("/cases/a.md"))
-        );
+        assert_eq!(tabs.set_document(a, Some(vault("0a"))), None);
+        assert_eq!(tabs.set_document(a, Some(vault("0b"))), Some(vault("0a")));
         assert_eq!(tabs.set_document(99, None), None);
-        let path = PathBuf::from("/cases/b.md");
-        assert!(tabs.note_recent(a, Some(&path)));
-        assert!(!tabs.note_recent(a, Some(&path)));
-        assert!(tabs.note_recent(a, None));
-        assert!(!tabs.note_recent(99, Some(&path)));
     }
 
     #[test]
@@ -425,22 +389,44 @@ mod tests {
     }
 
     #[test]
-    fn cycling_wraps_and_reordering_and_placing_move_tabs() {
+    fn viewing_brings_a_view_to_the_front_and_eviction_takes_the_least_recent_idle() {
         let mut tabs = LiveViews::<u8>::default();
-        assert_eq!(tabs.cycle(1), None);
-        let [a, b, c, d] = [(); 4].map(|_| tabs.push(TabRecord::default()));
-        tabs.activate(a);
-        assert_eq!(tabs.cycle(-1), Some(LiveViewsEffect::Activate(d)));
-        assert_eq!(tabs.cycle(1), Some(LiveViewsEffect::Activate(b)));
-        let order = |tabs: &LiveViews<u8>| tabs.iter().map(LiveView::id).collect::<Vec<_>>();
-        assert_eq!(tabs.reorder(d, a), Some(LiveViewsEffect::Repaint));
-        assert_eq!(order(&tabs), [d, a, b, c]);
-        assert_eq!(tabs.reorder(d, 99), None);
-        tabs.place(&[c, d], Some(b));
-        assert_eq!(order(&tabs), [a, d, c, b]);
-        tabs.place(&[a], Some(a));
-        assert_eq!(order(&tabs), [d, c, b, a]);
-        assert_eq!(tabs.at(0).map(LiveView::id), Some(d));
-        assert_eq!(tabs.position(b), Some(2));
+        let ids: Vec<u64> = (0..10).map(|_| tabs.push(TabRecord::default())).collect();
+        for id in &ids {
+            tabs.activate(*id);
+        }
+        let all = |_: &LiveView<u8>| Weight::Idle;
+        assert_eq!(
+            tabs.recent(all),
+            ids.iter().rev().copied().collect::<Vec<_>>()
+        );
+        // Ten views, a limit of eight: the two viewed first go.
+        assert_eq!(tabs.evictable(LIMIT, all), [ids[0], ids[1]]);
+        // A busy one is kept, so the next least recent goes in its place.
+        let busy = ids[0];
+        let weigh = |tab: &LiveView<u8>| {
+            if tab.id() == busy {
+                Weight::Busy
+            } else {
+                Weight::Idle
+            }
+        };
+        assert_eq!(tabs.evictable(LIMIT, weigh), [ids[1], ids[2]]);
+        // Uncounted views neither count nor go; the active one never goes.
+        let placeholder = ids[1];
+        let weigh = |tab: &LiveView<u8>| {
+            if tab.id() == placeholder {
+                Weight::Ignored
+            } else {
+                Weight::Idle
+            }
+        };
+        assert_eq!(tabs.evictable(LIMIT, weigh), [ids[0]]);
+        tabs.activate(ids[0]);
+        assert_eq!(tabs.evictable(LIMIT, all), [ids[1], ids[2]]);
+        assert_eq!(tabs.evictable(1, all).len(), 9);
+        assert!(!tabs.evictable(0, all).contains(&ids[0]));
+        assert_eq!(tabs.position(ids[0]), Some(0));
+        assert_eq!(tabs.position(ids[9]), Some(1));
     }
 }

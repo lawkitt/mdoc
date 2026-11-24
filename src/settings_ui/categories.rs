@@ -17,7 +17,7 @@ pub(crate) enum Category {
     Detection,
     Recognition,
     Spelling,
-    Cases,
+    Vault,
     About,
 }
 impl Category {
@@ -26,7 +26,7 @@ impl Category {
         Self::Detection,
         Self::Recognition,
         Self::Spelling,
-        Self::Cases,
+        Self::Vault,
         Self::About,
     ];
     pub fn label(self) -> &'static str {
@@ -35,7 +35,7 @@ impl Category {
             Self::Detection => "Detection",
             Self::Recognition => "Recognition",
             Self::Spelling => "Spelling",
-            Self::Cases => "Cases",
+            Self::Vault => "Vault",
             Self::About => "About",
         }
     }
@@ -75,6 +75,7 @@ impl Panel {
         }
         self.category = category;
         self.dictionary = None;
+        self.recovery.forget();
         self.scroll.set_offset(gpui::point(px(0.), px(0.)));
         window.focus(&self.category_focus, cx);
         cx.notify();
@@ -84,7 +85,8 @@ impl Panel {
             .iter()
             .position(|c| *c == self.category)
             .unwrap();
-        let next = (index + if backwards { 5 } else { 1 }) % Category::ALL.len();
+        let len = Category::ALL.len();
+        let next = (index + if backwards { len - 1 } else { 1 }) % len;
         self.change_category(Category::ALL[next], window, cx);
     }
     pub(super) fn setting_row(
@@ -301,8 +303,8 @@ impl Panel {
             .border_color(p.border)
             .child(div().text_size(px(13.)).child("Categories to detect"))
             .child(div().text_size(px(11.)).text_color(p.header_muted).child(
-                "Scans of documents without a case skip categories that are off, and new \
-                 cases start with this list. Names you mark yourself are still replaced.",
+                "Scans of documents outside a Project skip categories that are off, and new \
+                 Projects start with this list. Names you mark yourself are still replaced.",
             ))
             .child(
                 div()
@@ -460,7 +462,6 @@ impl Panel {
                 // MacOS only; Windows has no tray yet.
                 .when(cfg!(target_os = "macos"), |v| v.child(self.setting_row("Show mdoc in the menu bar", "mdoc keeps running after you close its windows.", self.switch("general-menu-bar", "Show mdoc in the menu bar", self.draft.general.menu_bar, true, |p| p.general.menu_bar = !p.general.menu_bar, theme, cx), theme)))
                 .child(self.updates_section(theme, cx))
-                .child(self.setting_row("Recent files", "Names and folders of recently opened files, never their contents.", self.scrolled_quiet("recents-clear", "Clear", theme, true, cx).when(cfg!(test), |v| v.debug_selector(|| "recents-clear".into())).on_click(cx.listener(|_, _, _, cx| cx.emit(Event::ClearRecents))), theme))
                 .child(self.setting_row("Keyboard shortcuts", "Browse the keys available in each part of mdoc.", self.scrolled_quiet("settings-shortcuts", "Show", theme, true, cx).when(cfg!(test), |v| v.debug_selector(|| "settings-shortcuts".into())).aria_label("Keyboard shortcuts").on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Shortcuts))), theme)),
             Category::Detection => div()
                 .child(div().text_size(px(11.)).text_color(theme.pdf_style().header_muted).child(self.section_note("Detection can miss names and identifiers — review the whole document before sharing.", Model::Pii(self.draft.pseudonymization.model))))
@@ -481,22 +482,25 @@ impl Panel {
                     .child(self.setting_row("Compare text recognition", "Compare models on a snapshot without changing your document or defaults.", self.scrolled_quiet("compare-ocr", "Compare", theme, true, cx).aria_label("Compare text recognition").on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Compare(Model::Ocr(OcrModel::Cyrillic))))), theme))
             },
             Category::Spelling => div().child(self.spelling_section(theme, cx)),
-            Category::Cases => div().child(self.setting_row("Ask before closing", "Confirm before closing an unsaved mapping. A saved case keeps its mapping encrypted on this computer.", self.switch("cases-ask", "Ask before closing an unsaved mapping", self.draft.cases.ask_before_closing, true, |p| p.cases.ask_before_closing = !p.cases.ask_before_closing, theme, cx), theme)),
+            Category::Vault => div().child(self.vault_section(theme, cx)),
             Category::About => div().child(self.about_section(theme, cx)),
         };
-        // About has no preferences, so it has nothing to reset.
-        body.when(self.category != Category::About, |v| {
-            v.child(
-                self.setting_row(
-                    "Reset",
-                    "Restore this category's defaults.",
-                    self.scrolled_quiet("reset-settings", "Reset", theme, true, cx)
-                        .when(cfg!(test), |v| v.debug_selector(|| "reset-settings".into()))
-                        .on_click(cx.listener(|this, _, _, cx| this.reset(cx))),
-                    theme,
-                ),
-            )
-        })
+        // About and Vault have no preferences, so nothing to reset.
+        body.when(
+            !matches!(self.category, Category::About | Category::Vault),
+            |v| {
+                v.child(
+                    self.setting_row(
+                        "Reset",
+                        "Restore this category's defaults.",
+                        self.scrolled_quiet("reset-settings", "Reset", theme, true, cx)
+                            .when(cfg!(test), |v| v.debug_selector(|| "reset-settings".into()))
+                            .on_click(cx.listener(|this, _, _, cx| this.reset(cx))),
+                        theme,
+                    ),
+                )
+            },
+        )
         .into_any_element()
     }
     pub(super) fn category_render(

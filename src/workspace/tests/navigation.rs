@@ -18,26 +18,55 @@ fn forward_key() -> &'static str {
     }
 }
 
+/// A Vault document titled "Note", shown in a live view of its own; that
+/// view's id.
+fn note(w: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> u64 {
+    let document = (w.vault.vault().unwrap())
+        .create_document(mdoc_vault::NewDocument {
+            project: None,
+            title: "Note".into(),
+            source_kind: mdoc_vault::SourceKind::Markdown,
+            origin: mdoc_vault::DocumentOrigin::Ordinary,
+            markdown: "note".into(),
+        })
+        .unwrap();
+    let id = mdoc_store::document_id::VaultId::parse(&document.id).unwrap();
+    w.open_vault_document(id, window, cx);
+    w.tabs.active()
+}
+
+/// The stop of live view `id`'s document.
+fn stop(w: &Workspace, id: u64, cx: &App) -> Stop {
+    Stop::Document(w.live_document(w.tabs.get(id).unwrap(), cx).unwrap())
+}
+
+/// A Project named `name` in the window's Vault, loaded; its id.
+fn add_project(w: &mut Workspace, name: &str) -> String {
+    let project = (w.vault.vault().unwrap())
+        .create_project(mdoc_vault::NewProject {
+            name: name.into(),
+            colour: None,
+            pinned: false,
+        })
+        .unwrap();
+    let id = project.id.clone();
+    w.projects.put(project);
+    id
+}
+
 #[gpui::test]
-fn back_forward_revisits_tabs_home_and_cases_without_key_or_member_reads(cx: &mut TestAppContext) {
+fn back_forward_revisits_tabs_home_and_projects_without_key_or_member_reads(
+    cx: &mut TestAppContext,
+) {
     cx.update(crate::bind_all_keys);
-    let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
-    let case = mdoc_store::cases::Case::new("Raman".into(), &[], None);
-    let id = case.id.clone();
-    let first = tabs.update_in(cx, |w, window, cx| {
-        w.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ));
-        w.case_coordinator.finish_load(vec![case]);
-        w.new_tab(window, cx)
-    });
-    tabs.update_in(cx, |w, window, cx| w.open_case(&id, window, cx));
+    let id = tabs.update(cx, |w, _| add_project(w, "Raman"));
+    let first = tabs.update_in(cx, note);
+    tabs.update_in(cx, |w, window, cx| w.open_project(&id, window, cx));
     cx.run_until_parked();
-    let second = tabs.update_in(cx, |w, window, cx| w.new_tab(window, cx));
+    let second = tabs.update_in(cx, note);
     cx.run_until_parked();
-    let before = tabs.read_with(cx, |w, _| (w.cases.key_reads, w.cases.member_reads));
+    let before = tabs.read_with(cx, |w, _| w.project_ui.member_reads);
     cx.update(|window, cx| {
         let focus = tabs.read(cx).focus.clone();
         window.focus(&focus, cx);
@@ -46,8 +75,8 @@ fn back_forward_revisits_tabs_home_and_cases_without_key_or_member_reads(cx: &mu
     cx.simulate_keystrokes(back_key());
     cx.run_until_parked();
     tabs.read_with(cx, |w, _| {
-        assert_eq!(w.cases.page.as_ref().unwrap().id(), id);
-        assert_eq!((w.cases.key_reads, w.cases.member_reads), before);
+        assert_eq!(w.project_ui.page.as_ref().unwrap().id(), id);
+        assert_eq!(w.project_ui.member_reads, before);
     });
     cx.simulate_keystrokes(back_key());
     cx.run_until_parked();
@@ -64,60 +93,35 @@ fn back_forward_revisits_tabs_home_and_cases_without_key_or_member_reads(cx: &mu
     assert_eq!(tabs.read_with(cx, |w, _| w.tabs.active()), first);
     tabs.update_in(cx, |w, window, cx| w.navigate(false, window, cx));
     assert_eq!(
-        tabs.read_with(cx, |w, _| w.cases.page.as_ref().unwrap().id().to_owned()),
+        tabs.read_with(cx, |w, _| w
+            .project_ui
+            .page
+            .as_ref()
+            .unwrap()
+            .id()
+            .to_owned()),
         id
     );
     tabs.update_in(cx, |w, window, cx| w.navigate(false, window, cx));
     assert_eq!(tabs.read_with(cx, |w, _| w.tabs.active()), second);
-    assert_eq!(
-        tabs.read_with(cx, |w, _| (w.cases.key_reads, w.cases.member_reads)),
-        before
-    );
+    assert_eq!(tabs.read_with(cx, |w, _| w.project_ui.member_reads), before);
 }
 
 #[gpui::test]
-fn back_to_a_locked_cached_case_never_reads_the_injected_store(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let case = mdoc_store::cases::Case::new("Raman".into(), &[], None);
-    let (tabs, cx) = boot_home(
-        cx,
-        Session {
-            cases: vec![mdoc_store::cases::CaseSummary::of(&case)],
-            ..Session::default()
-        },
-    );
-    tabs.update_in(cx, |w, window, cx| {
-        w.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ));
-        w.cases.test_may_ask = true;
-        w.open_case(&case.id, window, cx);
-        w.new_tab(window, cx);
-        w.navigate(true, window, cx);
-    });
-    cx.run_until_parked();
-    tabs.read_with(cx, |w, _| {
-        assert_eq!(w.cases.page.as_ref().unwrap().id(), case.id);
-        assert!(w.case_coordinator.case(&case.id).is_none());
-        assert_eq!(w.cases.key_reads, 0);
-        assert_eq!(w.cases.member_reads, 0);
-        assert!(!w.cases.explainer);
-    });
-}
-
-#[gpui::test]
-fn closed_tabs_are_skipped_and_a_new_stop_after_back_discards_forward(cx: &mut TestAppContext) {
+fn deleted_documents_are_skipped_and_a_new_stop_after_back_discards_forward(
+    cx: &mut TestAppContext,
+) {
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |w, window, cx| {
-        let first = w.new_tab(window, cx);
-        let closed = w.new_tab(window, cx);
-        let last = w.new_tab(window, cx);
-        w.remove(closed, window, cx);
+        let first = note(w, window, cx);
+        let deleted = note(w, window, cx);
+        let last = note(w, window, cx);
+        let gone = w.live_document(w.tabs.get(deleted).unwrap(), cx).unwrap();
+        w.run_delete_documents(vec![gone], window, cx);
         w.navigate(true, window, cx);
         assert_eq!(w.tabs.active(), first);
-        assert_eq!(w.navigation_target(false, cx), Some(&Stop::Tab(last)));
-        w.new_tab(window, cx);
+        assert_eq!(w.navigation_target(false, cx), Some(&stop(w, last, cx)));
+        note(w, window, cx);
         assert_eq!(w.navigation_target(false, cx), None);
         w.navigate(true, window, cx);
         assert_eq!(w.tabs.active(), first);
@@ -127,23 +131,25 @@ fn closed_tabs_are_skipped_and_a_new_stop_after_back_discards_forward(cx: &mut T
 }
 
 #[gpui::test]
-fn navigation_tooltips_follow_live_tab_and_case_titles_and_skip_deleted_cases(
+fn navigation_tooltips_follow_live_tab_and_project_titles_and_skip_deleted_projects(
     cx: &mut TestAppContext,
 ) {
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |w, window, cx| {
-        let tab = w.new_tab(window, cx);
-        let case = mdoc_store::cases::Case::new("Raman".into(), &[], None);
-        let id = case.id.clone();
-        w.case_coordinator.finish_load(vec![case]);
-        w.open_case(&id, window, cx);
-        assert_eq!(w.navigation_label(true, cx), "Back to Untitled.md");
+        let tab = note(w, window, cx);
+        let id = add_project(w, "Raman");
+        w.open_project(&id, window, cx);
+        assert_eq!(w.navigation_label(true, cx), "Back to Note");
         w.show_home(window, cx);
-        assert_eq!(w.navigation_label(true, cx), "Back to Case “Raman”");
-        w.case_coordinator.cases_mut()[0].name = "Renamed".into();
-        assert_eq!(w.navigation_label(true, cx), "Back to Case “Renamed”");
-        w.forget_case(&id, window, cx);
-        assert_eq!(w.navigation_target(true, cx), Some(&Stop::Tab(tab)));
+        assert_eq!(w.navigation_label(true, cx), "Back to Project “Raman”");
+        w.projects.edit(&id, |project| {
+            project.name = "Renamed".into();
+            Some(())
+        });
+        assert_eq!(w.navigation_label(true, cx), "Back to Project “Renamed”");
+        w.projects.remove(&id);
+        w.navigation.forget(&Stop::Project(id.clone()));
+        assert_eq!(w.navigation_target(true, cx), Some(&stop(w, tab, cx)));
         w.navigate(true, window, cx);
         assert_eq!(w.navigation_label(true, cx), "Back to Home");
         assert_eq!(w.navigation_label(false, cx), "Forward to Home");
@@ -182,10 +188,10 @@ fn alt_arrows_keep_word_moves_in_editor_and_do_not_navigate_from_text_fields(
 #[gpui::test]
 fn mouse_buttons_navigate_from_editor_and_text_input_once_per_press(cx: &mut TestAppContext) {
     cx.update(crate::bind_all_keys);
-    let (tabs, cx) = boot(cx, Session::default());
-    let first = tabs.read_with(cx, |w, _| w.tabs.active());
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let first = tabs.update_in(cx, note);
     tabs.update_in(cx, |w, window, cx| {
-        w.new_tab(window, cx);
+        note(w, window, cx);
     });
     draw(cx);
     let point = gpui::point(px(400.), px(240.));
@@ -210,7 +216,7 @@ fn title_buttons_disable_at_ends_and_work_with_sidebar_collapsed(cx: &mut TestAp
     cx.simulate_resize(size(px(1100.), px(760.)));
     click_toolbar(cx, "workspace-back");
     assert!(tabs.read_with(cx, |w, cx| w.showing_home(cx)));
-    let first = tabs.update_in(cx, |w, window, cx| w.new_tab(window, cx));
+    let first = tabs.update_in(cx, note);
     click_toolbar(cx, "workspace-back");
     assert!(tabs.read_with(cx, |w, cx| w.showing_home(cx)));
     click_toolbar(cx, "workspace-back");
@@ -237,7 +243,11 @@ fn settings_is_not_a_stop_and_navigation_preserves_its_modal_restrictions(cx: &m
 
 #[gpui::test]
 fn navigation_buttons_are_keyboard_reachable_in_both_sidebar_layouts(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot(cx, Session::default());
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |w, window, cx| {
+        note(w, window, cx);
+    });
+    cx.run_until_parked();
     cx.simulate_resize(size(px(1100.), px(760.)));
     for expanded in [false, true] {
         tabs.update_in(cx, |w, window, cx| {
@@ -278,129 +288,116 @@ fn navigation_buttons_are_keyboard_reachable_in_both_sidebar_layouts(cx: &mut Te
 }
 
 #[gpui::test]
-fn f6_lands_on_the_active_tab_after_back_across_sidebar_layouts(cx: &mut TestAppContext) {
-    // F6 into the sidebar lands on the active tab, not on Back.
-    let (tabs, cx) = boot(cx, Session::default());
-    let (focus, active) = tabs.read_with(cx, |w, _| (w.back_focus.clone(), w.tabs.active()));
-    cx.update(|window, cx| window.focus(&focus, cx));
-    draw(cx);
+fn f6_lands_on_the_shown_row_not_back_across_sidebar_layouts(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |w, window, cx| {
+        note(w, window, cx);
+    });
+    let (back, active) = tabs.read_with(cx, |w, _| (w.back_focus.clone(), w.tabs.active()));
     for expanded in [false, true] {
-        key(cx, "f6"); // toolbar
-        key(cx, "f6"); // editor
-        tabs.update(cx, |w, cx| {
+        tabs.update_in(cx, |w, window, cx| {
             w.sidebar.restore(expanded, Some(expanded));
+            window.focus(&back, cx);
             cx.notify();
         });
         draw(cx);
+        // Back is the sidebar's: F6 goes round the other regions first.
         key(cx, "f6");
-        assert!(
-            tab_row_focused(&tabs, active, cx),
-            "the active tab, not Back, expanded={expanded}"
-        );
+        for _ in 0..3 {
+            if in_sidebar(&tabs, cx) {
+                break;
+            }
+            key(cx, "f6");
+        }
+        assert!(!cx.update(|window, _| back.is_focused(window)), "not Back");
+        if expanded {
+            assert!(tab_row_focused(&tabs, active, cx), "the shown row");
+        } else {
+            // The rail has no document rows: its Home row, which reveals.
+            let rail = tabs.read_with(cx, |w, _| {
+                (w.rail_home_focus.clone(), w.panel_home_focus.clone())
+            });
+            assert!(cx.update(|window, _| rail.0.is_focused(window) || rail.1.is_focused(window)));
+        }
     }
 }
 
 #[gpui::test]
-fn closing_the_active_or_the_last_tab_never_offers_the_page_shown(cx: &mut TestAppContext) {
+fn deleting_the_shown_document_after_back_shows_home_and_keeps_forward(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |w, window, cx| {
-        let first = w.new_tab(window, cx);
-        let second = w.new_tab(window, cx);
-        // Home → first → second; closing second shows first.
-        w.close_tab(second, window, cx);
+        let first = note(w, window, cx);
+        note(w, window, cx);
+        let third = note(w, window, cx);
+        w.navigate(true, window, cx);
+        w.navigate(true, window, cx);
         assert_eq!(w.tabs.active(), first);
-        assert_eq!(w.navigation_target(true, cx), Some(&Stop::Home));
-        assert_eq!(w.navigation_label(true, cx), "Back to Home");
-        assert_eq!(w.navigation_target(false, cx), None);
-        // Closing the last tab shows Home: nothing either way.
-        w.close_tab(first, window, cx);
+        // Home takes its page and its stop.
+        let gone = w.live_document(w.tabs.get(first).unwrap(), cx).unwrap();
+        w.run_delete_documents(vec![gone], window, cx);
         assert!(w.showing_home(cx));
         assert_eq!(w.navigation_target(true, cx), None);
-        assert_eq!(w.navigation_target(false, cx), None);
-    });
-}
-
-#[gpui::test]
-fn closing_the_active_tab_after_back_keeps_forward(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update_in(cx, |w, window, cx| {
-        let first = w.new_tab(window, cx);
-        let second = w.new_tab(window, cx);
-        let third = w.new_tab(window, cx);
-        w.navigate(true, window, cx);
-        w.navigate(true, window, cx);
-        assert_eq!(w.tabs.active(), first);
-        // The tab after it takes its page and its stop.
-        w.close_tab(first, window, cx);
-        assert_eq!(w.tabs.active(), second);
-        assert_eq!(w.navigation_target(true, cx), Some(&Stop::Home));
-        assert_eq!(w.navigation_target(false, cx), Some(&Stop::Tab(third)));
+        w.navigate(false, window, cx);
         w.navigate(false, window, cx);
         assert_eq!(w.tabs.active(), third);
     });
 }
 
 #[gpui::test]
-fn deleting_a_case_from_its_page_shows_home_and_keeps_forward(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
+fn deleting_a_project_from_its_page_shows_home_and_keeps_forward(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
-    let case = mdoc_store::cases::Case::new("Raman".into(), &[], None);
-    let id = case.id.clone();
     let tab = tabs.update_in(cx, |w, window, cx| {
-        w.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ));
-        w.case_coordinator.finish_load(vec![case]);
-        w.open_case(&id, window, cx);
-        let tab = w.new_tab(window, cx);
+        let id = add_project(w, "Raman");
+        w.open_project(&id, window, cx);
+        let tab = note(w, window, cx);
         w.navigate(true, window, cx);
-        assert_eq!(w.cases.page.as_ref().unwrap().id(), id);
+        assert_eq!(w.project_ui.page.as_ref().unwrap().id(), id);
         tab
     });
-    tabs.update_in(cx, |w, window, cx| w.delete_case(id.clone(), window, cx));
-    cx.simulate_prompt_answer("Delete Case");
+    let id = tabs.read_with(cx, |w, _| {
+        w.project_ui.page.as_ref().unwrap().id().to_string()
+    });
+    tabs.update_in(cx, |w, window, cx| w.delete_project(id.clone(), window, cx));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Delete");
     cx.run_until_parked();
     tabs.read_with(cx, |w, cx| {
         assert!(w.showing_home(cx));
-        // Home took the case page's stop: Back doesn't offer Home again.
+        // Home took the Project page's stop: Back doesn't offer Home again.
         assert_eq!(w.navigation_target(true, cx), None);
-        assert_eq!(w.navigation_target(false, cx), Some(&Stop::Tab(tab)));
-        assert_eq!(w.navigation_label(false, cx), "Forward to Untitled.md");
+        assert_eq!(w.navigation_target(false, cx), Some(&stop(w, tab, cx)));
+        assert_eq!(w.navigation_label(false, cx), "Forward to Note");
     });
 }
 
 #[gpui::test]
-fn each_case_page_is_its_own_stop(cx: &mut TestAppContext) {
+fn each_project_page_is_its_own_stop(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
-    let raman = mdoc_store::cases::Case::new("Raman".into(), &[], None);
-    let petrova = mdoc_store::cases::Case::new("Petrova".into(), &[], None);
-    let (first, second) = (raman.id.clone(), petrova.id.clone());
     tabs.update_in(cx, |w, window, cx| {
-        w.case_coordinator.finish_load(vec![raman, petrova]);
-        w.open_case(&first, window, cx);
-        w.open_case(&second, window, cx);
-        assert_eq!(w.navigation_label(true, cx), "Back to Case “Raman”");
+        let first = add_project(w, "Raman");
+        let second = add_project(w, "Petrova");
+        w.open_project(&first, window, cx);
+        w.open_project(&second, window, cx);
+        assert_eq!(w.navigation_label(true, cx), "Back to Project “Raman”");
         w.navigate(true, window, cx);
-        assert_eq!(w.cases.page.as_ref().unwrap().id(), first);
+        assert_eq!(w.project_ui.page.as_ref().unwrap().id(), first);
         assert_eq!(w.navigation_label(true, cx), "Back to Home");
-        assert_eq!(w.navigation_label(false, cx), "Forward to Case “Petrova”");
+        assert_eq!(
+            w.navigation_label(false, cx),
+            "Forward to Project “Petrova”"
+        );
         w.navigate(false, window, cx);
-        assert_eq!(w.cases.page.as_ref().unwrap().id(), second);
+        assert_eq!(w.project_ui.page.as_ref().unwrap().id(), second);
         assert_eq!(w.navigation_target(false, cx), None);
     });
 }
 
 #[gpui::test]
 fn a_restored_workspace_starts_with_no_history(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let records = ["one.md", "two.md"].map(|name| {
-        let path = dir.path().join(name);
-        std::fs::write(&path, name).unwrap();
-        TabRecord {
-            markdown: path,
-            ..TabRecord::default()
-        }
+    let records = ["One.md", "Two.md"].map(|name| TabRecord {
+        blank: true,
+        name: Some(name.into()),
+        ..TabRecord::default()
     });
     let (tabs, cx) = boot(
         cx,
@@ -416,42 +413,6 @@ fn a_restored_workspace_starts_with_no_history(cx: &mut TestAppContext) {
         assert_eq!(w.navigation_target(false, cx), None);
         assert_eq!(w.navigation_label(true, cx), "Back");
         assert_eq!(w.navigation_label(false, cx), "Forward");
-    });
-}
-
-#[gpui::test]
-fn a_cancelled_close_or_quit_prompt_is_not_a_stop_and_keeps_forward(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot(cx, Session::default());
-    cx.simulate_input("unsaved");
-    let dirty = tabs.read_with(cx, |w, _| w.tabs.active());
-    let (second, third) = tabs.update_in(cx, |w, window, cx| {
-        let second = w.new_tab(window, cx);
-        let third = w.new_tab(window, cx);
-        w.navigate(true, window, cx);
-        (second, third)
-    });
-    let unchanged = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
-        tabs.read_with(cx, |w, cx| {
-            assert_eq!(w.tabs.active(), dirty, "the prompt's tab stays in front");
-            assert_eq!(w.navigation_target(false, cx), Some(&Stop::Tab(third)));
-            assert_eq!(w.navigation_target(true, cx), Some(&Stop::Tab(second)));
-        });
-    };
-    tabs.update_in(cx, |w, window, cx| w.close_tab(dirty, window, cx));
-    cx.run_until_parked();
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    unchanged(&tabs, cx);
-    cx.dispatch_action(Quit);
-    cx.run_until_parked();
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    unchanged(&tabs, cx);
-    tabs.update_in(cx, |w, window, cx| {
-        w.navigate(true, window, cx);
-        assert_eq!(w.tabs.active(), second);
-        w.navigate(false, window, cx);
-        assert_eq!(w.tabs.active(), third);
     });
 }
 
@@ -474,70 +435,27 @@ fn buttons_and_actions_share_one_liveness_rule(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn navigating_closes_the_tab_and_case_header_menus(cx: &mut TestAppContext) {
+fn navigating_closes_the_document_and_project_menus(cx: &mut TestAppContext) {
     cx.update(crate::bind_all_keys);
-    let (tabs, cx) = boot(cx, Session::default());
-    let first = tabs.read_with(cx, |w, _| w.tabs.active());
-    let second = tabs.update_in(cx, |w, window, cx| w.new_tab(window, cx));
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let [first, second] = open_notes(&tabs, cx, dir.path(), &["a", "b"])[..] else {
+        unreachable!()
+    };
     draw(cx);
-    let row = cx.update(|_, cx| tabs.read(cx).sidebar_row_focus.borrow()[&second].clone());
+    let row = tree_row_focus(&tabs, second, cx);
     cx.update(|window, cx| window.focus(&row, cx));
     key(cx, "shift-f10");
-    assert!(tabs.read_with(cx, |w, _| w.tab_menu.is_some()));
+    assert!(tabs.read_with(cx, |w, _| w.document_menu.is_some()));
     key(cx, back_key());
     tabs.read_with(cx, |w, _| {
         assert_eq!(w.tabs.active(), first);
-        assert!(w.tab_menu.is_none());
+        assert!(w.document_menu.is_none());
     });
     tabs.update_in(cx, |w, window, cx| {
-        w.cases.header_menu = Some(("case".into(), gpui::point(px(10.), px(10.))));
+        w.project_ui.header_menu = Some(("case".into(), gpui::point(px(10.), px(10.))));
         w.navigate(false, window, cx);
         assert_eq!(w.tabs.active(), second);
-        assert!(w.cases.header_menu.is_none());
-    });
-}
-
-#[gpui::test]
-fn closing_the_first_stop_behind_a_prompts_tab_keeps_forward_ahead(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let records = ["a.md", "b.md", "c.md"].map(|name| {
-        let path = dir.path().join(name);
-        std::fs::write(&path, name).unwrap();
-        TabRecord {
-            markdown: path,
-            ..TabRecord::default()
-        }
-    });
-    let (tabs, cx) = boot(
-        cx,
-        Session {
-            tabs: records.to_vec(),
-            ..Session::default()
-        },
-    );
-    let ids: Vec<u64> = tabs.read_with(cx, |w, _| w.tabs.iter().map(|tab| tab.id()).collect());
-    let (a, b, c) = (ids[0], ids[1], ids[2]);
-    tabs.update_in(cx, |w, window, cx| w.activate(b, window, cx));
-    cx.run_until_parked();
-    cx.simulate_input("unsaved");
-    tabs.update_in(cx, |w, window, cx| {
-        w.navigate(true, window, cx);
-        w.activate(c, window, cx);
-        w.navigate(true, window, cx);
-        assert_eq!(w.tabs.active(), a);
-        w.close_tab(b, window, cx);
-    });
-    cx.run_until_parked();
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    // History [a, c] with b in front; a closes in the background.
-    tabs.update_in(cx, |w, window, cx| {
-        assert_eq!(w.tabs.active(), b);
-        w.close_tab(a, window, cx);
-        assert_eq!(w.tabs.active(), b);
-        assert_eq!(w.navigation_target(true, cx), None);
-        assert_eq!(w.navigation_target(false, cx), Some(&Stop::Tab(c)));
-        w.navigate(false, window, cx);
-        assert_eq!(w.tabs.active(), c);
+        assert!(w.project_ui.header_menu.is_none());
     });
 }

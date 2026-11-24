@@ -54,7 +54,7 @@ pub enum Owner {
     /// Text fields (`markdown_search::bind_keys`).
     TextField,
     Pii,
-    Cases,
+    Projects,
     Shell,
     Settings,
     Dictionary,
@@ -381,12 +381,17 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
-        "Save as…",
-        &[on!(App, None, &["mod-shift-s"], document_view::SaveAs)],
+        "Export Markdown…",
+        &[on!(
+            App,
+            None,
+            &["mod-shift-s"],
+            document_view::ExportMarkdown
+        )],
     ),
     row(
         Everywhere,
-        "Close tab",
+        "Close",
         &[on!(App, None, &["mod-w"], workspace::Close)],
     ),
     row(
@@ -430,13 +435,18 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
-        "Next tab",
-        &[on!(App, None, &["ctrl-tab"], workspace::NextTab)],
+        "Switch to a recent document",
+        &[on!(App, None, &["ctrl-tab"], workspace::SwitchDocument)],
     ),
     row(
         Everywhere,
-        "Previous tab",
-        &[on!(App, None, &["ctrl-shift-tab"], workspace::PreviousTab)],
+        "Switch to a recent document, backwards",
+        &[on!(
+            App,
+            None,
+            &["ctrl-shift-tab"],
+            workspace::SwitchDocumentBack
+        )],
     ),
     // The macOS convention for View › Toggle Sidebar.
     row(
@@ -1010,46 +1020,86 @@ pub static SHORTCUTS: &[Shortcut] = &[
         ],
     ),
     // ---- Panels and sidebar -------------------------------------------------
-    // The sidebar's tab list is one Tab stop; arrows move inside it.
+    // The sidebar's tree is one Tab stop; arrows move inside it.
     row(
         Panel,
-        "Sidebar: previous tab",
+        "Sidebar: previous row",
         &[on!(
             Ui,
-            Some("SidebarTab"),
+            Some("SidebarRow"),
             &["up"],
             crate::ui::SidebarPrevious
         )],
     ),
     row(
         Panel,
-        "Sidebar: next tab",
+        "Sidebar: next row",
         &[on!(
             Ui,
-            Some("SidebarTab"),
+            Some("SidebarRow"),
             &["down"],
             crate::ui::SidebarNext
         )],
     ),
     row(
         Panel,
-        "Sidebar: close the tab",
+        "Sidebar: collapse a Project, or go to it",
         &[on!(
             Ui,
-            Some("SidebarTab"),
+            Some("SidebarRow"),
+            &["left"],
+            crate::ui::SidebarCollapse
+        )],
+    ),
+    row(
+        Panel,
+        "Sidebar: expand a Project, or go into it",
+        &[on!(
+            Ui,
+            Some("SidebarRow"),
+            &["right"],
+            crate::ui::SidebarExpand
+        )],
+    ),
+    row(
+        Panel,
+        "Unfiled: select the row above too",
+        &[on!(
+            Ui,
+            Some("SidebarRow"),
+            &["shift-up"],
+            crate::ui::SidebarExtendUp
+        )],
+    ),
+    row(
+        Panel,
+        "Unfiled: select the row below too",
+        &[on!(
+            Ui,
+            Some("SidebarRow"),
+            &["shift-down"],
+            crate::ui::SidebarExtendDown
+        )],
+    ),
+    row(
+        Panel,
+        "Unfiled: delete the selected documents",
+        &[on!(
+            Ui,
+            Some("SidebarRow"),
             &["backspace"],
-            crate::ui::SidebarCloseTab
+            crate::ui::SidebarDelete
         )
         .also(&["delete"])],
     ),
     row(
         Panel,
-        "Sidebar: the tab's menu",
+        "Sidebar: the row's menu",
         // ⌃↩ needs no fn on MacBook keyboards, where F10 is the mute key;
         // Windows adds the Menu key.
         &[on!(
             Ui,
-            Some("SidebarTab"),
+            Some("SidebarRow"),
             &["ctrl-enter", "shift-f10"],
             crate::ui::SidebarMenu
         )
@@ -1267,6 +1317,26 @@ pub static SHORTCUTS: &[Shortcut] = &[
         ],
     ),
     row(
+        Panel,
+        "Notes: close the Inspector",
+        &[on!(
+            Ui,
+            Some("NotesBox > Editor"),
+            &["escape"],
+            crate::ui::CloseMenu
+        )],
+    ),
+    row(
+        Panel,
+        "Open documents with the recovery key",
+        &[on!(
+            Shell,
+            Some("RecoveryKey"),
+            &["enter"],
+            workspace::OpenWithRecoveryKey
+        )],
+    ),
+    row(
         Popup,
         "Close the command palette",
         &[on!(
@@ -1330,42 +1400,42 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Save the case name",
+        "Save the Project name",
         &[on!(
-            Cases,
-            Some("CaseName"),
+            Projects,
+            Some("ProjectName"),
             &["enter"],
-            workspace::ConfirmCaseName
+            workspace::ConfirmProjectName
         )],
     ),
     row(
         Popup,
-        "Cancel renaming the case",
+        "Cancel renaming the Project",
         &[on!(
-            Cases,
-            Some("CaseName"),
+            Projects,
+            Some("ProjectName"),
             &["escape"],
-            workspace::CancelCaseName
+            workspace::CancelProjectName
         )],
     ),
     row(
         Panel,
-        "Add a name to the case",
+        "Add a name to the Project",
         &[on!(
-            Cases,
-            Some("CaseTerm"),
+            Projects,
+            Some("ProjectTerm"),
             &["enter"],
-            workspace::AddCaseName
+            workspace::AddProjectName
         )],
     ),
     row(
         Panel,
-        "Clear the new case name",
+        "Clear the new Project name",
         &[on!(
-            Cases,
-            Some("CaseTerm"),
+            Projects,
+            Some("ProjectTerm"),
             &["escape"],
-            workspace::ClearCaseName
+            workspace::ClearProjectName
         )],
     ),
     row(

@@ -16,8 +16,8 @@
 //! run while someone uses the desktop.
 //!
 //! Each run makes and removes a temporary profile, redirects the app data and
-//! cache paths before building app state, injects a temporary case store and
-//! refuses OS case-key access (no Keychain, no DPAPI). It reads only public
+//! cache paths before building app state, injects a temporary Vault and
+//! refuses OS key access (no Keychain, no DPAPI). It reads only public
 //! fixtures, never the real profile, clipboard or installed models, and
 //! downloads nothing: every app HTTP entry point rejects requests. The
 //! integration test (`tests/headless_renders.rs`) checks the files and the
@@ -45,25 +45,30 @@
 //! the output stays temporary unless that variable names a new folder. The
 //! images establish neither native input, IME, accessibility nor display
 //! presentation.
-mod cases;
 mod comments;
 mod comparison;
 mod confirm;
+mod cut_over;
 mod decisions;
 mod docx_source;
 mod encoder;
 mod folder_sheet;
+mod home;
 mod import;
 mod narrow;
 mod navigation;
+mod notes;
+mod old_cases;
 mod pdf_source;
-mod recents;
+mod projects;
 mod restore;
 mod review;
 mod search;
 mod settings;
 mod shelf;
 mod shell;
+mod tree;
+mod vault;
 
 use super::{Workspace, app_actions::bind as bind_app_actions};
 use crate::{bind_all_keys, pii::ui::CompareMode};
@@ -193,13 +198,12 @@ impl Driver {
         self.settle()?;
         let state = if self.window.downcast::<Workspace>().is_some() {
             self.change(|w, _, cx| {
-                let members = w.cases.page.as_ref()
-                    .and_then(|page| w.case_coordinator.case(page.id()))
-                    .map(|case| case.members.iter().map(|path| {
-                        let tab = w.find_path(path, None, cx);
+                let project = w.project_ui.page.as_ref().and_then(|page| w.projects.project(page.id()));
+                let members = project.map(|project| w.members(&project.id).into_iter().map(|(document, _)| {
+                        let tab = w.find_document(&mdoc_store::document_id::DocumentId::Vault(document), None, cx);
                         let mentions = tab.and_then(|tab| w.tabs.get(tab)?.view()).map(|view| {
                             let review = view.read(cx).pii.review();
-                            case.exported().iter().map(|identity| {
+                            project.mapping.exported().iter().map(|identity| {
                                 review.identity_by_alias(&identity.alias)
                                     .map_or(0, |id| review.identity_count(id))
                             }).collect::<Vec<_>>()
@@ -227,15 +231,15 @@ impl Driver {
                         ThemeChoice::Dark => "dark",
                     },
                     "dictionary": w.settings.read(cx).dictionary.is_some(),
-                    "case_list": w.cases.list_open,
-                    "case_page": w.cases.page.is_some(),
-                    "case_page_locked": w.cases.page.as_ref().is_some_and(|page| w.case_coordinator.case(page.id()).is_none()),
-                    "case_page_documents": w.cases.page.as_ref().and_then(|page| w.case_coordinator.case(page.id())).map(|case| case.members.len()),
-                    "case_page_names": w.cases.page.as_ref().and_then(|page| w.case_coordinator.case(page.id())).map(|case| case.exported().len()),
-                    "case_page_members": members,
-                    "case_rename": w.cases.renaming.is_some(),
-                    "case_categories": w.cases.page.as_ref().is_some_and(|page| page.categories()),
-                    "keychain_explainer": w.cases.explainer,
+                    "project_list": w.project_ui.list_open,
+                    "project_page": w.project_ui.page.is_some(),
+                    "project_page_documents": members.as_ref().map(Vec::len),
+                    "project_page_names": project.map(|project| project.mapping.exported().len()),
+                    "move_toast": w.project_ui.toast.as_ref().map(|toast| toast.text.clone()),
+                    "project_page_members": members,
+                    "project_rename": w.project_ui.renaming.is_some(),
+                    "project_categories": w.project_ui.page.as_ref().is_some_and(|page| page.categories()),
+                    "keychain_explainer": w.project_ui.explainer,
                     "folder_sheet": w.folder_sheets.sheet().map(|s| s.primary_label()),
                     "folder_sheet_ticked": w.folder_sheets.sheet().map(|s| s.ticked_count()),
                     "find_replace": w.active_view().is_some_and(|v| v.read(cx).search.open()),
@@ -380,24 +384,27 @@ fn fixture() -> Result<(String, Vec<mdoc_pii::Detection>)> {
 }
 
 /// Every scene in order. Later scenes build on earlier state: the fixture
-/// document, its review and its case.
+/// document, its review and its Project.
 fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) -> Result<()> {
     let view = navigation::scenes(d, path)?;
-    review::scenes(d, &view, path, detections)?;
+    review::scenes(d, &view, detections)?;
     settings::scenes(d)?;
     shell::scenes(d)?;
     search::scenes(d, &view)?;
     review::before_after(d, &view)?;
     review::applied_alias(d, &view)?;
     restore::reply_view(d, &view)?;
+    notes::scenes(d, &view)?;
     decisions::scenes(d, &view)?;
-    let case = cases::scenes(d, path)?;
-    folder_sheet::scenes(d, path, &case)?;
-    cases::delete(d, case)?;
+    let project = projects::scenes(d)?;
+    tree::scenes(d, &project)?;
+    folder_sheet::scenes(d, path, &project)?;
+    projects::delete(d, project)?;
     confirm::scenes(d)?;
     comparison::scenes(d, &view)?;
     import::scenes(d)?;
-    restore::restored_reply(d)?;
+    restore::saved_reply(d)?;
+    notes::promoted(d)?;
     comments::scenes(d)?;
     pdf_source::scenes(d)?;
     pdf_source::encrypted(d)?;
@@ -408,11 +415,14 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     review::long_counts(d)?;
     restore::share_leftover(d)?;
     review::scanning(d)?;
-    recents::scenes(d, path)?;
+    home::scenes(d)?;
     narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;
-    // Last: they leave cases locked.
-    shelf::scenes(d)?;
-    cases::locked_home(d)
+    vault::repeated_import(d, path.parent().ok_or("fixture folder")?)?;
+    vault::original_missing(d)?;
+    vault::unavailable_home(d)?;
+    vault::recovery_key(d)?;
+    // Last: it leaves the Vault locked.
+    shelf::scenes(d)
 }
 
 pub(crate) fn run(out: &Path) -> Result<()> {
@@ -427,15 +437,19 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     }
     // Exercise both OS-key entry points before building app state. Both must
     // refuse without touching the OS key store or any profile file.
-    let cases = data_directory.join("mdoc/cases");
     for result in [
-        mdoc_store::cases::Store::open(cases.clone()).map(|_| ()),
-        mdoc_store::cases::Store::open_quietly(cases).map(|_| ()),
+        mdoc_store::cases::vault_key(true).map(|_| ()),
+        mdoc_store::cases::vault_key(false).map(|_| ()),
     ] {
         if !matches!(result, Err(mdoc_store::cases::CaseError::KeysDisabled)) {
             return Err("OS case-key guard is not active".into());
         }
     }
+    // An earlier build's cases folder, its key and its recents: no path
+    // below may touch them (#1091 Decision 2).
+    let mdoc = data_directory.join("mdoc");
+    old_cases::fill(&mdoc)?;
+    let old = old_cases::Snapshot::take(&mdoc)?;
     let network_probe = mdoc_import::model_download::fetch(
         "https://invalid.invalid/headless-network-probe",
         1,
@@ -455,10 +469,12 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     let text_system = gpui_windows::headless_text_system().map_err(|e| e.to_string())?;
     let (text, detections) = fixture()?;
     let path = profile.path().join("Services Agreement.md");
-    std::fs::write(&path, text).map_err(|e| e.to_string())?;
     let mut screens = Vec::new();
     let mut focus_rings = Vec::new();
     for (theme, tag) in [(ThemeChoice::Light, "light"), (ThemeChoice::Dark, "dark")] {
+        // The fixture saves itself as scenes edit it: each theme starts
+        // from the public text.
+        std::fs::write(&path, &text).map_err(|e| e.to_string())?;
         let mut cx = HeadlessAppContext::with_platform(text_system.clone(), Arc::new(()), || {
             #[cfg(target_os = "macos")]
             {
@@ -480,15 +496,17 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             .open_window(size(px(WIDTH), px(HEIGHT)), |window, cx| {
                 cx.new(|cx| {
                     let mut workspace = Workspace::empty(window, cx);
-                    let store = mdoc_store::cases::Store::with_key(
-                        profile.path().join(tag).join("cases"),
-                        &[3; 32],
-                    );
-                    let case = mdoc_store::cases::Case::new("Public fixture".into(), &[], None);
-                    store.save(&case).expect("temporary fixture case");
-                    workspace.use_case_store(store);
-                    workspace.case_coordinator.finish_load(vec![case]);
-                    workspace.user_lists_read(Ok(Default::default()), cx);
+                    let vault =
+                        mdoc_vault::Vault::open(profile.path().join(tag).join("vault"), &[3; 32])
+                            .expect("temporary Vault");
+                    vault
+                        .create_project(mdoc_vault::NewProject {
+                            name: "Public fixture".into(),
+                            colour: None,
+                            pinned: false,
+                        })
+                        .expect("temporary fixture Project");
+                    workspace.use_vault(vault);
                     workspace.restore(
                         Session {
                             theme_choice: theme,
@@ -498,6 +516,8 @@ pub(crate) fn run(out: &Path) -> Result<()> {
                         cx,
                     );
                     workspace.install_prompts(cx);
+                    // The first-Project nudge shows only in its own scene.
+                    let _ = workspace.update_general(|g| g.recovery_key_nudge_dismissed = true, cx);
                     workspace
                 })
             })
@@ -520,6 +540,12 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             window.focus(w.focus_regions.home(), cx);
         })?;
         scenarios(&mut d, &path, &detections)?;
+        cut_over::run(
+            &mut d,
+            &profile.path().join(tag).join("vault"),
+            profile.path(),
+        )?;
+        old.check(&mdoc)?;
         for mut record in d.records.drain(..) {
             record["theme"] = json!(tag);
             screens.push(record);
@@ -534,6 +560,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     // DOCX fixture previews remove their backing directories off-thread.
     // Both TestWindow contexts have dropped before this cleanup barrier.
     mdoc_import::docx_preview::shutdown_workers();
+    old.check(&mdoc)?;
     let renderer = if cfg!(target_os = "windows") {
         "headless-directx-warp"
     } else {

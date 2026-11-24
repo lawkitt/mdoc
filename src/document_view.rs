@@ -12,17 +12,17 @@ use crate::{
     settings_ui, spelling,
     style::{self, Theme},
     ui,
-    workspace::{self, Close, Import, New, Open, RetryDocument, ToggleTheme},
+    workspace::{self, Import, New, Open, RetryDocument, ToggleTheme},
 };
 use gpui::{
-    App, Context, Entity, Focusable, PathPromptOptions, PromptLevel, ScrollHandle, Subscription,
-    Window, actions, div, prelude::*, px,
+    App, Context, Entity, Focusable, PathPromptOptions, ScrollHandle, Subscription, Window,
+    actions, div, prelude::*, px,
 };
 use mdoc_editor::{EditorEvent, EditorState};
 use mdoc_import::{import, model_work, ocr, recognition};
 use mdoc_store::{
     document::{self, Document},
-    document_session, session_store, settings,
+    document_session, settings,
 };
 use std::{
     cell::Cell,
@@ -31,9 +31,10 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-mod case;
-mod case_link;
-use case_link::CaseLinkEffect;
+pub(crate) mod notes;
+mod project;
+mod project_link;
+use project_link::ProjectEffect;
 mod chrome;
 mod decision_history;
 mod document_lifecycle;
@@ -42,7 +43,6 @@ mod import_flow;
 use import_flow::ImportEffect;
 #[cfg(test)]
 pub(crate) use import_flow::PasswordPrompt;
-pub(crate) mod save_prompt;
 #[cfg(test)]
 pub(crate) mod tests;
 actions!(
@@ -53,13 +53,15 @@ actions!(
         ExtractNative,
         DismissImportWarning,
         Save,
-        SaveAs,
+        ExportMarkdown,
         CopyMarkdown,
         ToggleCompare,
         ShowEditView,
         ShowOriginalView,
         ShowPseudonymizedView,
         ShowReplacements,
+        ShowNotes,
+        OpenSourceReply,
         ZoomIn,
         ZoomOut,
         ZoomReset,
@@ -68,27 +70,39 @@ actions!(
     ]
 );
 
+/// The Inspector's tabs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Inspector {
+    #[default]
+    Review,
+    Share,
+    /// The document's private notes.
+    Notes,
+}
+
 #[derive(Clone)]
 pub(crate) enum Next {
     Import(Box<import::Imported>),
-    Close,
-    /// Saved first so the new case lists the document (#75); `close` closes
-    /// the tab once the case is written.
-    CreateCase {
-        close: bool,
-    },
 }
 
-/// The window's Recents folders, most recent first, for Save As to start in
-/// when a document has no folder of its own (#180). The window shares them
-/// whenever its Recents change.
-pub(crate) struct RecentFolders(Vec<PathBuf>);
+/// The folder of the last file imported or exported this run, for Export
+/// Markdown to start in when a document has no folder of its own (#180).
+/// Kept in memory only: nothing about it is written to disk.
+#[derive(Default)]
+pub(crate) struct LastFolder(Option<PathBuf>);
 
-impl gpui::Global for RecentFolders {}
+impl gpui::Global for LastFolder {}
 
-impl RecentFolders {
-    pub(crate) fn share(folders: Vec<PathBuf>, cx: &mut App) {
-        cx.set_global(Self(folders));
+impl LastFolder {
+    /// `file` was imported or exported: its folder is the last one.
+    pub(crate) fn note(file: &std::path::Path, cx: &mut App) {
+        if let Some(folder) = file.parent().filter(|f| !f.as_os_str().is_empty()) {
+            cx.set_global(Self(Some(folder.to_path_buf())));
+        }
+    }
+
+    pub(crate) fn get(cx: &App) -> Option<&std::path::Path> {
+        cx.try_global::<Self>().and_then(|last| last.0.as_deref())
     }
 }
 
@@ -159,8 +173,12 @@ pub(crate) struct DocumentView {
     pub(crate) history: decision_history::HistoryPopover,
     /// Text zoom of this document's Markdown, not saved.
     pub(crate) zoom: f32,
-    /// Inspector: the Share tab is showing.
-    pub(crate) inspector_share: bool,
+    /// The Inspector's tab showing.
+    pub(crate) inspector: Inspector,
+    /// The document's private notes and their autosave.
+    pub(crate) notes: notes::NotesState,
+    /// The AI Reply it was promoted from, when it was.
+    pub(crate) from_reply: Option<notes::FromReply>,
     /// The running copy feedback belongs to Copy for AI, not Copy Markdown.
     pub(crate) copied_for_ai: bool,
     /// The running copy feedback belongs to Copy reply.
@@ -171,12 +189,19 @@ pub(crate) struct DocumentView {
     pub(crate) reply_box: Option<(Entity<EditorState>, Subscription)>,
     /// The reply box's scroll, which keeps its caret in view.
     pub(crate) reply_scroll: gpui::ScrollHandle,
-    /// The saved case this tab's mapping belongs to.
-    pub(crate) case: case_link::CaseLink,
-    /// The waiting save of the mapping into the case.
-    case_save: Option<gpui::Task<()>>,
-    pub(crate) case_names_open: bool,
-    pub(crate) case_term: Option<Entity<markdown_search::SearchInput>>,
+    /// Saves the box's reply once it settles.
+    pub(crate) reply_save: Option<gpui::Task<()>>,
+    /// The saved replies Share lists: the Project's, or this document's own
+    /// while Unfiled; the workspace keeps them current.
+    pub(crate) saved_replies: Vec<pii::ui::SavedReplyRow>,
+    /// The Project this tab's mapping belongs to.
+    pub(crate) project: project_link::ProjectState,
+    /// The waiting fold of the mapping into the Project.
+    project_save: Option<gpui::Task<()>>,
+    /// The waiting autosave of the document.
+    autosave: Option<gpui::Task<()>>,
+    pub(crate) project_names_open: bool,
+    pub(crate) project_term: Option<Entity<markdown_search::SearchInput>>,
     /// The result of Pseudonymize Clipboard, for a few seconds.
     pub(crate) clipboard_notice: pii::ui::restore::ClipboardNotice,
     /// The before/after view replaces the editor while open.
@@ -308,7 +333,11 @@ impl DocumentView {
             editor.set_autoscroll(scroll.clone());
             editor
         });
-        let images = images::install(&editor, Document::default().directory(), cx);
+        let images = images::install(
+            &editor,
+            document_session::DocumentSession::default().directory(),
+            cx,
+        );
         window.focus(&editor.read(cx).focus_handle(cx), cx);
         let subscription =
             cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {
@@ -318,10 +347,9 @@ impl DocumentView {
                     this.clipboard_notice.clear();
                     this.pii_edited(cx);
                     this.schedule_spellcheck(true, cx);
-                    this.schedule_case_save(cx);
+                    this.schedule_project_save(cx);
                     this.lifecycle.edited();
-                    let dirty = this.dirty(cx);
-                    this.lifecycle.set_dirty(dirty);
+                    this.schedule_autosave(cx);
                     this.refresh_markdown_search(SearchRefresh::DocumentEdit, false, window, cx);
                     cx.notify();
                 }
@@ -398,16 +426,21 @@ impl DocumentView {
             more_open: false,
             history: decision_history::HistoryPopover::new(cx),
             zoom: 1.,
-            inspector_share: false,
+            inspector: Inspector::Review,
+            notes: Default::default(),
+            from_reply: None,
             copied_for_ai: false,
             copied_reply: false,
             reply: Default::default(),
             reply_box: None,
             reply_scroll: gpui::ScrollHandle::new(),
-            case: Default::default(),
-            case_save: None,
-            case_names_open: false,
-            case_term: None,
+            reply_save: None,
+            saved_replies: Vec::new(),
+            project: Default::default(),
+            project_save: None,
+            autosave: None,
+            project_names_open: false,
+            project_term: None,
             clipboard_notice: Default::default(),
             compare: None,
             switcher: Default::default(),
@@ -447,16 +480,38 @@ impl DocumentView {
         self.images = images::install(&self.editor, directory, cx);
     }
 
-    pub(crate) fn dirty(&self, cx: &App) -> bool {
-        if self.lifecycle.loading()
-            || self.lifecycle.unavailable()
-            || self.lifecycle.source_only()
-            || self.lifecycle.generated_unedited()
-        {
-            return false;
+    /// Whether the text differs from what was last written: an autosave is
+    /// due. Never shown; documents save themselves.
+    pub(crate) fn unsaved(&self, cx: &App) -> bool {
+        self.lifecycle.ready()
+            && !self.lifecycle.source_only()
+            && self.session.document.id().is_some()
+            && self.session.unsaved(self.editor.read(cx).text())
+    }
+
+    /// The text changed: save it once typing pauses.
+    pub(crate) fn schedule_autosave(&mut self, cx: &mut Context<Self>) {
+        if !self.lifecycle.ready() || self.lifecycle.source_only() {
+            return;
         }
-        self.session.dirty(self.editor.read(cx).text())
-            || (self.session.document.path.is_none() && self.preview.attachment().is_some())
+        self.autosave = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(AUTOSAVE_DELAY).await;
+            let _ = this.update(cx, |this, cx| {
+                this.autosave = None;
+                cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Changed));
+            });
+        }));
+    }
+
+    /// Save: write now instead of after the pause.
+    pub(crate) fn save_now(&mut self, cx: &mut Context<Self>) {
+        self.autosave = None;
+        cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Changed));
+    }
+
+    /// Drop the waiting autosave: the caller writes the text itself.
+    pub(crate) fn cancel_autosave(&mut self) {
+        self.autosave = None;
     }
 
     /// A Markdown tab with no content and no source shows the empty page.
@@ -484,11 +539,7 @@ impl DocumentView {
             return;
         }
         let text = self.editor.read(cx).text().to_owned();
-        cx.write_to_clipboard(if self.pii.restore().is_some() {
-            crate::restored_clipboard::item(text)
-        } else {
-            gpui::ClipboardItem::new_string(text)
-        });
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
         self.copied_for_ai = false;
         self.copied_reply = false;
         self.show_copy_feedback(cx);
@@ -649,66 +700,19 @@ impl DocumentView {
 
     /// The window title while this tab shows; the workspace sets it.
     pub(crate) fn window_title(&self) -> String {
-        format!(
-            "{}{} — mdoc",
-            if self.lifecycle.dirty() { "• " } else { "" },
-            self.display_name()
-        )
+        format!("{} — mdoc", self.display_name())
     }
 
+    /// Replace or close the document, unless one of its dialogs is open.
     pub(crate) fn request(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
-        let dirty = self.dirty(cx);
-        match self.lifecycle.request(dirty) {
-            Some(LifecycleEffect::Proceed) => {
-                self.proceed(next, window, cx);
-                return;
-            }
-            Some(LifecycleEffect::AskToSave) => {}
-            _ => return,
+        if let Some(LifecycleEffect::Proceed) = self.lifecycle.request() {
+            self.proceed(next, window, cx);
         }
-        // Save is the default, Don't Save ⌘D / Alt+D, Cancel Esc.
-        let question = format!("Save changes to “{}”?", self.display_name());
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            &question,
-            Some("Your changes will be lost if you don't save them."),
-            &[
-                gpui::PromptButton::new("Save"),
-                gpui::PromptButton::new("Don't Save"),
-                gpui::PromptButton::cancel("Cancel"),
-            ],
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let answer = answer.await.ok();
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.lifecycle.end_prompt();
-                match answer {
-                    Some(0) => this.save(false, Some(next), window, cx),
-                    Some(1) => this.proceed(next, window, cx),
-                    _ => {
-                        cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
-                    }
-                }
-                this.resume_import(window, cx);
-            });
-        })
-        .detach();
     }
 
     pub(crate) fn proceed(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
         self.copy_feedback = None;
         match next {
-            Next::Close => {
-                cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Resolved));
-                return;
-            }
-            Next::CreateCase { close } => {
-                cx.emit(workspace::TabEvent::Case(workspace::CaseEvent::Create {
-                    close,
-                }));
-                return;
-            }
             Next::Import(imported) => {
                 let imported = *imported;
                 let automatic = self.import.imported();
@@ -723,8 +727,16 @@ impl DocumentView {
                     && !self
                         .preview
                         .shows_other_annotations(&imported.source.path, &imported.annotations);
+                // A Vault document stays itself: the conversion fills its text.
+                let kept =
+                    (self.session.document.vault.clone()).map(|id| (id, self.session.name.clone()));
                 self.session
                     .import(imported.source.path.clone(), imported.warning);
+                if let Some((id, name)) = kept {
+                    self.session.document = Document::in_vault(id, String::new());
+                    self.session.name = name;
+                    self.session.write_due = true;
+                }
                 self.session.left_out = imported.left_out.line(true);
                 self.session.comments_left_out = imported.left_out.comments_not_shown();
                 self.preview
@@ -737,8 +749,6 @@ impl DocumentView {
                 self.replace_images(self.save_directory(), window, cx);
                 self.editor
                     .update(cx, |editor, cx| editor.set_text(imported.markdown, cx));
-                let dirty = self.dirty(cx);
-                self.lifecycle.set_dirty(dirty);
                 self.reset_markdown_search(cx);
                 if self.active {
                     window.focus(&self.editor.read(cx).focus_handle(cx), cx);
@@ -1752,17 +1762,27 @@ impl DocumentView {
             .into_any_element()
     }
 
+    /// Where relative links and images resolve. A Vault document without a
+    /// Source has no folder: they resolve nowhere, as the Vault reads nothing
+    /// outside itself.
     pub(crate) fn save_directory(&self) -> PathBuf {
+        if self.session.document.vault.is_some() && self.session.source.is_none() {
+            return PathBuf::new();
+        }
         self.session.directory()
     }
 
-    /// Where Save As starts: the document's folder, else a Recents folder,
-    /// else Documents (#180).
-    fn save_as_directory(&self, cx: &App) -> PathBuf {
-        let folders = cx
-            .try_global::<RecentFolders>()
-            .map_or(&[][..], |folders| &folders.0);
-        self.session.save_as_directory(folders)
+    /// Where Export Markdown starts: the document's folder, else the last
+    /// folder a file was imported from or exported to this run, else
+    /// Documents (#180).
+    fn export_directory(&self, cx: &App) -> PathBuf {
+        let last = LastFolder::get(cx);
+        // A Vault document's Source is a viewing copy in the app cache,
+        // removed with its tab: never a place to export to.
+        if self.session.document.vault.is_some() {
+            return mdoc_store::document_session::DocumentSession::default().export_directory(last);
+        }
+        self.session.export_directory(last)
     }
 
     pub(crate) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -1846,106 +1866,72 @@ impl DocumentView {
         .detach();
     }
 
-    pub(crate) fn save(
-        &mut self,
-        save_as: bool,
-        next: Option<Next>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match self
-            .lifecycle
-            .save(save_as, self.session.document.path.is_some())
-        {
-            LifecycleEffect::CancelClose => {
-                cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
-                return;
-            }
-            LifecycleEffect::Write => {
-                if let Some(path) = self.session.document.path.clone() {
-                    self.write(path, next, cx);
-                }
-                return;
-            }
-            _ => {}
+    /// Export Markdown: a copy of the text in a file the user picks. The
+    /// document stays where it is.
+    pub(crate) fn export_markdown(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(LifecycleEffect::AskForPath) = self.lifecycle.export() else {
+            return;
+        };
+        let mut name = self.session.suggested_name();
+        if !document::is_markdown(std::path::Path::new(&name)) {
+            name.push_str(".md");
         }
-        let name = self.session.suggested_name();
-        let directory = self.save_as_directory(cx);
-        let reason =
-            matches!(next, Some(Next::CreateCase { .. })).then_some(save_prompt::CASE_REASON);
-        let path =
-            save_prompt::with_reason(reason, || cx.prompt_for_new_path(&directory, Some(&name)));
+        let directory = self.export_directory(cx);
+        let path = cx.prompt_for_new_path(&directory, Some(&name));
         cx.spawn_in(window, async move |this, cx| {
             let result = path.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.lifecycle.end_prompt();
-                if let Ok(Ok(Some(mut path))) = result {
-                    if path.extension().is_none() {
-                        path.set_extension("md");
+                match result {
+                    Ok(Ok(Some(mut path))) => {
+                        if path.extension().is_none() {
+                            path.set_extension("md");
+                        }
+                        let source = this.session.source.as_deref();
+                        // The viewing copy's folder goes with the tab.
+                        let viewing = (this.session.document.vault.is_some())
+                            .then_some(source)
+                            .flatten()
+                            .and_then(std::path::Path::parent);
+                        if !document::is_markdown(&path) {
+                            this.error = Some(
+                                "Export Markdown with a .md, .markdown, .mdown, or .txt extension."
+                                    .into(),
+                            );
+                        } else if viewing.is_some_and(|dir| path.starts_with(dir)) {
+                            this.error = Some(
+                                "Choose a folder of your own: this one holds a copy mdoc removes."
+                                    .into(),
+                            );
+                        } else if source.is_some_and(|source| {
+                            mdoc_store::session_store::identity(source)
+                                == mdoc_store::session_store::identity(&path)
+                        }) {
+                            this.error = Some(
+                                "Choose a different path to preserve the imported source.".into(),
+                            );
+                        } else if let Err(error) =
+                            document::export(&path, this.editor.read(cx).text())
+                        {
+                            this.error = Some(format!("Could not export: {error}"));
+                        } else {
+                            this.error = None;
+                            LastFolder::note(&path, cx);
+                        }
                     }
-                    if !document::is_markdown(&path) {
-                        this.error = Some(
-                            "Save Markdown with a .md, .markdown, .mdown, or .txt extension."
-                                .into(),
-                        );
-                        cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
-                        cx.notify();
-                        this.resume_import(window, cx);
-                        return;
-                    }
-                    this.write(path, next, cx);
-                } else {
-                    if let Ok(Err(error)) = &result {
-                        this.error = Some(chooser_unavailable(error));
-                        cx.notify();
-                    }
-                    cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
+                    Ok(Err(error)) => this.error = Some(chooser_unavailable(&error)),
+                    _ => {}
                 }
+                cx.notify();
                 this.resume_import(window, cx);
             });
         })
         .detach();
     }
-
-    pub(crate) fn write(&mut self, path: PathBuf, next: Option<Next>, cx: &mut Context<Self>) {
-        // The window checks that no other tab has the file open, then calls
-        // `save_to`.
-        let path = session_store::identity(&path);
-        cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Write {
-            path,
-            next,
-        }));
-    }
-
-    /// Save to `path`, which no other tab has open, then go on with `next`.
-    pub(crate) fn save_to(
-        &mut self,
-        path: PathBuf,
-        next: Option<Next>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let old_directory = self.save_directory();
-        match self.session.save(path, self.editor.read(cx).text()) {
-            Ok(()) => {
-                self.lifecycle.saved();
-                cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Saved));
-                if old_directory != self.session.document.directory() {
-                    self.replace_images(self.session.document.directory(), window, cx);
-                }
-                self.error = None;
-                if let Some(next) = next {
-                    self.proceed(next, window, cx);
-                }
-            }
-            Err(error) => {
-                self.error = Some(format!("Could not save: {error}"));
-                cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
-            }
-        }
-        cx.notify();
-    }
 }
+
+/// How long typing pauses before a document saves itself.
+const AUTOSAVE_DELAY: std::time::Duration = std::time::Duration::from_millis(700);
 
 pub(crate) fn button(label: &'static str, action: impl gpui::Action, theme: Theme) -> ui::Control {
     ui::control(label, label, theme, true)
@@ -2100,9 +2086,12 @@ impl Render for DocumentView {
         // The before/after view follows the applied replacements.
         self.refresh_compare(window, cx);
         // The Share panel's reply box restores against the live mapping.
-        if self.inspector_share && self.replacements_open() {
+        if self.inspector == Inspector::Share && self.replacements_open() {
             self.ensure_reply_box(window, cx);
             self.refresh_reply();
+        }
+        if self.inspector == Inspector::Notes && self.replacements_open() {
+            self.ensure_notes_editor(window, cx);
         }
         self.release_closed_popup_focus(window, cx);
         // Derived display state; set_outlines only notifies on change.
@@ -2479,7 +2468,7 @@ impl Render for DocumentView {
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) || self.import.setting_up() { "Setting up text recognition…" } else if self.import.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("Text recognized by {} · {} DPI · minimum confidence {}",crate::models::short_name(settings::Model::Ocr(config.model)),config.dpi,config.minimum_confidence))))
-            .children(import_notice).children(clipboard_notice).children(self.restore_summary(cx)).children(ocr_notice.filter(|_| !show_markdown))
+            .children(import_notice).children(clipboard_notice).children(ocr_notice.filter(|_| !show_markdown))
             .when(narrow_preview, |v| v.child(self.pane_switch(cx))))
             .child(div().flex().flex_1().min_h_0()
                 .when(!self.lifecycle.source_only() && show_markdown, |row| row.child(div().relative().flex().flex_1().min_w_0().h_full().flex().flex_col().text_size(px(16. * self.zoom))
@@ -2598,6 +2587,12 @@ impl Render for DocumentView {
             .on_action(cx.listener(|this, _: &ShowReplacements, window, cx| {
                 this.show_replacements(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &ShowNotes, window, cx| {
+                if this.can_copy_markdown() && this.notes_available() {
+                    this.show_notes(window, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, _: &OpenSourceReply, _, cx| this.open_source_reply(cx)))
             .on_action(cx.listener(Self::pseudonymize_clipboard))
             .on_action(cx.listener(Self::restore_clipboard))
             .on_action(cx.listener(Self::pseudonymize))
@@ -2629,13 +2624,12 @@ impl Render for DocumentView {
             .on_action(cx.listener(|_, _: &New, _, cx| {
                 cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::New))
             }))
-            .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, None, window, cx)))
+            .on_action(cx.listener(|this, _: &Save, _, cx| this.save_now(cx)))
             .on_action(
-                cx.listener(|this, _: &SaveAs, window, cx| this.save(true, None, window, cx)),
+                cx.listener(|this, _: &ExportMarkdown, window, cx| {
+                    this.export_markdown(window, cx)
+                }),
             )
-            .on_action(cx.listener(|_, _: &Close, _, cx| {
-                cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Requested))
-            }))
             .on_action(cx.listener(|this, _: &ClosePdf, window, cx| {
                 this.toggle_preview(window, cx);
                 if this.lifecycle.source_only() {

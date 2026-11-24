@@ -3,19 +3,19 @@
 //! with Copy reply and Open as tab.
 use super::Selection;
 use crate::{
-    document_view::{CopyMarkdown, DocumentView, SaveAs},
+    document_view::{CopyMarkdown, DocumentView, ExportMarkdown, Inspector},
     pii::ui::{APPLIED_ID, CopyForAi, KEPT_ID},
     style, ui,
 };
 use gpui::{AnyElement, App, Context, Focusable, Window, div, prelude::*, px};
 
 impl DocumentView {
-    /// Review | Share, the Inspector's two tabs.
-    pub(super) fn inspector_tabs(&self, entities: usize, cx: &mut Context<Self>) -> AnyElement {
+    /// Review | Share | Notes, the Inspector's tabs.
+    pub(crate) fn inspector_tabs(&self, entities: usize, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let tab = |id: &'static str, label: String, share: bool| {
-            let on = self.inspector_share == share;
+        let tab = |id: &'static str, label: String, which: Inspector| {
+            let on = self.inspector == which;
             ui::focus_ring(id, theme)
                 .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
                 .role(gpui::Role::Tab)
@@ -38,7 +38,7 @@ impl DocumentView {
                 .when(!on, |v| v.text_color(p.header_muted))
                 .child(label)
                 .on_click(cx.listener(move |this, _, window, cx| {
-                    this.inspector_share = share;
+                    this.inspector = which;
                     window.focus(&this.pii.mapping.focus, cx);
                     cx.notify();
                 }))
@@ -58,9 +58,10 @@ impl DocumentView {
                     .child(tab(
                         "inspector-review",
                         format!("Review · {entities}"),
-                        false,
+                        Inspector::Review,
                     ))
-                    .child(tab("inspector-share", "Share".into(), true)),
+                    .child(tab("inspector-share", "Share".into(), Inspector::Share))
+                    .child(tab("inspector-notes", "Notes".into(), Inspector::Notes)),
             )
             .into_any_element()
     }
@@ -70,7 +71,6 @@ impl DocumentView {
         let p = theme.pdf_style();
         let aliases = self.has_applied_aliases();
         let copied = self.copy_feedback.is_some();
-        let applied = self.pii.review.applied().len();
         let entities = self.replacement_entity_count(cx);
         let section = |title: &'static str| {
             div()
@@ -88,7 +88,9 @@ impl DocumentView {
                 .child(text)
         };
         let status = self.share_status(cx);
-        let case = self.case.link().cloned();
+        let case = self.project.link().cloned();
+        // Only a document in the Vault can move into a Project.
+        let movable = self.session.document.vault.is_some();
         ui::panel("identity-panel", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "identity-panel".into()))
             .m_2()
@@ -151,47 +153,42 @@ impl DocumentView {
                                     .on_click(cx.listener(|this, _, window, cx| this.copy_markdown(&CopyMarkdown, window, cx))),
                             )
                             .child(
-                                ui::primary_button("share-save", "Save…", theme, true)
-                                    .on_click(|_, window, cx| window.dispatch_action(Box::new(SaveAs), cx)),
+                                ui::primary_button("share-export", "Export Markdown…", theme, true)
+                                    .on_click(|_, window, cx| window.dispatch_action(Box::new(ExportMarkdown), cx)),
                             ),
                     )
                     .when(aliases || self.reply.exists(), |v| v.children(self.reply_section(cx)))
-                    .child(section("Case"))
-                    .child(match case {
-                        Some(link) => ui::control("share-case-page", "", theme, true)
-                            .when(cfg!(test), |v| v.debug_selector(|| "share-case-page".into()))
-                            .aria_label(format!("Open case {}", link.name))
-                            .on_click(cx.listener(|_, _, _, cx| cx.emit(crate::workspace::TabEvent::Case(crate::workspace::CaseEvent::OpenPage))))
+                    .child(section("Project"))
+                    .child(match &case {
+                        Some(link) => ui::control("share-project-page", "", theme, true)
+                            .when(cfg!(test), |v| v.debug_selector(|| "share-project-page".into()))
+                            .aria_label(format!("Open Project {}", link.name))
+                            .on_click(cx.listener(|_, _, _, cx| cx.emit(crate::workspace::TabEvent::Project(crate::workspace::ProjectEvent::OpenPage))))
                             .flex()
                             .items_center()
                             .gap_2()
-                            .child(div().size(px(8.)).rounded_full().bg(style::case_color(link.hue(), theme)))
+                            .child(div().size(px(8.)).rounded_full().bg(style::project_color(link.hue(), theme)))
                             .child(div().flex_1().truncate().child(link.name.clone()))
-                            .child(note("saved".into()))
                             .into_any_element(),
-                        None => div()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .child(note("Save which original each alias stands for, encrypted on this computer, to restore replies later.".into()))
-                            // A row, so the button keeps its label width like
-                            // Copy Markdown instead of stretching into a field.
-                            .child(
-                                div().flex().child(
-                                    ui::primary_button("share-save-case", "Save as case", theme, applied > 0)
-                                        .when(cfg!(test), |v| v.debug_selector(|| "share-save-case".into()))
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            if applied > 0 {
-                                                // The button leaves with the click; the panel
-                                                // stays in every view, so shortcuts keep a
-                                                // focused target (#79).
-                                                window.focus(&this.pii.mapping.focus, cx);
-                                                cx.emit(crate::workspace::TabEvent::Case(crate::workspace::CaseEvent::Create { close: false }));
-                                            }
-                                        })),
-                                ),
-                            )
-                            .into_any_element(),
+                        None if !movable => note("Kept with the document, encrypted on this computer.".into()).into_any_element(),
+                        None => note("Unfiled. Its names are kept with it, encrypted on this computer; in a Project, its documents share them.".into()).into_any_element(),
+                    })
+                    // A row, so the button keeps its label width like Copy
+                    // Markdown instead of stretching into a field.
+                    .when(movable, |v| {
+                        v.child(
+                            div().flex().child(
+                                ui::primary_button("share-new-project", "Move to New Project", theme, true)
+                                    .when(cfg!(test), |v| v.debug_selector(|| "share-new-project".into()))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        // The button leaves with the click; the panel
+                                        // stays in every view, so shortcuts keep a
+                                        // focused target (#79).
+                                        window.focus(&this.pii.mapping.focus, cx);
+                                        cx.emit(crate::workspace::TabEvent::Project(crate::workspace::ProjectEvent::MoveToNew));
+                                    })),
+                            ),
+                        )
                     }),
             )
             .into_any_element()
@@ -315,22 +312,15 @@ impl DocumentView {
                             )),
                         )
                         .child(
-                            ui::primary_button(
-                                "share-open-reply",
-                                "Open as tab",
-                                theme,
-                                restorable,
-                            )
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "share-open-reply".into())
-                            })
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
+                            ui::primary_button("share-open-reply", "Open reply", theme, restorable)
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "share-open-reply".into())
+                                })
+                                .on_click(cx.listener(move |this, _, _, cx| {
                                     if restorable {
-                                        this.open_reply_as_tab(cx)
+                                        this.open_saved_reply(cx)
                                     }
-                                },
-                            )),
+                                })),
                         )
                         // Bordered like its neighbors, not a bare text
                         // control beside them (U25).
@@ -351,6 +341,51 @@ impl DocumentView {
                             )
                         }),
                 )
+                // Saved replies: the Project's, or this document's own while
+                // Unfiled; each opens on its Reply page.
+                .when(!self.saved_replies.is_empty(), |v| {
+                    v.child(
+                        div()
+                            .pt_3()
+                            .pb_1()
+                            .text_size(px(11.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(p.header_muted)
+                            .child("SAVED REPLIES"),
+                    )
+                    .children(self.saved_replies.iter().enumerate().map(|(index, row)| {
+                        let id = row.id.clone();
+                        let key = format!("share-saved-reply-{index}");
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                ui::control(
+                                    gpui::SharedString::from(key.clone()),
+                                    row.title.clone(),
+                                    theme,
+                                    true,
+                                )
+                                .when(cfg!(test), move |v| v.debug_selector(move || key.clone()))
+                                .truncate()
+                                .on_click(cx.listener(
+                                    move |_, _, _, cx| {
+                                        cx.emit(crate::workspace::TabEvent::Reply(
+                                            crate::workspace::ReplyEvent::Open(id.clone()),
+                                        ));
+                                    },
+                                )),
+                            )
+                            .child(
+                                div()
+                                    .px_2()
+                                    .text_size(px(11.))
+                                    .text_color(p.header_muted)
+                                    .truncate()
+                                    .child(row.detail.clone()),
+                            )
+                    }))
+                })
                 .into_any_element(),
         )
     }

@@ -1,4 +1,4 @@
-//! One shelf row: the title without `.md`, the case as a tinted
+//! One shelf row: the title without `.md`, the Project as a tinted
 //! label (readiness in the same style, amber), an outlined Copy for AI on
 //! ready rows, the preview of two wrapped lines with alias chips, and the
 //! meta line "5 min ago · 1,297 words · 24 replaced". A row that is not
@@ -30,9 +30,9 @@ const TITLE_LINE: f32 = 20.;
 const PREVIEW_LINE: f32 = 16.;
 const META_LINE: f32 = 18.;
 const TITLE_SIZE: f32 = 13.;
-/// What the title line keeps for the others: a case label at least this
-/// wide, and the Copy for AI button; a long case label gives way first.
-const CASE_LABEL_MIN: f32 = 64.;
+/// What the title line keeps for the others: a Project label at least this
+/// wide, and the Copy for AI button; a long Project label gives way first.
+const PROJECT_LABEL_MIN: f32 = 64.;
 const COPY_BUTTON: f32 = 92.;
 const HEADER_GAP: f32 = 6.;
 const ROW_INNER_GAP: f32 = 3.;
@@ -129,10 +129,10 @@ pub(crate) fn breakdown(replaced: &[(Category, usize)]) -> String {
     }
 }
 
-/// What VoiceOver reads for a row: "<title>, <case>, ready".
+/// What VoiceOver reads for a row: "<title>, <Project>, ready".
 pub(crate) fn row_label(document: &ShelfDocument) -> String {
     let mut label = document.display_title().to_string();
-    if let Some(case) = &document.case_label {
+    if let Some(case) = &document.project_label {
         label.push_str(", ");
         label.push_str(case);
     }
@@ -239,8 +239,8 @@ fn title_width(text: &str, window: &Window) -> f32 {
 /// fits the room its row leaves, else cut in the middle with "…".
 pub(crate) fn fit_title(document: &ShelfDocument, window: &Window) -> (String, f32) {
     let mut room = PREVIEW_WIDTH - HEADER_GAP;
-    if document.case.is_some() {
-        room -= CASE_LABEL_MIN + HEADER_GAP;
+    if document.project.is_some() {
+        room -= PROJECT_LABEL_MIN + HEADER_GAP;
     }
     if document.readiness.is_ready() {
         room -= COPY_BUTTON + HEADER_GAP;
@@ -331,7 +331,7 @@ pub(crate) fn fit_preview(preview: &Preview, width: f32, window: &Window) -> Pre
     }
 }
 
-/// A small label: the case in its colour, or a readiness state in amber.
+/// A small label: the Project in its colour, or a readiness state in amber.
 fn label(text: impl Into<SharedString>, color: Hsla) -> gpui::Div {
     div()
         .flex_shrink_0()
@@ -367,7 +367,7 @@ impl ShelfView {
             .gap(px(HEADER_GAP))
             .child(
                 // Measured when the shelf opened: the title keeps its width
-                // and the case label takes what is left.
+                // and the Project label takes what is left.
                 div()
                     .flex_shrink_0()
                     .w(px(title_width))
@@ -377,11 +377,11 @@ impl ShelfView {
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(title),
             )
-            .when_some(document.case.as_ref(), |header, case| {
+            .when_some(document.project.as_ref(), |header, case| {
                 header.child(
                     label(
-                        document.case_label.clone().unwrap_or_default(),
-                        style::case_color(case.hue(), theme),
+                        document.project_label.clone().unwrap_or_default(),
+                        style::project_color(case.hue(), theme),
                     )
                     .flex_shrink(1.)
                     .min_w_0()
@@ -629,17 +629,21 @@ mod tests {
         use crate::shelf::OpenTab;
         let cx = cx.add_empty_window();
         let row = |title: &'static str| {
-            ShelfDocument::of_tab(OpenTab {
-                id: 1,
-                title,
-                text: "PERSON_1 signed the agreement today.",
-                aliases: vec!["PERSON_1"],
-                pending: 0,
-                checking: false,
-                names: Vec::new(),
-                case: None,
-                edited: SystemTime::UNIX_EPOCH,
-            })
+            ShelfDocument::of_tab(
+                OpenTab {
+                    id: 1,
+                    title,
+                    text: "PERSON_1 signed the agreement today.",
+                    aliases: vec!["PERSON_1"],
+                    pending: 0,
+                    checking: false,
+                    names: Vec::new(),
+                    project: None,
+                    edited: SystemTime::UNIX_EPOCH,
+                    stored: None,
+                }
+                .checked(),
+            )
             .unwrap()
         };
         cx.update(|window, _| {

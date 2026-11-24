@@ -105,6 +105,64 @@ fn an_import_keeps_its_file_as_the_original() {
 }
 
 /// A locked DOCX keeps its original locked, byte for byte, marked so.
+/// The mobile core imports converted text: its first save leaves nothing
+/// for the desktop to convert again, even when that text is empty.
+#[test]
+fn a_saved_import_is_never_pending_conversion() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let docx = fixture("../../docs/product-media/Settlement agreement.docx");
+    let id = imported(&vault, &docx, ImportOptions::default());
+    let stored = vault.store().document(&id).unwrap();
+    assert!(!stored.markdown.is_empty());
+    assert!(!stored.unconverted && !stored.pending_conversion());
+
+    let session = DocumentSession::new();
+    let text = (session.import_file(docx.display().to_string(), ImportOptions::default(), None))
+        .unwrap()
+        .text;
+    let all = crate::text::TextRange {
+        start: 0,
+        end: text.len() as u64,
+    };
+    session.type_text(all, String::new()).unwrap();
+    let emptied = session.save_into_vault(vault.clone()).unwrap().id;
+    let stored = vault.store().document(&emptied).unwrap();
+    assert!(stored.markdown.is_empty() && stored.original.is_some());
+    assert!(!stored.unconverted && !stored.pending_conversion());
+}
+
+/// Review of #1126: a record whose import stopped before its first save
+/// opens on the phone as it is; a save from there leaves it waiting for
+/// its conversion.
+#[test]
+fn an_unfinished_import_saved_from_the_phone_stays_pending() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let new = mdoc_vault::NewDocument {
+        project: None,
+        title: "Brief".into(),
+        source_kind: mdoc_vault::SourceKind::Pdf,
+        origin: mdoc_vault::DocumentOrigin::Ordinary,
+        markdown: String::new(),
+    };
+    let info = mdoc_vault::OriginalInfo {
+        file_name: "brief.pdf".into(),
+        ..mdoc_vault::OriginalInfo::default()
+    };
+    let store = vault.store();
+    let id = store
+        .import_document(new, &b"%PDF-1.4"[..], info)
+        .unwrap()
+        .id;
+    let session = DocumentSession::new();
+    session.open_from_vault(vault.clone(), id.clone()).unwrap();
+    session.save_into_vault(vault.clone()).unwrap();
+    let stored = vault.store().document(&id).unwrap();
+    assert!(stored.revision > 1, "the phone saved it");
+    assert!(stored.unconverted && stored.pending_conversion());
+}
+
 #[test]
 fn a_locked_source_stays_locked() {
     let scratch = Scratch::new();

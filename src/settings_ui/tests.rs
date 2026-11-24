@@ -440,7 +440,9 @@ fn tab_list_keys_show_categories_and_tab_enters_content(cx: &mut TestAppContext)
         });
         // Every category's last control remains reachable and its entire
         // ring stays in the viewport after scrolling in either direction.
-        for category in Category::ALL.into_iter().filter(|c| *c != Category::About) {
+        for category in
+            (Category::ALL.into_iter()).filter(|c| !matches!(c, Category::About | Category::Vault))
+        {
             panel.update_in(cx, |p, w, cx| p.change_category(category, w, cx));
             let mut reached = false;
             for _ in 0..45 {
@@ -754,8 +756,7 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
             }
             Category::Recognition => expected.ocr = defaults.ocr,
             Category::Spelling => expected.spelling = defaults.spelling,
-            Category::Cases => expected.cases = defaults.cases,
-            Category::About => {}
+            Category::About | Category::Vault => {}
         }
         assert_eq!(
             shared.borrow().snapshot().unwrap(),
@@ -1481,7 +1482,7 @@ fn a_long_page_shows_where_it_continues(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("settings-fade-top").is_some());
     assert!(cx.debug_bounds("settings-fade-bottom").is_none());
     // A page that fits shows neither.
-    panel.update_in(cx, |p, w, cx| p.change_category(Category::Cases, w, cx));
+    panel.update_in(cx, |p, w, cx| p.change_category(Category::About, w, cx));
     draw_settings(cx);
     assert!(cx.debug_bounds("settings-scrollbar").is_none());
     assert!(cx.debug_bounds("settings-fade-top").is_none());

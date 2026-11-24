@@ -28,7 +28,7 @@ fn source_only_manifest_restores_multiple_sources_and_missing_source_is_retryabl
         assert!(tabs.read(cx).tabs[1].view().is_none());
         assert_eq!(tabs.read(cx).snapshot(cx).tabs.len(), 2);
     });
-    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_next_recent(window, cx));
     cx.run_until_parked();
     let view = active(&tabs, cx);
     cx.update(|_, cx| assert!(view.read(cx).preview.retryable()));
@@ -37,69 +37,74 @@ fn source_only_manifest_restores_multiple_sources_and_missing_source_is_retryabl
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert!(!view.read(cx).preview.retryable());
-        assert!(!view.read(cx).dirty(cx));
+        assert!(!view.read(cx).unsaved(cx));
     });
 }
 
+/// A document of `markdown` in the Vault under `dir`, with `source` as its
+/// original when given; a tab record naming it.
+fn vault_tab(dir: &std::path::Path, markdown: &str, source: Option<&std::path::Path>) -> TabRecord {
+    let vault = mdoc_vault::Vault::open(dir.join("vault"), &[3; 32]).unwrap();
+    let new = mdoc_vault::NewDocument {
+        project: None,
+        title: "note".into(),
+        source_kind: mdoc_vault::SourceKind::Pdf,
+        origin: mdoc_vault::DocumentOrigin::Ordinary,
+        markdown: markdown.into(),
+    };
+    let stored = match source {
+        Some(source) => vault
+            .import_document(
+                new,
+                std::fs::File::open(source).unwrap(),
+                mdoc_vault::OriginalInfo {
+                    file_name: source.file_name().unwrap().to_string_lossy().into_owned(),
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
+        None => vault.create_document(new).unwrap(),
+    };
+    let mut record = TabRecord::default();
+    record.set_document(mdoc_store::document_id::DocumentId::Vault(
+        mdoc_store::document_id::VaultId::parse(&stored.id).unwrap(),
+    ));
+    record
+}
+
 #[gpui::test]
-fn restoration_is_lazy_and_missing_files_remain_retryable(cx: &mut TestAppContext) {
+fn restoration_is_lazy_and_keeps_the_caret(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let first = dir.path().join("first.md");
-    let missing = dir.path().join("missing.md");
-    std::fs::write(&first, "Привет").unwrap();
+    let mut first = vault_tab(dir.path(), "Привет", None);
+    first.caret = usize::MAX;
+    let second = vault_tab(dir.path(), "second", None);
     let session = Session {
-        tabs: vec![
-            TabRecord {
-                markdown: first.clone(),
-                caret: usize::MAX,
-                ..TabRecord::default()
-            },
-            TabRecord {
-                markdown: missing.clone(),
-                ..TabRecord::default()
-            },
-        ],
+        tabs: vec![first, second],
         ..Session::default()
     };
-    let (tabs, cx) = boot(cx, session);
+    let (tabs, cx) = boot_on_vault(cx, session, &dir.path().join("vault"));
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert!(tabs.tabs[1].view().is_none());
         let view = tabs.active_view().unwrap();
         assert_eq!(view.read(cx).editor.read(cx).cursor(), "Привет".len());
     });
-    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_next_recent(window, cx));
     cx.run_until_parked();
     let view = active(&tabs, cx);
-    cx.update(|_, cx| assert!(view.read(cx).lifecycle.unavailable()));
-    std::fs::write(missing, "now present").unwrap();
-    cx.dispatch_action(RetryDocument);
-    cx.run_until_parked();
-    cx.update(|_, cx| {
-        assert!(!view.read(cx).lifecycle.unavailable());
-        assert_eq!(view.read(cx).editor.read(cx).text(), "now present");
-    });
-    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(first, window, cx));
-    cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 2));
+    cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), "second"));
 }
 
 #[gpui::test]
-fn snapshot_keeps_saved_pairs_and_omits_unsaved_buffers(cx: &mut TestAppContext) {
+fn snapshot_names_documents_by_id_and_never_their_text(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let note = dir.path().join("note.md");
-    std::fs::write(&note, "saved").unwrap();
-    let attachment = dir.path().join("not-loaded.docx");
+    let mut record = vault_tab(dir.path(), "saved", None);
+    record.preview_visible = false;
     let session = Session {
-        tabs: vec![TabRecord {
-            markdown: note,
-            attachment: Some(attachment.clone()),
-            preview_visible: false,
-            ..TabRecord::default()
-        }],
+        tabs: vec![record],
         ..Session::default()
     };
-    let (tabs, cx) = boot(cx, session);
+    let (tabs, cx) = boot_on_vault(cx, session, &dir.path().join("vault"));
     cx.simulate_input("dirty text");
     cx.dispatch_action(New);
     cx.run_until_parked();
@@ -107,21 +112,12 @@ fn snapshot_keeps_saved_pairs_and_omits_unsaved_buffers(cx: &mut TestAppContext)
     cx.run_until_parked();
     cx.update(|_, cx| {
         let snapshot = tabs.read(cx).snapshot(cx);
-        assert_eq!(snapshot.tabs.len(), 1);
-        assert_eq!(snapshot.tabs[0].attachment.as_ref(), Some(&attachment));
+        assert!(snapshot.tabs.iter().all(|tab| tab.attachment.is_none()));
         assert!(!snapshot.tabs[0].preview_visible);
         let serialized = serde_json::to_string(&snapshot).unwrap();
         assert!(!serialized.contains("dirty text"));
         assert!(!serialized.contains("untitled secret"));
-        assert!(
-            tabs.read(cx).tabs[0]
-                .view()
-                .unwrap()
-                .read(cx)
-                .preview
-                .pdf()
-                .is_none()
-        );
+        assert!(!serialized.contains("saved"));
     });
 }
 
@@ -129,24 +125,17 @@ fn snapshot_keeps_saved_pairs_and_omits_unsaved_buffers(cx: &mut TestAppContext)
 fn checkpoint_serializes_latest_state_and_restores_pdf_position(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("session.json");
-    let note = dir.path().join("note.md");
-    std::fs::write(&note, "markdown").unwrap();
     let pdf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
-    let (tabs, cx) = boot(
-        cx,
-        Session {
-            tabs: vec![TabRecord {
-                markdown: note,
-                attachment: Some(pdf),
-                preview_visible: true,
-                preview_page: 0,
-                preview_zoom: Some(1.5),
-                preview_fit: session_store::PreviewFit::Manual,
-                ..TabRecord::default()
-            }],
-            ..Session::default()
-        },
-    );
+    let mut record = vault_tab(dir.path(), "markdown", Some(&pdf));
+    record.preview_visible = true;
+    record.preview_page = 0;
+    record.preview_zoom = Some(1.5);
+    record.preview_fit = session_store::PreviewFit::Manual;
+    let session = Session {
+        tabs: vec![record],
+        ..Session::default()
+    };
+    let (tabs, cx) = boot_on_vault(cx, session, &dir.path().join("vault"));
     let view = active(&tabs, cx);
     cx.update(|_, cx| {
         let pdf = view.read(cx).preview.pdf().unwrap().read(cx);
@@ -175,22 +164,15 @@ fn checkpoint_serializes_latest_state_and_restores_pdf_position(cx: &mut TestApp
 #[gpui::test]
 fn restored_pdf_keeps_auto_fit_and_manual_zoom_remains_manual(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let markdown = dir.path().join("note.md");
-    std::fs::write(&markdown, "note").unwrap();
     let attachment = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
-    let (tabs, cx) = boot(
-        cx,
-        Session {
-            tabs: vec![TabRecord {
-                markdown,
-                attachment: Some(attachment),
-                preview_visible: true,
-                preview_zoom: Some(1.0),
-                ..TabRecord::default()
-            }],
-            ..Session::default()
-        },
-    );
+    let mut record = vault_tab(dir.path(), "note", Some(&attachment));
+    record.preview_visible = true;
+    record.preview_zoom = Some(1.0);
+    let session = Session {
+        tabs: vec![record],
+        ..Session::default()
+    };
+    let (tabs, cx) = boot_on_vault(cx, session, &dir.path().join("vault"));
     cx.simulate_resize(size(px(1400.), px(850.)));
     let view = active(&tabs, cx);
     let pdf = cx.update(|_, cx| view.read(cx).preview.pdf().cloned().unwrap());

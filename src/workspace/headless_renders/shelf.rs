@@ -1,5 +1,5 @@
 //! The menu bar shelf: ready, not-ready and changed-since-review
-//! rows with prose previews, case labels and the drag hint; the applied
+//! rows with prose previews, Project labels and the drag hint; the applied
 //! demos and their "N replaced" hovered (#304); a row's "Copied"; the
 //! first-close note; the empty shelf and the locked shelf.
 //! The shelf is drawn on a stage window of the usual size, at the top right
@@ -7,18 +7,16 @@
 //! its blur) is involved.
 use super::{Driver, HEIGHT, Result, WIDTH};
 use crate::{
-    shelf::{ClosedMember, OpenTab, ShelfDocument, fingerprint},
+    shelf::{OpenTab, ShelfDocument, StoredDocument},
     shelf_ui::{NOTE_HEIGHT, NOTE_WIDTH, NoteView, ShelfContent, ShelfView},
     style::Theme,
-    workspace::{ClipboardSource, Workspace},
+    workspace::{ClipboardSource, ProjectLink, Workspace},
 };
 use gpui::{AnyView, App, Entity, Render, Window, div, prelude::*, px, size};
 use mdoc_pii::{Category, restore::ExportedIdentity};
-use mdoc_store::cases::{Case, CaseLink};
 use serde_json::{Value, json};
 use std::{
     cell::Cell,
-    path::Path,
     rc::Rc,
     sync::Arc,
     time::{Duration, SystemTime},
@@ -100,19 +98,20 @@ fn at(hours: u64) -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(1_791_763_200 + hours * 3600)
 }
 
-/// Ready, not-ready and changed-since-review documents of one public,
-/// synthetic case. Only its pseudonymized text ever reaches a row.
+/// Ready, not-ready and changed-since-review documents, three of them in
+/// one public, synthetic Project. Only their pseudonymized text ever
+/// reaches a row.
 fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
     let names = vec![
         identity("PERSON_1", Category::Person, "Anna Petrova"),
         identity("ORG_1", Category::Organization, "Northwind Traders Ltd"),
         identity("PERSON_2", Category::Person, "Boris Ivanov"),
     ];
-    let member = Path::new("/Cases/Anna Petrova notice.md");
-    let reviewed = "PERSON_1 gives notice to ORG_1 under clause 9.\n";
-    let mut case = Case::new("Petrova v Northwind".into(), &names, Some(member.into()));
-    case.set_reviewed(member, Some(fingerprint(reviewed)));
-    let link = CaseLink::of(&case);
+    let link = ProjectLink {
+        id: "c".repeat(32),
+        name: "Petrova v Northwind".into(),
+        colour: None,
+    };
     // Page furniture and a heading come first; the preview starts at the
     // prose, with its Markdown hidden.
     let ready = "— 1 —\n\n# Services Agreement\n\nPage 1 of 5\n\nThis **agreement** between \
@@ -121,55 +120,70 @@ fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
     let uncased = "Minutes of the meeting held with PERSON_1 on the revised payment schedule.\n";
     let pending = "PERSON_1 asked Boris Ivanov to review the draft.\n";
     let mut documents = vec![
-        ShelfDocument::of_tab(OpenTab {
-            id: 1,
-            title: "Anna Petrova services agreement.md",
-            text: ready,
-            aliases: vec!["PERSON_1", "ORG_1", "PERSON_2"],
-            pending: 0,
-            checking: false,
-            names: names.clone(),
-            case: Some(link.clone()),
-            edited: at(14),
-        }),
-        ShelfDocument::of_tab(OpenTab {
-            id: 3,
-            title: "Meeting notes 12 October.md",
-            text: uncased,
-            aliases: vec!["PERSON_1"],
-            pending: 0,
-            checking: false,
-            names: names.clone(),
-            case: None,
-            edited: at(13),
-        }),
-        ShelfDocument::of_tab(OpenTab {
-            id: 2,
-            title: "Draft memo.md",
-            text: pending,
-            aliases: vec!["PERSON_1"],
-            pending: 2,
-            checking: false,
-            names: names.clone(),
-            case: Some(link),
-            edited: at(12),
-        }),
+        ShelfDocument::of_tab(
+            OpenTab {
+                id: 1,
+                title: "Anna Petrova services agreement.md",
+                text: ready,
+                aliases: vec!["PERSON_1", "ORG_1", "PERSON_2"],
+                pending: 0,
+                checking: false,
+                names: names.clone(),
+                project: Some(link.clone()),
+                edited: at(14),
+                stored: None,
+            }
+            .checked(),
+        ),
+        ShelfDocument::of_tab(
+            OpenTab {
+                id: 3,
+                title: "Meeting notes 12 October.md",
+                text: uncased,
+                aliases: vec!["PERSON_1"],
+                pending: 0,
+                checking: false,
+                names: names.clone(),
+                project: None,
+                edited: at(13),
+                stored: None,
+            }
+            .checked(),
+        ),
+        ShelfDocument::of_tab(
+            OpenTab {
+                id: 2,
+                title: "Draft memo.md",
+                text: pending,
+                aliases: vec!["PERSON_1"],
+                pending: 2,
+                checking: false,
+                names: names.clone(),
+                project: Some(link.clone()),
+                edited: at(12),
+                stored: None,
+            }
+            .checked(),
+        ),
     ]
     .into_iter()
     .flatten()
     .collect::<Vec<_>>();
-    // Cases locked: closed members are hidden.
-    if !locked {
-        documents.push(ShelfDocument::of_member(ClosedMember {
-            case: &case,
-            path: member,
-            text: Some("PERSON_1 gives notice to ORG_1 under clause 9 and 10.\n"),
+    // The Vault locked: documents no tab shows are not listed.
+    if !locked && let Some(id) = mdoc_store::document_id::VaultId::parse(&"d".repeat(32)) {
+        documents.extend(ShelfDocument::of_stored(StoredDocument {
+            id,
+            title: "Anna Petrova notice",
+            text: "PERSON_1 gives notice to ORG_1 under clause 9 and 10.\n",
+            names: names.clone(),
+            project: Some(link.clone()),
             edited: at(9),
+            outbound: Some(Err(mdoc_vault::Readiness::ChangedSinceReview)),
         }));
     }
-    let source = ClipboardSource::Case {
-        id: case.id.clone(),
-        name: case.name.clone(),
+    let source = ClipboardSource::Project {
+        id: link.id.clone(),
+        name: link.name.clone(),
     };
     (documents, source)
 }
@@ -217,17 +231,21 @@ fn demos() -> Result<Vec<ShelfDocument>> {
             })
             .collect::<Result<Vec<_>>>()?;
         let aliases = names.iter().map(|n| n.alias.as_str()).collect();
-        documents.extend(ShelfDocument::of_tab(OpenTab {
-            id: 10 + index as u64,
-            title,
-            text,
-            aliases,
-            pending: 0,
-            checking: false,
-            names: names.clone(),
-            case: None,
-            edited: at(14 - index as u64),
-        }));
+        documents.extend(ShelfDocument::of_tab(
+            OpenTab {
+                id: 10 + index as u64,
+                title,
+                text,
+                aliases,
+                pending: 0,
+                checking: false,
+                names: names.clone(),
+                project: None,
+                edited: at(14 - index as u64),
+                stored: None,
+            }
+            .checked(),
+        ));
     }
     Ok(documents)
 }
@@ -364,8 +382,8 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     // Locked as on a launch whose quiet probe could not read the key: open
     // tabs still show; the clipboard buttons ask to unlock.
     d.change(|w, _, _| {
-        w.case_coordinator.reopen(None);
-        w.case_coordinator.lock();
+        w.vault.opened(super::super::vault_state::Opening::MayAsk);
+        w.projects.clear();
     })?;
     let (rows, source) = documents(true);
     shelf(d, "shelf-locked", content(rows, source), None)

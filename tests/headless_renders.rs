@@ -222,7 +222,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
             }
             // The shelf (ADR 0084): only ready rows copy or drag and show a
             // preview, of prose without Markdown syntax or an original;
-            // locked cases hide closed members and ask to unlock.
+            // a locked Vault lists open tabs only and asks to unlock.
             if name.starts_with("shelf") && *name != "shelf-note" {
                 let state = &record["state"];
                 let rows = state["rows"].as_array().unwrap();
@@ -288,11 +288,14 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     assert_eq!(record["state"]["back_enabled"], true, "{theme}/{name}");
                     assert_eq!(record["state"]["forward_enabled"], true, "{theme}/{name}");
                     assert_eq!(record["state"]["back_label"], "Back to Home");
-                    assert_eq!(record["state"]["forward_label"], "Forward to Untitled.md");
+                    assert_eq!(record["state"]["forward_label"], "Forward to Meeting notes");
                 }
                 assert_eq!(
                     record["state"]["palette"],
-                    *name == "command-palette",
+                    matches!(
+                        *name,
+                        "command-palette" | "palette-search-title" | "palette-search-project"
+                    ),
                     "stale palette on {theme}/{name}"
                 );
                 assert_eq!(
@@ -417,31 +420,39 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     "stale settings on {theme}/{name}"
                 );
                 assert_eq!(
-                    record["state"]["case_page"],
+                    record["state"]["project_page"],
                     matches!(
                         *name,
-                        "case-page"
-                            | "case-page-locked"
-                            | "case-page-lists"
-                            | "rename-case"
-                            | "case-categories"
+                        "project-page"
+                            | "project-page-replies"
+                            | "project-page-names"
+                            | "project-page-menu"
+                            | "project-page-lists"
+                            | "rename-project"
+                            | "project-categories"
                     ),
                     "{theme}/{name}"
                 );
+                // The move toast says where the fixture went, with Undo.
                 assert_eq!(
-                    record["state"]["case_page_locked"],
-                    *name == "case-page-locked",
+                    record["state"]["move_toast"],
+                    if *name == "project-move-toast" {
+                        Value::from("“Services Agreement” moved to “Public fixture”.")
+                    } else {
+                        Value::Null
+                    },
                     "{theme}/{name}"
                 );
-                if *name == "case-page" {
-                    assert!(record["state"]["case_page_documents"].as_u64().unwrap() >= 3);
-                    assert!(record["state"]["case_page_names"].as_u64().unwrap() > 0);
-                    let members = record["state"]["case_page_members"].as_array().unwrap();
-                    assert_eq!(members[0]["open"], true, "{theme}: joined fixture is open");
+                if *name == "project-page" {
+                    assert_eq!(record["state"]["project_page_documents"], 2);
+                    assert!(record["state"]["project_page_names"].as_u64().unwrap() > 0);
+                    let members = record["state"]["project_page_members"].as_array().unwrap();
+                    // By title: "Services Agreement", then "Witness statement".
+                    assert_eq!(members[0]["open"], true, "{theme}: moved fixture is open");
                     let mentions = members[0]["mentions"].as_array().unwrap();
                     assert_eq!(
                         mentions.len(),
-                        record["state"]["case_page_names"].as_u64().unwrap() as usize
+                        record["state"]["project_page_names"].as_u64().unwrap() as usize
                     );
                     assert!(
                         mentions.iter().all(|count| count.as_u64().unwrap() > 0),
@@ -452,9 +463,11 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 }
                 // ADR 0075: the primary button and the 20-file cap.
                 let (primary, ticked) = match *name {
-                    "folder-sheet" => (Value::from("Open as case"), Value::from(4)),
-                    "folder-sheet-over-cap" => (Value::from("Open as case"), Value::from(20)),
-                    "folder-sheet-add-to-case" => {
+                    "folder-sheet" => (Value::from("Open as New Project"), Value::from(4)),
+                    "folder-sheet-over-cap" => {
+                        (Value::from("Open as New Project"), Value::from(20))
+                    }
+                    "folder-sheet-add-to-project" => {
                         (Value::from("Add to “Public fixture”"), Value::from(4))
                     }
                     _ => (Value::Null, Value::Null),

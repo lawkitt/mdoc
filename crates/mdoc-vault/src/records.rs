@@ -99,6 +99,13 @@ pub struct Document {
     /// last it wrote.
     pub revision: u64,
     pub markdown: String,
+    /// Imported with no text yet: the app converts its Source Original when
+    /// it opens. Set only by [`crate::Vault::import_document`] with empty
+    /// text; a move keeps it; a save of text clears it (the app clears it
+    /// itself for a conversion that made no text), and no later save sets
+    /// it again. Read it through [`Document::pending_conversion`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unconverted: bool,
     /// Scanned for names, so a scan that found nothing reopens as scanned.
     #[serde(default)]
     pub scanned: bool,
@@ -128,6 +135,28 @@ pub struct Document {
     /// review.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counts: Option<ReviewCounts>,
+    /// The user's private notes (#1091 Decision 3), as typed; empty: none.
+    /// Never part of what leaves for an AI ([`crate::Vault::text_for_ai`]),
+    /// nor of its summary: lists and search never read them. Export
+    /// Project writes them beside the Markdown.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub notes: String,
+    /// The AI Reply it was promoted from ([`crate::Vault::promote_reply`]);
+    /// set only there, and kept as stored by every later write. The Reply
+    /// may have been deleted since.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_reply: Option<String>,
+}
+
+impl Document {
+    /// Whether its Source Original still waits to be converted: no text,
+    /// and imported so ([`Document::unconverted`]) or, for a Document
+    /// imported before that flag, never written since (revision 1).
+    pub fn pending_conversion(&self) -> bool {
+        self.original.is_some()
+            && self.markdown.is_empty()
+            && (self.unconverted || self.revision == 1)
+    }
 }
 
 /// What the Document record knows of its Source Original; the sealed file

@@ -231,7 +231,7 @@ pub(super) struct MappingUi {
     /// The panel's filter button and its menu, likewise.
     pub(super) filter_focus: FocusHandle,
     pub(super) filter_menu_focus: FocusHandle,
-    /// Merge hints dismissed in this tab or its case, by the wordings that
+    /// Merge hints dismissed in this tab or its Project, by the wordings that
     /// matched. Forgetting removes affected pairs and clears caches.
     dismissed_hints: std::collections::HashSet<(Arc<str>, Arc<str>)>,
     /// The fuller wording of the last hint Merge and the state it created.
@@ -365,8 +365,8 @@ impl MappingUi {
         self.dismissed_hints.len()
     }
     /// Irreversible forgetting also discards hint wordings and cached rows;
-    /// detaching this tab must not carry a forgotten name into a new case.
-    pub(super) fn forget_case_originals(&mut self, originals: &[String]) {
+    /// moving this tab must not carry a forgotten name into a new Project.
+    pub(super) fn forget_project_originals(&mut self, originals: &[String]) {
         let forgotten = |wording: &Arc<str>| originals.iter().any(|o| o == wording.as_ref());
         self.dismissed_hints
             .retain(|(from, into)| !forgotten(from) && !forgotten(into));
@@ -380,7 +380,7 @@ impl MappingUi {
         self.projection.get_mut().take();
         self.entries_cache.get_mut().take();
     }
-    /// Every dismissed pair, sorted, for saving into a new case.
+    /// Every dismissed pair, sorted, for saving into a new Project.
     pub(super) fn dismissed_hint_pairs(&self) -> Vec<(String, String)> {
         let mut pairs: Vec<_> = self
             .dismissed_hints
@@ -570,7 +570,6 @@ impl DocumentView {
     /// under way or names were found or applied (the toolbar's panel button).
     pub(crate) fn can_show_replacements(&self) -> bool {
         !self.lifecycle.source_only()
-            && self.pii.restore().is_none()
             && (self.pii.reviewing()
                 || self.replacements_open()
                 || !self.pii.review().variants().is_empty()
@@ -599,6 +598,14 @@ impl DocumentView {
         }
         cx.notify();
     }
+    /// Open the Inspector without starting a review: its Notes tab needs
+    /// none, and Pseudonymize still scans on its first click.
+    pub(crate) fn open_inspector(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.pii.mapping.open {
+            self.pii.mapping.open_panel(window.focused(cx));
+        }
+        cx.notify();
+    }
     /// Stop the running scan. With nothing found or applied yet, also leave
     /// review, so Pseudonymize starts afresh next time.
     pub(super) fn stop_pii_scan(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -610,7 +617,7 @@ impl DocumentView {
         }
         cx.notify();
     }
-    pub(super) fn close_replacements(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn close_replacements(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.pii.setup = false;
         let previous = self.pii.mapping.close_panel();
         self.pii.dismiss_popup();

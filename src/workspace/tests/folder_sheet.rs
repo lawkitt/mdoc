@@ -1,15 +1,10 @@
-//! The folder sheet: a dropped folder shows its files before
-//! anything opens; Open files never reads the case key; one folder opens at
-//! most 20 new tabs.
+//! The folder sheet: a dropped folder shows its files before anything
+//! opens; Open as New Project and Add to a Project import into it; one
+//! folder opens at most 20 new tabs.
 use super::*;
 use crate::workspace::ShowHome;
 use crate::workspace::folder_sheet::{CAP, CAP_NOTE, Status};
 use gpui::Action;
-use mdoc_store::cases::{Case, CaseError, Store};
-
-fn store(dir: &std::path::Path) -> Store {
-    Store::with_key(dir.join("cases"), &[3; 32])
-}
 
 /// A folder `name` in `dir` holding Markdown files `files`.
 fn folder(dir: &std::path::Path, name: &str, files: &[&str]) -> PathBuf {
@@ -48,22 +43,35 @@ fn focused_row(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<u
     cx.update(|window, cx| tabs.read(cx).focused_folder_row(window))
 }
 
-/// Every tab's case, in sidebar order: its link once loaded, else its record.
-fn tab_cases(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<Option<String>> {
+/// Every tab's Project, in sidebar order.
+/// The live views' Projects, in `tab_names`' order.
+fn tab_projects(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<Option<String>> {
     cx.update(|_, cx| {
-        tabs.read(cx)
-            .tabs
-            .iter()
+        let w = tabs.read(cx);
+        let mut named: Vec<(String, Option<String>)> = (w.tabs.iter())
             .map(|t| {
-                t.view()
-                    .and_then(|v| v.read(cx).case.link().map(|l| l.id.clone()))
-                    .or(t.record().case.clone())
+                let name = t
+                    .view()
+                    .map(|view| view.read(cx).display_name())
+                    .unwrap_or_else(|| tab_label(t, cx).name);
+                (name, w.sidebar_project_link(t, cx).map(|l| l.id))
             })
+            .collect();
+        named.sort_by_key(|(name, _)| name.to_lowercase());
+        named.into_iter().map(|(_, project)| project).collect()
+    })
+}
+
+/// Every Project the window has, by name.
+fn project_names(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String> {
+    cx.update(|_, cx| {
+        (tabs.read(cx).projects.summaries().into_iter())
+            .map(|p| p.name)
             .collect()
     })
 }
 
-/// Load every tab, so members join as their Markdown loads.
+/// Load every tab, so members get their names as they load.
 fn load_all(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
     let ids: Vec<_> = cx.update(|_, cx| tabs.read(cx).tabs.iter().map(|t| t.id()).collect());
     for id in ids {
@@ -84,7 +92,6 @@ fn a_dropped_folder_shows_its_files_before_anything_opens(cx: &mut TestAppContex
     std::fs::write(path.join("notes.bin"), [0u8, 1, 2]).unwrap();
     std::fs::write(path.join(".draft.md"), "Hidden").unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update(cx, |tabs, _| tabs.use_case_store(store(dir.path())));
     drop_paths(&tabs, cx, vec![path.clone()]);
     assert!(cx.debug_bounds("folder-sheet").is_some());
     cx.update(|_, cx| {
@@ -96,7 +103,7 @@ fn a_dropped_folder_shows_its_files_before_anything_opens(cx: &mut TestAppContex
         let sheet = tabs.folder_sheets.sheet().unwrap();
         assert_eq!(sheet.name(), "Petrova v Northwind");
         assert_eq!(sheet.skipped(), Some("1 subfolder, 1 hidden file skipped"));
-        assert_eq!(sheet.primary_label(), "Open as case");
+        assert_eq!(sheet.primary_label(), "Open as New Project");
     });
     // Sorted by name, all ticked, README included: no name rules.
     assert_eq!(
@@ -107,18 +114,16 @@ fn a_dropped_folder_shows_its_files_before_anything_opens(cx: &mut TestAppContex
             ("README.md".into(), Status::New, true),
         ]
     );
-    // Open as case: the files open and join a case named after the folder.
+    // Open as New Project: the files are imported into a Project named
+    // after the folder.
     click_toolbar(cx, "folder-primary");
     load_all(&tabs, cx);
     assert!(!sheet_open(&tabs, cx));
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md", "README.md"]);
-    let case = cx.update(|_, cx| {
-        let cases = tabs.read(cx).case_coordinator.cases();
-        assert_eq!(cases.len(), 1);
-        assert_eq!(cases[0].name, "Petrova v Northwind");
-        cases[0].id.clone()
-    });
-    assert_eq!(tab_cases(&tabs, cx), vec![Some(case); 3]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b", "README"]);
+    assert_eq!(project_names(&tabs, cx), ["Petrova v Northwind"]);
+    let project = cx.update(|_, cx| tabs.read(cx).projects.summaries()[0].id.clone());
+    assert_eq!(tab_projects(&tabs, cx), vec![Some(project.clone()); 3]);
+    assert_eq!(vault(&tabs, cx).documents_in(Some(&project)).len(), 3);
 }
 
 #[gpui::test]
@@ -138,32 +143,16 @@ fn an_empty_folder_posts_a_notice_and_shows_no_sheet(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn open_files_never_reads_the_case_key(cx: &mut TestAppContext) {
+fn open_files_opens_them_unfiled(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let path = folder(dir.path(), "Matter", &["a.md", "b.md"]);
     let (tabs, cx) = boot_home(cx, Session::default());
-    // As at a launch where reading the key would ask: cases stay locked.
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Ok(store(dir.path())));
-        tabs.load_cases(window, cx);
-        assert!(tabs.case_coordinator.locked());
-        tabs.cases.key_reads = 0;
-    });
     drop_paths(&tabs, cx, vec![path]);
     click_toolbar(cx, "folder-open-files");
     load_all(&tabs, cx);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
-    assert_eq!(tab_cases(&tabs, cx), [None, None]);
-    cx.update(|_, cx| {
-        let tabs = tabs.read(cx);
-        assert_eq!(tabs.cases.key_reads, 0, "Open files never reads the key");
-        assert!(
-            tabs.cases.test_open.is_some(),
-            "the staged key is untouched"
-        );
-        assert!(!tabs.cases.explainer);
-        assert!(tabs.case_coordinator.cases().is_empty());
-    });
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
+    assert_eq!(tab_projects(&tabs, cx), [None, None]);
+    assert!(project_names(&tabs, cx).is_empty());
 }
 
 #[gpui::test]
@@ -206,7 +195,7 @@ fn one_folder_opens_at_most_twenty_new_tabs(cx: &mut TestAppContext) {
         assert!(sheet.rows()[CAP].ticked && !sheet.rows()[0].ticked);
     });
     click_toolbar(cx, "folder-open-files");
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 1 + CAP));
+    assert_eq!(vault(&tabs, cx).documents().len(), 1 + CAP);
 }
 
 #[gpui::test]
@@ -226,14 +215,11 @@ fn the_refusal_reads_up_to_twenty_files_at_a_time(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_folder_with_files_in_a_loaded_case_adds_to_it(cx: &mut TestAppContext) {
+fn a_folder_with_files_in_a_project_adds_to_it(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx, contract) = applied_document(cx, dir.path(), Session::default());
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let case = tabs
-        .update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx))
-        .unwrap();
-    cx.run_until_parked();
+    let project = new_project(&tabs, cx, first);
     std::fs::write(dir.path().join("letter.md"), "A letter").unwrap();
     std::fs::write(dir.path().join("memo.md"), "A memo").unwrap();
     drop_paths(&tabs, cx, vec![dir.path().to_path_buf()]);
@@ -246,7 +232,7 @@ fn a_folder_with_files_in_a_loaded_case_adds_to_it(cx: &mut TestAppContext) {
         [
             (
                 "contract.md".into(),
-                Status::InCase(Some("contract".into())),
+                Status::InProject("contract".into()),
                 true
             ),
             ("letter.md".into(), Status::New, true),
@@ -258,34 +244,24 @@ fn a_folder_with_files_in_a_loaded_case_adds_to_it(cx: &mut TestAppContext) {
     cx.run_until_parked();
     load_all(&tabs, cx);
     assert!(!sheet_open(&tabs, cx));
-    assert_eq!(
-        tab_names(&tabs, cx),
-        ["contract.md", "letter.md", "memo.md"]
-    );
-    assert_eq!(tab_cases(&tabs, cx), vec![Some(case.clone()); 3]);
-    cx.update(|_, cx| {
-        let tabs = tabs.read(cx);
-        assert_eq!(tabs.case_coordinator.cases().len(), 1, "no new case");
-        let members = &tabs.case_coordinator.case(&case).unwrap().members;
-        assert!(members.contains(&session_store::identity(&contract)));
-        assert_eq!(members.len(), 3);
-    });
+    assert_eq!(tab_names(&tabs, cx), ["contract", "letter", "memo"]);
+    assert_eq!(tab_projects(&tabs, cx), vec![Some(project.clone()); 3]);
+    assert_eq!(project_names(&tabs, cx).len(), 1, "no new Project");
+    assert_eq!(vault(&tabs, cx).documents_in(Some(&project)).len(), 3);
 }
 
 #[gpui::test]
-fn a_folder_dropped_on_a_case_header_adds_to_that_case(cx: &mut TestAppContext) {
+fn a_folder_dropped_on_a_project_row_adds_to_that_project(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let case = tabs
-        .update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx))
-        .unwrap();
-    cx.run_until_parked();
+    let project = new_project(&tabs, cx, first);
     let other = tempfile::tempdir().unwrap();
     let path = folder(other.path(), "Unrelated", &["note.md"]);
-    // A real drop on the header, not on the list.
+    // A real drop on the Project's row.
     draw(cx);
-    let header = cx.debug_bounds("case-header").unwrap();
+    let header: &'static str = Box::leak(format!("tree-project-{project}").into_boxed_str());
+    let header = cx.debug_bounds(header).unwrap();
     drag_files(cx, &[path], header.center());
     drop_files(cx, header.center());
     cx.update(|_, cx| {
@@ -294,16 +270,34 @@ fn a_folder_dropped_on_a_case_header_adds_to_that_case(cx: &mut TestAppContext) 
     });
     click_toolbar(cx, "folder-primary");
     load_all(&tabs, cx);
-    assert_eq!(tab_names(&tabs, cx), ["contract.md", "note.md"]);
-    assert_eq!(tab_cases(&tabs, cx), vec![Some(case); 2]);
+    assert_eq!(tab_names(&tabs, cx), ["contract", "note"]);
+    assert_eq!(tab_projects(&tabs, cx), vec![Some(project); 2]);
 }
 
 #[gpui::test]
-fn an_open_file_without_a_case_joins_the_new_case(cx: &mut TestAppContext) {
+fn files_dropped_on_a_project_row_are_imported_into_it(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let project = new_project(&tabs, cx, first);
+    let other = tempfile::tempdir().unwrap();
+    let note = other.path().join("note.md");
+    std::fs::write(&note, "A note").unwrap();
+    draw(cx);
+    let header: &'static str = Box::leak(format!("tree-project-{project}").into_boxed_str());
+    let header = cx.debug_bounds(header).unwrap();
+    drag_files(cx, &[note], header.center());
+    drop_files(cx, header.center());
+    load_all(&tabs, cx);
+    assert_eq!(tab_names(&tabs, cx), ["contract", "note"]);
+    assert_eq!(tab_projects(&tabs, cx), vec![Some(project); 2]);
+}
+
+#[gpui::test]
+fn an_open_unfiled_file_moves_into_the_new_project(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let path = folder(dir.path(), "Matter", &["a.md", "b.md"]);
     let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update(cx, |tabs, _| tabs.use_case_store(store(dir.path())));
     drop_paths(&tabs, cx, vec![path.join("a.md")]);
     drop_paths(&tabs, cx, vec![path]);
     assert_eq!(
@@ -315,30 +309,61 @@ fn an_open_file_without_a_case_joins_the_new_case(cx: &mut TestAppContext) {
     );
     click_toolbar(cx, "folder-primary");
     load_all(&tabs, cx);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
-    let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
-    assert_eq!(tab_cases(&tabs, cx), vec![Some(case); 2]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
+    let project = cx.update(|_, cx| tabs.read(cx).projects.summaries()[0].id.clone());
+    assert_eq!(tab_projects(&tabs, cx), vec![Some(project); 2]);
+}
+
+/// Review of #1150: a file replaced on disk since its tab imported it is
+/// new bytes. Add to a Project imports them; the old Unfiled document is
+/// not moved in beside them.
+#[gpui::test]
+fn a_replaced_open_file_is_imported_not_moved(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = folder(dir.path(), "Matter", &["a.md"]);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    drop_paths(&tabs, cx, vec![path.join("a.md")]);
+    let old = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    std::fs::write(path.join("a.md"), "Replaced text").unwrap();
+    drop_paths(&tabs, cx, vec![path]);
+    click_toolbar(cx, "folder-primary");
+    load_all(&tabs, cx);
+    let project = cx.update(|_, cx| tabs.read(cx).projects.summaries()[0].id.clone());
+    let vault = vault(&tabs, cx);
+    let filed: Vec<String> = (vault.documents_in(Some(&project)).into_iter())
+        .map(|summary| vault.document(&summary.id).unwrap().markdown)
+        .collect();
+    assert_eq!(filed, ["Replaced text"]);
+    let unfiled: Vec<String> = (vault.documents_in(None).into_iter())
+        .map(|summary| vault.document(&summary.id).unwrap().markdown)
+        .collect();
+    assert_eq!(unfiled, ["Text of a.md"], "the old import stays Unfiled");
+    assert!(cx.update(|_, cx| tabs.read(cx).tabs.contains(old)));
 }
 
 #[gpui::test]
-fn an_open_file_in_another_case_stays_there(cx: &mut TestAppContext) {
+fn an_open_file_in_another_project_stays_there(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
     let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx, contract) = applied_document(cx, dir.path(), Session::default());
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let theirs = tabs
-        .update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx))
-        .unwrap();
-    cx.run_until_parked();
-    // A second loaded case holds more of the folder, so it is the target.
-    std::fs::write(dir.path().join("a.md"), "A").unwrap();
-    std::fs::write(dir.path().join("b.md"), "B").unwrap();
+    let theirs = new_project(&tabs, cx, first);
+    // A second Project holds more of the folder's open files: the target.
+    let mut others = Vec::new();
+    for name in ["Other.md", "b.md"] {
+        let text = format!("Boris Ivanov wrote {name}.");
+        others.push(open_applied(
+            &tabs,
+            cx,
+            dir.path(),
+            name,
+            &text,
+            &[("Boris Ivanov", Person)],
+        ));
+    }
+    let other = new_project(&tabs, cx, others[0]);
+    move_tab(&tabs, cx, others[1], Some(&other));
     std::fs::write(dir.path().join("c.md"), "C").unwrap();
-    let mut other = Case::new("Other".into(), &[], None);
-    other.members = ["a.md", "b.md", "c.md"]
-        .map(|name| session_store::identity(&dir.path().join(name)))
-        .to_vec();
-    let other_id = other.id.clone();
-    tabs.update(cx, |tabs, _| tabs.case_coordinator.cases_mut().push(other));
     drop_paths(&tabs, cx, vec![dir.path().to_path_buf()]);
     cx.update(|_, cx| {
         assert_eq!(
@@ -347,28 +372,20 @@ fn an_open_file_in_another_case_stays_there(cx: &mut TestAppContext) {
         );
     });
     let rows = sheet_rows(&tabs, cx);
-    assert_eq!(
-        rows[3],
-        (
-            "contract.md".into(),
-            Status::InCase(Some("contract".into())),
-            true
-        )
-    );
+    assert!(rows.contains(&(
+        "contract.md".into(),
+        Status::InProject("contract".into()),
+        true
+    )));
     click_toolbar(cx, "folder-primary");
     load_all(&tabs, cx);
     let names = tab_names(&tabs, cx);
     assert_eq!(names.len(), 4);
-    let cases = tab_cases(&tabs, cx);
-    for (name, case) in names.iter().zip(&cases) {
-        let want = if *name == "contract.md" {
-            &theirs
-        } else {
-            &other_id
-        };
-        assert_eq!(case.as_ref(), Some(want), "{name}");
+    let projects = tab_projects(&tabs, cx);
+    for (name, project) in names.iter().zip(&projects) {
+        let want = if *name == "contract" { &theirs } else { &other };
+        assert_eq!(project.as_ref(), Some(want), "{name}");
     }
-    assert!(contract.exists());
 }
 
 #[gpui::test]
@@ -381,7 +398,7 @@ fn several_folders_get_their_sheets_in_turn(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
     drop_paths(&tabs, cx, vec![first, loose, second]);
     // Plain files open at once; the folders wait.
-    assert_eq!(tab_names(&tabs, cx), ["loose.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["loose"]);
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert_eq!(tabs.folder_sheets.sheet().unwrap().name(), "First");
@@ -394,10 +411,10 @@ fn several_folders_get_their_sheets_in_turn(cx: &mut TestAppContext) {
             "Second"
         );
     });
-    assert_eq!(tab_names(&tabs, cx), ["loose.md"], "Cancel opens nothing");
+    assert_eq!(tab_names(&tabs, cx), ["loose"], "Cancel opens nothing");
     click_toolbar(cx, "folder-open-files");
     assert!(!sheet_open(&tabs, cx));
-    assert_eq!(tab_names(&tabs, cx), ["loose.md", "three.md", "two.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["loose", "three", "two"]);
 }
 
 #[gpui::test]
@@ -433,32 +450,30 @@ fn the_sheet_works_from_the_keyboard(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(!sheet_open(&tabs, cx));
     cx.update(|_, cx| assert!(no_documents(tabs.read(cx))));
-    // Enter opens as a case, with the ticks as they are.
-    tabs.update(cx, |tabs, _| tabs.use_case_store(store(dir.path())));
+    // Enter opens as a new Project, with the ticks as they are.
     drop_paths(&tabs, cx, vec![path]);
     cx.simulate_keystrokes("down space enter");
     cx.run_until_parked();
     load_all(&tabs, cx);
     assert!(!sheet_open(&tabs, cx));
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "c.md"]);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).case_coordinator.cases().len(), 1));
+    assert_eq!(tab_names(&tabs, cx), ["a", "c"]);
+    assert_eq!(project_names(&tabs, cx), ["Keys"]);
 }
 
 #[gpui::test]
-fn a_case_action_explains_the_keychain_and_not_now_returns_to_the_sheet(cx: &mut TestAppContext) {
+fn a_locked_vault_explains_the_keychain_and_not_now_returns_to_the_sheet(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let path = folder(dir.path(), "Matter", &["a.md", "b.md"]);
     let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update(cx, |tabs, _| {
-        tabs.stage_case_key(Ok(store(dir.path())));
-        tabs.cases.key_reads = 0;
-    });
     drop_paths(&tabs, cx, vec![path]);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).cases.key_reads, 0, "showing reads nothing"));
+    // The key locks while the sheet shows, as a Mac's may at launch.
+    let root = dir.path().join("vault");
+    tabs.update(cx, |tabs, _| {
+        tabs.stage_vault_key(Ok(mdoc_vault::Vault::open(root, &[3; 32]).unwrap()))
+    });
     cx.simulate_keystrokes("enter");
     draw(cx);
     assert!(cx.debug_bounds("keychain-explainer").is_some());
-    cx.update(|_, cx| assert!(tabs.read(cx).cases.test_open.is_some(), "not read yet"));
     // Not now: back to the sheet, with focus in it.
     cx.simulate_keystrokes("escape");
     draw(cx);
@@ -466,86 +481,22 @@ fn a_case_action_explains_the_keychain_and_not_now_returns_to_the_sheet(cx: &mut
     assert!(sheet_open(&tabs, cx));
     assert_eq!(focused_row(&tabs, cx), Some(0));
     cx.update(|_, cx| assert!(no_documents(tabs.read(cx))));
-    // Continue reads the key, then the files open as a case.
+    // Continue opens the Vault, then the files go into a new Project.
     cx.simulate_keystrokes("enter");
     draw(cx);
     click_toolbar(cx, "keychain-continue");
     load_all(&tabs, cx);
     assert!(!sheet_open(&tabs, cx));
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
-    let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
-    assert_eq!(tab_cases(&tabs, cx), vec![Some(case); 2]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
+    let project = cx.update(|_, cx| tabs.read(cx).projects.summaries()[0].id.clone());
+    assert_eq!(tab_projects(&tabs, cx), vec![Some(project); 2]);
 }
 
-#[gpui::test]
-fn without_the_key_the_files_open_without_a_case(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let path = folder(dir.path(), "Matter", &["a.md"]);
-    let (tabs, cx) = boot_home(cx, Session::default());
-    // After the explainer: the key store refuses.
-    tabs.update(cx, |tabs, _| {
-        tabs.stage_case_key(Err(CaseError::NoKeyStore))
-    });
-    drop_paths(&tabs, cx, vec![path.clone()]);
-    cx.simulate_keystrokes("enter");
-    draw(cx);
-    click_toolbar(cx, "keychain-continue");
-    assert!(!sheet_open(&tabs, cx));
-    assert_eq!(tab_names(&tabs, cx), ["a.md"]);
-    assert_eq!(tab_cases(&tabs, cx), [None]);
-    cx.update(|_, cx| {
-        let notice = tabs.read(cx).notices.message().unwrap().to_string();
-        assert!(
-            notice.starts_with("“Matter” opened without a case"),
-            "{notice}"
-        );
-    });
-    // Without an explainer (no key store at all), the same.
-    let other = folder(dir.path(), "Other", &["b.md"]);
-    tabs.update(cx, |tabs, _| {
-        tabs.cases.test_may_ask = false;
-        tabs.cases.test_open = Some(Err(CaseError::NoKeyStore));
-    });
-    drop_paths(&tabs, cx, vec![other]);
-    click_toolbar(cx, "folder-primary");
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
-    assert_eq!(tab_cases(&tabs, cx), [None, None]);
-}
-
-/// No tab holds a file: Home's placeholder at most.
+/// No tab holds a document: Home's placeholder at most.
 fn no_documents(tabs: &Workspace) -> bool {
     tabs.tabs
         .iter()
-        .all(|t| t.record().markdown.as_os_str().is_empty() && t.record().attachment.is_none())
-}
-
-#[gpui::test]
-fn a_declined_key_never_answers_a_later_sheet(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let a = folder(dir.path(), "A", &["a.md"]);
-    let b = folder(dir.path(), "B", &["b.md"]);
-    let c = folder(dir.path(), "C", &["c.md"]);
-    let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update(cx, |tabs, _| tabs.stage_case_key(Err(CaseError::KeyDenied)));
-    drop_paths(&tabs, cx, vec![a, b, c]);
-    // A: the Keychain is declined, so its file opens without a case.
-    cx.simulate_keystrokes("enter");
-    draw(cx);
-    click_toolbar(cx, "keychain-continue");
-    assert_eq!(tab_names(&tabs, cx), ["a.md"]);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).folder_sheets.sheet().unwrap().name(), "B"));
-    // B: this time the key opens. A's leftover action must not answer C.
-    tabs.update(cx, |tabs, _| tabs.stage_case_key(Ok(store(dir.path()))));
-    cx.simulate_keystrokes("enter");
-    draw(cx);
-    click_toolbar(cx, "keychain-continue");
-    cx.update(|_, cx| {
-        let tabs = tabs.read(cx);
-        assert_eq!(tabs.folder_sheets.sheet().map(|s| s.name()), Some("C"));
-        assert_eq!(tabs.case_coordinator.cases().len(), 1);
-        assert_eq!(tabs.case_coordinator.cases()[0].name, "B");
-    });
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+        .all(|t| t.record().attachment.is_none() && t.record().document.is_none())
 }
 
 #[gpui::test]
@@ -569,7 +520,7 @@ fn the_cap_holds_against_tabs_closed_behind_the_sheet(cx: &mut TestAppContext) {
     let open = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.remove(open, window, cx));
     click_toolbar(cx, "folder-open-files");
-    assert_eq!(tab_names(&tabs, cx).len(), CAP);
+    assert_eq!(vault(&tabs, cx).documents().len(), 1 + CAP);
 }
 
 #[gpui::test]
@@ -593,34 +544,11 @@ fn the_sheet_keeps_the_keyboard_while_a_loose_file_loads(cx: &mut TestAppContext
 }
 
 #[gpui::test]
-fn a_folder_waits_for_the_keychain_explainer(cx: &mut TestAppContext) {
+fn a_deferred_drop_keeps_its_project_header(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Ok(store(dir.path())));
-        tabs.create_case(tab, window, cx);
-    });
-    draw(cx);
-    assert!(cx.debug_bounds("keychain-explainer").is_some());
-    let other = tempfile::tempdir().unwrap();
-    drop_paths(&tabs, cx, vec![folder(other.path(), "Later", &["x.md"])]);
-    assert!(!sheet_open(&tabs, cx), "no sheet under the explainer");
-    cx.simulate_keystrokes("escape");
-    wait(cx, 200);
-    assert!(sheet_open(&tabs, cx));
-    assert_eq!(focused_row(&tabs, cx), Some(0));
-}
-
-#[gpui::test]
-fn a_deferred_drop_keeps_its_case_header(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
-    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let case = tabs
-        .update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx))
-        .unwrap();
-    cx.run_until_parked();
+    let case = new_project(&tabs, cx, tab);
     let other = tempfile::tempdir().unwrap();
     let path = folder(other.path(), "Unrelated", &["note.md"]);
     tabs.update(cx, |tabs, cx| tabs.install_prompts(cx));
@@ -630,7 +558,7 @@ fn a_deferred_drop_keeps_its_case_header(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|window, _| assert!(window.has_active_prompt()));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths_into(vec![path], None, Some(case), window, cx)
+        tabs.open_paths_into(vec![path], Some(case), window, cx)
     });
     cx.run_until_parked();
     assert!(!sheet_open(&tabs, cx));

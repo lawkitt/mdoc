@@ -217,7 +217,7 @@ fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpu
                 );
                 app.pii.mapping.open = false;
                 // Inspector: the Review tab.
-                app.inspector_share = false;
+                app.inspector = crate::document_view::Inspector::Review;
                 app.toggle_replacements_panel(window, cx);
             });
             cx.run_until_parked();
@@ -631,7 +631,7 @@ fn identity_keep_includes_linked_variants_but_preserves_a_separated_homonym(
             .occurrence_identity(initials, &detached)
             .unwrap();
         let revision = app.editor.read(cx).revision();
-        let dirty = app.dirty(cx);
+        let dirty = app.unsaved(cx);
         app.select_occurrence(Selection::Entity(identity), cx);
         app.pii.mapping.set_scope(Scope::Entity);
         app.keep_originals(window, cx);
@@ -641,7 +641,7 @@ fn identity_keep_includes_linked_variants_but_preserves_a_separated_homonym(
             revision,
             "Keep invalidates older scan revisions without editing source"
         );
-        assert_eq!(app.dirty(cx), dirty);
+        assert_eq!(app.unsaved(cx), dirty);
         assert_eq!(app.pii.review.remaining(), 1);
         assert_eq!(
             app.pii.review.occurrence_identity(initials, &detached),
@@ -2089,7 +2089,7 @@ fn panel_keyboard_ticks_jumps_expands_and_applies(cx: &mut gpui::TestAppContext)
         assert_eq!(app.pii.review.remaining(), 0);
         assert_eq!(app.pii.review.identity_count(initials), 2);
         // Inspector: applying everything turns to Share.
-        assert!(app.inspector_share);
+        assert_eq!(app.inspector, crate::document_view::Inspector::Share);
     });
     click_tab(cx, "inspector-review");
     // ↑ to the top, then ↑ again returns to search; Esc there closes.
@@ -2274,7 +2274,7 @@ fn panel_projection_reuses_rows_and_invalidates_on_keep_history_filter_and_query
         assert_eq!(app.replacement_entity_count(cx), 3);
         assert_eq!(app.kept_mention_count(cx), 0);
         let alias = app.pii.review.identity(identity).unwrap().alias.clone();
-        assert!(app.case_alias_is_present(&alias, cx));
+        assert!(app.project_alias_is_present(&alias, cx));
         app.sync_pii_theme(cx);
         assert!(
             Arc::ptr_eq(&initial, &app.replacement_entries(cx)),
@@ -2284,7 +2284,7 @@ fn panel_projection_reuses_rows_and_invalidates_on_keep_history_filter_and_query
         let kept = app.replacement_entries(cx);
         assert!(!Arc::ptr_eq(&initial, &kept));
         assert_eq!(app.kept_mention_count(cx), 1);
-        assert!(!app.case_alias_is_present(&alias, cx));
+        assert!(!app.project_alias_is_present(&alias, cx));
         assert!(
             kept.iter()
                 .any(|(row, item)| row.id == identity && matches!(item, PanelItem::Kept(_)))
@@ -3018,7 +3018,7 @@ fn apply_all_from_review_search_keeps_history_on_share(cx: &mut gpui::TestAppCon
     });
     press("secondary-enter", cx);
     app.update_in(cx, |app, window, _| {
-        assert!(app.inspector_share);
+        assert_eq!(app.inspector, crate::document_view::Inspector::Share);
         assert!(app.pii.mapping.focus.is_focused(window));
     });
     press(

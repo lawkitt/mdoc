@@ -8,13 +8,11 @@ use crate::{
 };
 use gpui::{Entity, Focusable};
 use mdoc_store::settings;
-use std::path::Path;
 
 /// More menu, review, its focus rings, the word popup and model setup.
 pub(super) fn scenes(
     d: &mut Driver,
     view: &Entity<DocumentView>,
-    path: &Path,
     detections: &[mdoc_pii::Detection],
 ) -> Result<()> {
     // Nothing is pseudonymized yet: Copy for AI says why it is off.
@@ -29,8 +27,9 @@ pub(super) fn scenes(
     d.change(|_, window, cx| view.update(cx, |v, cx| v.close_more(window, cx)))?;
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
-            // A Tab in the editor edits text. Restore the fixture before review.
-            let text = std::fs::read_to_string(path).expect("copied fixture");
+            // A Tab in the editor edits text, which saves itself. Restore the
+            // fixture before review.
+            let (text, _) = super::fixture().expect("public fixture");
             v.editor.update(cx, |e, cx| e.set_text(text.clone(), cx));
             v.pii
                 .review_mut()
@@ -51,17 +50,19 @@ pub(super) fn scenes(
         window.focused(cx).expect("first toolbar control")
     })?;
     d.focus_pair("toggle-on", toggle)?;
-    let sidebar = d.change(|w, _, _| {
-        w.sidebar_row_focus
-            .borrow()
-            .get(&w.tabs.active())
-            .expect("selected sidebar row")
-            .clone()
+    let sidebar = d.change(|w, _, cx| {
+        let document = w
+            .tabs
+            .active_tab()
+            .and_then(|tab| w.live_document(tab, cx))
+            .expect("the reviewed document");
+        let key = super::super::tree::RowKey::Document(document.as_str().to_string());
+        w.tree_focus(&key, cx)
     })?;
     d.focus_pair("sidebar-row", sidebar)?;
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
-            v.inspector_share = true;
+            v.inspector = crate::document_view::Inspector::Share;
             window.focus(&v.replacements_focus(), cx);
             cx.notify();
         });
@@ -72,7 +73,7 @@ pub(super) fn scenes(
     d.focus_pair("beside-selected-tab", review_tab)?;
     d.change(|_, _, cx| {
         view.update(cx, |v, cx| {
-            v.inspector_share = false;
+            v.inspector = crate::document_view::Inspector::Review;
             cx.notify();
         })
     })?;
@@ -214,7 +215,7 @@ pub(super) fn applied_alias(d: &mut Driver, view: &Entity<DocumentView>) -> Resu
 }
 
 /// A synthetic proposal pair, rendered on both shipped targets
-/// in each theme. No scan, model, case key or native window is involved.
+/// in each theme. No scan, model, Project key or native window is involved.
 pub(super) fn merge_hint(d: &mut Driver) -> Result<()> {
     d.change(|w, window, cx| {
         w.new_tab(window, cx);

@@ -29,7 +29,7 @@ fn install_scan(app: &mut DocumentView, cx: &mut Context<DocumentView>) -> (u64,
 }
 
 #[gpui::test]
-fn forgetting_a_case_identity_rejects_an_older_scan_result(cx: &mut gpui::TestAppContext) {
+fn forgetting_a_project_identity_rejects_an_older_scan_result(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| {
         app.editor
@@ -43,7 +43,7 @@ fn forgetting_a_case_identity_rejects_an_older_scan_result(cx: &mut gpui::TestAp
             .unwrap();
         let (generation, identity, revision) = install_scan(app, cx);
         let cancel = app.pii.job.as_ref().unwrap().cancel.clone();
-        app.forget_case_identity(&["PERSON_1"], &["Anna".into()], &[], cx);
+        app.forget_project_identity(&["PERSON_1"], &["Anna".into()], &[], cx);
         assert!(cancel.load(std::sync::atomic::Ordering::Relaxed));
         app.complete_pii_scan(
             generation,
@@ -229,7 +229,7 @@ fn scan_then_apply_is_one_undo_step_and_copy_is_explicit(cx: &mut gpui::TestAppC
             cx.read_from_clipboard().unwrap().text().as_deref(),
             Some("keep clipboard")
         );
-        assert!(app.dirty(cx));
+        assert!(app.unsaved(cx));
         assert!(app.session.warning.is_some());
     });
     cx.run_until_parked();
@@ -242,9 +242,7 @@ fn scan_then_apply_is_one_undo_step_and_copy_is_explicit(cx: &mut gpui::TestAppC
             Some(applied)
         );
         let result = app.editor.read(cx).text().to_owned();
-        app.session
-            .save(dir.path().join("prepared.md"), &result)
-            .unwrap();
+        mdoc_store::document::export(&dir.path().join("prepared.md"), &result).unwrap();
         window.focus(&app.editor.read(cx).focus_handle(cx), cx);
     });
     assert_eq!(std::fs::read_to_string(original).unwrap(), source);
@@ -454,7 +452,6 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
         assert_eq!(app.pii.review.remaining(), 0);
         // Nothing is left to review, so Apply closes the popup.
         assert!(app.pii.popup.is_none());
-        assert!(app.dirty(cx));
         assert!(app.pii.error.is_none());
     });
     // With no pending suggestions, another click must not add an undo step.
@@ -1607,7 +1604,7 @@ fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1");
         // Inspector: back to Review for the notice.
-        app.inspector_share = false;
+        app.inspector = crate::document_view::Inspector::Review;
         cx.notify();
     });
     cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -1684,141 +1681,6 @@ fn popup_delete_keeps_but_alias_field_backspace_edits(cx: &mut gpui::TestAppCont
     });
 }
 
-#[gpui::test]
-fn unrecognized_placeholders_are_assigned_or_left_never_guessed(cx: &mut gpui::TestAppContext) {
-    use mdoc_pii::restore::ExportedIdentity;
-    let (app, cx) = crate::document_view::tests::boot(cx);
-    let reply = restore::RestoredReply {
-        text: "PERSON_1 and PERSON_2 met PERSON_2 and ORG_5.".into(),
-        identities: vec![ExportedIdentity {
-            alias: "PERSON_1".into(),
-            previous: Vec::new(),
-            category: Category::Person,
-            custom: false,
-            originals: vec!["Anna Petrova".into()],
-        }],
-        source_name: "contract".into(),
-        case: None,
-    };
-    app.update_in(cx, |app, window, cx| app.start_restored(&reply, window, cx));
-    cx.run_until_parked();
-    app.update_in(cx, |app, window, cx| {
-        assert_eq!(
-            app.editor.read(cx).text(),
-            "Anna Petrova and PERSON_2 met PERSON_2 and ORG_5."
-        );
-        let tokens = app.unresolved_tokens(cx);
-        assert_eq!(tokens.len(), 3);
-        app.activate_annotation(restore::UNRESOLVED_ID | tokens[0].start as u64, window, cx);
-    });
-    // The picker keeps the focus it shares with the mention popup (#79).
-    cx.update(|window, cx| window.draw(cx).clear(cx));
-    app.update_in(cx, |app, window, cx| {
-        assert!(app.pii.focus.is_focused(window));
-        app.assign_unresolved(0, window, cx);
-    });
-    cx.run_until_parked();
-    app.update_in(cx, |app, window, cx| {
-        assert_eq!(
-            app.editor.read(cx).text(),
-            "Anna Petrova and Anna Petrova met PERSON_2 and ORG_5.",
-            "only the chosen token changes; nothing is guessed for its repeat"
-        );
-        // The paste's restore and the one assigned token: two decisions.
-        let path = app.editor.read(cx).history_path();
-        let labels: Vec<_> = app
-            .pii
-            .decisions()
-            .rows(&path)
-            .map(|(e, _)| e.label())
-            .collect();
-        assert_eq!(
-            labels,
-            ["Restored “Anna Petrova”", "Restored “Anna Petrova”"]
-        );
-        assert_eq!(
-            app.pii.review.remaining(),
-            2,
-            "both now proposed as PERSON_1"
-        );
-        let tokens = app.unresolved_tokens(cx);
-        assert_eq!(tokens.len(), 2);
-        app.activate_annotation(restore::UNRESOLVED_ID | tokens[1].start as u64, window, cx);
-        app.leave_unresolved(window, cx);
-        assert_eq!(app.unresolved_tokens(cx).len(), 1, "ORG_5 is left as is");
-        assert!(app.pii.restore.as_ref().unwrap().map.identities().len() == 1);
-    });
-}
-
-/// A Restore tab holds originals: Copy Markdown and the editor's own copies
-/// are tagged restored text, until a conversion replaces the tab's text.
-#[gpui::test]
-fn restore_tab_copies_are_restored_text(cx: &mut gpui::TestAppContext) {
-    use crate::restored_clipboard::{TAG, is_restored};
-    use mdoc_pii::restore::ExportedIdentity;
-    let (app, cx) = crate::document_view::tests::boot(cx);
-    app.update_in(cx, |app, window, cx| {
-        app.copy_markdown(&CopyMarkdown, window, cx);
-        assert!(!is_restored(&cx.read_from_clipboard().unwrap()));
-        assert_eq!(app.editor.read(cx).copy_metadata(), None);
-    });
-    // An ordinary document's before/after shows its own text: normal copies.
-    app.update_in(cx, |app, window, cx| {
-        app.editor
-            .update(cx, |editor, cx| editor.set_text("Anna Petrova signed.", cx));
-        app.pii.review.seed(
-            &[ExportedIdentity {
-                alias: "PERSON_1".into(),
-                previous: Vec::new(),
-                category: Category::Person,
-                custom: false,
-                originals: vec!["Anna Petrova".into()],
-            }],
-            "Anna Petrova signed.",
-        );
-        app.pii.reviewing = true;
-        app.apply_all_pii(&PiiApplyAll, window, cx);
-        app.set_view_mode(Some(super::compare::CompareMode::Side), window, cx);
-        let compare = app.compare.as_ref().expect("before/after opens");
-        for column in compare.columns() {
-            assert_eq!(column.read(cx).copy_metadata(), None);
-        }
-        app.set_view_mode(None, window, cx);
-        app.reset_pii(cx);
-    });
-    let reply = restore::RestoredReply {
-        text: "PERSON_1 signed.".into(),
-        identities: vec![ExportedIdentity {
-            alias: "PERSON_1".into(),
-            previous: Vec::new(),
-            category: Category::Person,
-            custom: false,
-            originals: vec!["Anna Petrova".into()],
-        }],
-        source_name: "contract".into(),
-        case: None,
-    };
-    app.update_in(cx, |app, window, cx| app.start_restored(&reply, window, cx));
-    cx.run_until_parked();
-    app.update_in(cx, |app, window, cx| {
-        app.copy_markdown(&CopyMarkdown, window, cx);
-        let item = cx.read_from_clipboard().unwrap();
-        assert_eq!(item.text().as_deref(), Some("Anna Petrova signed."));
-        assert!(is_restored(&item));
-        assert_eq!(app.editor.read(cx).copy_metadata(), Some(TAG));
-        // Before/after shows restored originals in both columns.
-        app.apply_all_pii(&PiiApplyAll, window, cx);
-        app.set_view_mode(Some(super::compare::CompareMode::Side), window, cx);
-        let compare = app.compare.as_ref().expect("before/after opens");
-        for column in compare.columns() {
-            assert_eq!(column.read(cx).copy_metadata(), Some(TAG));
-        }
-        app.set_view_mode(None, window, cx);
-        app.reset_pii(cx);
-        assert_eq!(app.editor.read(cx).copy_metadata(), None);
-    });
-}
-
 #[test]
 fn ai_notice_names_aliases_only() {
     let notice = mdoc_pii::handoff::ai_notice(&["PERSON_1", "ORG_2"]);
@@ -1828,39 +1690,7 @@ fn ai_notice_names_aliases_only() {
 }
 
 #[gpui::test]
-fn homonyms_keep_their_own_aliases_through_restore_and_apply(cx: &mut gpui::TestAppContext) {
-    use mdoc_pii::restore::ExportedIdentity;
-    let (app, cx) = crate::document_view::tests::boot(cx);
-    let person = |alias: &str| ExportedIdentity {
-        alias: alias.into(),
-        previous: Vec::new(),
-        category: Category::Person,
-        custom: false,
-        originals: vec!["John Smith".into()],
-    };
-    let reply = restore::RestoredReply {
-        text: "PERSON_1 met PERSON_2, then PERSON_1 left.".into(),
-        identities: vec![person("PERSON_1"), person("PERSON_2")],
-        source_name: "contract".into(),
-        case: None,
-    };
-    app.update_in(cx, |app, window, cx| app.start_restored(&reply, window, cx));
-    cx.run_until_parked();
-    app.update_in(cx, |app, window, cx| {
-        assert_eq!(
-            app.editor.read(cx).text(),
-            "John Smith met John Smith, then John Smith left."
-        );
-        app.apply_all_pii(&PiiApplyAll, window, cx);
-        assert_eq!(
-            app.editor.read(cx).text(),
-            "PERSON_1 met PERSON_2, then PERSON_1 left."
-        );
-    });
-}
-
-#[gpui::test]
-fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
+fn scans_skip_categories_the_project_switched_off(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| {
         app.editor
@@ -1868,14 +1698,14 @@ fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        app.case.attach(Some(mdoc_store::cases::CaseLink {
+        app.project.attach(Some(crate::workspace::ProjectLink {
             id: "a".into(),
-            color: None,
+            colour: None,
             name: "Acme".into(),
         }));
-        let mut skip = app.case.skip().clone();
+        let mut skip = app.project.skip().clone();
         skip.insert(Category::Address);
-        app.case.set_skip(skip);
+        app.project.set_skip(skip);
         let (generation, identity, revision) = install_scan(app, cx);
         let detection = |range, category| mdoc_pii::Detection {
             range,
@@ -1905,7 +1735,9 @@ fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
 }
 
 #[gpui::test]
-fn caseless_scans_follow_the_default_and_a_joined_tab_its_case(cx: &mut gpui::TestAppContext) {
+fn projectless_scans_follow_the_default_and_a_joined_tab_its_project(
+    cx: &mut gpui::TestAppContext,
+) {
     let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Alice at 1 Main St";
     app.update(cx, |app, cx| {
@@ -1948,12 +1780,12 @@ fn caseless_scans_follow_the_default_and_a_joined_tab_its_case(cx: &mut gpui::Te
     // Once the tab joins a case, the case's list wins: this one detects all.
     app.update(cx, |app, cx| {
         app.pii.review = Default::default();
-        app.case.attach(Some(mdoc_store::cases::CaseLink {
+        app.project.attach(Some(crate::workspace::ProjectLink {
             id: "a".into(),
-            color: None,
+            colour: None,
             name: "Acme".into(),
         }));
-        app.case.set_skip(Default::default());
+        app.project.set_skip(Default::default());
         assert_eq!(scan(app, cx), [Category::Person, Category::Address]);
         // A member ignores Settings changes; its case decides.
         app.default_categories_unticked(&[Category::Person].into(), cx);
@@ -2252,7 +2084,7 @@ fn inspector_share_tab_copies_for_ai_after_apply(cx: &mut gpui::TestAppContext) 
     // Applied: the header offers Share, which opens the Inspector's Share tab.
     click(cx, "primary-share");
     app.read_with(cx, |app, _| {
-        assert!(app.inspector_share);
+        assert_eq!(app.inspector, crate::document_view::Inspector::Share);
         assert!(app.replacements_open());
     });
     assert!(cx.debug_bounds("share-status").is_some());
@@ -2499,7 +2331,7 @@ fn merge_hint_applied_alias_keeps_restoring_and_merge_is_one_undo(cx: &mut gpui:
         if !app.replacements_open() {
             app.toggle_replacements_panel(window, cx);
         }
-        app.inspector_share = false;
+        app.inspector = crate::document_view::Inspector::Review;
         cx.notify();
         app.pii.review.merge_hints().remove(0)
     });
@@ -2578,7 +2410,7 @@ fn merge_hint_retains_target_primary_for_equal_length_wordings(cx: &mut gpui::Te
         if !app.replacements_open() {
             app.toggle_replacements_panel(window, cx);
         }
-        app.inspector_share = false;
+        app.inspector = crate::document_view::Inspector::Review;
         cx.notify();
         hint
     });

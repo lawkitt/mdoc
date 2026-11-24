@@ -563,7 +563,11 @@ actions!(
         FocusEditor,
         SidebarPrevious,
         SidebarNext,
-        SidebarCloseTab,
+        SidebarCollapse,
+        SidebarExpand,
+        SidebarExtendUp,
+        SidebarExtendDown,
+        SidebarDelete,
         SidebarMenu,
     ]
 );

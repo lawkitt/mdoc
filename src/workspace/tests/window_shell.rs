@@ -66,7 +66,7 @@ fn copy_markdown_button_uses_active_tab_without_editor_focus(cx: &mut TestAppCon
         assert!(first.read(cx).copy_feedback.is_none());
         assert!(second.read(cx).copy_feedback.is_some());
     });
-    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(-1, window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_next_recent(window, cx));
     cx.run_until_parked();
     cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
     more(cx, "more-copy-markdown");
@@ -340,7 +340,9 @@ fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     click_toolbar(cx, "header-source");
     cx.update(|_, cx| {
         assert!(!view.read(cx).preview.visible());
-        assert_eq!(view.read(cx).preview.attachment(), Some(&path));
+        // Its Source is the viewing copy of the file.
+        let attachment = view.read(cx).preview.attachment().cloned().unwrap();
+        assert_eq!(attachment.file_name(), path.file_name());
     });
 }
 
@@ -458,7 +460,6 @@ fn paired_preview_hides_reopens_and_failed_replacement_preserves_attachment(
     cx.update(|_, cx| {
         assert!(!view.read(cx).preview.visible());
         assert_eq!(view.read(cx).preview.attachment(), Some(&pdf));
-        assert!(view.read(cx).session.document.path.is_none());
     });
     cx.dispatch_action(TogglePreview);
     cx.run_until_parked();
@@ -480,8 +481,7 @@ fn every_menu_item_reaches_a_handler_in_a_document(cx: &mut TestAppContext) {
     cx.update(|_, cx| crate::menus::install(cx));
     cx.simulate_input("alpha beta");
     cx.run_until_parked();
-    let recent = [std::path::PathBuf::from("/tmp/recent.md")];
-    for (name, action) in crate::menus::items(&recent) {
+    for (name, action) in crate::menus::items() {
         // In the window's focus path, or app-wide (Hide, Minimize).
         let available = cx.update(|window, cx| {
             window.is_action_available(action.as_ref(), cx)
@@ -491,33 +491,16 @@ fn every_menu_item_reaches_a_handler_in_a_document(cx: &mut TestAppContext) {
     }
 }
 
-/// File › Open Recent follows Recents: its rows open their file, and Clear
-/// Menu empties it and Recents (decision 10 of the UI polish grill).
-#[gpui::test]
-fn open_recent_follows_recents_and_clear_menu_empties_it(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let paths: Vec<_> = ["first.md", "second.md"]
-        .iter()
-        .map(|name| {
-            let path = dir.path().join(name);
-            std::fs::write(&path, *name).unwrap();
-            path
-        })
+/// Documents live in the Vault, so the File menu lists no recent files:
+/// opening a file again is Open…, an import (#1091 Decisions 6 and 7).
+#[test]
+fn the_file_menu_has_no_open_recent() {
+    let names: Vec<_> = crate::menus::items()
+        .into_iter()
+        .map(|(name, _)| name)
         .collect();
-    let (tabs, cx) = boot_home(cx, Session::default());
-    let titles =
-        |cx: &mut VisualTestContext| cx.update(|_, cx| crate::menus::open_recent_titles(cx));
-    assert_eq!(titles(cx), ["Clear Menu"]);
-    for path in &paths {
-        cx.dispatch_action(crate::workspace::OpenRecent(path.clone()));
-        cx.run_until_parked();
-    }
-    assert_eq!(tab_names(&tabs, cx), ["first.md", "second.md"]);
-    assert_eq!(titles(cx), ["second.md", "first.md", "Clear Menu"]);
-    cx.dispatch_action(crate::workspace::ClearRecentFiles);
-    cx.run_until_parked();
-    assert_eq!(titles(cx), ["Clear Menu"]);
-    cx.update(|_, cx| assert!(tabs.read(cx).shell.recents.files.is_empty()));
+    assert!(names.iter().any(|name| name == "Open…"));
+    assert!(!names.iter().any(|name| name == "Clear Menu"), "{names:?}");
 }
 
 #[gpui::test]
@@ -566,31 +549,32 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
         );
     }
     let dir = tempfile::tempdir().unwrap();
-    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let pdf = base.join("tests/fixtures/reference.pdf");
-    let docx = base.join("tests/fixtures/docx-preview/comments.docx");
+    let root = dir.path().join("vault");
+    let vault = mdoc_vault::Vault::open(&root, &[3; 32]).unwrap();
     let mut session = Session::default();
     for index in 0..24 {
-        let path = dir.path().join(format!("note-{index}.md"));
-        let source = if index % 3 == 0 {
+        let markdown = if index % 3 == 0 {
             "# Heading\n\nalpha **beta** words for a long document.\n\n".repeat(2500)
         } else {
             "# Short\n\nhello world\n".repeat(30)
         };
-        std::fs::write(&path, source).unwrap();
+        let document = vault
+            .create_document(mdoc_vault::NewDocument {
+                project: None,
+                title: format!("note-{index}"),
+                source_kind: mdoc_vault::SourceKind::Markdown,
+                origin: mdoc_vault::DocumentOrigin::Ordinary,
+                markdown,
+            })
+            .unwrap();
         session.tabs.push(TabRecord {
-            markdown: path,
-            attachment: match index % 3 {
-                0 => None,
-                1 => Some(pdf.clone()),
-                _ => Some(docx.clone()),
-            },
-            preview_visible: index % 3 != 0,
+            document: mdoc_store::document_id::VaultId::parse(&document.id),
             ..TabRecord::default()
         });
     }
+    drop(vault);
     let start = Instant::now();
-    let (tabs, cx) = boot(cx, session);
+    let (tabs, cx) = boot_on_vault(cx, session, &root);
     cx.simulate_resize(size(px(1280.), px(800.)));
     draw(cx);
     eprintln!(
@@ -648,7 +632,7 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
     report("switch_with_implicit_test_frame", &mut switching);
     report("switch_frame", &mut frames);
     report("long_markdown_frame", &mut long_frames);
-    report("short_markdown_with_preview_frame", &mut short_frames);
+    report("short_markdown_frame", &mut short_frames);
     // Same document, same viewport, no tab change: distinguish inherited editor
     // layout cost from the sidebar/activation overhead.
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(ids[0], window, cx));
@@ -682,6 +666,8 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
     }
     report("metadata_snapshot_24_tabs", &mut snapshots);
     // Repeated DOCX pairs exercise temporary files and retained viewer release.
+    let docx =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx");
     eprintln!(
         "TABS_PERF before_close_cycles_rss_kib={:?}",
         crate::perf_tests::rss_kib()
@@ -714,36 +700,34 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn menu_routes_save_save_as_and_open_to_the_active_document(cx: &mut TestAppContext) {
+fn menu_routes_save_export_and_open_to_the_active_document(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let first_path = dir.path().join("first.md");
     let copy_path = dir.path().join("copy.md");
     let other_path = dir.path().join("other.md");
     std::fs::write(&other_path, "other document").unwrap();
     let (tabs, cx) = boot(cx, Session::default());
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
+    let stored = || {
+        let summary = vault.documents().into_iter().next()?;
+        Some(vault.document(&summary.id).unwrap().markdown)
+    };
     let view = active(&tabs, cx);
     view.update(cx, |v, cx| {
         v.editor.update(cx, |e, cx| e.set_text("first version", cx))
     });
     cx.run_until_parked();
+    // Save writes at once, without asking where.
     more(cx, "more-save");
-    cx.simulate_new_path_selection(|_| Some(first_path.clone()));
-    cx.run_until_parked();
-    assert_eq!(
-        std::fs::read_to_string(&first_path).unwrap(),
-        "first version"
-    );
+    assert_eq!(stored().as_deref(), Some("first version"));
     view.update(cx, |v, cx| {
         v.editor
             .update(cx, |e, cx| e.set_text("updated version", cx))
     });
     cx.run_until_parked();
     more(cx, "more-save");
-    assert_eq!(
-        std::fs::read_to_string(&first_path).unwrap(),
-        "updated version"
-    );
-    more(cx, "more-save-as");
+    assert_eq!(stored().as_deref(), Some("updated version"));
+    // Export Markdown writes a copy; the document stays in the Vault.
+    more(cx, "more-export");
     cx.simulate_new_path_selection(|_| Some(copy_path.clone()));
     cx.run_until_parked();
     assert_eq!(
@@ -751,10 +735,8 @@ fn menu_routes_save_save_as_and_open_to_the_active_document(cx: &mut TestAppCont
         "updated version"
     );
     cx.update(|_, cx| {
-        assert_eq!(
-            view.read(cx).session.document.path.as_ref(),
-            Some(&dunce::canonicalize(&copy_path).unwrap())
-        )
+        let view = view.read(cx);
+        assert!(view.session.document.vault.is_some());
     });
     // Open has no header button: ⌘O, Home and the palette.
     cx.dispatch_action(Open);
@@ -911,7 +893,7 @@ fn settings_categories_use_one_tab_stop_and_arrow_keys(cx: &mut TestAppContext) 
         settings_ui::Category::Detection,
         settings_ui::Category::Recognition,
         settings_ui::Category::Spelling,
-        settings_ui::Category::Cases,
+        settings_ui::Category::Vault,
         settings_ui::Category::About,
         settings_ui::Category::General,
     ] {
@@ -1181,7 +1163,7 @@ fn dictionary_view_searches_adds_removes_with_undo_and_stays_virtualized(cx: &mu
 }
 
 #[gpui::test]
-fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut TestAppContext) {
+fn ai_reply_round_trip_saves_the_reply_and_shows_it_restored(cx: &mut TestAppContext) {
     use mdoc_pii::Category;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("contract.md");
@@ -1224,18 +1206,16 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
     let reply = "**PERSON_1** owes ORG_1; person 1 and PERSON_7 disagree.";
     cx.write_to_clipboard(gpui::ClipboardItem::new_string(reply.into()));
     more(cx, "more-paste-reply");
-    let restored = active(&tabs, cx);
+    cx.run_until_parked();
+    let restored =
+        "**Anna Petrova** owes Northwind Traders Ltd; Anna Petrova and PERSON_7 disagree.";
     cx.update(|_, cx| {
-        assert_ne!(tabs.read(cx).tabs.active(), first_id);
-        let view = restored.read(cx);
-        assert_eq!(
-            view.editor.read(cx).text(),
-            "**Anna Petrova** owes Northwind Traders Ltd; Anna Petrova and PERSON_7 disagree."
-        );
-        assert_eq!(view.display_name(), "Restored – contract.md");
-        assert!(view.dirty(cx), "a restored reply is unsaved work");
-        assert_eq!(view.pii.review().remaining(), 3);
-        assert_eq!(view.unresolved_tokens(cx).len(), 1);
+        let w = tabs.read(cx);
+        assert_eq!(w.tabs.active(), first_id, "no tab is opened");
+        let page = w.reply_page.as_ref().expect("the Reply page shows");
+        assert_eq!(page.restored().text, restored);
+        assert_eq!(page.restored().unresolved.len(), 1);
+        assert_eq!(page.summary(), "2 values restored · 1 unrecognized");
         assert_eq!(
             first.read(cx).editor.read(cx).text(),
             "PERSON_1 met ORG_1.",
@@ -1243,33 +1223,28 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
         );
     });
     draw(cx);
-    assert!(cx.debug_bounds("restore-summary").is_some());
-
-    // Applying the proposals re-pseudonymizes with the source's aliases.
-    restored.update_in(cx, |view, window, cx| {
-        view.apply_all_pii(&PiiApplyAll, window, cx)
-    });
-    cx.run_until_parked();
+    assert!(cx.debug_bounds("reply-page").is_some());
+    // Saved as received, aliases and all.
+    let saved = vault(&tabs, cx).replies();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(
+        vault(&tabs, cx).reply(&saved[0].id).unwrap().markdown,
+        reply
+    );
+    // Copy reply copies the restored text, marked as restored.
+    click_toolbar(cx, "reply-page-copy");
     cx.update(|_, cx| {
-        assert_eq!(
-            restored.read(cx).editor.read(cx).text(),
-            "**PERSON_1** owes ORG_1; PERSON_1 and PERSON_7 disagree."
-        );
+        let item = cx.read_from_clipboard().unwrap();
+        assert_eq!(item.text().unwrap(), restored);
+        assert!(crate::restored_clipboard::is_restored(&item));
     });
-    // Undo returns to the restored text, then to the reply as pasted.
-    for expected in [
-        "**Anna Petrova** owes Northwind Traders Ltd; Anna Petrova and PERSON_7 disagree.",
-        reply,
-    ] {
-        cx.update(|window, cx| {
-            window.focus(&restored.read(cx).editor.read(cx).focus_handle(cx), cx)
-        });
-        cx.dispatch_action(mdoc_editor::Undo);
-        cx.run_until_parked();
-        cx.update(|_, cx| assert_eq!(restored.read(cx).editor.read(cx).text(), expected));
-    }
-
-    // Unsaved restored replies are not written to the session manifest.
+    // Next unrecognized walks the unknown token.
+    click_toolbar(cx, "reply-page-next");
+    cx.update(|_, cx| {
+        let range = tabs.read(cx).current_saved_unrecognised().unwrap();
+        assert_eq!(&restored[range], "PERSON_7");
+    });
+    // The session keeps no reply text.
     cx.update(|_, cx| {
         let session = tabs.read(cx).snapshot(cx);
         assert_eq!(session.tabs.len(), 1);
@@ -1411,7 +1386,7 @@ fn paste_text_fills_the_new_tab(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     let texts = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
-        cx.update(|_, cx| {
+        let mut texts = cx.update(|_, cx| {
             tabs.read(cx)
                 .tabs
                 .iter()
@@ -1425,7 +1400,10 @@ fn paste_text_fills_the_new_tab(cx: &mut TestAppContext) {
                         .to_owned()
                 })
                 .collect::<Vec<_>>()
-        })
+        });
+        // Live views are kept by recency; order them by text.
+        texts.sort();
+        texts
     };
     // From Home's button, with a Windows line ending to normalize.
     cx.write_to_clipboard(gpui::ClipboardItem::new_string(
@@ -1444,16 +1422,16 @@ fn paste_text_fills_the_new_tab(cx: &mut TestAppContext) {
     // From the palette over that document: a second tab, the first untouched.
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("Second paste".into()));
     cx.simulate_keystrokes("secondary-k");
-    cx.simulate_input("paste text as new tab");
+    cx.simulate_input("paste text as new document");
     draw(cx);
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
     assert_eq!(
         texts(&tabs, cx),
         [
+            "Second paste",
             "Two lines
-Вторая строка",
-            "Second paste"
+Вторая строка"
         ]
     );
     assert_eq!(
@@ -1492,12 +1470,12 @@ fn home_clipboard_actions_use_the_active_documents_mapping(cx: &mut TestAppConte
         "PERSON_1 owes ORG_1.".into(),
     ));
     click_toolbar(cx, "home-restore");
-    let restored = active(&tabs, cx);
-    assert_ne!(source, restored);
     cx.update(|_, cx| {
-        assert!(!tabs.read(cx).showing_home(cx));
+        let w = tabs.read(cx);
+        assert!(!w.showing_home(cx));
+        let page = w.reply_page.as_ref().expect("the Reply page");
         assert_eq!(
-            restored.read(cx).editor.read(cx).text(),
+            page.restored().text,
             "Anna Petrova owes Northwind Traders Ltd."
         );
     });
@@ -1632,12 +1610,6 @@ fn review_host_performance(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ));
-    });
     // Layout-only baseline: the same text without review state, with the
     // Replacements panel open so the editor width matches the review phases.
     let plain = dir.path().join("plain.md");
@@ -1648,7 +1620,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let plain_view = active(&tabs, cx);
     plain_view.update_in(cx, |view, window, cx| {
-        view.inspector_share = false;
+        view.inspector = crate::document_view::Inspector::Review;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }
@@ -1674,17 +1646,27 @@ fn review_host_performance(cx: &mut TestAppContext) {
             view.pii.review().candidates().is_empty() && view.pii.review().applied().is_empty()
         );
     });
-    let first = open_applied(&tabs, cx, dir.path(), "first.md", &text, &wordings);
+    // Each file its own bytes: the same bytes again would ask Open Existing.
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "first.md",
+        &format!("{text}1"),
+        &wordings,
+    );
     let first_view = active(&tabs, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
-    cx.run_until_parked();
-    let case = tabs.read_with(cx, |tabs, _| tabs.case_coordinator.cases()[0].id.clone());
+    let case = new_project(&tabs, cx, first);
     for name in ["second.md", "third.md"] {
-        let member = open_applied(&tabs, cx, dir.path(), name, &text, &wordings);
-        tabs.update_in(cx, |tabs, window, cx| {
-            tabs.join_case(member, &case, window, cx)
-        });
-        cx.run_until_parked();
+        let member = open_applied(
+            &tabs,
+            cx,
+            dir.path(),
+            name,
+            &format!("{text}{name}"),
+            &wordings,
+        );
+        move_tab(&tabs, cx, member, Some(&case));
     }
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(first, window, cx));
     for phase in ["proposed_panel", "applied_panel", "before_after"] {
@@ -1696,7 +1678,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
                 "applied_panel" => view.apply_all_pii(&PiiApplyAll, window, cx),
                 _ => view.toggle_compare(window, cx),
             }
-            view.inspector_share = false;
+            view.inspector = crate::document_view::Inspector::Review;
             if !view.replacements_open() {
                 view.toggle_replacements_panel(window, cx);
             }
@@ -1733,7 +1715,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
             }
             assert_eq!(view.compare.is_some(), phase == "before_after");
             assert!(
-                !view.inspector_share,
+                view.inspector != crate::document_view::Inspector::Share,
                 "measure the Review tab, not the post-Apply Share tab"
             );
         });
@@ -1745,7 +1727,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
         view.retag_identities(&[(id, "CLIENT".into(), Category::Person, true)], cx)
             .unwrap();
     });
-    tabs.update(cx, |tabs, cx| tabs.case_changed(first, cx));
+    tabs.update(cx, |tabs, cx| tabs.project_changed(first, cx));
     cx.run_until_parked();
     draw(cx);
     eprintln!(
@@ -1760,7 +1742,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
             .filter_map(|tab| tab.view())
             .filter(|view| {
                 view.read(cx)
-                    .case
+                    .project
                     .link()
                     .is_some_and(|link| link.id == case)
             })
@@ -1792,7 +1774,7 @@ fn expand_and_collapse_all_identities(cx: &mut TestAppContext) {
             view.toggle_replacements_panel(window, cx);
         }
         // Apply all leaves the inspector on Share; the list is on Review.
-        view.inspector_share = false;
+        view.inspector = crate::document_view::Inspector::Review;
         cx.notify();
     });
     cx.run_until_parked();
@@ -1899,7 +1881,7 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
     let unknown = dir.path().join("unknown.bin");
     for path in [&a, &b, &unknown] {
-        std::fs::write(path, "x").unwrap();
+        std::fs::write(path, path.display().to_string()).unwrap();
     }
     let (tabs, cx) = boot_home(cx, Session::default());
     draw(cx);
@@ -1917,7 +1899,7 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     drag_files(cx, &[a.clone(), b.clone(), unknown.clone()], center);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, Some(2)));
     drop_files(cx, center);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
     cx.update(|_, cx| {
         assert!(
             tabs.read(cx)
@@ -1933,33 +1915,12 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     drag_files(cx, std::slice::from_ref(&b), center);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, None));
     drop_files(cx, center);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
 }
 
 #[gpui::test]
 fn pii_download_retains_card_focus(cx: &mut TestAppContext) {
     download_retains_card_focus(cx, settings::Model::Pii(settings::PiiModel::Fp16));
-}
-
-/// Home's "Open a case…" text ends where "Documents stay on this Mac" above
-/// it ends; only its hover padding runs past (U25).
-#[gpui::test]
-fn home_open_a_case_ends_under_the_local_note(cx: &mut TestAppContext) {
-    let (_tabs, cx) = boot_home(cx, Session::default());
-    cx.simulate_resize(size(px(1100.), px(760.)));
-    draw(cx);
-    let note = cx.debug_bounds("empty-page-local").unwrap();
-    let link = cx.debug_bounds("home-open-case").unwrap();
-    let column = cx.debug_bounds("home-drop").unwrap();
-    let paste = cx.debug_bounds("home-paste").unwrap();
-    assert!(link.top() > note.bottom(), "the link sits under the note");
-    // The text ends at Home's column edge.
-    assert_eq!(link.right() - px(8.), column.right());
-    // So does the note beside the buttons; Windows' longer "this computer"
-    // can wrap it onto a line of its own.
-    if note.center().y < paste.bottom() {
-        assert_eq!(link.right() - px(8.), note.right());
-    }
 }
 
 /// Tooltips name the key that does the same (U16): the sidebar's toggle,
@@ -1999,7 +1960,7 @@ fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContex
         "this computer"
     };
     let detail = format!(
-        "tooltip-Detection, conversion and saved cases run on {machine}. mdoc goes online \
+        "tooltip-Detection, conversion and Projects run on {machine}. mdoc goes online \
          only to check for updates and to download models you choose."
     );
     let bubble = cx
@@ -2015,8 +1976,8 @@ fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContex
 
     hover(cx, "sidebar-toggle");
     shown(cx, tip("Collapse sidebar", &ToggleSidebar));
-    hover(cx, "sidebar-new");
-    shown(cx, tip("New Markdown tab", &New));
+    hover(cx, "tree-new");
+    shown(cx, tip("New document", &New));
     // A tab to go back from.
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.new_tab(window, cx);
@@ -2065,7 +2026,7 @@ fn saving_with_pending_proposals_writes_the_text_and_keeps_them(cx: &mut TestApp
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
-    let pending = view.update_in(cx, |view, window, cx| {
+    let pending = view.update_in(cx, |view, _, cx| {
         view.pii.set_reviewing(true);
         view.pii
             .review_mut()
@@ -2076,12 +2037,14 @@ fn saving_with_pending_proposals_writes_the_text_and_keeps_them(cx: &mut TestApp
         view.editor.update(cx, |editor, cx| {
             editor.replace_range(source.len()..source.len(), "\n\nA note.", cx)
         });
-        view.save(false, None, window, cx);
+        view.save_now(cx);
         pending
     });
     cx.run_until_parked();
+    let document = view.read_with(cx, |view, _| view.session.document.vault.clone().unwrap());
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
     assert_eq!(
-        std::fs::read_to_string(&path).unwrap(),
+        vault.document(document.as_str()).unwrap().markdown,
         format!("{source}\n\nA note.")
     );
     cx.update(|_, cx| {

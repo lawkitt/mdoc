@@ -1,26 +1,31 @@
 //! The window shell: theme choice, the sidebar's top and foot,
-//! Home with its drop zone, and the ⌘K command palette.
+//! Home (drop zone, quick actions, the Continue strip), and the ⌘K command
+//! palette with its search over the Vault.
+use super::home;
 use super::{Tab, Workspace};
 use crate::{
-    document_view::{CopyMarkdown, DocumentView, RecentFolders, Save, SaveAs, ToggleCompare},
+    document_view::{
+        CopyMarkdown, DocumentView, ExportMarkdown, OpenSourceReply, Save, ShowNotes, ToggleCompare,
+    },
     markdown_search::{SearchInput, SearchInputEvent},
     pii::ui::{CopyForAi, Pseudonymize},
     shortcuts,
     style::{self, Theme},
     ui,
     workspace::{
-        Close, New, Open, OpenCase, PasteAiResponse, PseudonymizeClipboard, Settings,
+        Close, New, Open, OpenProject, PasteAiResponse, PseudonymizeClipboard, Settings,
         ToggleSidebar, shortcuts_ui::ShowShortcuts,
     },
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Entity, Focusable, Hsla, KeyBinding,
-    SharedString, Subscription, Window, actions, div, prelude::*, px,
+    Subscription, Window, actions, div, prelude::*, px,
 };
 use mdoc_import::import;
-use mdoc_store::recents::{self, Recents};
+use mdoc_store::document_id::VaultId;
 use mdoc_store::session_store::ThemeChoice;
-use std::{path::PathBuf, time::Duration};
+use mdoc_vault::{DocumentSummary, ProjectSummary, ReplyOwner};
+use std::{collections::HashMap, time::Duration};
 
 actions!(
     mdoc_shell,
@@ -51,10 +56,10 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("down", PaletteDown, Some(PALETTE)),
         KeyBinding::new("enter", PaletteConfirm, Some(PALETTE)),
     ]);
+    super::switcher_ui::bind_keys(cx);
 }
 
 pub(super) struct ShellState {
-    pub recents: Recents,
     pub palette: Option<Palette>,
     /// The keyboard shortcuts sheet, while open.
     pub shortcuts: Option<super::shortcuts_ui::ShortcutsSheet>,
@@ -62,43 +67,32 @@ pub(super) struct ShellState {
     pub drop: Option<usize>,
     pub drop_generation: u64,
     home_scroll: gpui::ScrollHandle,
-    /// Focus for each Recents row on Home, by position.
-    pub recent_focus: std::cell::RefCell<Vec<gpui::FocusHandle>>,
+    /// Focus for each card of Home's Continue strip, by its document's or
+    /// reply's id, so a reordered strip keeps focus on the same card.
+    pub card_focus: std::cell::RefCell<HashMap<String, gpui::FocusHandle>>,
     /// The pointer is over Home's "Documents stay on this Mac".
     pub local_note_hover: bool,
 }
 
 impl ShellState {
-    pub fn new(cx: &mut App) -> Self {
-        let recents = Recents::load(if cfg!(test) {
-            None
-        } else {
-            Recents::default_path()
-        });
-        share_recents(&recents, cx);
+    pub fn new() -> Self {
         Self {
-            recents,
             palette: None,
             shortcuts: None,
             drop: None,
             drop_generation: 0,
-            recent_focus: Default::default(),
             home_scroll: gpui::ScrollHandle::new(),
+            card_focus: Default::default(),
             local_note_hover: false,
         }
     }
 }
 
-/// Recents changed: Save As's folders (#180) and File › Open Recent follow.
-fn share_recents(recents: &Recents, cx: &mut App) {
-    RecentFolders::share(recents.folders(), cx);
-    let files = recents.files.iter().map(|recent| recent.path.clone());
-    crate::menus::set_recent_files(files.collect(), cx);
-}
-
 pub(super) struct Palette {
     input: Entity<SearchInput>,
     selected: usize,
+    /// The list's scroll, which keeps the selected row in view.
+    scroll: gpui::ScrollHandle,
     return_focus: Option<gpui::FocusHandle>,
     _changes: Subscription,
 }
@@ -115,17 +109,21 @@ enum Command {
     CopyForAi,
     CopyMarkdown,
     Save,
-    SaveAs,
-    CloseTab,
+    ExportMarkdown,
+    Close,
     BeforeAfter,
     /// The active document's What you did; no key of its own.
     DecisionHistory,
+    /// The active document's Notes tab.
+    Notes,
+    /// The AI reply the active document was promoted from.
+    SourceReply,
     ExpandIdentities,
     CollapseIdentities,
     /// Stop the active tab's running conversion (#950); no key of its own.
     CancelConversion,
     ToggleSidebar,
-    OpenCase,
+    OpenProject,
     Home,
     Settings,
     SettingsCategory(crate::settings_ui::Category),
@@ -133,9 +131,24 @@ enum Command {
     Theme,
     /// The active document's heading whose line starts at this offset.
     Heading(usize),
-    Tab(u64),
-    Case(String),
-    Recent(PathBuf),
+    Document(VaultId),
+    Project(String),
+    /// An action of the Project page or Reply page shown.
+    Page(PageAction),
+}
+
+/// The header and ⋯ actions of the page shown, in the palette too.
+#[derive(Clone, Copy)]
+pub(super) enum PageAction {
+    RenameProject,
+    ProjectColour,
+    ProjectCategories,
+    AddDocument,
+    ExportProject,
+    DeleteProject,
+    CopyReply,
+    PromoteReply,
+    DeleteReply,
 }
 
 impl Command {
@@ -151,14 +164,16 @@ impl Command {
             Command::CopyForAi => Box::new(CopyForAi),
             Command::CopyMarkdown => Box::new(CopyMarkdown),
             Command::Save => Box::new(Save),
-            Command::SaveAs => Box::new(SaveAs),
-            Command::CloseTab => Box::new(Close),
+            Command::ExportMarkdown => Box::new(ExportMarkdown),
+            Command::Close => Box::new(Close),
             Command::BeforeAfter => Box::new(ToggleCompare),
             Command::ToggleSidebar => Box::new(ToggleSidebar),
-            Command::OpenCase => Box::new(OpenCase),
+            Command::OpenProject => Box::new(OpenProject),
             Command::Home => Box::new(ShowHome),
             Command::Settings => Box::new(Settings),
             Command::Shortcuts => Box::new(ShowShortcuts),
+            Command::Notes => Box::new(ShowNotes),
+            Command::SourceReply => Box::new(OpenSourceReply),
             Command::PasteText
             | Command::DecisionHistory
             | Command::ExpandIdentities
@@ -167,9 +182,9 @@ impl Command {
             | Command::Theme
             | Command::SettingsCategory(_)
             | Command::Heading(_)
-            | Command::Tab(_)
-            | Command::Case(_)
-            | Command::Recent(_) => return None,
+            | Command::Document(_)
+            | Command::Project(_)
+            | Command::Page(_) => return None,
         })
     }
 
@@ -253,14 +268,14 @@ impl Workspace {
             && tab.view().is_none_or(|view| {
                 let view = view.read(cx);
                 view.lifecycle.blank_disposable()
-                    && view.session.document.path.is_none()
                     && view.preview.source().is_none()
                     && view.editor.read(cx).text().is_empty()
             })
     }
 
     pub(super) fn showing_home(&self, cx: &App) -> bool {
-        self.cases.page.is_none()
+        self.project_ui.page.is_none()
+            && self.reply_page.is_none()
             && (self.tabs.home()
                 || self
                     .tabs
@@ -269,7 +284,7 @@ impl Workspace {
     }
 
     pub(super) fn showing_overview(&self, cx: &App) -> bool {
-        self.cases.page.is_some() || self.showing_home(cx)
+        self.project_ui.page.is_some() || self.reply_page.is_some() || self.showing_home(cx)
     }
 
     pub(super) fn show_home(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -286,56 +301,13 @@ impl Workspace {
         if let Some(old) = self.active_view() {
             old.update(cx, |view, _| view.pii.dismiss_popup());
         }
-        self.cases.page = None;
+        self.reply_page = None;
+        self.project_ui.page = None;
         self.end_rename(true, cx);
         self.tabs.show_home();
         self.note_destination(arrival, cx);
+        self.drop_if_empty_new(self.tabs.active(), window, cx);
         window.focus(&self.focus, cx);
-        cx.notify();
-    }
-
-    /// Remember files as they open or save (paths only).
-    pub(super) fn remember_recent(&mut self, id: u64, cx: &mut App) {
-        let Some(view) = self
-            .tabs
-            .get(id)
-            .and_then(|tab| tab.view())
-            .map(|view| view.read(cx))
-        else {
-            return;
-        };
-        if view.lifecycle.loading() || view.lifecycle.unavailable() {
-            return;
-        }
-        // Saved Markdown first: a conversion saved as .md reopens as that
-        // file, not as a fresh conversion of its source (#76).
-        let saved = view.session.document.path.as_ref();
-        let source = view.preview.attachment().or(view.preview.source());
-        let path = saved.or(source);
-        let opened = self.tabs.note_recent(id, path);
-        if let Some(path) = path {
-            // The badge means replacements were applied, not just a scan (#306).
-            let pseudonymized = view.has_applied_aliases();
-            let new_badge = pseudonymized
-                && self
-                    .shell
-                    .recents
-                    .files
-                    .iter()
-                    .any(|recent| &recent.path == path && !recent.pseudonymized);
-            // A saved conversion's source folds into the .md's row (#306).
-            let folded = saved.and(source).map(PathBuf::as_path);
-            // Cleared or evicted entries return only on a new file event.
-            if (opened || new_badge) && self.shell.recents.touch(path, pseudonymized, folded) {
-                share_recents(&self.shell.recents, cx);
-            }
-        }
-    }
-
-    /// Settings › Clear and File › Open Recent › Clear Menu.
-    pub(super) fn clear_recents(&mut self, cx: &mut Context<Self>) {
-        self.shell.recents.clear();
-        share_recents(&self.shell.recents, cx);
         cx.notify();
     }
 
@@ -415,7 +387,7 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// A small section label, e.g. "Open" over tabs without a case.
+    /// A small section label, e.g. "Open" over tabs without a Project.
     pub(super) fn section_label(&self, label: &'static str) -> AnyElement {
         let p = self.theme.get().pdf_style();
         div()
@@ -508,7 +480,7 @@ impl Workspace {
     }
 
     /// The notices popover under the title row's right end:
-    /// locked cases, a crash report and session messages, with their actions.
+    /// locked Projects, a crash report and session messages, with their actions.
     pub(super) fn notices_view(
         &self,
         window: &Window,
@@ -520,7 +492,8 @@ impl Workspace {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let cards: Vec<AnyElement> = [
-            self.case_key_bar(cx),
+            self.project_key_bar(cx),
+            self.recovery_nudge_bar(cx),
             self.crash_bar(cx),
             self.notice_bar(cx),
         ]
@@ -862,8 +835,7 @@ impl Workspace {
                                     )
                                     .child(self.drop_zone(cx))
                                     .child(self.home_actions(cx))
-                                    .children(self.home_cases(cx))
-                                    .children(self.home_recents(cx)),
+                                    .children(self.home_strip(cx)),
                             ),
                     ),
             );
@@ -927,7 +899,7 @@ impl Workspace {
         )
     }
 
-    fn drop_zone(&self, _cx: &mut Context<Self>) -> AnyElement {
+    fn drop_zone(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let accent = theme.search_accent();
@@ -980,7 +952,14 @@ impl Workspace {
         } else {
             illustration.into_any_element()
         };
+        // Sealed with another key: the zone asks for the recovery key.
+        if self.vault.wrong_key_root().is_some() {
+            return self.recovery_panel(cx);
+        }
+        // No Vault this run: nothing can be added, and the zone says why.
+        let unavailable = self.vault.unavailable();
         let title = match self.shell.drop {
+            _ if unavailable.is_some() => "Documents are unavailable".to_string(),
             Some(0) => "These files can't be opened".to_string(),
             Some(1) => "Drop to open".to_string(),
             Some(n) => format!("Drop {n} files"),
@@ -1019,7 +998,7 @@ impl Workspace {
                     .child(title),
             )
             .child(
-                ui::filled_button("home-open", "Open files…", theme, true)
+                ui::filled_button("home-open", "Open files…", theme, unavailable.is_none())
                     .when(cfg!(test), |v| v.debug_selector(|| "home-open".into()))
                     .mt_1()
                     .child(ui::key_hint(key(&Open)))
@@ -1034,8 +1013,12 @@ impl Workspace {
                     .px_4()
                     .text_size(px(12.))
                     .text_color(p.header_muted)
-                    .child(mdoc_import::import::supported_formats())
-                    .child("Several at once open in their own tabs"),
+                    .map(|v| match unavailable {
+                        Some(why) => v.max_w(px(460.)).child(why.to_owned()),
+                        None => v
+                            .child(mdoc_import::import::supported_formats())
+                            .child("Several at once each become a document in Unfiled"),
+                    }),
             )
             .into_any_element()
     }
@@ -1049,16 +1032,22 @@ impl Workspace {
             "this computer"
         };
         let detail = format!(
-            "Detection, conversion and saved cases run on {machine}. mdoc goes online only \
+            "Detection, conversion and Projects run on {machine}. mdoc goes online only \
              to check for updates and to download models you choose."
         );
+        let intake = self.vault.unavailable().is_none();
         div()
             .flex()
             .flex_wrap()
             .items_center()
             .gap_2()
             .child(
-                ui::primary_button("home-paste", "Paste text", theme, true)
+                ui::primary_button("home-new", "New document", theme, intake)
+                    .when(cfg!(test), |v| v.debug_selector(|| "home-new".into()))
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(New), cx)),
+            )
+            .child(
+                ui::primary_button("home-paste", "Paste text", theme, intake)
                     .when(cfg!(test), |v| v.debug_selector(|| "home-paste".into()))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAsNewTab), cx)),
             )
@@ -1127,198 +1116,223 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn home_cases(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    /// Each live view's proposals left, by its Vault document's id.
+    fn live_proposals(&self, cx: &App) -> HashMap<String, usize> {
+        (self.tabs.iter())
+            .filter_map(|tab| {
+                let view = tab.view()?.read(cx);
+                let document = self.live_document(tab, cx)?;
+                Some((document.as_str().to_string(), view.pii.review().remaining()))
+            })
+            .collect()
+    }
+
+    /// The Continue strip as it stands, with the summaries it was read
+    /// from; `None` while the Vault is closed.
+    pub(super) fn home_strip_now(&self, cx: &App) -> Option<(home::Strip, Vec<DocumentSummary>)> {
+        let vault = self.vault.vault()?;
+        let documents = vault.documents();
+        let strip = home::strip(&documents, &vault.replies(), &self.live_proposals(cx));
+        Some((strip, documents))
+    }
+
+    /// Continue: documents that need review and saved replies, newest first.
+    fn home_strip(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (strip, documents) = self.home_strip_now(cx)?;
+        if !strip.shown {
+            return None;
+        }
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let cases = self.case_coordinator.summaries();
-        let mut list = div().flex().flex_col();
-        if cases.is_empty() {
-            return Some(
-                // The label's top padding moves to the row, so the label and
-                // the link share a center line.
+        let projects: HashMap<String, ProjectSummary> = (self.projects.summaries().into_iter())
+            .map(|project| (project.id.clone(), project))
+            .collect();
+        let documents_shown = (strip.cards.iter())
+            .filter(|card| matches!(card, home::Card::Document { .. }))
+            .count();
+        let more = match strip.need_review {
+            0 if !strip.cards.is_empty() => Some("Nothing needs review".to_string()),
+            n if n <= documents_shown => None,
+            1 => Some("1 needs review".to_string()),
+            n => Some(format!("{n} need review")),
+        };
+        let header = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .pt_2()
+            .child(home_label("Continue", theme).pt_0())
+            .child(div().flex_1())
+            .children(more.map(|more| {
                 div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .pt_2()
-                    .child(home_label("Cases", theme).pt_0())
-                    .child(div().flex_1())
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "home-strip-more".into())
+                    })
+                    .text_size(px(12.))
+                    .text_color(p.header_muted)
+                    .child(more)
+            }));
+        let strip_box = div()
+            .id("home-strip")
+            .when(cfg!(test), |v| v.debug_selector(|| "home-strip".into()))
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(header);
+        if strip.cards.is_empty() {
+            return Some(
+                strip_box
                     .child(
-                        // The list opens below this link (#307). The link's
-                        // text, not its padding, ends where the local note
-                        // above it ends (U25).
                         div()
-                            .relative()
-                            .mr(px(-8.))
-                            .child({
-                                let bounds = self.cases.home_link.clone();
-                                gpui::canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {})
-                                    .absolute()
-                                    .inset_0()
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "home-strip-empty".into())
                             })
-                            .child(
-                                ui::link_button("home-open-case", "Open a case…", theme, true)
-                                    .when(cfg!(test), |v| {
-                                        v.debug_selector(|| "home-open-case".into())
-                                    })
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        let link = this.cases.home_link.get();
-                                        this.show_case_list_at(link, window, cx);
-                                    })),
-                            ),
+                            .text_size(px(13.))
+                            .text_color(p.header_muted)
+                            .child("Nothing needs review."),
                     )
                     .into_any_element(),
             );
         }
-        for case in cases.iter().take(6) {
-            let link = case.link();
-            let id = case.id.clone();
-            let documents = case.documents;
-            list = list.child(
-                home_row(
-                    SharedString::from(format!("home-case-{}", case.id)),
-                    format!(
-                        "Case {}, {documents} {}",
-                        case.name,
-                        if documents == 1 {
-                            "document"
-                        } else {
-                            "documents"
-                        }
-                    ),
-                    theme,
-                )
-                .child(
-                    div()
-                        .size(px(8.))
-                        .rounded_full()
-                        .bg(style::case_color(link.hue(), theme))
-                        .flex_shrink_0(),
-                )
-                .child(div().flex_1().min_w_0().truncate().child(case.name.clone()))
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(p.header_muted)
-                        .child(format!(
-                            "{documents} {}",
-                            if documents == 1 {
-                                "document"
-                            } else {
-                                "documents"
-                            }
-                        )),
-                )
-                .on_click(cx.listener(move |this, _, window, cx| this.open_case(&id, window, cx))),
-            );
-        }
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(home_label("Cases", theme))
-                .child(list)
-                .into_any_element(),
-        )
-    }
-
-    fn home_recents(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let theme = self.theme.get();
-        let p = theme.pdf_style();
-        if self.shell.recents.files.is_empty() {
-            return None;
-        }
-        let rows = self
-            .shell
-            .recents
-            .files
-            .iter()
-            .take(8)
-            .enumerate()
-            .map(|(i, recent)| {
-                let path = recent.path.clone();
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                let folder = path
-                    .parent()
-                    .and_then(|p| p.file_name())
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                let label = format!(
-                    "{name} in {folder}{}, opened {}",
-                    if recent.pseudonymized {
-                        ", pseudonymized"
-                    } else {
-                        ""
+        // A document's place: its Project's dot and name, or Unfiled.
+        let place = |project: Option<&str>| -> (Option<Hsla>, String) {
+            match project.and_then(|id| projects.get(id)) {
+                Some(project) => {
+                    let link = super::ProjectLink {
+                        id: project.id.clone(),
+                        name: project.name.clone(),
+                        colour: project.colour,
+                    };
+                    (
+                        Some(style::project_color(link.hue(), theme)),
+                        project.name.clone(),
+                    )
+                }
+                None => (None, "Unfiled".to_string()),
+            }
+        };
+        let now = home::now();
+        let shown = strip.cards.len();
+        let mut row = div().flex().gap_3();
+        for (i, card) in strip.cards.into_iter().enumerate() {
+            let age = home::age(card.at(), now);
+            let (badge, title, (dot, place), status) = match &card {
+                home::Card::Document { summary, proposed } => (
+                    super::tree_ui::kind_label(summary),
+                    summary.title.clone(),
+                    place(summary.project.as_deref()),
+                    match proposed {
+                        Some(1) => "1 to review".to_string(),
+                        Some(n) => format!("{n} to review"),
+                        None => "Not reviewed".to_string(),
                     },
-                    recents::when(recent.opened).to_lowercase()
-                );
-                let focus = {
-                    let mut handles = self.shell.recent_focus.borrow_mut();
-                    while handles.len() <= i {
-                        handles.push(cx.focus_handle().tab_stop(true));
-                    }
-                    handles[i].clone()
-                };
-                home_row(("home-recent", i), label, theme)
-                    .track_focus(&focus)
+                ),
+                home::Card::Reply(reply) => {
+                    let project = match &reply.owner {
+                        ReplyOwner::Project(id) => Some(id.as_str()),
+                        ReplyOwner::Document(id) => (documents.iter())
+                            .find(|summary| &summary.id == id)
+                            .and_then(|summary| summary.project.as_deref()),
+                    };
+                    (
+                        "REPLY",
+                        reply.title.clone(),
+                        place(project),
+                        "Saved reply".to_string(),
+                    )
+                }
+            };
+            let label = format!("{title}, {place}, {status}, {age}");
+            let focus = (self.shell.card_focus.borrow_mut())
+                .entry(card.id().to_string())
+                .or_insert_with(|| cx.focus_handle().tab_stop(true))
+                .clone();
+            let view =
+                crate::ui::focus_ring(("home-card", i), theme)
                     .when(cfg!(test), |v| {
-                        v.debug_selector(move || format!("home-recent-{i}"))
+                        v.debug_selector(move || format!("home-card-{i}"))
                     })
-                    .tooltip(style::tooltip(path.to_string_lossy().into_owned(), theme))
-                    .child(
-                        gpui::svg()
-                            .data(ui::Icon::Source.data())
-                            .size(px(14.))
-                            .flex_shrink_0()
-                            .text_color(p.header_muted),
-                    )
-                    .child(div().min_w_0().truncate().child(name))
+                    .role(gpui::Role::Button)
+                    .aria_label(label)
+                    .key_context("UiControl")
+                    .tab_index(0)
+                    .track_focus(&focus)
+                    .flex_1()
+                    .flex_basis(px(0.))
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .p_3()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(p.border)
+                    .text_size(px(13.))
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(p.placeholder_bg))
                     .child(
                         div()
-                            .flex_1()
-                            .min_w_0()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .text_size(px(10.))
+                                    .text_color(p.header_muted)
+                                    .child(badge),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .child(title),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .text_size(px(12.))
+                            .text_color(p.header_muted)
+                            .children(dot.map(|dot| {
+                                div().size(px(8.)).rounded_full().bg(dot).flex_shrink_0()
+                            }))
+                            .child(div().min_w_0().truncate().child(place)),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(p.header_muted)
                             .truncate()
-                            .text_size(px(12.))
-                            .text_color(p.header_muted)
-                            .child(folder),
-                    )
-                    .when(recent.pseudonymized, |v| {
-                        v.child(
-                            div()
-                                .px(px(6.))
-                                .rounded_sm()
-                                .bg(p.placeholder_bg)
-                                .text_size(px(11.))
-                                .text_color(p.header_muted)
-                                .child("pseudonymized"),
-                        )
-                    })
-                    .child(
-                        div()
-                            .w(px(84.))
-                            .flex_shrink_0()
-                            .text_right()
-                            .text_size(px(12.))
-                            .text_color(p.header_muted)
-                            .child(recents::when(recent.opened)),
-                    )
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.open_paths(vec![path.clone()], window, cx)
+                            .child(format!("{status} · {age}")),
+                    );
+            let view = match card {
+                home::Card::Document { summary, .. } => {
+                    let id = VaultId::parse(&summary.id);
+                    view.on_click(cx.listener(move |this, _, window, cx| {
+                        if let Some(id) = id.clone() {
+                            this.open_vault_document(id, window, cx);
+                        }
                     }))
-            });
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(home_label("Recent", theme))
-                .child(div().flex().flex_col().children(rows))
-                .into_any_element(),
-        )
+                }
+                home::Card::Reply(reply) => {
+                    let id = reply.id;
+                    view.on_click(
+                        cx.listener(move |this, _, window, cx| this.open_reply(&id, window, cx)),
+                    )
+                }
+            };
+            row = row.child(view);
+        }
+        // Fewer cards keep a card's width.
+        for _ in shown..home::STRIP_CARDS {
+            row = row.child(div().flex_1().flex_basis(px(0.)));
+        }
+        Some(strip_box.child(row).into_any_element())
     }
 
     /// A file drag anywhere over the window while Home shows.
@@ -1349,6 +1363,9 @@ impl Workspace {
     }
 
     pub(super) fn paste_as_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.intake_refused(window, cx) {
+            return;
+        }
         let item = cx.read_from_clipboard();
         // A copied file carries its path as text; the editor's Paste skips it.
         let has_files = item.as_ref().is_some_and(|item| {
@@ -1369,6 +1386,8 @@ impl Workspace {
         let id = self.new_tab(window, cx);
         if let Some(view) = self.tabs.get(id).and_then(|tab| tab.view()).cloned() {
             view.update(cx, |view, cx| {
+                // An ordinary document, not a new one.
+                view.session.pasted = true;
                 view.editor
                     .update(cx, |editor, cx| editor.insert_pasted(text, window, cx))
             });
@@ -1387,11 +1406,9 @@ impl Workspace {
             .active_tab()
             .is_some_and(|tab| !self.is_placeholder(tab, cx));
         if !real {
-            // The notice opens even over an earlier one; check quietly whether
-            // locked cases belong in it.
-            self.load_cases(window, cx);
+            // The notice opens even over an earlier one.
             let effect = self.notices.post_now(format!(
-                "{action} works from a pseudonymized document. Open one, or open a case, first."
+                "{action} works from a pseudonymized document. Open one, or open a Project, first."
             ));
             self.carry_out_notices(effect);
             cx.notify();
@@ -1420,6 +1437,7 @@ impl Workspace {
         let changes = cx.subscribe(&input, |this, _, _: &SearchInputEvent, cx| {
             if let Some(palette) = &mut this.shell.palette {
                 palette.selected = 0;
+                palette.scroll.set_offset(gpui::Point::default());
             }
             cx.notify();
         });
@@ -1428,6 +1446,7 @@ impl Workspace {
         self.shell.palette = Some(Palette {
             input,
             selected: 0,
+            scroll: gpui::ScrollHandle::new(),
             return_focus,
             _changes: changes,
         });
@@ -1452,10 +1471,11 @@ impl Workspace {
             .map(|p| p.input.read(cx).value().trim().to_lowercase())
             .unwrap_or_default();
         let has_document = !self.showing_overview(cx);
-        let mut rows = vec![
+        let mut rows = self.page_rows();
+        rows.extend(vec![
             Row {
                 section: "Actions",
-                label: "New tab".into(),
+                label: "New document".into(),
                 detail: None,
                 command: Command::NewTab,
             },
@@ -1467,11 +1487,11 @@ impl Workspace {
             },
             Row {
                 section: "Actions",
-                label: "Paste text as new tab".into(),
+                label: "Paste text as new document".into(),
                 detail: None,
                 command: Command::PasteText,
             },
-        ];
+        ]);
         if has_document {
             rows.extend([
                 Row {
@@ -1500,9 +1520,9 @@ impl Workspace {
                 },
                 Row {
                     section: "Actions",
-                    label: "Save as…".into(),
+                    label: "Export Markdown…".into(),
                     detail: None,
-                    command: Command::SaveAs,
+                    command: Command::ExportMarkdown,
                 },
                 Row {
                     section: "Actions",
@@ -1517,6 +1537,30 @@ impl Workspace {
                     command: Command::DecisionHistory,
                 },
             ]);
+            // Notes, and the reply a promoted document came from.
+            let (notes, source) = self.active_view().map_or((false, false), |view| {
+                let view = view.read(cx);
+                (
+                    view.can_copy_markdown() && view.notes_available(),
+                    view.from_reply.as_ref().is_some_and(|from| !from.gone),
+                )
+            });
+            if notes {
+                rows.push(Row {
+                    section: "Actions",
+                    label: "Notes".into(),
+                    detail: None,
+                    command: Command::Notes,
+                });
+            }
+            if source {
+                rows.push(Row {
+                    section: "Actions",
+                    label: "Open source AI reply".into(),
+                    detail: None,
+                    command: Command::SourceReply,
+                });
+            }
             let panel = self.active_view().is_some_and(|view| {
                 let view = view.read(cx);
                 view.replacements_open() && view.can_copy_markdown()
@@ -1551,9 +1595,9 @@ impl Workspace {
             }
             rows.extend([Row {
                 section: "Actions",
-                label: "Close tab".into(),
+                label: "Close".into(),
                 detail: None,
-                command: Command::CloseTab,
+                command: Command::Close,
             }]);
         }
         rows.extend([
@@ -1571,9 +1615,9 @@ impl Workspace {
             },
             Row {
                 section: "Actions",
-                label: "Open a case…".into(),
+                label: "Open a Project…".into(),
                 detail: None,
-                command: Command::OpenCase,
+                command: Command::OpenProject,
             },
             Row {
                 section: "Actions",
@@ -1633,53 +1677,58 @@ impl Workspace {
                 }
             }
         }
-        for tab in &self.tabs {
-            if self.is_placeholder(tab, cx) {
-                continue;
-            }
-            let name = super::tab_label(tab, cx).name;
-            rows.push(Row {
-                section: "Open tabs",
-                label: name,
-                detail: None,
-                command: Command::Tab(tab.id()),
-            });
-        }
-        for case in self.case_coordinator.summaries() {
-            rows.push(Row {
-                section: "Cases",
-                label: case.name.clone(),
-                detail: Some(format!("{} documents", case.documents)),
-                command: Command::Case(case.id.clone()),
-            });
-        }
-        for recent in &self.shell.recents.files {
-            let name = recent
-                .path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let kind = recent
-                .path
-                .extension()
-                .map(|e| e.to_string_lossy().to_uppercase())
-                .unwrap_or_default();
-            rows.push(Row {
-                section: "Recent",
-                label: name,
-                detail: Some(kind),
-                command: Command::Recent(recent.path.clone()),
-            });
-        }
         if query.is_empty() {
             return rows;
         }
-        rows.into_iter()
-            .filter(|row| {
-                let label = row.label.to_lowercase();
-                query.split_whitespace().all(|word| label.contains(word))
+        // What the query finds in the Vault comes first, then the actions.
+        let mut found = self.vault_rows(&query);
+        found.extend(rows.into_iter().filter(|row| {
+            let label = row.label.to_lowercase();
+            query.split_whitespace().all(|word| label.contains(word))
+        }));
+        found
+    }
+
+    /// The palette's Documents and Projects for `query`: titles and Project
+    /// names from the manifest.
+    fn vault_rows(&self, query: &str) -> Vec<Row> {
+        let Some(vault) = self.vault.vault() else {
+            return Vec::new();
+        };
+        let projects = vault.projects();
+        let documents = vault.documents();
+        let found = home::search(query, &projects, &documents);
+        let names: HashMap<&str, &str> = (projects.iter())
+            .map(|project| (project.id.as_str(), project.name.as_str()))
+            .collect();
+        let mut rows: Vec<Row> = (found.documents.iter())
+            .filter_map(|summary| {
+                let place = (summary.project.as_deref())
+                    .and_then(|id| names.get(id).copied())
+                    .unwrap_or("Unfiled");
+                Some(Row {
+                    section: "Documents",
+                    label: summary.title.clone(),
+                    detail: Some(format!("{place} · {}", super::tree_ui::kind_label(summary))),
+                    command: Command::Document(VaultId::parse(&summary.id)?),
+                })
             })
-            .collect()
+            .collect();
+        rows.extend(found.projects.into_iter().map(|project| {
+            let count = (documents.iter())
+                .filter(|summary| summary.project.as_deref() == Some(project.id.as_str()))
+                .count();
+            Row {
+                section: "Projects",
+                label: project.name,
+                detail: Some(match count {
+                    1 => "1 document".to_string(),
+                    n => format!("{n} documents"),
+                }),
+                command: Command::Project(project.id),
+            }
+        }));
+        rows
     }
 
     /// Each palette row with a key: its label and the key, for tests.
@@ -1688,6 +1737,24 @@ impl Workspace {
         self.palette_rows(cx)
             .into_iter()
             .filter_map(|row| Some((row.label, row.command.shortcut()?)))
+            .collect()
+    }
+
+    /// The palette list's vertical scroll offset, for tests.
+    #[cfg(test)]
+    pub(super) fn palette_offset(&self) -> gpui::Pixels {
+        self.shell
+            .palette
+            .as_ref()
+            .map_or(px(0.), |palette| palette.scroll.offset().y)
+    }
+
+    /// The palette's labels in order, for tests.
+    #[cfg(test)]
+    pub(super) fn palette_labels(&self, cx: &App) -> Vec<String> {
+        self.palette_rows(cx)
+            .into_iter()
+            .map(|row| row.label)
             .collect()
     }
 
@@ -1702,12 +1769,20 @@ impl Workspace {
     }
 
     pub(super) fn palette_step(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let count = self.palette_rows(cx).len();
+        let rows = self.palette_rows(cx);
         if let Some(palette) = &mut self.shell.palette
-            && count > 0
+            && !rows.is_empty()
         {
-            palette.selected =
-                (palette.selected as isize + delta).rem_euclid(count as isize) as usize;
+            let selected =
+                (palette.selected as isize + delta).rem_euclid(rows.len() as isize) as usize;
+            palette.selected = selected;
+            // The list's children are its rows and a label before each
+            // section.
+            let labels = 1
+                + (rows[..=selected].windows(2))
+                    .filter(|pair| pair[0].section != pair[1].section)
+                    .count();
+            palette.scroll.scroll_to_item(selected + labels);
             cx.notify();
         }
     }
@@ -1723,12 +1798,17 @@ impl Workspace {
         let Some(row) = index.and_then(|i| rows.into_iter().nth(i)) else {
             return;
         };
+        self.palette_run(row.command, window, cx);
+    }
+
+    /// Close the palette and run `command`.
+    fn palette_run(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
         self.close_palette(window, cx);
         let dispatch =
             |window: &mut Window, cx: &mut Context<Self>, action: Box<dyn gpui::Action>| {
                 window.dispatch_action(action, cx)
             };
-        match row.command {
+        match command {
             Command::NewTab => dispatch(window, cx, Box::new(New)),
             Command::OpenFiles => dispatch(window, cx, Box::new(Open)),
             Command::PasteText => self.paste_as_new_tab(window, cx),
@@ -1738,14 +1818,24 @@ impl Workspace {
             Command::CopyForAi => dispatch(window, cx, Box::new(CopyForAi)),
             Command::CopyMarkdown => dispatch(window, cx, Box::new(CopyMarkdown)),
             Command::Save => dispatch(window, cx, Box::new(Save)),
-            Command::SaveAs => dispatch(window, cx, Box::new(SaveAs)),
-            Command::CloseTab => dispatch(window, cx, Box::new(Close)),
+            Command::ExportMarkdown => dispatch(window, cx, Box::new(ExportMarkdown)),
+            Command::Close => dispatch(window, cx, Box::new(Close)),
             Command::BeforeAfter => dispatch(window, cx, Box::new(ToggleCompare)),
             // Straight to the document: focus may have gone back to the
             // sidebar, outside the view's action handlers.
             Command::DecisionHistory => {
                 if let Some(view) = self.active_view() {
                     view.update(cx, |view, cx| view.open_decision_history(window, cx));
+                }
+            }
+            Command::Notes => {
+                if let Some(view) = self.active_view() {
+                    view.update(cx, |view, cx| view.show_notes(window, cx));
+                }
+            }
+            Command::SourceReply => {
+                if let Some(view) = self.active_view() {
+                    view.update(cx, |view, cx| view.open_source_reply(cx));
                 }
             }
             Command::CancelConversion => {
@@ -1757,7 +1847,7 @@ impl Workspace {
                 }
             }
             Command::ExpandIdentities | Command::CollapseIdentities => {
-                let expand = matches!(row.command, Command::ExpandIdentities);
+                let expand = matches!(command, Command::ExpandIdentities);
                 if let Some(view) = self.active_view() {
                     view.update(cx, |view, cx| {
                         if view.replacements_open() {
@@ -1767,7 +1857,7 @@ impl Workspace {
                 }
             }
             Command::ToggleSidebar => dispatch(window, cx, Box::new(ToggleSidebar)),
-            Command::OpenCase => dispatch(window, cx, Box::new(OpenCase)),
+            Command::OpenProject => dispatch(window, cx, Box::new(OpenProject)),
             Command::Home => self.show_home(window, cx),
             Command::Settings => dispatch(window, cx, Box::new(Settings)),
             Command::SettingsCategory(category) => self
@@ -1791,9 +1881,9 @@ impl Workspace {
                 }
                 self.focus_active(window, cx);
             }
-            Command::Tab(id) => self.activate(id, window, cx),
-            Command::Case(id) => self.open_case(&id, window, cx),
-            Command::Recent(path) => self.open_paths(vec![path], window, cx),
+            Command::Document(id) => self.open_vault_document(id, window, cx),
+            Command::Project(id) => self.open_project(&id, window, cx),
+            Command::Page(action) => self.run_page_action(action, window, cx),
         }
     }
 
@@ -1803,7 +1893,15 @@ impl Workspace {
         let p = theme.pdf_style();
         let rows = self.palette_rows(cx);
         let selected = palette.selected.min(rows.len().saturating_sub(1));
-        let mut list = div().flex().flex_col().px_1().pb_1();
+        let mut list = div()
+            .id("palette-list")
+            .track_scroll(&palette.scroll)
+            .max_h(px(470.))
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .px_1()
+            .pb_1();
         let mut section = "";
         for (i, row) in rows.iter().enumerate() {
             if row.section != section {
@@ -1821,7 +1919,7 @@ impl Workspace {
             let icon = match &row.command {
                 Command::NewTab | Command::PasteText => ui::Icon::Plus,
                 Command::OpenFiles => ui::Icon::Open,
-                Command::Tab(_) | Command::Recent(_) => ui::Icon::Source,
+                Command::Document(_) => ui::Icon::Source,
                 Command::Heading(_) => ui::Icon::ChevronRight,
                 Command::Home => ui::Icon::Home,
                 Command::Settings | Command::SettingsCategory(_) => ui::Icon::Settings,
@@ -1829,15 +1927,19 @@ impl Workspace {
                 Command::Theme => ui::Icon::ThemeSystem,
                 Command::RestoreReply => ui::Icon::Reply,
                 Command::CopyForAi | Command::CopyMarkdown => ui::Icon::Copy,
-                Command::Save | Command::SaveAs => ui::Icon::Save,
-                Command::CloseTab | Command::CancelConversion => ui::Icon::Close,
+                Command::Save | Command::ExportMarkdown => ui::Icon::Save,
+                Command::Close | Command::CancelConversion => ui::Icon::Close,
                 Command::BeforeAfter => ui::Icon::PanelRight,
                 Command::DecisionHistory => ui::Icon::Clock,
+                Command::Notes => ui::Icon::PanelRight,
+                Command::SourceReply => ui::Icon::Reply,
                 Command::ExpandIdentities => ui::Icon::ExpandAll,
                 Command::CollapseIdentities => ui::Icon::CollapseAll,
                 Command::ToggleSidebar => ui::Icon::Sidebar,
                 Command::Pseudonymize | Command::PseudonymizeClipboard => ui::Icon::Anonymous,
-                Command::Case(_) | Command::OpenCase => ui::Icon::Sidebar,
+                Command::Project(_) | Command::OpenProject => ui::Icon::Sidebar,
+                Command::Page(PageAction::CopyReply) => ui::Icon::Copy,
+                Command::Page(_) => ui::Icon::Sidebar,
             };
             list = list.child(
                 div()
@@ -1869,9 +1971,12 @@ impl Workspace {
                     .when_some(row.command.shortcut(), |v, s| {
                         v.child(div().text_size(px(11.)).text_color(p.header_muted).child(s))
                     })
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.palette_confirm(Some(i), window, cx)
-                    })),
+                    .on_click({
+                        let command = row.command.clone();
+                        cx.listener(move |this, _, window, cx| {
+                            this.palette_run(command.clone(), window, cx)
+                        })
+                    }),
             );
         }
         if rows.is_empty() {
@@ -1951,13 +2056,7 @@ impl Workspace {
                                             .child(palette.input.clone()),
                                     ),
                             )
-                            .child(
-                                div()
-                                    .id("palette-list")
-                                    .max_h(px(470.))
-                                    .overflow_y_scroll()
-                                    .child(list),
-                            ),
+                            .child(list),
                     ),
             )
             .with_priority(2)
@@ -2012,28 +2111,88 @@ fn home_label(label: &'static str, theme: Theme) -> gpui::Div {
         .child(label)
 }
 
-/// A Home list row: a Tab stop that Enter or Space opens, read by screen
-/// readers as a button named `label`.
-fn home_row(
-    id: impl Into<gpui::ElementId>,
-    label: impl Into<SharedString>,
-    theme: Theme,
-) -> ui::Control {
-    let p = theme.pdf_style();
-    crate::ui::focus_ring(id, theme)
-        .role(gpui::Role::Button)
-        .aria_label(label.into())
-        .key_context("UiControl")
-        .tab_index(0)
-        .flex()
-        .items_center()
-        .gap_3()
-        .h(px(36.))
-        .px_2()
-        .rounded_md()
-        .border_b_1()
-        .border_color(p.border)
-        .text_size(px(13.))
-        .cursor_pointer()
-        .hover(move |s| s.bg(p.placeholder_bg))
+impl Workspace {
+    /// Headless renders: type `query` into the open palette.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(super) fn palette_query_for_render(&mut self, query: &str, cx: &mut Context<Self>) {
+        if let Some(palette) = &self.shell.palette {
+            (palette.input.clone()).update(cx, |input, cx| {
+                input.set_value(query.into(), cx);
+                input.move_to_end(cx);
+            });
+        }
+        cx.notify();
+    }
+}
+
+impl Workspace {
+    /// The palette's rows for the page shown: its header and ⋯ actions.
+    fn page_rows(&self) -> Vec<Row> {
+        let row = |label: &str, action| Row {
+            section: "Page",
+            label: label.into(),
+            detail: None,
+            command: Command::Page(action),
+        };
+        if self.reply_page.is_some() {
+            return vec![
+                row("Copy reply", PageAction::CopyReply),
+                row("Promote to Document", PageAction::PromoteReply),
+                row("Delete reply…", PageAction::DeleteReply),
+            ];
+        }
+        if self.project_ui.page.is_none() {
+            return Vec::new();
+        }
+        vec![
+            row("Add document to Project…", PageAction::AddDocument),
+            row("Rename Project", PageAction::RenameProject),
+            row("Project colour", PageAction::ProjectColour),
+            row(
+                "Project categories to detect",
+                PageAction::ProjectCategories,
+            ),
+            row("Export Project…", PageAction::ExportProject),
+            row("Delete Project…", PageAction::DeleteProject),
+        ]
+    }
+
+    pub(super) fn run_page_action(
+        &mut self,
+        action: PageAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use super::project_page::Place;
+        let reply = self.reply_page.as_ref().map(|page| page.id().to_string());
+        // The Project shown, else the active document's.
+        let project = (self.project_ui.page.as_ref())
+            .map(|page| page.id().to_string())
+            .or_else(|| {
+                let view = self.active_view().filter(|_| !self.showing_overview(cx))?;
+                view.read(cx).project.link().map(|link| link.id.clone())
+            });
+        match (action, reply, project) {
+            (PageAction::CopyReply, Some(_), _) => self.copy_saved_reply(cx),
+            (PageAction::PromoteReply, Some(_), _) => self.promote_saved_reply(window, cx),
+            (PageAction::DeleteReply, Some(id), _) => self.confirm_delete_reply(&id, window, cx),
+            (PageAction::AddDocument, _, Some(id)) => self.add_document_to_project(id, window, cx),
+            (PageAction::RenameProject, _, Some(id)) => {
+                self.show_project_page(&id, Place::Rename, window, cx)
+            }
+            (PageAction::ProjectColour, _, Some(id)) => {
+                self.show_project_page(&id, Place::Colour, window, cx)
+            }
+            (PageAction::ProjectCategories, _, Some(id)) => {
+                self.show_project_page(&id, Place::Categories, window, cx)
+            }
+            (PageAction::ExportProject, _, Some(id)) => self.export_project(id, window, cx),
+            (PageAction::DeleteProject, _, Some(id)) => self.delete_project(id, window, cx),
+            _ => {}
+        }
+    }
 }

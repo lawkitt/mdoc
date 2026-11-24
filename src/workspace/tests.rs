@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     bind_app_keys,
     document_view::{
-        DocumentView, OcrState, Save, SaveAs, TogglePreview, ZoomIn, ZoomReset,
+        DocumentView, ExportMarkdown, OcrState, Save, TogglePreview, ZoomIn, ZoomReset,
         bind_markdown_search_keys,
     },
     markdown_search,
@@ -13,8 +13,8 @@ use crate::{
     style::{self, Theme},
     ui,
     workspace::{
-        Close, Import, New, Open, OpenCase, PasteAiResponse, PseudonymizeClipboard, Quit,
-        RetryDocument, Settings, ToggleSidebar, ToggleTheme,
+        Close, Import, New, Open, OpenProject, PasteAiResponse, PseudonymizeClipboard, Quit,
+        Settings, ToggleSidebar, ToggleTheme,
     },
 };
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
@@ -34,27 +34,33 @@ use std::{
     },
 };
 
-mod case_coordinator;
-mod case_page;
 mod comment_rail;
 mod decision_history;
 mod default_categories;
+mod document_notes;
 mod docx_queue;
+mod export_project;
 mod focus_regions;
 mod folder_sheet;
+mod home;
 mod import_flow;
 mod menu_bar;
 mod navigation;
 mod notices;
+mod project_page;
+mod projects;
 mod quit_flow;
+mod recovery_key;
 mod restore_in_place;
+mod saved_replies;
 mod session_writer;
 mod shelf;
 mod shortcuts_sheet;
 mod sidebar;
-mod tab_menu;
 mod tab_set;
 mod user_lists;
+mod vault_documents;
+mod vault_tree;
 mod window_shell;
 
 /// Boot with `session`; an empty session starts from an Untitled tab rather
@@ -71,10 +77,32 @@ fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Workspace>, &mut V
     (tabs, cx)
 }
 
+/// Boot `session` on the Vault in `root`, as a restart does.
+fn boot_on_vault<'a>(
+    cx: &'a mut TestAppContext,
+    session: Session,
+    root: &std::path::Path,
+) -> (Entity<Workspace>, &'a mut VisualTestContext) {
+    let root = root.to_path_buf();
+    boot_home_with(cx, session, move |tabs, _, _| {
+        tabs.use_vault(mdoc_vault::Vault::open(root, &[3; 32]).unwrap())
+    })
+}
+
 /// Boot exactly as launch does: an empty session shows Home.
 fn boot_home(
     cx: &mut TestAppContext,
     session: Session,
+) -> (Entity<Workspace>, &mut VisualTestContext) {
+    boot_home_with(cx, session, |_, _, _| {})
+}
+
+/// [`boot_home`], with `launch` run where launch opens the Vault: after the
+/// window is built and before its tabs restore.
+fn boot_home_with(
+    cx: &mut TestAppContext,
+    session: Session,
+    launch: impl FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>) + 'static,
 ) -> (Entity<Workspace>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
     cx.update(ui::bind_keys);
@@ -86,6 +114,7 @@ fn boot_home(
     cx.update(bind_markdown_search_keys);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
         let mut tabs = Workspace::empty(window, cx);
+        launch(&mut tabs, window, cx);
         tabs.restore(session, window, cx);
         tabs
     });
@@ -171,12 +200,54 @@ fn reveal_by_keyboard(cx: &mut VisualTestContext, rail: &gpui::FocusHandle) {
     draw(cx);
 }
 
-fn compact_focus(
+/// The Vault document live view `id` shows.
+fn document_of(tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext) -> String {
+    cx.update(|_, cx| {
+        let w = tabs.read(cx);
+        let tab = w.tabs.get(id).expect("a live view");
+        w.live_document(tab, cx)
+            .expect("a Vault document")
+            .as_str()
+            .to_string()
+    })
+}
+
+/// The tree row's focus of the Vault document live view `id` shows.
+fn tree_row_focus(
+    tabs: &Entity<Workspace>,
+    id: u64,
+    cx: &mut VisualTestContext,
+) -> gpui::FocusHandle {
+    let document = document_of(tabs, id, cx);
+    tabs.update(cx, |w, cx| {
+        w.tree_focus(&tree::RowKey::Document(document), cx)
+    })
+}
+
+/// The debug selector of the tree row of live view `id`'s document.
+fn tree_row(tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext) -> &'static str {
+    let document = document_of(tabs, id, cx);
+    Box::leak(format!("tree-document-{document}").into_boxed_str())
+}
+
+/// Import a Markdown note per name in `dir`, one at a time, as Open does;
+/// their live views' ids in order.
+fn open_notes(
     tabs: &Entity<Workspace>,
     cx: &mut VisualTestContext,
-    id: u64,
-) -> gpui::FocusHandle {
-    cx.update(|_, cx| tabs.read(cx).compact_row_focus.borrow()[&id].clone())
+    dir: &std::path::Path,
+    names: &[&str],
+) -> Vec<u64> {
+    names
+        .iter()
+        .map(|name| {
+            let path = dir.join(format!("{name}.md"));
+            std::fs::write(&path, format!("{name} text")).unwrap();
+            tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+            cx.run_until_parked();
+            cx.update(|_, cx| tabs.read(cx).tabs.active())
+        })
+        .collect()
 }
 
 /// Set up the real card with a synthetic running transfer: no model/network access.
@@ -242,7 +313,7 @@ fn download_retains_card_focus(cx: &mut TestAppContext, model: settings::Model) 
 
 fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
     let (tabs, _, cancel, cx) = setup_download_card(cx, model);
-    // A separate dirty tab must still get the normal unsaved-changes prompt.
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
     let setup_tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     cx.simulate_input("Unsaved draft");
@@ -258,50 +329,22 @@ fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
         cx.update(|_, cx| cx.is_action_available(&Quit)),
         "Quit menu stays enabled"
     );
-    cx.dispatch_action(Quit);
-    cx.run_until_parked();
-    if matches!(model, settings::Model::Pii(_)) {
-        // The setup tab has typed text too: two to ask about, so the quit's
-        // summary comes first.
-        cx.simulate_prompt_answer("Review…");
-        cx.run_until_parked();
-    }
-    assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    cx.update(|_, cx| {
-        assert!(!tabs.read(cx).quit_flow.quitting());
-        assert!(!progress.cancel.load(Ordering::Relaxed));
-    });
-    let dirty = cx.update(|_, cx| {
-        tabs.read(cx)
-            .tabs
-            .iter()
-            .filter(|tab| tab.view().is_some_and(|view| view.read(cx).dirty(cx)))
-            .count()
-    });
-    // The keyboard path also works without focus; Don't Save completes shutdown.
-    cx.update(|window, cx| window.blur(cx));
-    draw(cx);
+    // The keyboard path also works without focus, and nothing asks.
     cx.simulate_keystrokes(if cfg!(target_os = "macos") {
         "cmd-q"
     } else {
         "ctrl-q"
     });
     cx.run_until_parked();
-    if dirty > 1 {
-        // Discard All in the summary drops every tab's changes at once.
-        cx.simulate_prompt_answer("Discard All");
-        cx.run_until_parked();
-    } else {
-        assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
-        for _ in 0..dirty {
-            cx.simulate_prompt_answer("Don't Save");
-            cx.run_until_parked();
-        }
-    }
+    assert!(!cx.has_pending_prompt());
     assert!(progress.cancel.load(Ordering::Relaxed));
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    assert!(
+        vault
+            .documents()
+            .iter()
+            .any(|summary| vault.document(&summary.id).unwrap().markdown == "Unsaved draft")
+    );
 }
 
 /// Open `path` and return its tab once the OCR card is up.
@@ -314,6 +357,11 @@ fn open_scan(
         tabs.open_paths(vec![path], window, cx)
     });
     cx.run_until_parked();
+    // Copies of one scan are one source: each becomes its own document.
+    if cx.has_pending_prompt() {
+        cx.simulate_prompt_answer("Import Again");
+        cx.run_until_parked();
+    }
     let view = active(tabs, cx);
     draw(cx);
     cx.update(|_, cx| assert!(view.read(cx).import.ocr_required().is_some()));
@@ -348,29 +396,25 @@ fn drop_files(cx: &mut VisualTestContext, position: gpui::Point<gpui::Pixels>) {
     draw(cx);
 }
 
+/// The live views' names, sorted: live views keep recency order, which no
+/// row shows.
 fn tab_names(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String> {
-    cx.update(|_, cx| {
+    let mut names: Vec<String> = cx.update(|_, cx| {
         tabs.read(cx)
             .tabs
             .iter()
             .map(|tab| {
                 tab.view()
                     .map(|view| view.read(cx).display_name())
-                    .unwrap_or_else(|| {
-                        tab.record()
-                            .markdown
-                            .file_name()
-                            .unwrap()
-                            .to_string_lossy()
-                            .into()
-                    })
+                    .unwrap_or_else(|| tab_label(tab, cx).name)
             })
             .collect()
-    })
+    });
+    names.sort_by_key(|name| name.to_lowercase());
+    names
 }
 
-/// A workspace with one saved document whose names are replaced, and an
-/// isolated case store.
+/// A workspace with one imported document whose names are replaced.
 fn applied_document<'a>(
     cx: &'a mut TestAppContext,
     dir: &std::path::Path,
@@ -387,18 +431,11 @@ fn applied_document<'a>(
     let (tabs, cx) = boot_home(cx, session);
     cx.simulate_resize(size(px(1400.), px(850.)));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.join("cases"),
-            &[3; 32],
-        ));
-        tabs.open_paths(vec![path.clone()], window, cx)
+        tabs.open_path(path.clone(), window, cx)
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
     view.update_in(cx, |view, window, cx| {
-        if view.case.link().is_some() {
-            return;
-        }
         view.pii.set_reviewing(true);
         view.pii
             .review_mut()
@@ -414,7 +451,7 @@ fn applied_document<'a>(
     (tabs, cx, path)
 }
 
-/// Open `text` at `name` in `dir`, mark `names` and apply them.
+/// Import `text` as `name` in `dir`, mark `names` and apply them.
 fn open_applied(
     tabs: &Entity<Workspace>,
     cx: &mut VisualTestContext,
@@ -425,9 +462,7 @@ fn open_applied(
 ) -> u64 {
     let path = dir.join(name);
     std::fs::write(&path, text).unwrap();
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path], window, cx)
-    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
     cx.run_until_parked();
     let view = active(tabs, cx);
     view.update_in(cx, |view, window, cx| {
@@ -445,46 +480,86 @@ fn open_applied(
     cx.update(|_, cx| tabs.read(cx).tabs.active())
 }
 
-/// A case to restore, saved in an isolated store under `dir`.
-fn saved_case(dir: &std::path::Path) -> (mdoc_store::cases::Case, std::path::PathBuf) {
-    let store = mdoc_store::cases::Store::with_key(dir.join("cases"), &[3; 32]);
-    let path = dir.join("contract.md");
-    std::fs::write(&path, "PERSON_1 met Bob.").unwrap();
-    let case = mdoc_store::cases::Case::new(
-        "Petrova".into(),
-        &[mdoc_pii::restore::ExportedIdentity {
-            alias: "PERSON_1".into(),
-            previous: vec![],
-            category: mdoc_pii::Category::Person,
-            custom: false,
-            originals: vec!["Anna Petrova".into()],
-        }],
-        Some(session_store::identity(&path)),
-    );
-    store.save(&case).unwrap();
-    (case, path)
+/// Move tab `id`'s document into a new Project named after it; its id.
+fn new_project(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: u64) -> String {
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.move_to_new_project(id, window, cx)
+    });
+    cx.run_until_parked();
+    project_of_tab(tabs, cx, id).expect("the tab moved into a new Project")
 }
 
-fn case_quit_fixture<'a>(
-    cx: &'a mut TestAppContext,
-    dir: &std::path::Path,
-) -> (Entity<Workspace>, &'a mut VisualTestContext, String) {
-    let (tabs, cx, path) = applied_document(cx, dir, Session::default());
-    let view = active(&tabs, cx);
-    view.update(cx, |view, cx| view.write(path, None, cx));
-    let id = tabs
-        .update_in(cx, |tabs, window, cx| {
-            tabs.create_case(tabs.tabs.active(), window, cx)
+/// Move tab `id`'s document into Project `to`, or Unfiled.
+fn move_tab(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: u64, to: Option<&str>) {
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.move_tab(id, to.map(str::to_owned), window, cx)
+    });
+    cx.run_until_parked();
+}
+
+/// The Project tab `id`'s view belongs to.
+fn project_of_tab(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: u64) -> Option<String> {
+    cx.update(|_, cx| {
+        let view = tabs.read(cx).tabs.get(id)?.view()?.clone();
+        view.read(cx).project.link().map(|link| link.id.clone())
+    })
+}
+
+/// The window's copy of Project `id`.
+fn project(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: &str) -> mdoc_vault::Project {
+    cx.update(|_, cx| tabs.read(cx).projects.project(id).cloned().unwrap())
+}
+
+/// The window's Vault.
+fn vault(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Arc<mdoc_vault::Vault> {
+    cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap())
+}
+
+/// A Project to reopen: "Anna Petrova" is PERSON_1, and its one document,
+/// "PERSON_1 met Bob.", in `vault`. Its id and the document's.
+fn saved_project(vault: &mdoc_vault::Vault) -> (String, String) {
+    let project = vault
+        .create_project(mdoc_vault::NewProject {
+            name: "Petrova".into(),
+            colour: None,
+            pinned: false,
         })
         .unwrap();
-    cx.run_until_parked();
-    // A regular file at the store directory gives a real, portable IO failure.
-    let blocked = dir.join("blocked-store");
-    std::fs::write(&blocked, "keep this file").unwrap();
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(blocked, &[3; 32]));
-    });
-    (tabs, cx, id)
+    vault
+        .update_project(&project.id, |project| {
+            project
+                .mapping
+                .merge(&[mdoc_pii::restore::ExportedIdentity {
+                    alias: "PERSON_1".into(),
+                    previous: vec![],
+                    category: mdoc_pii::Category::Person,
+                    custom: false,
+                    originals: vec!["Anna Petrova".into()],
+                }])
+        })
+        .unwrap();
+    let document = vault
+        .create_document(mdoc_vault::NewDocument {
+            project: Some(project.id.clone()),
+            title: "contract".into(),
+            source_kind: mdoc_vault::SourceKind::Markdown,
+            origin: mdoc_vault::DocumentOrigin::Ordinary,
+            markdown: "PERSON_1 met Bob.".into(),
+        })
+        .unwrap();
+    (project.id, document.id)
+}
+
+/// A session restoring Vault document `id`.
+fn session_of(id: &str) -> Session {
+    let mut record = TabRecord::default();
+    record.set_document(mdoc_store::document_id::DocumentId::Vault(
+        mdoc_store::document_id::VaultId::parse(id).unwrap(),
+    ));
+    Session {
+        tabs: vec![record],
+        ..Session::default()
+    }
 }
 
 // Keyboard reach.
@@ -541,13 +616,8 @@ fn in_sidebar(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
     })
 }
 
-/// Whether keyboard focus is on `id`'s sidebar row in either layout: the
-/// expanded list (or the rail's reveal of it) or the collapsed rail.
+/// Whether keyboard focus is on the tree row of live view `id`'s document.
 fn tab_row_focused(tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext) -> bool {
-    cx.update(|window, cx| {
-        let tabs = tabs.read(cx);
-        [&tabs.sidebar_row_focus, &tabs.compact_row_focus]
-            .iter()
-            .any(|rows| rows.borrow().get(&id).is_some_and(|f| f.is_focused(window)))
-    })
+    let focus = tree_row_focus(tabs, id, cx);
+    cx.update(|window, _| focus.is_focused(window))
 }

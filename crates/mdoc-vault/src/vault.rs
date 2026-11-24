@@ -2,10 +2,12 @@
 //! time: in the process through a mutex and across processes and handles
 //! through `.lock`, held only for the write (#1091 Decision 20). A handle
 //! never writes a revision older than the last it wrote.
+mod export;
 mod moves;
 mod readiness;
 mod replies;
 
+pub use export::{Exported, ORIGINALS};
 pub use moves::{MoveUndo, Moved, ProjectDocuments};
 pub use readiness::Readiness;
 pub use replies::ReplyHandle;
@@ -224,6 +226,20 @@ impl Vault {
         Ok(vault)
     }
 
+    /// Whether `key` is the key this handle seals with: Settings shows a
+    /// recovery key only when it opens these documents. The key itself is
+    /// never kept.
+    pub fn opens_with(&self, key: &[u8; 32]) -> bool {
+        const PROBE: &str = "recovery-key-check";
+        self.sealer
+            .seal(ObjectKind::Manifest, PROBE, PROBE.as_bytes())
+            .is_ok_and(|sealed| {
+                Sealer::new(key)
+                    .open(ObjectKind::Manifest, PROBE, &sealed)
+                    .is_ok()
+            })
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -306,16 +322,19 @@ impl Vault {
 
     pub fn create_project(&self, new: NewProject) -> Result<Project, VaultError> {
         let lock = self.write_lock()?;
-        self.create_project_locked(&lock, new)
+        self.create_project_locked(&lock, new, |_| {})
     }
 
+    /// Create a Project from `new`, set up by `setup` before its first
+    /// write.
     fn create_project_locked(
         &self,
         lock: &WriteLock<'_>,
         new: NewProject,
+        setup: impl FnOnce(&mut Project),
     ) -> Result<Project, VaultError> {
         let now = now();
-        let project = Project {
+        let mut project = Project {
             id: new_id()?,
             name: new.name,
             colour: new.colour,
@@ -328,6 +347,7 @@ impl Vault {
             skip: Vec::new(),
             dismissed_hints: Vec::new(),
         };
+        setup(&mut project);
         self.write_record(lock, &project)?;
         Ok(project)
     }
@@ -376,14 +396,41 @@ impl Vault {
         source: impl Read,
         info: OriginalInfo,
     ) -> Result<Document, VaultError> {
+        match self.import_of(new, source, info, None)? {
+            Some(document) => Ok(document),
+            None => unreachable!("only an expected hash refuses the source"),
+        }
+    }
+
+    /// [`Self::import_document`], only while `source` hashes to `sha256`,
+    /// the bytes the caller checked before: `Ok(None)` when they differ,
+    /// with nothing written. The hash is that of the bytes sealed, so the
+    /// Document holds exactly what was checked.
+    pub fn import_document_expecting(
+        &self,
+        new: NewDocument,
+        source: impl Read,
+        info: OriginalInfo,
+        sha256: &str,
+    ) -> Result<Option<Document>, VaultError> {
+        self.import_of(new, source, info, Some(sha256))
+    }
+
+    fn import_of(
+        &self,
+        new: NewDocument,
+        source: impl Read,
+        info: OriginalInfo,
+        expect: Option<&str>,
+    ) -> Result<Option<Document>, VaultError> {
         if self.crashed.load(Ordering::SeqCst) {
             return Err(VaultError::Crashed);
         }
         let id = new_id()?;
         let dir = document_dir(&self.root, &id);
         std::fs::create_dir_all(&dir)?;
-        let imported = self.import_into(&id, &dir, new, source, info);
-        if !matches!(imported, Ok(_) | Err(VaultError::Crashed)) {
+        let imported = self.import_into(&id, &dir, new, source, info, expect);
+        if !matches!(imported, Ok(Some(_)) | Err(VaultError::Crashed)) {
             let _ = std::fs::remove_dir_all(&dir);
         }
         imported
@@ -396,7 +443,8 @@ impl Vault {
         new: NewDocument,
         source: impl Read,
         info: OriginalInfo,
-    ) -> Result<Document, VaultError> {
+        expect: Option<&str>,
+    ) -> Result<Option<Document>, VaultError> {
         let mut temp = tempfile::Builder::new()
             .prefix(IMPORT_PREFIX)
             .tempfile_in(dir)?;
@@ -404,6 +452,9 @@ impl Vault {
         // folder whose file is locked, however long the source stalls.
         temp.as_file().lock()?;
         let sealed = original::seal(&self.sealer, id, source, temp.as_file_mut())?;
+        if expect.is_some_and(|sha256| sha256 != sealed.sha256) {
+            return Ok(None);
+        }
         temp.as_file().sync_all()?;
         let lock = self.write_lock()?;
         if let Some(project) = &new.project {
@@ -425,7 +476,7 @@ impl Vault {
         };
         let document = new_document(id.to_string(), new, Some(original));
         self.write_record(&lock, &document)?;
-        Ok(document)
+        Ok(Some(document))
     }
 
     /// The Source Original of Document `id`, to read in bounded memory.
@@ -499,6 +550,12 @@ impl Vault {
         self.update(id, change)
     }
 
+    /// Replace Document `id`'s private notes (#1091 Decision 3) under the
+    /// write lock; its text, review and place stay as stored.
+    pub fn set_notes(&self, id: &str, notes: String) -> Result<Document, VaultError> {
+        self.update(id, |document: &mut Document| document.notes = notes)
+    }
+
     /// Save `document` unless this handle wrote, or its file holds, a newer
     /// revision. Its Project stays as stored.
     pub fn save_document(&self, document: &Document) -> Result<Saved, VaultError> {
@@ -513,6 +570,31 @@ impl Vault {
         }
         let lock = self.write_lock()?;
         self.delete_document_locked(&lock, id)
+    }
+
+    /// [`Self::delete_document`] of each of `ids`, only while every one
+    /// that still exists is Unfiled: checked under the write lock, so a
+    /// Document moved into a Project since the user was asked is never
+    /// deleted. `Ok(false)` when one was moved, and nothing is deleted.
+    /// One that can't be read (another key, damaged) was never moved by
+    /// this Vault and is deleted.
+    pub fn delete_unfiled_documents(&self, ids: &[String]) -> Result<bool, VaultError> {
+        if !ids.iter().all(|id| is_id(id)) {
+            return Err(VaultError::InvalidId);
+        }
+        let lock = self.write_lock()?;
+        self.refresh()?;
+        for id in ids {
+            match self.load_record::<Document>(id) {
+                Ok(document) if document.project.is_some() => return Ok(false),
+                Err(VaultError::Io(error)) => return Err(VaultError::Io(error)),
+                _ => {}
+            }
+        }
+        for id in ids {
+            self.delete_document_locked(&lock, id)?;
+        }
+        Ok(true)
     }
 
     fn delete_document_locked(&self, lock: &WriteLock<'_>, id: &str) -> Result<(), VaultError> {
@@ -832,6 +914,7 @@ impl Drop for Vault {
 
 fn new_document(id: String, new: NewDocument, original: Option<Original>) -> Document {
     let now = now();
+    let unconverted = original.is_some() && new.markdown.is_empty();
     Document {
         id,
         project: new.project,
@@ -843,12 +926,15 @@ fn new_document(id: String, new: NewDocument, original: Option<Original>) -> Doc
         updated: now,
         revision: 1,
         markdown: new.markdown,
+        unconverted,
         scanned: false,
         ready_fingerprint: None,
         mapping: Mapping::default(),
         review: None,
         original,
         counts: None,
+        notes: String::new(),
+        from_reply: None,
     }
 }
 
