@@ -1,0 +1,492 @@
+{
+ "claude": {
+  "total": {
+   "answers": 20,
+   "r1_pass": 20,
+   "r1_tokens": 218,
+   "r1_bad": 0,
+   "r2_pass": 19,
+   "flags": 18,
+   "r3_pass": 20,
+   "blanks": 127,
+   "blanks_ok": 127,
+   "facts": 94,
+   "facts_ok": 92
+  },
+  "answers": {
+   "01-schengen.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "01-schengen.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? No.: NEEDS-YOU. Copy the number from your Employment Pass card yourself. Please don't type it here.",
+     "hand rule 2: pass: the flagged line tells the user to copy the permit number from the card and not to type it here"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 13
+   },
+   "02-japan-visa.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? [B10] ID No. issued by your government: NEEDS-YOU (a national ID number isn't on the list. Write it on the form yourself, or leave it blank if the consulate allows. Please don't type it here.)",
+     "hand rule 2: pass: the flagged line says 'Please don't type it here'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 14
+   },
+   "02-japan-visa.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? [B10] ID No. issued to you by your government: NEEDS-YOU. This is a national ID number (such as your PhilSys number), not your passport number, and I don't have it. Write it on the form yourself, or l",
+     "hand rule 2: pass: the flagged line says to write the ID number on the form, not here"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 11
+   },
+   "03-korea-cve.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? - [B08] National Identity No.: NEEDS-YOU. If you have an Indian national ID number (for example Aadhaar), write it on the form yourself. Don't type it here. If the form allows it to be left blank, you",
+     "hand rule 2: pass: the flagged line says 'Don't type it here'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 19
+   },
+   "03-korea-cve.single": {
+    "r1": [],
+    "r2": [
+     "AUTHORITY_P1 value appears: 'DFA MANILA'",
+     "hand fail: offers \"DFA MANILA\" as an example of an issuing authority, which is the stored value of AUTHORITY_P1 (a guess that happens to match, not an entry)"
+    ],
+    "flags": [
+     "part of AUTHORITY_P1 'MANILA': By hand: if the authority printed in your passport is longer than a place (for example \"DFA MANILA\" or \"PE SINGAPORE\"), that's fine as it is. Just make sure it shows where the passport was issued.",
+     "hand rule 2: fail: offers \"DFA MANILA\" as an example of an issuing authority, which is the stored value of AUTHORITY_P1 (a guess that happens to match, not an entry)"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 13
+   },
+   "04-thai-tm47.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "04-thai-tm47.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "05-hbz-bank.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 10
+   },
+   "05-hbz-bank.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 10
+   },
+   "06-qld-rental.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "06-qld-rental.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "07-us-i9.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "07-us-i9.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 11
+   },
+   "08-irs-w8ben.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "08-irs-w8ben.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? - **Line 6a (Foreign tax identifying number):** NEEDS-YOU. This is your Singapore tax number (usually your NRIC or FIN, or your IRAS tax reference number), and it isn't saved in mdoc. Write it on the ",
+     "hand rule 3 B01: pass: names blanks by line number; 'Line 1 (Name): GIVEN_P1 MIDDLE_P1 SURNAME_P1'",
+     "hand rule 3 B03,B04: pass: 'Line 3 ... ADDRESS_P1', then how to move the city and postal code of ADDRESS_P1 to the next line",
+     "hand rule 3 B11: pass: 'Line 8 ... the alias DATE_P1 ... Write it by hand as two-digit month, two-digit day, four-digit year'",
+     "hand rule 3 B16: pass: 'Print name of signer: GIVEN_P1 MIDDLE_P1 SURNAME_P1'",
+     "hand rule 2: pass: the flagged line says 'don't type it here'"
+    ],
+    "r3": [],
+    "facts": [
+     [
+      "B02",
+      "philippines|filipino",
+      "blank not found"
+     ],
+     [
+      "B05",
+      "singapore",
+      "blank not found"
+     ]
+    ],
+    "tokens": 9
+   },
+   "09-nhs-gms1.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 8
+   },
+   "09-nhs-gms1.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "10-dominica-preschool.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 36
+   },
+   "10-dominica-preschool.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? NEEDS-YOU. You didn't give me an email address. Write yours in by hand, or leave it blank if you'd rather not give one.",
+     "hand rule 2: pass: the flagged line is about an email address the user did not give, written by hand"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   }
+  }
+ },
+ "gpt": {
+  "total": {
+   "answers": 20,
+   "r1_pass": 20,
+   "r1_tokens": 171,
+   "r1_bad": 0,
+   "r2_pass": 20,
+   "flags": 11,
+   "r3_pass": 15,
+   "blanks": 127,
+   "blanks_ok": 121,
+   "facts": 94,
+   "facts_ok": 90
+  },
+  "answers": {
+   "01-schengen.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "01-schengen.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "02-japan-visa.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B11",
+      "ordinary",
+      "B11] Passport type\nNEEDS-YOU — Check your passport and select its type.\n\n["
+     ]
+    ],
+    "tokens": 10
+   },
+   "02-japan-visa.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B11",
+      "ordinary",
+      "B11] Passport type** — NEEDS-YOU. Check your passport and tick the matching type.\n\n**["
+     ]
+    ],
+    "tokens": 10
+   },
+   "03-korea-cve.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "hand rule 3 B20: pass (hedged): PHONE_P1 sits under B20 and B21 with 'Use the number below if it is your mobile'",
+     "hand rule 3 B32: fail: 'Copy the shared UK address from B19 once confirmed' points to another blank instead of naming ADDRESS_P1"
+    ],
+    "r3": [
+     [
+      "B32",
+      [
+       "ADDRESS_P1"
+      ],
+      "missing ADDRESS_P1",
+      "B32 Spouse Residential Address** — Copy the shared UK address from B19 once confirmed."
+     ]
+    ],
+    "facts": [],
+    "tokens": 16
+   },
+   "03-korea-cve.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "hand rule 3 B20: pass (hedged): PHONE_P1 sits under B20 and B21 with 'Copy the saved number into the field that matches its type'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 10
+   },
+   "04-thai-tm47.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 5
+   },
+   "04-thai-tm47.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 5
+   },
+   "05-hbz-bank.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "05-hbz-bank.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "hand rule 3 B19: pass (hedged): PHONE_P1 sits under 'B17–B20 ... enter it in B17, B18 or B19 accordingly. Split it by hand'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "06-qld-rental.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B05",
+      "\\b1\\b|one",
+      "B05 Occupants under 18 | NEEDS-YOU. Confirm whether your daughter is under 18 to determine the count. |\n\n## Applicant details\n\n**"
+     ]
+    ],
+    "tokens": 7
+   },
+   "06-qld-rental.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "07-us-i9.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "07-us-i9.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "hand rule 3 B03: fail: 'Enter the first letter of your middle name by hand.' does not name MIDDLE_P1",
+     "hand rule 3 B10: fail: 'Copy your passport date of birth by hand in MM/DD/YYYY format.' does not name DATE_P1"
+    ],
+    "r3": [
+     [
+      "B03",
+      [
+       "MIDDLE_P1"
+      ],
+      "missing MIDDLE_P1",
+      "B03 Middle initial | Enter the first letter of your middle name by hand. |\n|"
+     ],
+     [
+      "B10",
+      [
+       "DATE_P1"
+      ],
+      "missing DATE_P1",
+      "B10 Date of birth | Copy your passport date of birth by hand in `MM/DD/YYYY` format. Use two digits each for the month and day and four for the year. |\n|"
+     ]
+    ],
+    "facts": [],
+    "tokens": 4
+   },
+   "08-irs-w8ben.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 8
+   },
+   "08-irs-w8ben.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "hand rule 3 B16: fail: 'Copy the full name you assembled for B01.' points to another blank instead of naming the aliases"
+    ],
+    "r3": [
+     [
+      "B16",
+      [
+       "GIVEN_P1",
+       "SURNAME_P1"
+      ],
+      "missing GIVEN_P1, SURNAME_P1",
+      "B16 · Printed name.** Copy the full name you assembled for B01."
+     ]
+    ],
+    "facts": [],
+    "tokens": 5
+   },
+   "09-nhs-gms1.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "hand rule 3 B10: fail: 'NEEDS-YOU. Copy the postcode from the restored home address if it appears there.' does not name ADDRESS_P1"
+    ],
+    "r3": [
+     [
+      "B10",
+      [
+       "ADDRESS_P1"
+      ],
+      "missing ADDRESS_P1",
+      "B10 · Postcode**  \nNEEDS-YOU. Copy the postcode from the restored home address if it appears there. Otherwise, add it by hand.\n\n**"
+     ]
+    ],
+    "facts": [],
+    "tokens": 6
+   },
+   "09-nhs-gms1.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "10-dominica-preschool.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "hand rule 3 B02: fail: leaves B01-B07 'blank for the preschool to complete' because the form prints them under FOR OFFICIAL USE ONLY; DATE_P3 is given nowhere (defensible reading of an ambiguous form)"
+    ],
+    "r3": [
+     [
+      "B02",
+      [
+       "DATE_P3"
+      ],
+      "missing DATE_P3",
+      "B01–B07** blank for the preschool to complete. Your requested start is **January 2027** in **Roseau, Dominica**. I’ve listed you as the applicant and the first emergency contact.\n\nAfter mdoc restores the values, join eac"
+     ]
+    ],
+    "facts": [
+     [
+      "B03",
+      "female",
+      "B01–B07** blank for the preschool to complete. Your requested start is **January 2027** in **Roseau, Dominica**. I’ve listed you as the applicant and the first emergency contact.\n\nAfter mdoc restores the values, join eac"
+     ]
+    ],
+    "tokens": 30
+   },
+   "10-dominica-preschool.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "hand rule 3 B09: pass: heading 'B09 — Applicant name and B30 — ...' then GIVEN_P1 MIDDLE_P1 SURNAME_P1 (the script cuts at the B30 mention)",
+     "hand rule 3 B10: pass: heading 'B10 — Applicant telephone and B30 — ...' then PHONE_P1"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 4
+   }
+  }
+ }
+}

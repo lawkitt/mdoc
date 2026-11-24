@@ -1,0 +1,51 @@
+Here is your form filled in. Where I couldn't fill a field from what you gave me, I've put NEEDS-YOU and said what's missing.
+
+One urgent thing first: your daughter's passport is valid only until 1 January 2027, so it will have expired by the time you arrive on 20 April 2027. She will need a new passport before she can apply for her visa. Please renew it before you start her application.
+
+VISA APPLICATION FORM TO ENTER JAPAN (you)
+
+[B01] Surname: SURNAME_P1
+[B02] Given and middle names: GIVEN_P1 MIDDLE_P1
+[B03] Other names: NEEDS-YOU (any other names you use or have used; write "None" if there aren't any)
+[B04] Date of birth: DATE_P1
+      By hand: the form wants Day/Month/Year. If your passport prints the date another way, rewrite it as DD/MM/YYYY.
+[B05] Place of birth: PLACE_P1
+      By hand: the form has separate City, State or Province, and Country parts. Split the place into those three parts.
+[B06] Sex: Male [X]  Female [ ]
+[B07] Marital status: Single [ ]  Married [X]  Widowed [ ]  Divorced [ ]
+[B08] Nationality or citizenship: Indian
+[B09] Former and/or other nationalities: NEEDS-YOU (write "None" if you've only ever been Indian)
+[B10] ID No. issued by your government: NEEDS-YOU (a national ID number isn't on the list. Write it on the form yourself, or leave it blank if the consulate allows. Please don't type it here.)
+[B11] Passport type: NEEDS-YOU (most tourist passports are "Ordinary", but check yours and tick the right box)
+[B12] Passport No.: ID_P1
+[B13] Place of issue: NEEDS-YOU (the place of issue printed in your passport isn't on the list)
+[B14] Date of issue: ISSUED_P1
+      By hand: rewrite it as DD/MM/YYYY if your passport prints it another way.
+[B15] Issuing authority: AUTHORITY_P1
+[B16] Date of expiry: 04/06/2029
+[B17] Certificate of Eligibility No.: leave blank (a short tourist visit doesn't need one)
+[B18] Purpose of visit: Tourism (sightseeing with family)
+[B19] Intended length of stay: 7 days
+[B20] Date of arrival: 20/04/2027
+[B21] Port of entry: Kansai International Airport
+[B22] Name of ship or airline: NEEDS-YOU (your airline and flight number)
+[B23] Hotel or host, name and Tel.: NEEDS-YOU (where you're staying and their phone number)
+[B24] Address: NEEDS-YOU (the hotel's or host's address in Japan)
+[B25] Previous stays in Japan: October 2023, 9 days
+      If you know the exact dates, add them, e.g. "DD/10/2023 to DD/10/2023 (9 days)".
+[B26] Current residential address: ADDRESS_P1
+[B27] Tel.: (leave blank, or write your landline if you have one)   Mobile No.: PHONE_P1
+[B28] E-Mail: NEEDS-YOU (your email address)
+[B29] Profession/occupation and position: Software Engineer
+[B30] Employer, name and Tel.: NEEDS-YOU (your employer's name and phone number)
+[B31] Employer's address: NEEDS-YOU (your employer's address)
+[B32] Partner's profession/occupation: Pharmacist
+[B33] Guarantor or reference in Japan: NEEDS-YOU (if a person in Japan is guaranteeing or hosting you, fill in their details. If it's a self-funded holiday with nobody guaranteeing you, write "None".)
+[B34] Inviter in Japan: NEEDS-YOU (same as B33: "None" if nobody is inviting you, or "same as above" if the inviter is your guarantor)
+[B35] Remarks: Travelling for tourism with my wife, GIVEN_P2 SURNAME_P2, and my daughter, GIVEN_P3 SURNAME_P3, who are applying separately.
+[B36]–[B41] Criminal record, deportation and other questions: NEEDS-YOU. Only you can answer these, so tick Yes or No for each one yourself.
+[B42] Details if any answer is "Yes": leave blank if every answer is No
+[B43] Date of application: NEEDS-YOU (the day you sign and submit, as DD/MM/YYYY)
+[B44] Signature of applicant: sign by hand
+
+Your wife and daughter each need their own form. I can fill theirs in the same way, and I have most of their details. For your daughter's form, B32 asks for her parents' professions (Software Engineer and Pharmacist). Her passport details will change once it's renewed.

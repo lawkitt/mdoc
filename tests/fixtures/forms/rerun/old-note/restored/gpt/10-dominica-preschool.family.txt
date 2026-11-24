@@ -1,0 +1,39 @@
+Leave **B01–B07** blank for the preschool to complete. If staff ask you for your daughter’s birth date separately, copy it from her passport by hand in day/month/year order.
+
+**Applicant**  
+I’ve used you as the applicant and your current home address for the child and both parents. The requested start is January 2027.
+
+| Field | Entry |
+|---|---|
+| Form title and B08 — Preschool/daycare | NEEDS-YOU — preschool or daycare name in Roseau |
+| B08 — Child applying for admission | ANIKA RAGHUNATHAN |
+| B09 — Applicant name | VIKRAM ANAND RAGHUNATHAN |
+| B10 — Applicant phone | +44 7700 900123 |
+| B11 — Applicant email | NEEDS-YOU — your email address |
+| B12 — Relationship to child | Father |
+
+**Child and family**
+
+| Field | Entry |
+|---|---|
+| B13 — Child’s name | ANIKA RAGHUNATHAN |
+| B14 — Child lives with | Both parents, VIKRAM ANAND RAGHUNATHAN and MEERA RAGHUNATHAN |
+| B15 — Child’s address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B16 — Number of children | 1 total, 0 male, 1 female |
+| B17 — Place in family | Only child |
+| B18 — Mother’s name | MEERA RAGHUNATHAN |
+| B19 — Mother’s address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B20 — Mother’s phone | +44 7700 900456 |
+| B21 — Mother’s email | NEEDS-YOU — your wife’s email address |
+| B22 — Mother’s occupation | Pharmacist |
+| B23 — Father’s name | VIKRAM ANAND RAGHUNATHAN |
+| B24 — Father’s address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B25 — Father’s phone | +44 7700 900123 |
+| B26 — Father’s email | NEEDS-YOU — your email address, same as B11 |
+| B27 — Father’s occupation | Software engineer |
+| B28 — Authorized to collect | VIKRAM ANAND RAGHUNATHAN and MEERA RAGHUNATHAN |
+| B29 — Emergency contact 1 | VIKRAM ANAND RAGHUNATHAN / +44 7700 900123 |
+| B30 — Emergency contact 2 | MEERA RAGHUNATHAN / +44 7700 900456 |
+
+**Phone fields (B10, B20, B25, B29, B30)**  
+NEEDS-YOU — choose the appropriate box for each number by hand. Use C for cell, W for work, or H for home.

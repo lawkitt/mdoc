@@ -1,0 +1,182 @@
+{
+ "claude": {
+  "total": {
+   "answers": 1,
+   "r1_pass": 1,
+   "r1_tokens": 12,
+   "r1_bad": 0,
+   "r2_pass": 1,
+   "flags": 2,
+   "r3_pass": 1,
+   "blanks": 7,
+   "blanks_ok": 7,
+   "facts": 8,
+   "facts_ok": 8
+  },
+  "answers": {
+   "03-korea-cve.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? [B08] National Identity No.: NEEDS-YOU. Write your Philippine national ID number (PhilSys) by hand if you have one. Don't type it here.",
+     "hand rule 2: pass: the flagged line says 'Don't type it here'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 12
+   }
+  }
+ },
+ "gpt": {
+  "total": {
+   "answers": 6,
+   "r1_pass": 6,
+   "r1_tokens": 70,
+   "r1_bad": 0,
+   "r2_pass": 6,
+   "flags": 1,
+   "r3_pass": 1,
+   "blanks": 49,
+   "blanks_ok": 40,
+   "facts": 28,
+   "facts_ok": 27
+  },
+  "answers": {
+   "03-korea-cve.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [
+     [
+      "B02",
+      [
+       "GIVEN_P1"
+      ],
+      "missing GIVEN_P1",
+      "B02 Given names | By hand, copy all given names exactly as shown in your passport. Include your middle name if it appears in the passport’s given-names field, preserving the printed order and spacing. |\n|"
+     ],
+     [
+      "B05",
+      [
+       "DATE_P1"
+      ],
+      "missing DATE_P1",
+      "B05 Date of birth | By hand, write your passport date of birth as `yyyy/mm/dd`. |\n|"
+     ],
+     [
+      "B23",
+      [
+       "GIVEN_P2",
+       "SURNAME_P2"
+      ],
+      "missing GIVEN_P2, SURNAME_P2",
+      "B23 Emergency contact name | By hand, write your wife’s full name in English as shown in her passport. |\n|"
+     ],
+     [
+      "B30",
+      [
+       "DATE_P2"
+      ],
+      "missing DATE_P2",
+      "B30 Spouse’s date of birth | By hand, write your wife’s passport date of birth as `yyyy/mm/dd`. |\n|"
+     ]
+    ],
+    "facts": [],
+    "tokens": 10
+   },
+   "03-korea-cve.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "hand rule 3 B20: pass (hedged): PHONE_P1 sits under 'B20–B21 Phone numbers — Put the number below in B20 if it is a mobile number', as in the first run"
+    ],
+    "r3": [
+     [
+      "B02",
+      [
+       "GIVEN_P1"
+      ],
+      "missing GIVEN_P1",
+      "B02 Given names** — Copy the passport’s Given Names field by hand, in the printed order. Include your middle name if it appears in that field.\n- **"
+     ],
+     [
+      "B05",
+      [
+       "DATE_P1"
+      ],
+      "missing DATE_P1",
+      "B05 Date of birth** — Convert the birth date printed in your passport to `yyyy/mm/dd` by hand. Use four digits for the year and two each for the month and day.\n- **"
+     ]
+    ],
+    "facts": [],
+    "tokens": 5
+   },
+   "07-us-i9.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "08-irs-w8ben.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [
+     [
+      "B16",
+      [
+       "GIVEN_P1",
+       "SURNAME_P1"
+      ],
+      "missing GIVEN_P1, SURNAME_P1",
+      "B16 — Printed name of signer.** If you sign for yourself, print your full name as entered in B01."
+     ]
+    ],
+    "facts": [],
+    "tokens": 8
+   },
+   "09-nhs-gms1.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [
+     [
+      "B10",
+      [
+       "ADDRESS_P1"
+      ],
+      "missing ADDRESS_P1",
+      "B10 Postcode | Copy the postcode from the restored home address into this box by hand. If the address does not include it, NEEDS-YOU for the postcode. |\n|"
+     ]
+    ],
+    "facts": [],
+    "tokens": 6
+   },
+   "10-dominica-preschool.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [
+     [
+      "B02",
+      [
+       "DATE_P3"
+      ],
+      "missing DATE_P3",
+      "B01–B07** blank for the preschool to complete. If staff ask you for your daughter’s birth date separately, copy it from her passport by hand in day/month/year order.\n\n**Applicant**  \nI’ve used you as the applicant and yo"
+     ]
+    ],
+    "facts": [
+     [
+      "B03",
+      "female",
+      "B01–B07** blank for the preschool to complete. If staff ask you for your daughter’s birth date separately, copy it from her passport by hand in day/month/year order.\n\n**Applicant**  \nI’ve used you as the applicant and yo"
+     ]
+    ],
+    "tokens": 35
+   }
+  }
+ }
+}

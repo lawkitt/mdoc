@@ -1,0 +1,35 @@
+Here's Section 1 of your I-9. Only you, the employee, fill in an I-9, so your wife's and daughter's details aren't used here.
+
+[B01] Last Name (Family Name): SURNAME_P1
+[B02] First Name (Given Name): GIVEN_P1
+[B03] Middle Initial: by hand. Write only the first letter of your middle name, which is MIDDLE_P1
+[B04] Other Last Names Used: N/A
+[B05] Address (Street Number and Name): NEEDS-YOU (your new Seattle street address)
+[B06] Apt. Number: NEEDS-YOU (your apartment number, or N/A if there isn't one)
+[B07] City or Town: NEEDS-YOU (probably Seattle, but use the city in your postal address)
+[B08] State: NEEDS-YOU (probably WA)
+[B09] ZIP Code: NEEDS-YOU
+[B10] Date of Birth (mm/dd/yyyy): by hand. The stored value is your date of birth as printed in your passport, which is usually day first. Rewrite it as month/day/year with a four-digit year. The stored value is DATE_P1
+[B11] U.S. Social Security Number: leave blank
+[B12] Employee's Email Address: optional. NEEDS-YOU if you want to give one, or leave it blank
+[B13] Employee's Telephone Number: PHONE_P1
+[B14] Check box 4: "An alien authorized to work until", expiration date 01/15/2029
+[B15] Use the third option, Foreign Passport Number and Country of Issuance. Passport number: ID_P1
+      Country of Issuance: India
+      Leave the USCIS A-Number and Form I-94 Admission Number options blank. You only need one of the three.
+[B16] Signature of Employee: sign it yourself by hand, or with the employer's e-signature if the form is electronic
+[B17] Today's Date (mm/dd/yyyy): the date you sign it
+
+Some things to know:
+
+1. Address (B05 to B09): You said your new US address isn't saved in mdoc, so fill these in yourself. Don't use your saved home address. Section 1 asks for the address where you live now in the US.
+
+2. No Social Security number (B11): Giving your SSN in Section 1 is usually optional, so leaving it blank is fine. The exception is an employer that uses E-Verify, which needs it. In that case, tell HR you've applied for (or will apply for) a number. You can still complete the I-9 now, and they'll create the E-Verify case once your number arrives. Don't put zeros or "applied for" in the boxes.
+
+3. Work authorization date (B14): 01/15/2029 should match the "Admit Until" date on your I-94 record, which you can look up on the CBP I-94 website. If the I-94 shows a different date, use the I-94 date. Your passport is valid until 4 June 2029, which is after that date, so there's no conflict there.
+
+4. Passport vs I-94 number (B15): Either one is accepted. If you'd rather use your I-94 admission number, that's fine too, but you'd have to enter it yourself because it isn't saved. Whatever you enter should match the documents you show your employer in Section 2. For an L-1 worker, that's usually your Indian passport together with your I-94.
+
+5. Timing: Section 1 must be completed and signed no later than your first day of work. Within three business days of starting, you'll have to show your employer your original documents, typically the passport and I-94.
+
+6. Help with the form: If someone else fills in the form for you, they also have to complete the Preparer and/or Translator Certification. That doesn't apply if you fill it in yourself from this answer.

@@ -1,0 +1,48 @@
+## Certificate of Visa Eligibility application for P1
+
+| Blank | Entry | What to complete by hand |
+|---|---|---|
+| B01 | SURNAME_P1 | |
+| B02 | GIVEN_P1 MIDDLE_P1 | Copy the given names in passport order. Include the middle name only if it appears among the passport’s given names. |
+| B03 | NEEDS-YOU | Supply your name in Chinese characters if this field applies. |
+| B04 | √ MALE | |
+| B05 | DATE_P1 | Rewrite the restored date as `yyyy/mm/dd`. |
+| B06 | INDIAN | |
+| B07 | PLACE_P1 | Enter only the country from the restored birthplace. If it shows only a city or region, supply the country by hand. |
+| B08 | NEEDS-YOU | Supply the national identity number requested by the form. |
+| B09 | NEEDS-YOU | Check Yes or No for prior use of another name when entering or leaving Korea. If Yes, supply the other family and given names. |
+| B10 | NEEDS-YOU | Check Yes or No for multiple citizenships. If Yes, give the other citizenship details. |
+| B11 | NEEDS-YOU | Check the passport category shown on your passport. If Other, specify the type. |
+| B12 | ID_P1 | |
+| B13 | INDIA | |
+| B14 | NEEDS-YOU | Supply the passport’s place of issue. |
+| B15 | ISSUED_P1 | If the field specifies `yyyy/mm/dd`, rewrite the restored date in that format. |
+| B16 | 2029/06/04 | |
+| B17 | NEEDS-YOU | Check Yes or No for another valid passport. If Yes, supply its type, number, issuing country and expiry date. |
+| B18 | NEEDS-YOU | Supply your home-country address in India. |
+| B19 | ADDRESS_P1 | Use your current UK residential address. |
+| B20 | PHONE_P1 | Use this here if it is your mobile number. |
+| B21 | NEEDS-YOU | Supply a general telephone number if applicable. If your stored phone number is your general telephone number, move it here. |
+| B22 | NEEDS-YOU | Supply your email address. |
+| B23 | GIVEN_P2 SURNAME_P2 | Enter your wife’s full name in English. |
+| B24 | UNITED KINGDOM | |
+| B25 | PHONE_P2 | |
+| B26 | WIFE | |
+| B27 | √ MARRIED | |
+| B28 | SURNAME_P2 | |
+| B29 | GIVEN_P2 | |
+| B30 | DATE_P2 | Rewrite the restored date as `yyyy/mm/dd`. |
+| B31 | INDIAN | |
+| B32 | ADDRESS_P1 | Use the UK address you share. |
+| B33 | PHONE_P2 | |
+| B34 | √ YES · 1 CHILD | Enter `1` in the number-of-children box. |
+| B35 | √ MASTER’S / DOCTORAL DEGREE | |
+| B36 | NEEDS-YOU | Supply the name of the school that awarded your master’s degree. |
+| B37 | NEEDS-YOU | Supply the school’s city, province or equivalent region, and country. |
+| B38 | √ EMPLOYED | |
+| B39 | NEEDS-YOU | Supply your company’s name. |
+| B40 | NEEDS-YOU | Supply your job title. |
+| B41 | NEEDS-YOU | Supply the company office’s full address. |
+| B42 | NEEDS-YOU | Supply the company office’s telephone number. |
+
+Use block letters when copying the restored entries onto the form.

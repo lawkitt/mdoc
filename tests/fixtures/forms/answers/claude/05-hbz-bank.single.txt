@@ -1,0 +1,52 @@
+Here's how I'd fill in the HBZ Bank form for a non-resident current account. The form asks for capital letters. Your saved details go back in exactly as stored, so if any of them aren't in capitals, write those entries in capitals by hand.
+
+**Top of form**
+- [B01] Date: NEEDS-YOU. Put the date you sign, one digit per box (8 boxes, so DDMMYYYY).
+- [B02] Branch: NEEDS-YOU. I don't know which HBZ branch you're using (for example the Durban branch).
+- [B03] Type of Account: Current [X]  Saving [ ]
+
+**A. Account holder's detail**
+- [B04] Surname: SURNAME_P1
+- [B05] First name: GIVEN_P1 MIDDLE_P1 (if the bank only wants your first name, leave out MIDDLE_P1)
+- [B06] Identity number: N/A – NON-RESIDENT, NO SA ID
+- [B07] Date of Birth: DATE_P1
+- [B08] Passport number: ID_P1
+- [B09] Passport issuing country: PHILIPPINES   Expiry date: 13 MARCH 2032
+- [B10] Work / study / residence permit: N/A   Expiry date: N/A
+- [B11] Alternative type of permit: N/A   Expiry date: N/A
+- [B12] Nationality: FILIPINO   Country of birth: NEEDS-YOU. I only have your place of birth (PLACE_P1), which may be just a town or city. Write the country you were born in by hand.
+- [B13] Additional nationality: NEEDS-YOU. Write NONE if Filipino is your only nationality. Otherwise write the other one.
+- [B14] Physical residential address: ADDRESS_P1   Postal code: see the note below.
+  By hand: spread the address across the three lines if it doesn't fit on one, and move the postal code into the Postal code box.
+- [B15] Postal address: SAME AS RESIDENTIAL ADDRESS   Postal code: same as B14
+- [B16] Email address: NEEDS-YOU. I don't have an email address for you.
+- [B17] Home telephone no: leave blank (or see B19)
+- [B18] Work telephone no: leave blank
+- [B19] Cell. no: PHONE_P1
+  By hand: split the number across the three boxes. The country code goes in "Country Code" (without the + or leading zeros). Singapore numbers have no area code, so write N/A in "Area Code". The rest goes in "Number". If PHONE_P1 is a landline and not a mobile, put it in B17 instead and leave B19 blank.
+- [B20] Fax no: leave blank
+- [B21] Nature of profession / occupation: STAFF NURSE
+
+None of your details are US-linked (no US phone, address or email), so you don't need the W-8BEN.
+
+**B. Beneficial ownership**
+- [B22] Are you the beneficial owner of the funds? Yes [X]  No [ ]
+- [B23] Leave blank, since you answered Yes.
+
+**C. FATCA**
+- [B24] U.S. citizen? No [X]
+- [B25] Lawful permanent resident (green card / substantial presence)? No [X]
+- [B26] Born in the U.S. or a U.S. territory? No [X]
+- [B27] US Person for any other reason? No [X] (leave "please specify" blank)
+- [B28] Transfers to U.S. accounts or directions from a U.S. address? No [X]
+- [B29] Power of Attorney or signing authority to someone with a U.S. address? No [X]
+- [B30] "In care of" / "hold mail" / U.S. P.O. Box / U.S. phone number on file? No [X]
+
+**Still to do by you:**
+1. Date and branch (B01, B02)
+2. Country of birth (B12)
+3. Additional nationality, or NONE (B13)
+4. Email address (B16)
+5. Moving the address postal code into its box (B14) and splitting the phone number (B19)
+
+Your passport's issue date and issuing authority aren't needed on this page, so I left them out. As a non-resident, expect the bank to ask for supporting documents too: usually a copy of your passport, proof of your Singapore address, and possibly something about where the money comes from (for example your Durban lease). It's worth asking the branch what they need.

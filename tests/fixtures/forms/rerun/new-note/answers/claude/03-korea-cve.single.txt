@@ -1,0 +1,64 @@
+Here's the form filled in from what you gave me. Wherever the form needs something you haven't given me, I've put NEEDS-YOU and said what's missing. Fill those in on the form yourself, not here in chat.
+
+**1. PERSONAL DETAILS**
+- [B01] Family Name: SURNAME_P1
+- [B02] Given Names: GIVEN_P1
+  - Check the two machine-readable lines at the bottom of your passport photo page. If your middle name appears there after your first name, add MIDDLE_P1 after GIVEN_P1 here so the names match your passport exactly.
+- [B03] Chinese characters (漢字姓名): leave blank (not applicable)
+- [B04] Sex: Female [√]
+- [B05] Date of Birth: DATE_P1
+  - This will show your birth date the way your passport prints it (for example day, month as letters, year). The form wants yyyy/mm/dd, so rewrite it in that order with the month as a number before you submit.
+- [B06] Nationality: FILIPINO
+- [B07] Country of Birth: PLACE_P1
+  - The form asks only for the country. If PLACE_P1 turns out to be a city or province, replace it with the country name (for example PHILIPPINES, if that's where you were born).
+- [B08] National Identity No.: NEEDS-YOU. Enter your Philippine national ID (PhilSys) number if you have one, or leave it blank if you don't.
+- [B09] Other names used to enter/leave Korea: NEEDS-YOU. Tick No or Yes. If Yes, give the other name.
+- [B10] Citizen of more than one country: NEEDS-YOU. Tick No or Yes. If Yes, give details.
+
+**2. PASSPORT INFORMATION**
+- [B11] Passport Type: Regular [√] (I've assumed an ordinary passport, so change this if yours is diplomatic or official)
+- [B12] Passport No.: ID_P1
+- [B13] Country of Passport: PHILIPPINES
+- [B14] Place of Issue: AUTHORITY_P1
+  - This is the issuing authority as printed (for example a DFA office or a Philippine embassy). If the form checker wants a city, write just the city or post named in it.
+- [B15] Date of Issue: ISSUED_P1
+  - For consistency, rewrite it as yyyy/mm/dd like the other dates.
+- [B16] Date of Expiry: 2032/03/13
+- [B17] Any other valid passport: NEEDS-YOU. Tick No or Yes. If Yes, give its type, number, country and expiry date.
+
+**3. CONTACT INFORMATION**
+- [B18] Home Country Address: NEEDS-YOU. Give your address in the Philippines.
+- [B19] Current Residential Address: ADDRESS_P1
+  - I've assumed ADDRESS_P1 is your Singapore address, since you live there. If it's actually your Philippine address, move ADDRESS_P1 to 3.1 and write your Singapore address here.
+- [B20] Cell Phone No.: PHONE_P1
+  - If the stored number has no country code, add it in front (+65 for a Singapore number, +63 for a Philippine one).
+- [B21] Telephone No.: leave blank if you have no landline
+- [B22] E-mail: NEEDS-YOU. Give your email address.
+- 3.6 Emergency Contact
+  - [B23] Full Name: NEEDS-YOU. Give your mother's full name in English.
+  - [B24] Country of Residence: PHILIPPINES
+  - [B25] Telephone No.: NEEDS-YOU. Give your mother's phone number, with +63 in front.
+  - [B26] Relationship: MOTHER
+
+**4. MARITAL STATUS AND FAMILY DETAILS**
+- [B27] Current Marital Status: Single [√]
+- [B28]–[B33] Spouse details: leave blank (only for married applicants)
+- [B34] Children: No [√]. Number of children: leave blank (or 0)
+
+**5. EDUCATION**
+- [B35] Highest level of education: Bachelor's Degree [√]
+- [B36] Name of School: NEEDS-YOU. Give the school where you got your nursing degree.
+- [B37] Location of School: NEEDS-YOU. Give its city/province/country.
+
+**6. EMPLOYMENT** (this means your situation now, not the Seoul job)
+- [B38] Current personal circumstances: NEEDS-YOU. Tick the box that fits now, most likely Employed if you're working in Singapore.
+- [B39] Name of Company/Institute: NEEDS-YOU. Give your current employer.
+- [B40] Position: NEEDS-YOU. Give your current job title (for example Staff Nurse).
+- [B41] Address of Company: NEEDS-YOU. Give your current employer's address.
+- [B42] Telephone No.: NEEDS-YOU. Give your current employer's phone number.
+- If you're not working right now, tick Unemployed or Other (and explain) and leave 6.2 blank.
+
+A few final checks before you submit:
+1. The form must be in block letters, so write every name and address in CAPITALS when you copy them in.
+2. Make sure your name, date of birth and passport number match your passport exactly.
+3. Ask your Seoul employer whether they want both your Philippine and Singapore addresses filled in. Most do, since you live outside your home country.

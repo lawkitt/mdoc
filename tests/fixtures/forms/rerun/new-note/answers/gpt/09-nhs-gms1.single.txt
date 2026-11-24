@@ -1,0 +1,24 @@
+| Field | Entry |
+|---|---|
+| B01 Title | Tick **Ms** |
+| B02 Surname | SURNAME_P1 |
+| B03 Date of birth | DATE_P1 |
+| B04 First names | GIVEN_P1 MIDDLE_P1 |
+| B05 NHS number | NEEDS-YOU. Enter your NHS number if you have it. |
+| B06 Previous surnames | NONE |
+| B07 Sex | Tick **Female** |
+| B08 Town and country of birth | PLACE_P1 |
+| B09 Home address | NEEDS-YOU. Enter your new Leeds address. |
+| B10 Postcode | NEEDS-YOU. Enter your Leeds postcode. |
+| B11 Telephone number | PHONE_P1 |
+| B12–B14 Previous UK address and doctor | Leave blank. You have no previous UK address or doctor at that address. |
+| B15 First UK address where registered with a GP | NEEDS-YOU. Enter your new Leeds address again if this is your first UK GP registration. |
+| B16 Date you left the UK | Leave blank. You have never previously lived in the UK. |
+| B17 Date you first came to live in the UK | 03 NOVEMBER 2026 |
+| B18–B20 Armed Forces details | Leave blank unless you are returning from the Armed Forces. If that applies, enter your address before enlisting, service or personnel number, and enlistment date. |
+| B21 Child Health Surveillance | Leave unticked. |
+| B22 Dispensing | Tick a statement only if it applies and you need the GP to dispense medicines or appliances. |
+| B23 Signature | Tick **Signature of Patient**. NEEDS-YOU. Sign by hand. |
+| B24 Date | NEEDS-YOU. Enter the date you sign. |
+
+After mdoc restores your details, put both names in the **First names** box in the order shown and write the text entries in block capitals. If your passport date of birth is in a different format from the one the form requires, reformat it by hand. Check that your place of birth includes both the town and the country, and add either by hand if it is missing.

@@ -1,0 +1,22 @@
+| Field | What to enter |
+|---|---|
+| B01 Last name | SURNAME_P1 |
+| B02 First name | GIVEN_P1 |
+| B03 Middle initial | Enter the first letter of your middle name by hand. |
+| B04 Other last names used | Leave blank. You’ve never used another last name. |
+| B05 Street number and name | NEEDS-YOU. Enter the street number and name of your new U.S. home address. |
+| B06 Apartment number | NEEDS-YOU. Enter your apartment number if you have one. |
+| B07 City or town | NEEDS-YOU. Enter the city or town of your new home address. |
+| B08 State | NEEDS-YOU. Enter the state of your new home address. |
+| B09 ZIP code | NEEDS-YOU. Enter the ZIP code of your new home address. |
+| B10 Date of birth | Copy your passport date of birth by hand in `MM/DD/YYYY` format. Use two digits each for the month and day and four for the year. |
+| B11 U.S. Social Security number | Leave blank for now. You don’t have a number yet. |
+| B12 Email address | NEEDS-YOU. Enter your email address. |
+| B13 Telephone number | PHONE_P1 |
+| B14 Citizenship or immigration status | Check **Item 4**, authorized to work, and enter **09/30/2029** as the work authorization expiration date. |
+| B15 Foreign passport number | ID_P1 |
+| B15 Country of issuance | Philippines |
+| B16 Employee signature | NEEDS-YOU. Sign the form yourself. |
+| B17 Today’s date | NEEDS-YOU. Enter the date you actually sign in `MM/DD/YYYY` format. |
+
+For B15, use the foreign passport option. Complete and sign Section 1 after accepting the job offer and by your first day of employment.

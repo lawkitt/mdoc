@@ -1,0 +1,23 @@
+**B08 — Admission request**  
+Leave the child’s name blank for your sister.  
+NEEDS-YOU — name of the preschool or daycare.
+
+**B09 — Applicant name and B30 — Second emergency contact name**  
+Copy these three values into each name field, on one line in the order shown. Put one space between each part.
+
+MARICEL  
+BUENAFLOR  
+ESCALANTE
+
+**B10 — Applicant telephone and B30 — Second emergency contact telephone**  
+Copy this value into the matching slot in both fields: C for cell, W for work, or H for home.
+
++65 8555 0143
+
+**B11 — Applicant email**  
+NEEDS-YOU — your email address.
+
+**B12 — Relationship to child**  
+Aunt
+
+Leave **B01–B07** blank for preschool staff and **B13–B29** blank for your sister.

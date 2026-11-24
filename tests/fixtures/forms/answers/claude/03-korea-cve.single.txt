@@ -1,0 +1,61 @@
+Here's how to fill sections 1 to 6. The form wants block letters, so write everything in English capitals, including when you copy the values back in.
+
+**1. Personal details**
+- [B01] Family Name: SURNAME_P1
+- [B02] Given Names: GIVEN_P1 MIDDLE_P1
+  Korean immigration goes by the name in your passport's machine-readable lines (the two lines of `<<<` at the bottom of the photo page). On Philippine passports those lines usually include the middle name after the first name. Check that line. If your middle name isn't in it, leave out MIDDLE_P1 and write only GIVEN_P1.
+- [B03] Chinese characters (漢字姓名): leave blank
+- [B04] Sex: Female [√]
+- [B05] Date of Birth: DATE_P1
+  By hand: the form needs yyyy/mm/dd, so rewrite your date of birth in that order (for example, 5 June 1995 becomes 1995/06/05).
+- [B06] Nationality: FILIPINO
+- [B07] Country of Birth: NEEDS-YOU. Only your place of birth (PLACE_P1) is listed, and it may be a city or province. Write the country it's in, e.g. PHILIPPINES if you were born there.
+- [B08] National Identity No.: NEEDS-YOU. This isn't your passport number. If you have a PhilSys (Philippine national ID) number, write it here yourself. If you don't have one, leave it blank.
+- [B09] Other names used to enter or leave Korea: NEEDS-YOU. Tick No unless you've travelled to Korea under a different name. If you have, tick Yes and write that name.
+- [B10] More than one citizenship: NEEDS-YOU. Tick No if you're only Filipino. If you're also, say, a Singapore citizen, tick Yes and name the country.
+
+**2. Passport information**
+- [B11] Passport Type: Regular [√] (your ordinary personal passport, not a diplomatic or official one)
+- [B12] Passport No.: ID_P1
+- [B13] Country of Passport: PHILIPPINES
+- [B14] Place of Issue: AUTHORITY_P1
+  By hand: if the authority printed in your passport is longer than a place (for example "DFA MANILA" or "PE SINGAPORE"), that's fine as it is. Just make sure it shows where the passport was issued.
+- [B15] Date of Issue: ISSUED_P1
+  By hand: rewrite it as yyyy/mm/dd so it matches the other dates on the form.
+- [B16] Date of Expiry: 2032/03/13
+- [B17] Other valid passport: NEEDS-YOU. Tick No unless you hold a second valid passport. If you do, fill in a) to d) for it.
+
+**3. Contact information**
+- [B18] Home Country Address: NEEDS-YOU. This means your address in the Philippines.
+- [B19] Current Residential Address: ADDRESS_P1
+  This assumes ADDRESS_P1 is your address in Singapore. If it's actually your Philippine address, move it to B18 and write your Singapore address here yourself.
+- [B20] Cell Phone No.: PHONE_P1
+  By hand: write it in international format with the country code (+65 for a Singapore number, +63 for a Philippine one) if it isn't stored that way.
+- [B21] Telephone No.: leave blank if you have no landline
+- [B22] E-mail: NEEDS-YOU (your email address)
+- [B23] Emergency contact, full name: NEEDS-YOU (your mother's full name in English, as on her ID)
+- [B24] Country of Residence: PHILIPPINES
+- [B25] Telephone No.: NEEDS-YOU (your mother's number, with +63)
+- [B26] Relationship: MOTHER
+
+**4. Marital status and family**
+- [B27] Current Marital Status: Single [√]
+- [B28] to [B33] Spouse details: leave blank
+- [B34] Children: No [√] (leave the number of children empty)
+
+**5. Education**
+- [B35] Highest level: Bachelor's Degree [√]
+- [B36] Name of School: NEEDS-YOU (the school where you got your nursing degree)
+- [B37] Location of School: NEEDS-YOU (city / province / country, e.g. city, province, PHILIPPINES)
+
+**6. Employment** (this asks about your job now, not the Seoul offer)
+- [B38] Current circumstances: NEEDS-YOU. Tick Employed [√] if you're working now, for example as a nurse in Singapore. Otherwise tick whichever box fits.
+- [B39] Name of Company/Institute: NEEDS-YOU (your current employer)
+- [B40] Position: NEEDS-YOU (e.g. STAFF NURSE)
+- [B41] Address of Company: NEEDS-YOU
+- [B42] Telephone No.: NEEDS-YOU (your employer's number)
+  If you aren't working right now, leave B39 to B42 blank.
+
+A few things before you send it:
+- The text you shared ends at section 6. The full application usually goes on to ask about your visit, your Korean employer (who sponsors the certificate), and a signature and date. Your Seoul employer will probably fill in or send you those parts.
+- Once the values are back in, check every name, number and date against your passport letter by letter. A mismatch with the passport is the most common reason these applications get sent back.

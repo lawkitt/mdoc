@@ -1,0 +1,47 @@
+Here's Section 1 of your I-9. Congratulations on the new nursing job!
+
+**Section 1. Employee Information and Attestation**
+
+- [B01] Last Name (Family Name): ESCALANTE
+- [B02] First Name (Given Name): MARICEL
+- [B03] Middle Initial (if any): BUENAFLOR
+  - By hand: the form wants only the initial. Cut this down to the first letter of your middle name.
+- [B04] Other Last Names Used (if any): N/A
+- [B05] Address (Street Number and Name): NEEDS-YOU
+- [B06] Apt. Number (if any): NEEDS-YOU
+- [B07] City or Town: NEEDS-YOU (probably Houston)
+- [B08] State: NEEDS-YOU (probably TX)
+- [B09] ZIP Code: NEEDS-YOU
+  - B05 to B09 need your new US home address, which isn't saved in mdoc. Don't use Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 here. That's your saved home address, and the I-9 asks for where you live in the US now. If you don't have an apartment number, write N/A in B06.
+- [B10] Date of Birth (mm/dd/yyyy): 09 AUG 1991
+  - By hand: this is stored as it's printed in your passport. Change it to mm/dd/yyyy, month first (for example, 2 digits for the month, 2 for the day, 4 for the year).
+- [B11] U.S. Social Security Number: leave blank
+  - You don't have one yet, so leave it empty. Tell your employer you've applied or will apply. If they use E-Verify, they'll ask you to give them the number once it arrives.
+- [B12] Employee's Email Address: NEEDS-YOU (optional, you can leave it blank)
+- [B13] Employee's Telephone Number: +65 8555 0143 (optional)
+  - If this is a Philippine number and you'll have a US number, you can use the US one or leave this blank.
+
+**Citizenship or immigration status [B14]**
+- [ ] 1. A citizen of the United States
+- [ ] 2. A noncitizen national of the United States
+- [ ] 3. A lawful permanent resident
+- [X] 4. An alien authorized to work until (exp. date, if any): 09/30/2029
+  - Check this against your I-94 record. The date to write is the one on your I-94 ("Admit Until Date"). It's usually the same as your H-1B approval end date, but not always (for example, if your passport expires sooner). If the I-94 shows a different date, use that one.
+
+**[B15] Item 4 needs only ONE of these three:**
+- USCIS A-Number: leave blank (H-1B workers usually don't have one)
+- Form I-94 Admission Number: leave blank
+- Foreign Passport Number and Country of Issuance: P4829173B, Philippines
+
+I picked your passport because it's already saved. If you'd rather give your I-94 number, write it in the I-94 box yourself and leave the passport box empty. Don't fill in more than one.
+
+- [B16] Signature of Employee: NEEDS-YOU (you have to sign it yourself)
+- [B17] Today's Date (mm/dd/yyyy): NEEDS-YOU (the date you sign)
+  - Sign and date it no later than your first day (next Monday). Don't sign before the date you accepted the job offer.
+
+**Preparer/Translator Certification:** Not needed if you fill this in yourself.
+
+**Things to know for Section 2:**
+Within 3 business days of starting, you'll need to show your employer original documents. As an H-1B worker you'd usually show your Philippine passport together with your I-94 record. Bring both on your first day. Your employer chooses no documents for you, so you can pick any acceptable ones from the list.
+
+**Not used:** CEBU CITY, 14 MAR 2022 and DFA MANILA (Section 1 doesn't ask for them), and Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 (see the address note above).

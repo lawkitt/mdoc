@@ -1,0 +1,49 @@
+## Applicant section
+
+| Blank | Entry |
+|---|---|
+| Form heading — preschool/daycare name | NEEDS-YOU |
+| B08 — child’s name | GIVEN_P3 SURNAME_P3 |
+| B08 — preschool/daycare name | NEEDS-YOU |
+| B09 — applicant’s name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 |
+| B10 — applicant’s phone | PHONE_P1 |
+| B11 — applicant’s email | NEEDS-YOU |
+| B12 — relationship to child | Father |
+| B13 — child’s name | GIVEN_P3 SURNAME_P3 |
+| B14 — people the child lives with | GIVEN_P1 MIDDLE_P1 SURNAME_P1 and GIVEN_P2 SURNAME_P2 |
+| B15 — child’s address | ADDRESS_P1 |
+| B16 — number of children | 0 male, 1 female |
+| B17 — place in the family | First and only child |
+| B18 — mother’s name | GIVEN_P2 SURNAME_P2 |
+| B19 — mother’s address | ADDRESS_P1 |
+| B20 — mother’s phone | PHONE_P2 |
+| B21 — mother’s email | NEEDS-YOU |
+| B22 — mother’s occupation | Pharmacist |
+| B23 — father’s name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 |
+| B24 — father’s address | ADDRESS_P1 |
+| B25 — father’s phone | PHONE_P1 |
+| B26 — father’s email | NEEDS-YOU |
+| B27 — father’s occupation | Software engineer |
+| B28 — authorized to collect the child | GIVEN_P1 MIDDLE_P1 SURNAME_P1 and GIVEN_P2 SURNAME_P2 |
+| B29 — first emergency contact | GIVEN_P1 MIDDLE_P1 SURNAME_P1 |
+| B29 — first emergency contact’s phone | PHONE_P1 |
+| B30 — second emergency contact | GIVEN_P2 SURNAME_P2 |
+| B30 — second emergency contact’s phone | PHONE_P2 |
+
+B14 assumes your daughter currently lives with both parents. For each phone entry, put the restored number in the matching cell, work, or home box. The phone types and any additional numbers are NEEDS-YOU if the preschool requires them. Enter the preschool’s name and the requested email addresses directly on the form.
+
+## Official-use section
+
+Leave B01–B07 for preschool staff. These are the details to have ready if they ask.
+
+| Blank | Detail |
+|---|---|
+| B01 — child’s name | GIVEN_P3 SURNAME_P3 |
+| B02 — date of birth | DATE_P3 |
+| B03 — sex | Mark Female |
+| B04 — religion | NEEDS-YOU — child’s religion, if applicable |
+| B05 — home address | ADDRESS_P1 |
+| B06 — date of full immunization | NEEDS-YOU — date from the child’s health records |
+| B07 — admission date | NEEDS-YOU — exact admission date |
+
+For B02, transfer the restored passport date into the day, month, and year boxes in that order. The requested start is January 2027 in Roseau.

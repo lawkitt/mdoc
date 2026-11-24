@@ -1,0 +1,106 @@
+```text
+[B01] Surname
+ESCALANTE
+
+[B02] Surname at birth
+NEEDS-YOU
+Confirm your surname at birth. If it matches your current surname, enter that surname again.
+
+[B03] First name(s)
+MARICEL
+BUENAFLOR
+Use the spelling and order shown in your passport’s given-name entry. Include the middle name if it appears in that entry.
+
+[B04] Date of birth
+09 AUG 1991
+After the value is restored, put it in day-month-year order by hand if needed.
+
+[B05] Place of birth
+CEBU CITY
+
+[B06] Country of birth
+NEEDS-YOU
+Enter the country where you were born.
+
+[B07] Current nationality
+Filipino
+Nationality at birth, if different: NEEDS-YOU
+Other nationalities, if any: NEEDS-YOU
+
+[B08] Sex: Check Female.
+[B09] Civil status: Check Single.
+
+[B10] Parental authority or legal guardian
+Leave blank if inapplicable. Otherwise, NEEDS-YOU for the guardian’s details.
+
+[B11] National identity number
+NEEDS-YOU if a national identity number applies to you.
+
+[B12] Type of travel document
+NEEDS-YOU
+Check the passport category shown on your document. Select Ordinary passport if that is the category.
+
+[B13] Travel document number
+P4829173B
+
+[B14] Date of issue
+14 MAR 2022
+After the value is restored, adjust the date by hand if the form requires a different format.
+
+[B15] Valid until: 13-03-2032
+[B16] Issued by (country): Philippines
+
+[B17] Qualifying family member
+NEEDS-YOU to confirm whether this applies. If it does, supply their surname, given names, date of birth, nationality, and travel document or ID card number. Otherwise, leave blank.
+
+[B18] Family relationship
+NEEDS-YOU for the relationship if this field applies. Otherwise, leave blank.
+
+[B19] Home address
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+E-mail: NEEDS-YOU
+Telephone
++65 8555 0143
+
+[B20] Residence in another country: Check Yes.
+Residence permit or equivalent: Singapore Employment Pass
+Permit number: NEEDS-YOU
+Valid until: NEEDS-YOU
+
+[B21] Current occupation: Staff nurse
+[B22] Employer name, address, and telephone: NEEDS-YOU
+
+[B23] Purpose of journey: Check Tourism.
+[B24] Additional information: Holiday in Italy.
+[B25] Main destination: Italy
+[B26] Member State of first entry: Italy
+This assumes Rome is where you first enter the Schengen area. If you enter through a connection in another Schengen country, enter that country instead.
+
+[B27] Number of entries requested
+NEEDS-YOU
+Check Single entry if you plan to enter the Schengen area once on this trip.
+
+[B28] Intended arrival: 14-05-2027
+[B29] Intended departure: 28-05-2027
+[B30] Previous Schengen visa fingerprints: Check No.
+[B31] Entry permit for final destination: Leave blank for the itinerary described.
+
+[B32] Inviting person or accommodation name: NEEDS-YOU
+[B33] Address, e-mail, and telephone of inviting person or accommodation: NEEDS-YOU
+[B34] Inviting company or organisation: Leave blank if inapplicable.
+[B35] Company contact and telephone details: Leave blank if inapplicable.
+
+[B36] Costs: Check “by the applicant himself/herself.”
+Means of support: NEEDS-YOU
+Check the boxes for the means you will use.
+
+[B37] Name of person filling in the form: Leave blank if you complete it yourself. Otherwise, NEEDS-YOU for their name.
+[B38] Address, e-mail, and telephone: Leave blank if you complete it yourself. Otherwise, NEEDS-YOU for their contact details.
+
+[B39] Place of signing: NEEDS-YOU
+Date of signing: NEEDS-YOU
+[B40] Applicant signature: NEEDS-YOU — sign the form.
+Parent or guardian signature: NEEDS-YOU if applicable.
+```
+
+If the qualifying family-member exemption applies, leave **form fields 21, 22, 30, 31, and 32** blank. These correspond to **B21, B22, and B32–B36** in your template.

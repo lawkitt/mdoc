@@ -1,0 +1,27 @@
+## NHS GMS1 for your Leeds GP registration
+
+Use block capitals for handwritten entries. If a restored name, place, or other text appears in mixed case, copy it into the form in capitals by hand. Keep the aliases as written here.
+
+| Box | Entry | What to do by hand |
+|---|---|---|
+| B01 | Tick Ms | |
+| B02 | SURNAME_P1 | |
+| B03 | DATE_P1 | If the form requires a different date format, rewrite the passport date in that format. |
+| B04 | GIVEN_P1 | Write your first name followed by your middle name in the same box, with a space between them. |
+| B04 | MIDDLE_P1 | |
+| B05 | NEEDS-YOU | Enter your NHS number if you know it. Otherwise, leave the box blank. |
+| B06 | NONE | |
+| B07 | Tick Female | |
+| B08 | PLACE_P1 | Enter both the town and country of birth. If the restored value omits either, that detail is NEEDS-YOU. |
+| B09 | NEEDS-YOU | Enter your new Leeds home address. |
+| B10 | NEEDS-YOU | Enter the postcode for your new Leeds address. |
+| B11 | PHONE_P1 | |
+| B12–B14 | Leave blank | These boxes ask about a previous UK address and the doctor you had there. |
+| B15 | NEEDS-YOU | If this is your first UK GP registration, enter the same Leeds address as in B09. |
+| B16 | Leave blank | You have never previously lived in the UK. |
+| B17 | 3 NOVEMBER 2026 | |
+| B18–B20 | Leave blank unless applicable | If you are returning from the Armed Forces, your address before enlisting, service or personnel number, and enlistment date are NEEDS-YOU. |
+| B21 | Leave unticked | |
+| B22 | Tick only if applicable | If you need the GP to dispense medicines or appliances, tick any statement that applies to you. |
+| B23 | Tick Signature of Patient | NEEDS-YOU. Sign the form yourself. |
+| B24 | NEEDS-YOU | Enter the date you sign the form. |

@@ -1,0 +1,50 @@
+This is for your application. Check the boxes marked **√** and use block letters. If a restored value needs a different format or capitalization, make that change by hand on the form.
+
+| Field | Entry |
+|---|---|
+| B01 Family name | RAGHUNATHAN |
+| B02 Given names | By hand, copy all given names exactly as shown in your passport. Include your middle name if it appears in the passport’s given-names field, preserving the printed order and spacing. |
+| B03 Chinese-character name | **NEEDS-YOU** — whether this field applies and, if so, your name in Chinese characters. |
+| B04 Sex | √ Male |
+| B05 Date of birth | By hand, write your passport date of birth as `yyyy/mm/dd`. |
+| B06 Nationality | INDIAN |
+| B07 Country of birth | **NEEDS-YOU** — your country of birth. |
+| B08 National identity number | **NEEDS-YOU** — your national identity number, if applicable. |
+| B09 Other names used for Korean entry or departure | **NEEDS-YOU** — check Yes or No. If Yes, supply the family name and given names used. |
+| B10 Multiple citizenships | **NEEDS-YOU** — check Yes or No. If Yes, list your other citizenships. |
+| B11 Passport type | **NEEDS-YOU** — confirm whether your passport is Regular, Official, Diplomatic, or Other. If Other, specify the type. |
+| B12 Passport number | Z4827163 |
+| B13 Country of passport | INDIA |
+| B14 Place of issue | **NEEDS-YOU** — the place of issue shown in your passport. |
+| B15 Date of issue | 05/06/2019 |
+| B16 Date of expiry | 2029/06/04 |
+| B17 Other valid passports | **NEEDS-YOU** — check Yes or No. If Yes, supply the passport type, number, issuing country, and expiry date. |
+| B18 Home-country address | **NEEDS-YOU** — your home-country address. |
+| B19 Current residential address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B20 Cell phone | +44 7700 900123 |
+| B21 General telephone | **NEEDS-YOU** — your general telephone number, if applicable. |
+| B22 Email | **NEEDS-YOU** — your email address. |
+| B23 Emergency contact name | By hand, write your wife’s full name in English as shown in her passport. |
+| B24 Emergency contact country of residence | UNITED KINGDOM |
+| B25 Emergency contact telephone | +44 7700 900456 |
+| B26 Emergency contact relationship | WIFE |
+| B27 Marital status | √ Married |
+| B28 Spouse’s family name | RAGHUNATHAN |
+| B29 Spouse’s given names | MEERA |
+| B30 Spouse’s date of birth | By hand, write your wife’s passport date of birth as `yyyy/mm/dd`. |
+| B31 Spouse’s nationality | INDIAN |
+| B32 Spouse’s residential address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B33 Spouse’s contact number | +44 7700 900456 |
+| B34 Children | √ Yes. Number of children is **1**. |
+| B35 Highest education | √ Master’s / Doctoral Degree |
+| B36 School name | **NEEDS-YOU** — the institution that awarded your master’s degree. |
+| B37 School location | **NEEDS-YOU** — the institution’s city, province or region, and country. |
+| B38 Employment status | √ Employed |
+| B39 Company name | **NEEDS-YOU** — your employer’s name. |
+| B40 Position | **NEEDS-YOU** — your job title. |
+| B41 Company address | **NEEDS-YOU** — the full address of the employer office to be listed. |
+| B42 Company telephone | **NEEDS-YOU** — the telephone number for that office. |
+
+For B19 and B32, use the restored address if it is the UK address you share. If it is a different address, **NEEDS-YOU** — supply your shared UK address directly on the form. Complete B19 only if your current address differs from B18.
+
+For B20, use the restored number if it is your mobile. If it is your general telephone number, move it to B21 and mark B20 **NEEDS-YOU** for your mobile number.

@@ -1,0 +1,26 @@
+Here is your TM.47, field by field. Thai forms use the Buddhist year (Gregorian + 543), so 2026 is 2569.
+
+[B01] Written at: Bangkok
+[B02] Date: 24 / Month: November / Year: 2569
+[B03] Full name: Mr. GIVEN_P1 MIDDLE_P1 SURNAME_P1
+  By hand: the form asks for block letters, so write your name in capitals, in the same spelling as your passport.
+[B04] Nationality: Indian
+[B05] Visa: tick [X] NON-IMM
+[B06] Entered Thailand on: 26 / Month: August / Year: 2569
+[B07] By: Air (Suvarnabhumi Airport). If you have your flight number, you can add it here.
+[B08] Passport No.: ID_P1
+[B09] Arrival card No.: NEEDS-YOU. Your arrival card number is not saved. You can find it on your arrival card (TDAC) confirmation or on the slip or stamp in your passport. Copy it from there onto the form.
+[B10] Lane/Road: NEEDS-YOU
+[B11] Tambol: NEEDS-YOU
+[B12] Amphur: NEEDS-YOU
+[B13] Province: NEEDS-YOU
+  Your Thai address is not saved, so fill in B10 to B13 yourself. Do not use ADDRESS_P1, which is your home address. In Bangkok the "Tambol" is the khwaeng (sub-district), the "Amphur" is the khet (district), and the province is Bangkok. Use the same address your landlord or hotel gave for your TM.30.
+[B14] Phone: PHONE_P1
+  If this is not a Thai number, you can write a Thai number instead so the office can reach you.
+[B15] Signature: sign by hand.
+
+What to bring: your passport, plus copies of the photo page, the visa page, the latest entry stamp and the arrival card. Some offices also ask for the TM.30 receipt.
+
+About your family: your wife and daughter each file their own TM.47. Their forms are the same as yours, with their own name, passport number and phone, and the same entry details if they arrived with you on 26 August. Since your daughter is a minor, a parent usually signs for her.
+
+One more thing: your daughter's passport expires on 1 January 2027, about five weeks from now. Her next 90-day report would be due around 22 February 2027, after that date. Her permission to stay also can't run past the passport's expiry, so plan to renew it at the Indian Embassy in Bangkok soon.

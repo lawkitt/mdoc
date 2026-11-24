@@ -1,0 +1,45 @@
+## Part I — Identification of beneficial owner
+
+**B01 — Full name.** Put these on one line in the order you use for your brokerage account.
+
+MARICEL  
+BUENAFLOR  
+ESCALANTE
+
+**B02 — Country of citizenship.** Philippines.
+
+**B03–B04 — Permanent residence address.** Split the address by hand. Put the street and any apartment or suite number in B03. Put the city or town, any applicable state or province, and the postal code in B04.
+
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+
+**B05 — Country.** Singapore.
+
+**B06 — Mailing address.** Leave blank if it is the same as your permanent residence address. If different, **NEEDS-YOU** — enter your mailing address directly on the form, including the postal code and country.
+
+**B07 — U.S. taxpayer identification number.** If required, **NEEDS-YOU** — enter your SSN or ITIN directly on the form. Otherwise, leave blank.
+
+**B08 — Foreign tax identifying number.** **NEEDS-YOU** — enter your Singapore tax number directly on the form.
+
+**B09 — FTIN not legally required.** Leave unchecked. You have a Singapore tax number.
+
+**B10 — Reference number.** Leave blank unless the brokerage asks for one. If it does, **NEEDS-YOU** — enter the reference it requests.
+
+**B11 — Date of birth.** Rewrite the passport date by hand in MM-DD-YYYY format, with the month first, then the day, then the four-digit year.
+
+09 AUG 1991
+
+## Part II — Claim of tax treaty benefits
+
+**B12–B13 — Treaty claim.** Leave both blank for this draft. The supplied facts establish your Singapore tax residence but do not establish a treaty benefit for the account income.
+
+## Part III — Certification
+
+**B14 — Capacity to sign.** Check the box if you can make the stated certification when signing for yourself.
+
+**B15 — Signature and date.** **NEEDS-YOU** — sign the form and enter the date you sign in MM-DD-YYYY format.
+
+**B16 — Printed name of signer.** If you sign for yourself, print your full name as entered in B01.
+
+MARICEL  
+BUENAFLOR  
+ESCALANTE

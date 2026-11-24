@@ -1,0 +1,34 @@
+Congratulations on the new job! Here is Section 1, box by box.
+
+[B01] Last Name (Family Name): ESCALANTE
+[B02] First Name (Given Name): MARICEL
+[B03] Middle Initial: write only the first letter of BUENAFLOR by hand. The box takes an initial, not your full middle name.
+[B04] Other Last Names Used: N/A
+[B05] Address (Street Number and Name): NEEDS-YOU. Your Houston street address isn't saved in mdoc. Don't use Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 here unless it's your US address. The I-9 needs the place where you live in the US.
+[B06] Apt. Number: NEEDS-YOU (your Houston apartment number, or N/A if you don't have one)
+[B07] City or Town: NEEDS-YOU (probably Houston, but use the city in your actual address)
+[B08] State: NEEDS-YOU (probably TX)
+[B09] ZIP Code: NEEDS-YOU (your Houston ZIP code)
+[B10] Date of Birth (mm/dd/yyyy): 09 AUG 1991. It's stored the way your passport prints it, which is probably not mm/dd/yyyy. Check it, and if needed rewrite it by hand as month/day/year with a 4-digit year, e.g. 07/04/1990.
+[B11] U.S. Social Security Number: leave blank. You haven't been issued one yet, and that's allowed. If your employer uses E-Verify, they'll ask for the number once you have it so they can finish their check. Tell HR you've applied, or are about to.
+[B12] Employee's Email Address: optional. Add one if you like (not saved in mdoc), or write N/A.
+[B13] Employee's Telephone Number: +65 8555 0143. This is optional too. If +65 8555 0143 isn't a US number and you get a US one soon, you can use that instead or write N/A.
+
+[B14] Check box 4, "An alien authorized to work until", and enter the expiration date 09/30/2029.
+(Boxes 1, 2 and 3 stay empty.)
+
+[B15] Enter just one of the three options. Using what's saved:
+- Foreign Passport Number and Country of Issuance: P4829173B, Philippines
+- Leave USCIS A-Number and Form I-94 Admission Number blank.
+(If you'd rather give your I-94 admission number, you can get it from the CBP I-94 website and write it in by hand instead. Either is acceptable.)
+
+[B16] Signature of Employee: sign by hand, on paper or electronically if your employer offers that.
+[B17] Today's Date (mm/dd/yyyy): write the date you actually sign, by hand. It must be no later than your first day of work (next Monday) and no earlier than the day you accepted the offer.
+
+Leave the Preparer/Translator section empty unless someone helps you fill this in.
+
+A few things to have ready:
+- Your work-authorization date should match your I-94 record. H-1B workers normally use the I-94 expiration date. Check your I-94 says 30 September 2029.
+- For Section 2, which your employer completes within 3 business days of your start, bring your Philippine passport and your I-94 record. Together they count as a List A document for H-1B, so you won't need anything else.
+- The form text you pasted looks like an older edition ("Middle Initial", "alien authorized"). Make sure HR gives you the current edition of Form I-9. The current one says "noncitizen authorized to work", but the answers above go in the same places.
+- Not needed for the I-9: CEBU CITY, 14 MAR 2022, DFA MANILA, or the title, sex and nationality.

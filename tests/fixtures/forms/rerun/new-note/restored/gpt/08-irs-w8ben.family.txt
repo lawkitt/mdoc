@@ -1,0 +1,30 @@
+Use P1 as the beneficial owner and signer. The text you supplied gives the treaty country as the United Kingdom. It leaves the treaty article, paragraph, withholding rate, and eligibility conditions to be filled in before you sign.
+
+| Blank | Entry | What to do by hand |
+|---|---|---|
+| B01 Name, given name | VIKRAM | Join these three name components in the single name field. |
+| B01 Name, middle name | ANAND | |
+| B01 Name, family name | RAGHUNATHAN | |
+| B02 Country of citizenship | India | |
+| B03 Permanent residence, street line | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom | Keep only the street address and any apartment or suite number, or rural route. |
+| B04 Permanent residence, locality | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom | Keep only the city or town, state or province, and postal code where appropriate. |
+| B05 Permanent residence, country | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom | Keep only the country. If the stored address lacks it, enter the country of your home address by hand. |
+| B06 Mailing address | NEEDS-YOU | Leave all three mailing fields blank if you receive mail at your permanent address. If you use a different mailing address, enter its street, locality and postal code, and country. |
+| B07 U.S. SSN or ITIN | NEEDS-YOU | Enter your U.S. SSN or ITIN by hand if required. Otherwise leave blank. |
+| B08 Foreign tax identifying number | NEEDS-YOU | Enter your UK National Insurance number by hand. |
+| B09 FTIN checkbox | Leave unchecked | |
+| B10 Reference number | Leave blank | If your publisher requires a reference number, enter it by hand. |
+| B11 Date of birth | 22/11/1983 | Put the passport date in MM-DD-YYYY order by hand. |
+| B12 Treaty country | United Kingdom | |
+| B13 Article and paragraph | NEEDS-YOU | Enter the UK–US treaty article and paragraph that apply to your book royalties. |
+| B13 Withholding rate | NEEDS-YOU | Enter the percentage that applies under that treaty provision. |
+| B13 Type of income | Book royalties | |
+| B13 Additional conditions | NEEDS-YOU | Enter the applicable treaty conditions and explain how you meet them. |
+| B14 Capacity to sign | Check when signing | Check the box if you can make the stated certification. |
+| B15 Signature | NEEDS-YOU | Sign the form yourself. |
+| B15 Date signed | NEEDS-YOU | Enter the actual signing date in MM-DD-YYYY format. |
+| B16 Printed name, given name | VIKRAM | Join these three components in the single printed-name field, using the same name as B01. |
+| B16 Printed name, middle name | ANAND | |
+| B16 Printed name, family name | RAGHUNATHAN | |
+
+Give the completed and signed form to your U.S. publisher.

@@ -1,0 +1,91 @@
+Here's the form filled in from what you've told me. Wherever I don't have the detail, I've put NEEDS-YOU and said what's missing.
+
+APPLICANT
+
+[B01] 1. Surname: ESCALANTE
+[B02] 2. Surname at birth: ESCALANTE
+   (Only if your surname has never changed. If you were born with a different surname, NEEDS-YOU: write that one here instead.)
+[B03] 3. First name(s): MARICEL BUENAFLOR
+   (Fields 1-3 must match your passport. A Filipino middle name is usually your mother's maiden surname. Check the two machine-readable lines at the bottom of your passport's photo page. If the middle name isn't in the given-names part there, cross out BUENAFLOR and keep only MARICEL.)
+[B04] Date of birth: 09 AUG 1991
+   (The form wants day-month-year. If your passport prints it another way, for example with the month as a word, rewrite it by hand as DD-MM-YYYY.)
+[B05] 5. Place of birth: CEBU CITY
+[B06] 6. Country of birth: NEEDS-YOU. Your country of birth isn't in what you shared.
+[B07] 7. Current nationality: Filipino
+   Nationality at birth, if different: leave blank (fill it in only if it was different)
+   Other nationalities: leave blank if you have none
+[B08] 8. Sex: [X] Female
+[B09] 9. Civil status: [X] Single
+[B10] 10. Parental authority / legal guardian: leave blank (you're not a minor)
+[B11] 11. National identity number, where applicable: optional. If you have a Philippine national ID (PhilSys) number, write it in by hand. Otherwise leave blank.
+
+TRAVEL DOCUMENT
+
+[B12] 12. Type of travel document: [X] Ordinary passport
+   (Assuming it's a regular passport and not a diplomatic or official one.)
+[B13] 13. Number of travel document: P4829173B
+[B14] 14. Date of issue: 14 MAR 2022
+   (Rewrite it as DD-MM-YYYY by hand if your passport prints it another way.)
+[B15] 15. Valid until: 13-03-2032
+[B16] 16. Issued by (country): Philippines
+   (The form asks for the country, not the issuing office, so you don't need DFA MANILA here.)
+
+FAMILY MEMBER OF AN EU/EEA/CH/UK CITIZEN
+
+[B17] 17. Leave blank (not applicable)
+[B18] 18. Leave blank (not applicable)
+
+CONTACT AND RESIDENCE
+
+[B19] 19. Home address and e-mail address: Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+   E-mail: NEEDS-YOU. Your e-mail address isn't in what you shared, so add it by hand after the address.
+   Tel.: +65 8555 0143
+[B20] 20. Residence in a country other than your nationality: [X] Yes
+   Residence permit or equivalent: Singapore Employment Pass
+   No.: NEEDS-YOU. Copy the number from your Employment Pass card yourself. Please don't type it here.
+   Valid until: NEEDS-YOU. The expiry date on your Employment Pass card, as DD-MM-YYYY.
+
+WORK
+
+[B21] *21. Current occupation: Staff Nurse
+[B22] *22. Employer, employer's address and telephone number: NEEDS-YOU. The name, address and phone number of the hospital or clinic you work for.
+
+TRIP
+
+[B23] 23. Purpose of the journey: [X] Tourism
+[B24] 24. Additional information on purpose of stay: Holiday in Italy (optional; you can leave it blank)
+[B25] 25. Member State of main destination: Italy
+[B26] 26. Member State of first entry: Italy
+[B27] 27. Number of entries requested: [X] Single entry
+[B28] Intended date of arrival: 14-05-2027
+[B29] Intended date of departure: 28-05-2027
+[B30] 28. Fingerprints collected previously: [X] No
+[B31] 29. Entry permit for the final country of destination: leave blank (not applicable; Italy is your destination)
+
+ACCOMMODATION
+
+[B32] *30. Inviting person / hotel(s): NEEDS-YOU. The names of the hotels or other places you're staying in Italy.
+[B33] Address, e-mail and telephone of the hotel(s): NEEDS-YOU. Use the details from your booking confirmations.
+[B34] *31. Inviting company/organisation: leave blank (not applicable)
+[B35] Contact person in company/organisation: leave blank (not applicable)
+
+COSTS
+
+[B36] *32. Cost of travelling and living is covered:
+   [X] by the applicant himself/herself
+   Means of support: NEEDS-YOU. Tick whichever apply: Cash, Traveller's cheques, Credit card, Pre-paid accommodation, Pre-paid transport. For example, tick Credit card, plus Pre-paid accommodation and Pre-paid transport if your hotels and flights are already paid.
+   Sponsor section: leave blank
+
+PERSON FILLING IN THE FORM
+
+[B37] 33. Leave blank (you're filling it in yourself)
+[B38] Leave blank
+
+SIGNING
+
+[B39] Place and date: NEEDS-YOU. Write by hand the city where you sign (for example Singapore) and the date you sign.
+[B40] Signature of applicant: sign by hand. Leave the guardian signature blank.
+
+Before you submit:
+- Apply from Singapore as a resident. Your Employment Pass should be valid well beyond 28 May 2027. If it expires around then, bring proof that it's being renewed.
+- You'll need travel medical insurance for the trip with at least EUR 30,000 of cover. You'll also usually need your flight booking, hotel bookings, recent bank statements and a letter from your employer approving your leave.

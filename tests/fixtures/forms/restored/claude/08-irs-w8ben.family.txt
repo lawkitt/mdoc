@@ -1,0 +1,40 @@
+You're the author and the person who gets the royalties, so the W-8BEN is in your name only. Your wife and daughter don't go on it. Here's how to fill in each line.
+
+**Part I: Identification of Beneficial Owner**
+
+- **[B01] Line 1, Name:** VIKRAM ANAND RAGHUNATHAN
+- **[B02] Line 2, Country of citizenship:** India
+- **[B03] Line 3, Permanent residence address (street):** 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+- **[B04] City or town, state or province, postal code:** see the note below
+- **[B05] Country:** United Kingdom
+  - Note on lines 3 to 5: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom is stored as one value, but the form splits it into street, then town and postcode, then country. After the value is filled in, move the town and postcode onto the second line by hand, and remove "United Kingdom" from the street line if it's there. It must be your residential address, not a P.O. box or "care of" address.
+- **[B06] Line 4, Mailing address:** leave blank, because your mail goes to the same address.
+- **[B07] Line 5, U.S. TIN (SSN or ITIN):** leave blank. You don't need one for a treaty claim if you give a foreign tax number on line 6a.
+- **[B08] Line 6a, Foreign tax identifying number:** NEEDS-YOU. Your UK National Insurance number isn't saved in mdoc. Write it on the form yourself, not in this chat. HMRC treats either your NI number or your Self Assessment UTR (10 digits) as your UK tax number, so if your publisher asks for one in particular, use that one.
+- **[B09] Line 6b, FTIN not legally required:** leave unchecked. The UK issues tax numbers, so this box doesn't apply to you.
+- **[B10] Line 7, Reference number(s):** leave blank, unless your publisher gave you an author or account number to put here.
+- **[B11] Line 8, Date of birth (MM-DD-YYYY):** 22/11/1983
+  - Note: this comes out as printed in your passport, and Indian passports usually show the day first (DD/MM/YYYY). If that's how yours prints it, rewrite it by hand as month-day-year with dashes. For example, 5 March 1980 becomes 03-05-1980.
+
+**Part II: Claim of Tax Treaty Benefits**
+
+- **[B12] Line 9, Resident of:** United Kingdom
+- **[B13] Line 10, Special rates and conditions:**
+  - Article and paragraph: Article 12, paragraph 1
+  - Rate of withholding: 0 %
+  - Type of income: Royalties for the use of a copyright of a literary work (book royalties)
+  - Additional conditions: The beneficial owner is an individual resident in the United Kingdom for tax purposes and is the beneficial owner of the royalties. The royalties are not connected with a permanent establishment or fixed base in the United States. The beneficial owner is a qualified person under Article 23 (Limitation on Benefits).
+
+  Under the UK–US treaty, royalties are taxed only in the country where the owner lives, so the US withholding rate is 0% instead of the default 30%.
+
+**Part III: Certification**
+
+- **[B14] Capacity to sign:** tick the box. On this revision of the form, you tick it even when you're signing for yourself.
+- **[B15] Signature:** sign by hand. **Date:** write the date you sign, by hand, in MM-DD-YYYY format.
+- **[B16] Print name of signer:** VIKRAM ANAND RAGHUNATHAN
+
+**Before you send it**
+
+- Give the form to your publisher, not to the IRS.
+- The form usually stays valid until the end of the third calendar year after you sign it. Send a new one sooner if your residence or address changes.
+- If you ever stop being UK tax resident, the treaty rate no longer applies and you'll need to update the form.

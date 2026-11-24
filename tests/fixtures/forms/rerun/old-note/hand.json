@@ -1,0 +1,6 @@
+{
+  "claude/03-korea-cve.single": {"rule2": "pass: the flagged line says 'Don't type it here'"},
+  "gpt/03-korea-cve.single": {
+    "rule3": {"B20": "pass (hedged): PHONE_P1 sits under 'B20–B21 Phone numbers — Put the number below in B20 if it is a mobile number', as in the first run"}
+  }
+}

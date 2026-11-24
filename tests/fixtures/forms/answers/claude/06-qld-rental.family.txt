@@ -1,0 +1,50 @@
+Here's your Form 22, filled in as far as the details you gave me go. You're the only applicant on this form, so only your own details go on it. Your wife and daughter count as occupants.
+
+Leave these items blank. The property manager or owner fills them in:
+- Item 1 (B01) property manager/owner details
+- Item 2 (B02) address of the premises
+- Item 3 (B03) ways to submit
+- Items 7, 8 and 9 (B15, B16, B17) the lists of documents they want
+- Item 12, question B25 (body corporate by-laws and pet rules)
+
+4 Number of occupants
+[B04] Total number of occupants: 3
+[B05] Number under 18: NEEDS-YOU. Write 1 if your daughter is under 18 on the day you apply. Write 0 if she's 18 or older. Work it out from her date of birth; I can't see it.
+
+5 Applicant details
+[B06] Full name: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+[B07] Date of birth: DATE_P1
+  This is your date of birth as printed in your passport. Australian forms use day/month/year, so if your passport shows it another way, rewrite it by hand as DD/MM/YYYY.
+[B08] Current address: ADDRESS_P1
+  Postcode: if your stored address already ends in your UK postcode, take the postcode off the address line by hand and write it in the Postcode box.
+[B09] Phone: PHONE_P1
+  Because you're applying from the UK, make sure the number starts with the +44 country code. If it's stored without one, change it by hand: drop the leading 0 and put +44 in front.
+[B10] Email: NEEDS-YOU. I don't have your email address.
+
+6 Employment details
+[B11] Current employer: NEEDS-YOU
+[B12] Job title: NEEDS-YOU
+[B13] Length of employment / Gross weekly income: NEEDS-YOU
+[B14] Employer name, phone and email: NEEDS-YOU
+I have none of your work details. If you'll have no job in Brisbane when you apply, the note under item 6 lets you show you can pay the rent another way instead, for example with savings or bank statements, through item 7.
+
+10 Rental history
+Property 1
+[B18] Current/previous address: ADDRESS_P1 (same Postcode step as B08)
+[B19] Rental period: March 2020 – present
+[B20] Property manager/owner name, email and phone: NEEDS-YOU. These are your Manchester landlord's or letting agent's details.
+Property 2
+[B21] NEEDS-YOU if you rented somewhere before March 2020. Otherwise leave it blank.
+[B22] Leave blank. You have a rental history, so this optional box doesn't apply.
+
+11 References
+[B23] and [B24]: NEEDS-YOU. Give two referees, each with name, phone, email and how they know you. They should be able to vouch for how you look after a home, for example a previous landlord, agent or employer. Don't use a family member.
+
+12 Pet details
+[B26] Do you intend to keep pets? [X] No
+[B27] Leave blank.
+
+Some other things to know:
+- Separate forms: the form says each applicant fills in their own. If your wife will also be on the lease, she needs her own Form 22. If your daughter is an adult and will be a tenant too, so does she. If they're only living with you, counting them in item 4 is enough.
+- Passport details: the form doesn't ask for your passport number. When the property manager lists the ID documents they want under item 8, give them a copy of your passport instead. Don't write the number on the form.
+- Visa: since you're moving from overseas, the agent may also ask to see your Australian visa or other proof of your right to live there. Have it ready in case they ask.

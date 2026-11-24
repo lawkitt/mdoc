@@ -1,0 +1,26 @@
+
+=== claude ===
+- 03-korea-cve.single: tokens 12; rule 1 pass; rule 2 pass (2 flags); rule 3 7/7; facts 8/8
+    flag ask? [B08] National Identity No.: NEEDS-YOU. Write your Philippine national ID number (PhilSys) by hand if you have one. Don't type it here.
+    flag hand rule 2: pass: the flagged line says 'Don't type it here'
+TOTAL claude: {"answers": 1, "r1_pass": 1, "r1_tokens": 12, "r1_bad": 0, "r2_pass": 1, "flags": 2, "r3_pass": 1, "blanks": 7, "blanks_ok": 7, "facts": 8, "facts_ok": 8}
+
+=== gpt ===
+- 03-korea-cve.family: tokens 10; rule 1 pass; rule 2 pass (0 flags); rule 3 10/14; facts 10/10
+    r3 B02 missing GIVEN_P1: 'B02 Given names | By hand, copy all given names exactly as shown in your passport. Include your middle name if it appears in the passport’s given-names field, preserving the printed order and spacing. |\n|'
+    r3 B05 missing DATE_P1: 'B05 Date of birth | By hand, write your passport date of birth as `yyyy/mm/dd`. |\n|'
+    r3 B23 missing GIVEN_P2, SURNAME_P2: 'B23 Emergency contact name | By hand, write your wife’s full name in English as shown in her passport. |\n|'
+    r3 B30 missing DATE_P2: 'B30 Spouse’s date of birth | By hand, write your wife’s passport date of birth as `yyyy/mm/dd`. |\n|'
+- 03-korea-cve.single: tokens 5; rule 1 pass; rule 2 pass (1 flags); rule 3 5/7; facts 8/8
+    flag hand rule 3 B20: pass (hedged): PHONE_P1 sits under 'B20–B21 Phone numbers — Put the number below in B20 if it is a mobile number', as in the first run
+    r3 B02 missing GIVEN_P1: 'B02 Given names** — Copy the passport’s Given Names field by hand, in the printed order. Include your middle name if it appears in that field.\n- **'
+    r3 B05 missing DATE_P1: 'B05 Date of birth** — Convert the birth date printed in your passport to `yyyy/mm/dd` by hand. Use four digits for the year and two each for the month and day.\n- **'
+- 07-us-i9.single: tokens 6; rule 1 pass; rule 2 pass (0 flags); rule 3 6/6; facts 2/2
+- 08-irs-w8ben.single: tokens 8; rule 1 pass; rule 2 pass (0 flags); rule 3 3/4; facts 2/2
+    r3 B16 missing GIVEN_P1, SURNAME_P1: 'B16 — Printed name of signer.** If you sign for yourself, print your full name as entered in B01.'
+- 09-nhs-gms1.family: tokens 6; rule 1 pass; rule 2 pass (0 flags); rule 3 6/7; facts 2/2
+    r3 B10 missing ADDRESS_P1: 'B10 Postcode | Copy the postcode from the restored home address into this box by hand. If the address does not include it, NEEDS-YOU for the postcode. |\n|'
+- 10-dominica-preschool.family: tokens 35; rule 1 pass; rule 2 pass (0 flags); rule 3 10/11; facts 3/4
+    r3 B02 missing DATE_P3: 'B01–B07** blank for the preschool to complete. If staff ask you for your daughter’s birth date separately, copy it from her passport by hand in day/month/year order.\n\n**Applicant**  \nI’ve used you as the applicant and yo'
+    fact B03 /female/ not matched: 'B01–B07** blank for the preschool to complete. If staff ask you for your daughter’s birth date separately, copy it from her passport by hand in day/month/year order.\n\n**Applicant**  \nI’ve used you as the applicant and yo'
+TOTAL gpt: {"answers": 6, "r1_pass": 6, "r1_tokens": 70, "r1_bad": 0, "r2_pass": 6, "flags": 1, "r3_pass": 1, "blanks": 49, "blanks_ok": 40, "facts": 28, "facts_ok": 27}

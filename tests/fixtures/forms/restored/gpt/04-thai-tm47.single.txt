@@ -1,0 +1,32 @@
+| Field | Entry |
+|---|---|
+| B01 Written at | Chiang Mai Immigration Office |
+| B02 Report date | Day 24 · Month November · B.E. year 2569 |
+| B04 Nationality | Filipino |
+| B05 Visa | Check **NON-IMM** |
+| B06 Date entered Thailand | Day 25 · Month August · B.E. year 2569 |
+| B07 Means of travel | Air |
+| B09 Arrival card number | NEEDS-YOU — enter your arrival card number on the form. |
+| B10 Lane or road | NEEDS-YOU — enter the lane or road for your current Thai address. |
+| B11 Tambol | NEEDS-YOU — enter your subdistrict. |
+| B12 Amphur | NEEDS-YOU — enter your district. |
+| B13 Province | Chiang Mai |
+| B15 Signature | NEEDS-YOU — sign the form by hand. |
+
+**B03 Full name**
+
+MARICEL
+
+BUENAFLOR
+
+ESCALANTE
+
+After the names are restored, write them together in block capitals on the form.
+
+**B08 Passport number**
+
+P4829173B
+
+**B14 Phone**
+
++65 8555 0143

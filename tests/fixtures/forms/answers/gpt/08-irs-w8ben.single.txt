@@ -1,0 +1,45 @@
+### Part I — Identification
+
+**B01 · Full name.** Combine these three components by hand in the order your full name appears on your passport.
+
+GIVEN_P1
+
+MIDDLE_P1
+
+SURNAME_P1
+
+**B02 · Country of citizenship.** Philippines.
+
+**B03–B04 · Permanent residence address.** Split the address below by hand. Put the street and applicable unit number on B03. Put the city or town, any applicable state or province, and the postal code on B04. Use your physical home address.
+
+ADDRESS_P1
+
+**B05 · Country.** Singapore.
+
+**B06 · Mailing address.** Leave blank if it matches your permanent residence address. If it differs, **NEEDS-YOU**. Enter the separate mailing address directly on the form.
+
+**B07 · U.S. taxpayer identification number.** Leave blank if it’s unrequired. If required, **NEEDS-YOU**. Enter your SSN or ITIN directly on the form.
+
+**B08 · Foreign tax identifying number.** **NEEDS-YOU**. Enter your Singapore tax number directly on the form.
+
+**B09 · FTIN not legally required.** Leave unchecked.
+
+**B10 · Reference number.** Leave blank unless the brokerage asks for one. If it does, **NEEDS-YOU**. Enter the reference the brokerage requests.
+
+**B11 · Date of birth.** Use the date below. If it appears in a different format, rewrite it by hand as two-digit month, two-digit day, and four-digit year, separated by hyphens.
+
+DATE_P1
+
+### Part II — Tax treaty benefits
+
+**B12–B13.** Leave both blank for a submission without a treaty claim. The facts provided establish Singapore tax residence but supply no basis for a treaty claim.
+
+### Part III — Certification
+
+**B14 · Capacity to sign.** Check the box when signing for yourself if you can make the certification. Before signing, confirm that the form’s eligibility requirements apply to you.
+
+**B15 · Signature and date.** **NEEDS-YOU**. Sign the form and enter the date you sign in MM-DD-YYYY format.
+
+**B16 · Printed name.** Copy the full name you assembled for B01.
+
+Give the completed form to the brokerage.

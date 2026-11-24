@@ -1,0 +1,69 @@
+Congratulations on the job offer. Here is the form filled in as far as your details allow. The form asks for block letters, so write every answer in CAPITALS in English. Where I write NEEDS-YOU, the information is not in what you gave me.
+
+1. PERSONAL DETAILS
+
+[B01] Family Name: ESCALANTE
+[B02] Given Names: MARICEL
+  (The form wants your given names exactly as your passport shows them. Philippine passports print the middle name in its own field, so normally it does not go here. If your passport's "Given Names" line also includes it, add BUENAFLOR after MARICEL.)
+[B03] Name in Chinese characters: leave blank (not applicable)
+[B04] Sex: Female [√]
+[B05] Date of Birth: 09 AUG 1991
+  (The form wants yyyy/mm/dd. If your passport prints the date another way, such as "05 JAN 1995", rewrite it by hand as year/month/day, for example 1995/01/05.)
+[B06] Nationality: FILIPINO
+[B07] Country of Birth: NEEDS-YOU. The form asks for the country only, not the town. I only have your place of birth (CEBU CITY). Write the country it is in, for example PHILIPPINES if you were born there.
+[B08] National Identity No.: NEEDS-YOU. Write your Philippine national ID number (PhilSys) by hand if you have one. Don't type it here.
+[B09] Other names used to enter or leave Korea: NEEDS-YOU. If you have never been to Korea, or always used your current name, tick No [√].
+[B10] Citizen of more than one country: NEEDS-YOU. Tick No [√] if you are only Filipino. Otherwise tick Yes and name the other country.
+
+2. PASSPORT INFORMATION
+
+[B11] Passport Type: Regular [√]
+  (This is the ordinary passport for private travel and work. Only change it if yours is a diplomatic or official passport.)
+[B12] Passport No.: P4829173B
+[B13] Country of Passport: PHILIPPINES
+[B14] Place of Issue: DFA MANILA
+  (Philippine passports print the issuing office, such as a DFA office or an embassy. If that text is longer than a place name, write just the city it names.)
+[B15] Date of Issue: 14 MAR 2022
+  (To match the rest of the form, rewrite it by hand as yyyy/mm/dd.)
+[B16] Date of Expiry: 2032/03/13
+[B17] Any other valid passport: NEEDS-YOU. Tick No [√] if this is your only valid passport.
+
+3. CONTACT INFORMATION
+
+[B18] Home Country Address: NEEDS-YOU. This means your address in the Philippines.
+[B19] Current Residential Address: Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+  (I've assumed your stored home address is your address in Singapore, since you live there. If it is your Philippine address instead, put Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 in 3.1 and write your Singapore address by hand here.)
+[B20] Cell Phone No.: +65 8555 0143
+  (Add the country code if it isn't already included, for example +65 for a Singapore number.)
+[B21] Telephone No.: leave blank, or write N/A if you have no landline
+[B22] E-mail: NEEDS-YOU. Your email address.
+
+3.6 Emergency Contact
+[B23] Full Name in English: NEEDS-YOU. Your mother's full name.
+[B24] Country of Residence: PHILIPPINES
+[B25] Telephone No.: NEEDS-YOU. Your mother's phone number, with +63 in front.
+[B26] Relationship: MOTHER
+
+4. MARITAL STATUS AND FAMILY
+
+[B27] Current Marital Status: Single [√]
+[B28]–[B33] Spouse details: leave blank (you only fill these in if married)
+[B34] Children: No [√]. Leave the number of children blank, or write 0.
+
+5. EDUCATION
+
+[B35] Highest education: Bachelor's Degree [√]
+[B36] Name of School: NEEDS-YOU. The school where you got your nursing degree.
+[B37] Location of School: NEEDS-YOU. Its city/province/country, for example "CITY / PROVINCE / PHILIPPINES".
+
+6. EMPLOYMENT
+
+These questions are about what you do now, not the Seoul job.
+[B38] Current personal circumstances: NEEDS-YOU. Tick Employed [√] if you are working now, for example as a nurse in Singapore. Otherwise tick whichever box fits.
+[B39] Name of Company/Institute/School: NEEDS-YOU. Your current employer.
+[B40] Position/Course: NEEDS-YOU. Your current job title, for example STAFF NURSE.
+[B41] Address of Company: NEEDS-YOU. Your current employer's address.
+[B42] Telephone No.: NEEDS-YOU. Your current employer's phone number.
+(If you are not working now, leave B39–B42 blank.)
+
+Before you send it, check each name, number and date against your passport. The employer, or whoever files it in Korea, will usually want a copy of your passport photo page and your nursing degree attached.

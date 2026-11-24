@@ -1,0 +1,50 @@
+{
+  "claude/01-schengen.single": {"rule2": "pass: the flagged line tells the user to copy the permit number from the card and not to type it here"},
+  "claude/02-japan-visa.family": {"rule2": "pass: the flagged line says 'Please don't type it here'"},
+  "claude/02-japan-visa.single": {"rule2": "pass: the flagged line says to write the ID number on the form, not here"},
+  "claude/03-korea-cve.family": {"rule2": "pass: the flagged line says 'Don't type it here'"},
+  "claude/03-korea-cve.single": {"rule2": "fail: offers \"DFA MANILA\" as an example of an issuing authority, which is the stored value of AUTHORITY_P1 (a guess that happens to match, not an entry)"},
+  "claude/08-irs-w8ben.single": {
+    "rule2": "pass: the flagged line says 'don't type it here'",
+    "rule3": {
+      "B01": "pass: names blanks by line number; 'Line 1 (Name): GIVEN_P1 MIDDLE_P1 SURNAME_P1'",
+      "B03,B04": "pass: 'Line 3 ... ADDRESS_P1', then how to move the city and postal code of ADDRESS_P1 to the next line",
+      "B11": "pass: 'Line 8 ... the alias DATE_P1 ... Write it by hand as two-digit month, two-digit day, four-digit year'",
+      "B16": "pass: 'Print name of signer: GIVEN_P1 MIDDLE_P1 SURNAME_P1'"
+    }
+  },
+  "claude/10-dominica-preschool.single": {"rule2": "pass: the flagged line is about an email address the user did not give, written by hand"},
+  "gpt/03-korea-cve.family": {
+    "rule3": {
+      "B20": "pass (hedged): PHONE_P1 sits under B20 and B21 with 'Use the number below if it is your mobile'",
+      "B32": "fail: 'Copy the shared UK address from B19 once confirmed' points to another blank instead of naming ADDRESS_P1"
+    }
+  },
+  "gpt/03-korea-cve.single": {
+    "rule3": {"B20": "pass (hedged): PHONE_P1 sits under B20 and B21 with 'Copy the saved number into the field that matches its type'"}
+  },
+  "gpt/05-hbz-bank.single": {
+    "rule3": {"B19": "pass (hedged): PHONE_P1 sits under 'B17–B20 ... enter it in B17, B18 or B19 accordingly. Split it by hand'"}
+  },
+  "gpt/07-us-i9.single": {
+    "rule3": {
+      "B03": "fail: 'Enter the first letter of your middle name by hand.' does not name MIDDLE_P1",
+      "B10": "fail: 'Copy your passport date of birth by hand in MM/DD/YYYY format.' does not name DATE_P1"
+    }
+  },
+  "gpt/08-irs-w8ben.single": {
+    "rule3": {"B16": "fail: 'Copy the full name you assembled for B01.' points to another blank instead of naming the aliases"}
+  },
+  "gpt/09-nhs-gms1.family": {
+    "rule3": {"B10": "fail: 'NEEDS-YOU. Copy the postcode from the restored home address if it appears there.' does not name ADDRESS_P1"}
+  },
+  "gpt/10-dominica-preschool.family": {
+    "rule3": {"B02": "fail: leaves B01-B07 'blank for the preschool to complete' because the form prints them under FOR OFFICIAL USE ONLY; DATE_P3 is given nowhere (defensible reading of an ambiguous form)"}
+  },
+  "gpt/10-dominica-preschool.single": {
+    "rule3": {
+      "B09": "pass: heading 'B09 — Applicant name and B30 — ...' then GIVEN_P1 MIDDLE_P1 SURNAME_P1 (the script cuts at the B30 mention)",
+      "B10": "pass: heading 'B10 — Applicant telephone and B30 — ...' then PHONE_P1"
+    }
+  }
+}

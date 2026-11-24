@@ -1,0 +1,109 @@
+Use this worksheet for your application. Enter text in English block letters. Where an alias appears on its own line, use the restored value and make any indicated changes by hand. Resolve each **NEEDS-YOU** item from your records before submitting.
+
+### 1. Personal details
+
+**B01 Family Name**
+
+RAGHUNATHAN
+
+**B02 Given Names** — Enter these together in the order shown in the passport’s Given Names field. Include the middle name if it appears in that field.
+
+VIKRAM
+
+ANAND
+
+**B03 Name in Chinese characters** — **NEEDS-YOU**. Confirm whether you have a name in Chinese characters and enter it if applicable.
+
+**B04 Sex** — ✓ Male  
+**B05 Date of Birth** — Rewrite the restored date by hand as `yyyy/mm/dd`, using four digits for the year and two each for the month and day.
+
+22/11/1983
+
+**B06 Nationality** — INDIAN  
+**B07 Country of Birth** — **NEEDS-YOU**. Use your place of birth to confirm the country, then enter the country name only.
+
+PUNE, MAHARASHTRA
+
+**B08 National Identity No.** — **NEEDS-YOU**. Enter the applicable national identity number from your records, if you have one.  
+**B09 Other names used to enter or depart Korea** — **NEEDS-YOU**. Check Yes or No. If Yes, provide the family and given names used.  
+**B10 More than one citizenship** — **NEEDS-YOU**. Check Yes or No. If Yes, provide the additional citizenship details.
+
+### 2. Passport information
+
+**B11 Passport Type** — **NEEDS-YOU**. Confirm the passport category and check the corresponding box. If Other, specify the type.  
+**B12 Passport No.**
+
+Z4827163
+
+**B13 Country of Passport** — INDIA  
+**B14 Place of Issue** — **NEEDS-YOU**. Enter the place of issue shown in your passport.  
+**B15 Date of Issue** — Use the restored date. If the form specifies a different date format, rewrite it by hand.
+
+05/06/2019
+
+**B16 Date of Expiry** — 2029/06/04  
+**B17 Other valid passport** — **NEEDS-YOU**. Check Yes or No. If Yes, supply its type, number, issuing country and expiry date.
+
+### 3. Contact information
+
+**B18 Home Country Address** — **NEEDS-YOU**. Enter your home-country address in India. If the restored address under B19 is your address in India, use it here and supply your UK address for B19.
+
+**B19 Current Residential Address** — Use the restored address if it is your shared UK address. Otherwise, **NEEDS-YOU** for your current UK address.
+
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+**B20 Cell Phone No.** — Use the number below if it is your mobile. Otherwise, **NEEDS-YOU** for your mobile number, if you have one.  
+**B21 Telephone No.** — Use the number below if it is your landline. Otherwise, **NEEDS-YOU** for your landline number, if you have one.
+
++44 7700 900123
+
+**B22 E-mail** — **NEEDS-YOU** for your email address.  
+**B23 Emergency Contact Full Name** — Enter your wife’s family name and all given names together as shown in her passport. If she has additional given names, **NEEDS-YOU** for those names.
+
+RAGHUNATHAN
+
+MEERA
+
+**B24 Emergency Contact Country of Residence** — UNITED KINGDOM  
+**B25 Emergency Contact Telephone No.**
+
++44 7700 900456
+
+**B26 Relationship** — WIFE
+
+### 4. Marital status and family details
+
+**B27 Marital Status** — ✓ Married  
+**B28 Spouse Family Name**
+
+RAGHUNATHAN
+
+**B29 Spouse Given Names** — Add any additional given names from her passport by hand.
+
+MEERA
+
+**B30 Spouse Date of Birth** — Rewrite the restored date by hand as `yyyy/mm/dd`.
+
+03/02/1986
+
+**B31 Spouse Nationality** — INDIAN  
+**B32 Spouse Residential Address** — Copy the shared UK address from B19 once confirmed.  
+**B33 Spouse Contact No.**
+
++44 7700 900456
+
+**B34 Children** — ✓ Yes. Number of children **1**.
+
+### 5. Education
+
+**B35 Highest Level Completed** — ✓ Master’s / Doctoral Degree. Your degree is a master’s in computer science.  
+**B36 Name of School** — **NEEDS-YOU** for the institution that awarded your master’s degree.  
+**B37 Location of School** — **NEEDS-YOU** for its city, province or equivalent, and country.
+
+### 6. Employment
+
+**B38 Current Personal Circumstances** — ✓ Employed  
+**B39 Company Name** — **NEEDS-YOU** for the employer name to use on the application.  
+**B40 Position** — **NEEDS-YOU** for your job title.  
+**B41 Company Address** — **NEEDS-YOU** for the company address to use on the application.  
+**B42 Company Telephone No.** — **NEEDS-YOU** for the phone number of the office listed in B41.

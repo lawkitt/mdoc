@@ -1,0 +1,23 @@
+| Blank | What to enter |
+|---|---|
+| B01 — Beneficial owner’s name | MARICEL BUENAFLOR ESCALANTE |
+| B02 — Country of citizenship | Philippines |
+| B03 — Permanent residence street address | Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 |
+| B04 — City or town, state or province, postal code | Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 |
+| B05 — Country of residence | Singapore |
+| B06 — Mailing address | Leave all three fields blank if you receive mail at your home address. If your mailing address differs, NEEDS-YOU for the street address, locality and postal code, and country. |
+| B07 — U.S. taxpayer identification number | Leave blank unless required. If required, NEEDS-YOU for your SSN or ITIN. |
+| B08 — Foreign tax identifying number | NEEDS-YOU |
+| B09 — FTIN checkbox | Leave unchecked unless you are legally exempt from obtaining an FTIN. |
+| B10 — Reference number(s) | Leave blank unless the brokerage requests a reference. If requested, NEEDS-YOU for that reference. |
+| B11 — Date of birth | 09 AUG 1991 |
+| B12 — Treaty residence | Leave blank for this submission. |
+| B13 — Special rates and conditions | Leave all four fields blank for this submission. |
+| B14 — Capacity to sign | Check when signing on your own behalf. |
+| B15 — Signature | NEEDS-YOU |
+| B15 — Date signed | NEEDS-YOU |
+| B16 — Printed name of signer | MARICEL BUENAFLOR ESCALANTE |
+
+After mdoc restores your values, keep the street and unit details in B03 and the locality and postal code in B04. Reformat your birth date in B11 as month-day-year (`MM-DD-YYYY`).
+
+Enter your Singapore tax number directly in B08. Sign B15 and enter the date you sign in `MM-DD-YYYY` format. Give the completed form to your brokerage.

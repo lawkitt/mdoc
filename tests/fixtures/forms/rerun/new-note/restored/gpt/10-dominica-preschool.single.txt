@@ -1,0 +1,17 @@
+Leave [B01]–[B07] blank for preschool staff.
+
+| Field | Entry |
+|---|---|
+| Form heading | NEEDS-YOU |
+| [B08] Child’s name | NEEDS-YOU |
+| [B08] Preschool or daycare name | NEEDS-YOU |
+| [B09] Applicant’s name | MARICEL BUENAFLOR ESCALANTE |
+| [B10] Applicant’s telephone | +65 8555 0143 |
+| [B11] Applicant’s email | NEEDS-YOU |
+| [B12] Relationship to child | Aunt |
+| [B30] Second emergency contact’s name | MARICEL BUENAFLOR ESCALANTE |
+| [B30] Second emergency contact’s telephone | +65 8555 0143 |
+
+For [B10] and [B30], put the restored number in the slot that matches it: (C) cell, (W) work, or (H) home.
+
+Use the preschool or daycare’s name in both the heading and [B08]. Add your email in [B11]. Leave the child’s name in [B08] and all of [B13]–[B29] blank for your sister, including the authorized pickup list and the first emergency contact.

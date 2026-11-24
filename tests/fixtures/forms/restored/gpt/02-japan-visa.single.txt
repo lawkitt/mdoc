@@ -1,0 +1,94 @@
+## Japan visa application
+
+Fill in each **NEEDS-YOU** item directly on your form. Where applicability is uncertain, check whether the item applies before filling it in.
+
+**[B01] Surname**
+
+ESCALANTE
+
+**[B02] Given and middle names**
+
+MARICEL
+
+BUENAFLOR
+
+After the names are restored, put them together in this field in the order and spelling shown in your passport.
+
+**[B03] Other names** — NEEDS-YOU. Enter any other names you use or have used, or write “None” if you have none.
+
+**[B04] Date of birth**
+
+09 AUG 1991
+
+After restoration, write the date in day/month/year order if needed.
+
+**[B05] Place of birth**
+
+CEBU CITY
+
+After restoration, enter the city, state or province, and country in the corresponding spaces. NEEDS-YOU for any applicable component missing from the stored value.
+
+**[B06] Sex** — Tick Female.  
+**[B07] Marital status** — Tick Single.  
+**[B08] Nationality or citizenship** — Filipino.  
+**[B09] Former or other nationalities or citizenships** — NEEDS-YOU. Enter any that apply, or write “None” if you have none.  
+**[B10] Government-issued ID number** — NEEDS-YOU. Confirm which government ID number applies and enter it directly on the form.  
+**[B11] Passport type** — NEEDS-YOU. Check your passport and tick the matching type.
+
+**[B12] Passport number**
+
+P4829173B
+
+**[B13] Place of issue** — NEEDS-YOU. The issuing country is the Philippines. Check your passport for the place of issue to enter.
+
+**[B14] Date of issue**
+
+14 MAR 2022
+
+After restoration, write the date in day/month/year order if needed.
+
+**[B15] Issuing authority**
+
+DFA MANILA
+
+**[B16] Date of expiry** — 13/03/2032.  
+**[B17] Certificate of Eligibility number** — NEEDS-YOU. Confirm whether this applies and enter the number if applicable.  
+**[B18] Purpose of visit** — Holiday (tourism).  
+**[B19] Intended length of stay** — 10 days.  
+**[B20] Date of arrival** — 02/04/2027.  
+**[B21] Port of entry** — Narita International Airport.  
+**[B22] Ship or airline** — NEEDS-YOU. Enter the airline for your flight into Narita.  
+**[B23] Hotel names and telephone numbers** — NEEDS-YOU. Enter the name and telephone number of each hotel once booked.  
+**[B24] Hotel addresses** — NEEDS-YOU. Enter the address of each hotel once booked.  
+**[B25] Previous stays in Japan** — None.
+
+**[B26] Current residential address**
+
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+
+Use the restored home address if it is current. NEEDS-YOU for any other current residential address, or for your current address if the stored one is outdated.
+
+**[B27] Telephone and mobile**
+
++65 8555 0143
+
+Put the restored number under “Mobile No.” if it is a mobile number, or under “Tel.” if it is a landline. NEEDS-YOU for a second number if applicable.
+
+**[B28] Email** — NEEDS-YOU. Enter your email address.  
+**[B29] Current occupation and position** — Staff nurse.  
+**[B30] Employer name and telephone** — NEEDS-YOU. Enter your employer’s name and telephone number.  
+**[B31] Employer address** — NEEDS-YOU. Enter your employer’s address.  
+**[B32] Partner’s or parents’ occupation** — NEEDS-YOU if applicable. This item is optional.  
+**[B33] Guarantor or reference in Japan** — NEEDS-YOU. If applicable, enter the person’s name, telephone, address, date of birth, sex, relationship to you, occupation and position, nationality, and immigration status.  
+**[B34] Inviter in Japan** — NEEDS-YOU. If you have an inviter and they are also your guarantor, write “same as above.” If someone else invited you, provide the details requested in B33 for that person.  
+**[B35] Remarks or special circumstances** — NEEDS-YOU if you have anything to add. This item is optional.
+
+**[B36] Criminal conviction** — NEEDS-YOU. Tick Yes or No.  
+**[B37] Imprisonment sentence of one year or more** — NEEDS-YOU. Tick Yes or No and follow Note 2 about suspended sentences.  
+**[B38] Deportation or removal** — NEEDS-YOU. Tick Yes or No.  
+**[B39] Drug conviction and sentence** — NEEDS-YOU. Tick Yes or No and follow Note 2 about suspended sentences.  
+**[B40] Prostitution or related activity** — NEEDS-YOU. Tick Yes or No.  
+**[B41] Trafficking in persons or involvement in it** — NEEDS-YOU. Tick Yes or No.  
+**[B42] Details of any Yes answers** — NEEDS-YOU if you ticked Yes in B36–B41. Enter the relevant details.  
+**[B43] Date of application** — NEEDS-YOU. Enter the actual application date in day/month/year order.  
+**[B44] Applicant’s signature** — NEEDS-YOU. Sign the form yourself after reviewing it.

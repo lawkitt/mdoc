@@ -1,0 +1,65 @@
+## Form 22 — your application
+
+| Item | Field | Entry |
+|---|---|---|
+| B01 | Property manager or owner’s full name | NEEDS-YOU |
+| B01 | Property manager or owner’s phone | NEEDS-YOU |
+| B01 | Property manager or owner’s email | NEEDS-YOU |
+| B01 | Agency details, if applicable | NEEDS-YOU |
+| B02 | Brisbane rental property’s street address | NEEDS-YOU |
+| B02 | Brisbane rental property’s postcode | NEEDS-YOU |
+| B03 | Submission method 1 | NEEDS-YOU |
+| B03 | Submission method 2 | NEEDS-YOU |
+| B04 | Total occupants | 3 |
+| B05 | Occupants under 18 | NEEDS-YOU |
+| B06 | Full name, given-name component | GIVEN_P1 |
+| B06 | Full name, middle-name component | MIDDLE_P1 |
+| B06 | Full name, family-name component | SURNAME_P1 |
+| B07 | Date of birth | DATE_P1 |
+| B08 | Current address | ADDRESS_P1 |
+| B08 | Current address postcode | NEEDS-YOU |
+| B09 | Phone | PHONE_P1 |
+| B10 | Email | NEEDS-YOU |
+| B11 | Current employer | NEEDS-YOU |
+| B12 | Job title | NEEDS-YOU |
+| B13 | Length of employment | NEEDS-YOU |
+| B13 | Gross weekly income | NEEDS-YOU |
+| B14 | Employer name | NEEDS-YOU |
+| B14 | Employer phone | NEEDS-YOU |
+| B14 | Employer email | NEEDS-YOU |
+| B15 | Requested financial document 1 | NEEDS-YOU |
+| B15 | Requested financial document 2 | NEEDS-YOU |
+| B15 | Other evidence of ability to pay rent, if applicable | NEEDS-YOU |
+| B16 | Requested identity document 1 | NEEDS-YOU |
+| B16 | Requested identity document 2 | NEEDS-YOU |
+| B17 | Requested suitability document 1 | NEEDS-YOU |
+| B17 | Requested suitability document 2 | NEEDS-YOU |
+| B18 | Property 1 current rental address | ADDRESS_P1 |
+| B18 | Property 1 postcode | NEEDS-YOU |
+| B19 | Property 1 rental period | March 2020 – Present |
+| B20 | Property 1 manager or owner’s name | NEEDS-YOU |
+| B20 | Property 1 manager or owner’s email | NEEDS-YOU |
+| B20 | Property 1 manager or owner’s phone | NEEDS-YOU |
+| B21 | Property 2 previous address, if applicable | NEEDS-YOU |
+| B21 | Property 2 postcode, if applicable | NEEDS-YOU |
+| B21 | Property 2 rental period, if applicable | NEEDS-YOU |
+| B21 | Property 2 manager or owner’s name, if applicable | NEEDS-YOU |
+| B21 | Property 2 manager or owner’s email, if applicable | NEEDS-YOU |
+| B21 | Property 2 manager or owner’s phone, if applicable | NEEDS-YOU |
+| B22 | Prior living arrangements | Skip. You have rental history. |
+| B23 | First referee’s name | NEEDS-YOU |
+| B23 | First referee’s phone | NEEDS-YOU |
+| B23 | First referee’s email | NEEDS-YOU |
+| B23 | First referee’s connection to you | NEEDS-YOU |
+| B24 | Second referee’s name | NEEDS-YOU |
+| B24 | Second referee’s phone | NEEDS-YOU |
+| B24 | Second referee’s email | NEEDS-YOU |
+| B24 | Second referee’s connection to you | NEEDS-YOU |
+| B25 | Pet rules at the premises | NEEDS-YOU |
+| B26 | Do you intend to keep pets? | No |
+| B27 | Pet type, number, and other information | Skip. You answered No. |
+
+- **B05** Enter the number of the three occupants who are under 18. Check your daughter’s date of birth privately.
+- **B06–B08 and B18** After the values are restored, join the three name components in the full-name field in the order shown on your passport. If the form requires a different date format, reformat the restored date of birth by hand. If your restored Manchester address includes the postcode, copy it into both postcode boxes and omit it from the address lines.
+- **B03, B15–B17, and B25** The property manager or owner supplies the submission methods, identifies the documents requested, and answers the question about pet rules. If you cannot provide current employment or income details, use item 7 to provide other evidence of your ability to pay rent.
+- If your wife is also applying, the form requires her to complete a separate application. The occupant total on this application includes all three of you.

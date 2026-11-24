@@ -1,0 +1,59 @@
+Here is your Certificate of Visa Eligibility application, filled in for you (P1). The form asks for block letters, so wherever a restored value isn't already in capitals, copy it out in capitals by hand.
+
+**1. Personal details**
+- [B01] Family Name: RAGHUNATHAN
+- [B02] Given Names: VIKRAM ANAND
+- [B03] Chinese characters (漢字姓名): leave blank. This is only for people with a Chinese-character name.
+- [B04] Sex: Male [√]
+- [B05] Date of Birth: 22/11/1983. The form wants yyyy/mm/dd. Your passport probably prints the date as dd/mm/yyyy, so rewrite it by hand: year first, then month, then day, separated by slashes.
+- [B06] Nationality: INDIAN
+- [B07] Country of Birth: NEEDS-YOU. I only have your place of birth (PUNE, MAHARASHTRA), not the country. Write the country you were born in.
+- [B08] National Identity No.: NEEDS-YOU. If you have an Indian national ID number (for example Aadhaar), write it on the form yourself. Don't type it here. If the form allows it to be left blank, you can do that.
+- [B09] Other names used to enter or leave Korea: NEEDS-YOU. If you've never been to Korea, or always used your passport name, tick No [√].
+- [B10] Citizen of more than one country: NEEDS-YOU. If Indian is your only citizenship, tick No [√]. Note that holding UK residence or a UK visa is not a second citizenship.
+
+**2. Passport information**
+- [B11] Passport Type: NEEDS-YOU. If you hold an ordinary Indian passport (type "P"), tick Regular [√].
+- [B12] Passport No.: Z4827163
+- [B13] Country of Passport: INDIA
+- [B14] Place of Issue: HIGH COMMISSION OF INDIA, LONDON. Indian passports print a "Place of Issue" field, so this should fit. If what's restored is an office name rather than a place, write just the city it names.
+- [B15] Date of Issue: 05/06/2019. To match the rest of the form, you can rewrite it as yyyy/mm/dd by hand.
+- [B16] Date of Expiry: 2029/06/04
+- [B17] Other valid passport: NEEDS-YOU. If you hold only this one, tick No [√] and leave a) to d) blank.
+
+**3. Contact information**
+- [B18] Home Country Address: NEEDS-YOU. "Home country" here means India. If you still have an address in India, write it. If you don't, write 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom here and leave 3.2 blank.
+- [B19] Current Residential Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom (your UK address, which is different from your home-country address)
+- [B20] Cell Phone No.: +44 7700 900123. Make sure it starts with the country code (+44 for a UK number). Add it by hand if it's missing.
+- [B21] Telephone No.: leave blank unless you have a landline. NEEDS-YOU if you want to add one.
+- [B22] E-mail: NEEDS-YOU. Write your email address.
+- [B23] Emergency contact, Full Name: RAGHUNATHAN MEERA
+- [B24] Country of Residence: UNITED KINGDOM
+- [B25] Telephone No.: +44 7700 900456. Include the country code here too.
+- [B26] Relationship: WIFE
+
+**4. Marital status and family**
+- [B27] Current Marital Status: Married [√]
+- [B28] Spouse Family Name: RAGHUNATHAN
+- [B29] Spouse Given Names: MEERA
+- [B30] Spouse Date of Birth: 03/02/1986. Rewrite it by hand as yyyy/mm/dd, the same way as B05.
+- [B31] Spouse Nationality: INDIAN
+- [B32] Spouse Residential Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom (you live together)
+- [B33] Spouse Contact No.: +44 7700 900456
+- [B34] Children: Yes [√], Number of children: 1
+
+**5. Education**
+- [B35] Highest level: Master's/Doctoral Degree [√]
+- [B36] Name of School: NEEDS-YOU. Write the university that awarded your master's in computer science.
+- [B37] Location of School: NEEDS-YOU. Write the city, province or state, and country.
+
+**6. Employment**
+- [B38] Current circumstances: Employed [√]
+- [B39] Name of Company: NEEDS-YOU. Write your employer's name.
+- [B40] Position: NEEDS-YOU. Write your current job title.
+- [B41] Company Address: NEEDS-YOU. Write the address of the office you work at now. Your employer or the Seoul office can tell you if Korean immigration wants the Korean office address instead.
+- [B42] Telephone No.: NEEDS-YOU. Write your employer's phone number.
+
+**Things to sort out:**
+- This form is only for you. Your daughter's details aren't needed here, only the count in 4.3. Your wife and daughter will usually need their own applications as your dependants when they join you.
+- Your daughter's passport expires on 1 January 2027. If she's joining you in Korea, renew it early, because it may not have enough validity left for a visa.

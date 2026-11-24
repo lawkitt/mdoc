@@ -1,0 +1,52 @@
+Here is your form filled in as far as your details allow. Where it says NEEDS-YOU, I don't have the information and you'll need to add it yourself. Where a value has to be in a different shape, I've said what to change by hand.
+
+VISA APPLICATION FORM TO ENTER JAPAN
+
+[B01] Surname: SURNAME_P1
+[B02] Given and middle names: GIVEN_P1 MIDDLE_P1
+[B03] Other names: NEEDS-YOU. If you have never used another name (an alias or a different spelling, for example), write "None".
+[B04] Date of birth: DATE_P1
+      By hand: the form wants Day/Month/Year in numbers. If your passport prints the date another way (for example "13 MAR 1990"), rewrite it as DD/MM/YYYY.
+[B05] Place of birth: PLACE_P1
+      By hand: the form has three boxes (City, State or Province, Country). Split your place of birth across them, and add the country if your passport leaves it out.
+[B06] Sex: Female [X]
+[B07] Marital status: Single [X]
+[B08] Nationality or citizenship: Filipino
+[B09] Former and/or other nationalities or citizenships: NEEDS-YOU. If you have never held another nationality, write "None".
+[B10] ID No. issued to you by your government: NEEDS-YOU. This is a national ID number (such as your PhilSys number), not your passport number, and I don't have it. Write it on the form yourself, or leave it blank if you don't have one. Don't post it here.
+[B11] Passport type: Ordinary [X]
+[B12] Passport No.: ID_P1
+[B13] Place of issue: NEEDS-YOU. Copy it from your passport's data page. Look at the "Issuing Authority" field or the DFA office that issued it.
+[B14] Date of issue: ISSUED_P1
+      By hand: rewrite it as DD/MM/YYYY if your passport prints it another way.
+[B15] Issuing authority: AUTHORITY_P1
+[B16] Date of expiry: 13/03/2032
+[B17] Certificate of Eligibility No.: N/A (a tourist visit doesn't need one)
+[B18] Purpose of visit to Japan: Tourism / sightseeing (Temporary Visitor)
+[B19] Intended length of stay in Japan: 10 days
+[B20] Date of arrival in Japan: 02/04/2027
+[B21] Port of entry into Japan: Narita International Airport
+[B22] Name of ship or airline: NEEDS-YOU. Add your airline (and flight number if you have one) once your flight is booked.
+[B23] Name / Tel. of hotel: NEEDS-YOU. Your hotels aren't booked yet. Book them first (a free-cancellation booking is fine), then write the first hotel's name and phone number here. List the Tokyo and Kyoto hotels on your itinerary, or add the second one under the first.
+[B24] Address of hotel: NEEDS-YOU. Use the address of the hotel above.
+[B25] Dates and duration of previous stays in Japan: None
+[B26] Current residential address: ADDRESS_P1
+[B27] Tel.: PHONE_P1   Mobile No.: PHONE_P1
+      If this is a mobile number, you can leave the Tel. box blank. Write it with the +63 country code if it isn't stored that way.
+[B28] E-Mail: NEEDS-YOU. Write your email address.
+[B29] Current profession or occupation and position: Staff Nurse
+[B30] Employer name / Tel.: NEEDS-YOU. Write your hospital or employer's name and phone number.
+[B31] Employer address: NEEDS-YOU. Write your employer's address.
+[B32] Partner's / parents' occupation: N/A (optional; you're single and not a minor)
+[B33] Guarantor or reference in Japan: None. You're travelling as a tourist with no one sponsoring you. If someone in Japan is guaranteeing or paying for your trip, this is NEEDS-YOU and you'll need their details.
+[B34] Inviter in Japan: None
+[B35] Remarks / special circumstances: leave blank (optional)
+[B36] to [B41] Have you ever... (criminal record, imprisonment, deportation, drug offences, prostitution-related activity, trafficking): NEEDS-YOU. Only you can answer these. Tick Yes or No honestly for each one. Remember that a suspended sentence still counts as Yes for B37 and B39.
+[B42] Details if any answer is "Yes": leave blank if you ticked No to all of them. Otherwise, NEEDS-YOU.
+[B43] Date of application: NEEDS-YOU. Write the date you sign and submit the form, as DD/MM/YYYY.
+[B44] Signature of applicant: sign by hand, the same way you sign your passport.
+
+Before you submit, check these:
+- Japanese visa applications from the Philippines usually go through an accredited travel agency, not straight to the Embassy. Check with your agency which documents they want, such as a day-by-day itinerary, bank statement, certificate of employment, and income tax return (ITR).
+- Your hotels and flight details need to be settled before you finish B22 to B24, so book those first.
+- Attach a recent passport-size photo that meets the visa photo rules.

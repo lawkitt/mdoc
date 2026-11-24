@@ -1,0 +1,54 @@
+## Form I-9, Section 1
+
+**B01 · Last name**
+
+ESCALANTE
+
+**B02 · First name**
+
+MARICEL
+
+**B03 · Middle initial**  
+Enter only the first letter of your middle name by hand.
+
+BUENAFLOR
+
+**B04 · Other last names used**  
+Leave blank. You’ve never used another last name.
+
+**B05–B09 · U.S. home address**
+
+- **B05 · Street number and name** — NEEDS-YOU. Enter your new home street address.
+- **B06 · Apartment number** — NEEDS-YOU if your new address has an apartment number. Otherwise, leave blank.
+- **B07 · City or town** — NEEDS-YOU. Enter the city or town where you live.
+- **B08 · State** — NEEDS-YOU. Enter the state where you live.
+- **B09 · ZIP code** — NEEDS-YOU. Enter your home ZIP code.
+
+**B10 · Date of birth**  
+Enter the restored date by hand in month/day/year order, using two digits for the month and day and four for the year.
+
+09 AUG 1991
+
+**B11 · U.S. Social Security number**  
+NEEDS-YOU. You don’t have a U.S. Social Security number yet. Ask your employer how to handle this field while you’re waiting for it.
+
+**B12 · Email address**  
+NEEDS-YOU. Enter your email address directly on the form.
+
+**B13 · Telephone number**
+
++65 8555 0143
+
+**B14 · Citizenship or immigration status**  
+Check **box 4, “An alien authorized to work until,”** and enter **09/30/2029**.
+
+**B15 · Foreign passport number and country of issuance**  
+Enter **Philippines** as the country of issuance and use this passport number.
+
+P4829173B
+
+**B16 · Employee signature**  
+NEEDS-YOU. Sign the form yourself.
+
+**B17 · Today’s date**  
+NEEDS-YOU. Enter the date you actually sign in **mm/dd/yyyy** format.

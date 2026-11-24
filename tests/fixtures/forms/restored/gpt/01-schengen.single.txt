@@ -1,0 +1,83 @@
+Enter each alias in its indicated field after mdoc restores the value. Complete the **NEEDS-YOU** items directly on the form.
+
+If the family-member exemption at the top of the form applies, leave form fields **21, 22, 30, 31 and 32** blank, including their continuation lines.
+
+| Box | Entry or action |
+|---|---|
+| B02 | **NEEDS-YOU** — Confirm your surname at birth and any former family names. Follow the travel document for fields 1–3. |
+| B06 | **NEEDS-YOU** — Enter your country of birth. |
+| B07 | Current nationality **Filipino**. **NEEDS-YOU** — Enter nationality at birth if different, and any other nationalities. |
+| B08 | Tick **Female**. |
+| B09 | Tick **Single**. |
+| B10 | **NEEDS-YOU** — Enter parental authority or legal guardian details if applicable. |
+| B11 | **NEEDS-YOU** — Enter your national identity number if applicable. |
+| B12 | **NEEDS-YOU** — Confirm the passport category and tick the matching box. Tick **Ordinary passport** if that is your passport type. |
+| B15 | **13-03-2032** |
+| B16 | **Philippines** |
+| B17 | **NEEDS-YOU** — Confirm whether you have a qualifying family member under field 17. If so, enter their surname, given names, date of birth, nationality and travel document or ID card number. |
+| B18 | **NEEDS-YOU** — Tick the relationship if this field applies. |
+| B20 | Tick **Yes** if you live in Singapore. Enter **Singapore Employment Pass** as the permit type. **NEEDS-YOU** — Enter the pass number and expiry date. I’ve assumed you live in Singapore based on your work and employment pass there. |
+| B21 | **Staff nurse** |
+| B22 | **NEEDS-YOU** — Enter your employer’s name, address and telephone number. |
+| B23 | Tick **Tourism**. |
+| B24 | **Holiday in Italy** |
+| B25 | **Italy**. **NEEDS-YOU** — Add any other Member States you plan to visit, if applicable. |
+| B26 | **Italy**, assuming Rome is where you first enter the Schengen area. If a connection takes you through Schengen border control earlier, enter that country. |
+| B27 | **NEEDS-YOU** — Confirm the number of entries you want to request. Tick **Single entry** if you want one entry for this trip. |
+| B28 | **14-05-2027** |
+| B29 | **28-05-2027** |
+| B30 | Tick **No**. |
+| B31 | **NEEDS-YOU** — If an entry permit for the final destination is required, enter who issued it and its validity dates. Otherwise leave blank. |
+| B32 | **NEEDS-YOU** — Enter the inviting person’s name or the name of each hotel or other accommodation. |
+| B33 | **NEEDS-YOU** — Enter the corresponding address, email address and telephone number. |
+| B34 | **NEEDS-YOU** — Enter the inviting company or organisation’s name and address if applicable. |
+| B35 | **NEEDS-YOU** — If B34 applies, enter the contact person’s name, address, telephone number and email, plus the organisation’s telephone number. |
+| B36 | Tick **by the applicant himself/herself**. **NEEDS-YOU** — Tick the means of support you’ll use. |
+| B37 | Leave blank if you fill in the application yourself. Otherwise **NEEDS-YOU** — Enter the preparer’s surname and given name. |
+| B38 | If someone else fills in the application, **NEEDS-YOU** — Enter their address, email and telephone number. |
+| B39 | **NEEDS-YOU** — Enter the place and date when you sign. |
+| B40 | **NEEDS-YOU** — Sign the form. Add the parental authority or legal guardian’s signature if applicable. |
+
+### Fields using your restored details
+
+**B01 — Surname**
+
+ESCALANTE
+
+**B03 — Given names**
+
+MARICEL
+
+BUENAFLOR
+
+Use the passport’s given-name entry to check whether to include the middle name and in what order.
+
+**B04 — Date of birth**
+
+09 AUG 1991
+
+If the restored date uses a different format, rewrite it on the form in day-month-year order, with a four-digit year.
+
+**B05 — Place of birth**
+
+CEBU CITY
+
+**B13 — Passport number**
+
+P4829173B
+
+**B14 — Passport issue date**
+
+14 MAR 2022
+
+If the form requires a different date format, rewrite the restored date by hand.
+
+**B19 — Home address**
+
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+
+**NEEDS-YOU** — Add your email address.
+
+**B19 — Telephone**
+
++65 8555 0143

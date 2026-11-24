@@ -1,0 +1,263 @@
+Reading additional input from stdin...
+OpenAI Codex v0.172.0
+--------
+workdir: /private/var/folders/vc/b3qk63h13wg_7f6fxfjw986r0000gn/T/tmp.ZRHoeGfuYT
+model: gpt-6.2-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a20cbd-5dd8-7e42-b224-b343767ce016
+--------
+user
+Use no tools: answer from the text below only.
+
+Note from mdoc: my personal details are replaced with aliases. Each alias
+stands for one value, which is put back on my device after your reply,
+exactly as it is stored. Write an alias exactly as listed, with nothing
+attached to it. You cannot see or change the value, so where a form needs it
+in another shape, tell me in words what to do with it by hand. Never guess or
+invent a real value, and never ask me to type an identifier into this chat.
+If the form needs something that is not listed here, write NEEDS-YOU and say
+what is missing.
+
+P1 is "Me".
+- SURNAME_P1: my family name
+- GIVEN_P1: my first name
+- MIDDLE_P1: my middle name
+- DATE_P1: my date of birth, as printed in my passport
+- PLACE_P1: my place of birth
+- ID_P1: my passport number
+- ISSUED_P1: my passport's date of issue, as printed
+- AUTHORITY_P1: my passport's issuing authority, as printed
+- ADDRESS_P1: my home address
+- PHONE_P1: my phone number
+
+Readable facts: title Ms; sex female; nationality Filipino; document type passport; passport issued by the Philippines, valid until 13 March 2032.
+
+HARMONISED APPLICATION FORM
+APPLICATION FOR SCHENGEN VISA
+This application form is free.
+Family members of EU, EEA or CH citizens or of UK nationals who are beneficiaries of the EU – UK Withdrawal Agreement shall not fill in fields No. 21, 22, 30, 31 and 32 (marked with *).
+Fields 1-3 shall be filled in in accordance with the data in the travel document.
+
+[B01] 1. Surname (Family name): ....
+[B02] 2. Surname at birth (Former family name(s)): ....
+[B03] 3. First name(s) (Given name(s)): ....
+[B04] Date of birth (day-month-year): ....
+[B05] 5. Place of birth: ....
+[B06] 6. Country of birth: ....
+[B07] 7. Current nationality: ....   Nationality at birth, if different: ....   Other nationalities: ....
+[B08] 8. Sex: [ ] Male  [ ] Female  [ ] Other
+[B09] 9. Civil status: [ ] Single  [ ] Married  [ ] Registered Partnership  [ ] Separated  [ ] Divorced  [ ] Widow(er)  [ ] Other (please specify): ....
+[B10] 10. Parental authority (in case of minors) /legal guardian (surname, first name, address, if different from applicant's, telephone no., e-mail address, and nationality): ....
+[B11] 11. National identity number, where applicable: ....
+[B12] 12. Type of travel document: [ ] Ordinary passport  [ ] Diplomatic passport  [ ] Service passport  [ ] Official passport  [ ] Special passport  [ ] Other travel document (please specify): ....
+[B13] 13. Number of travel document: ....
+[B14] 14. Date of issue: ....
+[B15] 15. Valid until: ....
+[B16] 16. Issued by (country): ....
+17. Personal data of the family member who is an EU, EEA or CH citizen or a UK national who is beneficiary of the EU – UK Withdrawal Agreement, if applicable
+[B17] Surname (Family name): ....   First name(s) (Given name(s)): ....   Date of birth (day-month-year): ....   Nationality: ....   Number of travel document or ID card: ....
+[B18] 18. Family relationship with an EU, EEA or CH citizen if applicable: [ ] spouse  [ ] child  [ ] grandchild  [ ] dependent ascendant  [ ] Registered Partnership  [ ] other: ....
+[B19] 19. Applicant's home address and e-mail address: ....   Tel.: ....
+[B20] 20. Residence in a country other than the country of current nationality: [ ] No  [ ] Yes. Residence permit or equivalent .... No. .... Valid until ....
+[B21] *21. Current occupation: ....
+[B22] *22. Employer and employer's address and telephone number. For students, name and address of educational establishment: ....
+[B23] 23. Purpose(s) of the journey: [ ] Tourism  [ ] Business  [ ] Visiting family or friends  [ ] Cultural  [ ] Sports  [ ] Official visit  [ ] Medical reasons  [ ] Study  [ ] Airport transit  [ ] Other (please specify): ....
+[B24] 24. Additional information on purpose of stay: ....
+[B25] 25. Member State of main destination (and other Member States of destination, if applicable): ....
+[B26] 26. Member State of first entry: ....
+[B27] 27. Number of entries requested: [ ] Single entry  [ ] Two entries  [ ] Multiple entries
+[B28] Intended date of arrival of the first intended stay in the Schengen area: ....
+[B29] Intended date of departure from the Schengen area after the first intended stay: ....
+[B30] 28. Fingerprints collected previously for the purpose of applying for a Schengen visa: [ ] No  [ ] Yes. Date, if known: ....  Visa sticker number, if known: ....
+[B31] 29. Entry permit for the final country of destination, where applicable: Issued by ....  Valid from .... until ....
+[B32] *30. Surname and first name of the inviting person(s) in the Member State(s). If not applicable, name of hotel(s) or temporary accommodation(s) in the Member State(s): ....
+[B33] Address and e-mail address of inviting person(s)/hotel(s)/temporary accommodation(s): ....   Telephone No.: ....
+[B34] *31. Name and address of inviting company/organisation: ....
+[B35] Surname, first name, address, telephone no., and e-mail address of contact person in company/organisation: ....   Telephone No. of company/organisation: ....
+[B36] *32. Cost of travelling and living during the applicant's stay is covered:
+  [ ] by the applicant himself/herself. Means of support: [ ] Cash  [ ] Traveller's cheques  [ ] Credit card  [ ] Pre-paid accommodation  [ ] Pre-paid transport  [ ] Other (please specify): ....
+  [ ] by a sponsor (host, company, organisation), please specify: [ ] referred to in field 30 or 31  [ ] other (please specify): ....  Means of support: [ ] Cash  [ ] Accommodation provided  [ ] All expenses covered during the stay  [ ] Pre-paid transport  [ ] Other (please specify): ....
+[B37] 33. Surname and first name of the person filling in the application form, if different from the applicant: ....
+[B38] Address and email address of the person filling in the application form: ....   Telephone No.: ....
+I am aware that the visa fee is not refunded if the visa is refused.
+Applicable in case a multiple-entry visa is applied for: I am aware of the need to have an adequate travel medical insurance for my first stay and any subsequent visits to the territory of Member States.
+(Declarations on personal data, the VIS and the conditions of entry follow on the form.)
+[B39] Place and date: ....
+[B40] Signature of applicant: ....   (Signature of parental authority/legal guardian, if applicable): ....
+
+I'm applying for a short-stay Schengen visa for a holiday in Italy, flying into Rome on 14 May 2027 and leaving on 28 May 2027. I'm single, I work as a staff nurse in Singapore on an employment pass, I've never had Schengen fingerprints taken, and I'm paying for everything myself.
+warning: `[features].multi_agent` is deprecated. It still controls the V1 fallback. `[agents].enabled = false` disables subagent tools even when the model selects a subagent version, unless `[features].multi_agent_v2` is enabled.
+warning: `[features].multi_agent` is deprecated. It still controls the V1 fallback. `[agents].enabled = false` disables subagent tools even when the model selects a subagent version, unless `[features].multi_agent_v2` is enabled.
+codex
+Enter each alias in its indicated field after mdoc restores the value. Complete the **NEEDS-YOU** items directly on the form.
+
+If the family-member exemption at the top of the form applies, leave form fields **21, 22, 30, 31 and 32** blank, including their continuation lines.
+
+| Box | Entry or action |
+|---|---|
+| B02 | **NEEDS-YOU** — Confirm your surname at birth and any former family names. Follow the travel document for fields 1–3. |
+| B06 | **NEEDS-YOU** — Enter your country of birth. |
+| B07 | Current nationality **Filipino**. **NEEDS-YOU** — Enter nationality at birth if different, and any other nationalities. |
+| B08 | Tick **Female**. |
+| B09 | Tick **Single**. |
+| B10 | **NEEDS-YOU** — Enter parental authority or legal guardian details if applicable. |
+| B11 | **NEEDS-YOU** — Enter your national identity number if applicable. |
+| B12 | **NEEDS-YOU** — Confirm the passport category and tick the matching box. Tick **Ordinary passport** if that is your passport type. |
+| B15 | **13-03-2032** |
+| B16 | **Philippines** |
+| B17 | **NEEDS-YOU** — Confirm whether you have a qualifying family member under field 17. If so, enter their surname, given names, date of birth, nationality and travel document or ID card number. |
+| B18 | **NEEDS-YOU** — Tick the relationship if this field applies. |
+| B20 | Tick **Yes** if you live in Singapore. Enter **Singapore Employment Pass** as the permit type. **NEEDS-YOU** — Enter the pass number and expiry date. I’ve assumed you live in Singapore based on your work and employment pass there. |
+| B21 | **Staff nurse** |
+| B22 | **NEEDS-YOU** — Enter your employer’s name, address and telephone number. |
+| B23 | Tick **Tourism**. |
+| B24 | **Holiday in Italy** |
+| B25 | **Italy**. **NEEDS-YOU** — Add any other Member States you plan to visit, if applicable. |
+| B26 | **Italy**, assuming Rome is where you first enter the Schengen area. If a connection takes you through Schengen border control earlier, enter that country. |
+| B27 | **NEEDS-YOU** — Confirm the number of entries you want to request. Tick **Single entry** if you want one entry for this trip. |
+| B28 | **14-05-2027** |
+| B29 | **28-05-2027** |
+| B30 | Tick **No**. |
+| B31 | **NEEDS-YOU** — If an entry permit for the final destination is required, enter who issued it and its validity dates. Otherwise leave blank. |
+| B32 | **NEEDS-YOU** — Enter the inviting person’s name or the name of each hotel or other accommodation. |
+| B33 | **NEEDS-YOU** — Enter the corresponding address, email address and telephone number. |
+| B34 | **NEEDS-YOU** — Enter the inviting company or organisation’s name and address if applicable. |
+| B35 | **NEEDS-YOU** — If B34 applies, enter the contact person’s name, address, telephone number and email, plus the organisation’s telephone number. |
+| B36 | Tick **by the applicant himself/herself**. **NEEDS-YOU** — Tick the means of support you’ll use. |
+| B37 | Leave blank if you fill in the application yourself. Otherwise **NEEDS-YOU** — Enter the preparer’s surname and given name. |
+| B38 | If someone else fills in the application, **NEEDS-YOU** — Enter their address, email and telephone number. |
+| B39 | **NEEDS-YOU** — Enter the place and date when you sign. |
+| B40 | **NEEDS-YOU** — Sign the form. Add the parental authority or legal guardian’s signature if applicable. |
+
+### Fields using your restored details
+
+**B01 — Surname**
+
+SURNAME_P1
+
+**B03 — Given names**
+
+GIVEN_P1
+
+MIDDLE_P1
+
+Use the passport’s given-name entry to check whether to include the middle name and in what order.
+
+**B04 — Date of birth**
+
+DATE_P1
+
+If the restored date uses a different format, rewrite it on the form in day-month-year order, with a four-digit year.
+
+**B05 — Place of birth**
+
+PLACE_P1
+
+**B13 — Passport number**
+
+ID_P1
+
+**B14 — Passport issue date**
+
+ISSUED_P1
+
+If the form requires a different date format, rewrite the restored date by hand.
+
+**B19 — Home address**
+
+ADDRESS_P1
+
+**NEEDS-YOU** — Add your email address.
+
+**B19 — Telephone**
+
+PHONE_P1
+tokens used
+10,810
+Enter each alias in its indicated field after mdoc restores the value. Complete the **NEEDS-YOU** items directly on the form.
+
+If the family-member exemption at the top of the form applies, leave form fields **21, 22, 30, 31 and 32** blank, including their continuation lines.
+
+| Box | Entry or action |
+|---|---|
+| B02 | **NEEDS-YOU** — Confirm your surname at birth and any former family names. Follow the travel document for fields 1–3. |
+| B06 | **NEEDS-YOU** — Enter your country of birth. |
+| B07 | Current nationality **Filipino**. **NEEDS-YOU** — Enter nationality at birth if different, and any other nationalities. |
+| B08 | Tick **Female**. |
+| B09 | Tick **Single**. |
+| B10 | **NEEDS-YOU** — Enter parental authority or legal guardian details if applicable. |
+| B11 | **NEEDS-YOU** — Enter your national identity number if applicable. |
+| B12 | **NEEDS-YOU** — Confirm the passport category and tick the matching box. Tick **Ordinary passport** if that is your passport type. |
+| B15 | **13-03-2032** |
+| B16 | **Philippines** |
+| B17 | **NEEDS-YOU** — Confirm whether you have a qualifying family member under field 17. If so, enter their surname, given names, date of birth, nationality and travel document or ID card number. |
+| B18 | **NEEDS-YOU** — Tick the relationship if this field applies. |
+| B20 | Tick **Yes** if you live in Singapore. Enter **Singapore Employment Pass** as the permit type. **NEEDS-YOU** — Enter the pass number and expiry date. I’ve assumed you live in Singapore based on your work and employment pass there. |
+| B21 | **Staff nurse** |
+| B22 | **NEEDS-YOU** — Enter your employer’s name, address and telephone number. |
+| B23 | Tick **Tourism**. |
+| B24 | **Holiday in Italy** |
+| B25 | **Italy**. **NEEDS-YOU** — Add any other Member States you plan to visit, if applicable. |
+| B26 | **Italy**, assuming Rome is where you first enter the Schengen area. If a connection takes you through Schengen border control earlier, enter that country. |
+| B27 | **NEEDS-YOU** — Confirm the number of entries you want to request. Tick **Single entry** if you want one entry for this trip. |
+| B28 | **14-05-2027** |
+| B29 | **28-05-2027** |
+| B30 | Tick **No**. |
+| B31 | **NEEDS-YOU** — If an entry permit for the final destination is required, enter who issued it and its validity dates. Otherwise leave blank. |
+| B32 | **NEEDS-YOU** — Enter the inviting person’s name or the name of each hotel or other accommodation. |
+| B33 | **NEEDS-YOU** — Enter the corresponding address, email address and telephone number. |
+| B34 | **NEEDS-YOU** — Enter the inviting company or organisation’s name and address if applicable. |
+| B35 | **NEEDS-YOU** — If B34 applies, enter the contact person’s name, address, telephone number and email, plus the organisation’s telephone number. |
+| B36 | Tick **by the applicant himself/herself**. **NEEDS-YOU** — Tick the means of support you’ll use. |
+| B37 | Leave blank if you fill in the application yourself. Otherwise **NEEDS-YOU** — Enter the preparer’s surname and given name. |
+| B38 | If someone else fills in the application, **NEEDS-YOU** — Enter their address, email and telephone number. |
+| B39 | **NEEDS-YOU** — Enter the place and date when you sign. |
+| B40 | **NEEDS-YOU** — Sign the form. Add the parental authority or legal guardian’s signature if applicable. |
+
+### Fields using your restored details
+
+**B01 — Surname**
+
+SURNAME_P1
+
+**B03 — Given names**
+
+GIVEN_P1
+
+MIDDLE_P1
+
+Use the passport’s given-name entry to check whether to include the middle name and in what order.
+
+**B04 — Date of birth**
+
+DATE_P1
+
+If the restored date uses a different format, rewrite it on the form in day-month-year order, with a four-digit year.
+
+**B05 — Place of birth**
+
+PLACE_P1
+
+**B13 — Passport number**
+
+ID_P1
+
+**B14 — Passport issue date**
+
+ISSUED_P1
+
+If the form requires a different date format, rewrite the restored date by hand.
+
+**B19 — Home address**
+
+ADDRESS_P1
+
+**NEEDS-YOU** — Add your email address.
+
+**B19 — Telephone**
+
+PHONE_P1

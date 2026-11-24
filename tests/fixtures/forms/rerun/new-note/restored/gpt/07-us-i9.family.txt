@@ -1,0 +1,26 @@
+Select **box 4** in Section 1 and enter **01/15/2029** as the date your work authorization expires. For B15, use the foreign passport option.
+
+`NEEDS-YOU` marks an entry to complete or resolve privately before submitting the form.
+
+| Blank | Entry | What to do |
+|---|---|---|
+| B01 Last name | RAGHUNATHAN | |
+| B02 First name | VIKRAM | |
+| B03 Middle initial | ANAND | After mdoc restores your middle name, enter only its first letter. |
+| B04 Other last names used | N/A | |
+| B05 Street number and name | NEEDS-YOU | Enter your new U.S. home street address. |
+| B06 Apartment number | NEEDS-YOU | Enter your apartment number if you have one. |
+| B07 City or town | NEEDS-YOU | Enter the city or town where you live. |
+| B08 State | NEEDS-YOU | Enter the state where you live. |
+| B09 ZIP code | NEEDS-YOU | Enter your home ZIP code. |
+| B10 Date of birth | 22/11/1983 | After mdoc restores your birth date, put it in month/day/year order using two digits each for the month and day and four for the year. |
+| B11 U.S. Social Security number | NEEDS-YOU | You don’t have one yet. Leave the digit boxes empty for now and check with your employer on how to handle the pending number. |
+| B12 Email address | NEEDS-YOU | Your email address wasn’t supplied. |
+| B13 Telephone number | +44 7700 900123 | |
+| B14 Status and expiration | Box 4, 01/15/2029 | |
+| B15 Foreign passport number | Z4827163 | |
+| B15 Country of issuance | India | |
+| B16 Employee signature | NEEDS-YOU | Sign the form yourself after reviewing the completed entries. |
+| B17 Today’s date | NEEDS-YOU | Enter the date you actually sign in mm/dd/yyyy format. |
+
+Leave the A-Number and I-94 alternatives in B15 blank. If a preparer or translator assists you in completing Section 1, the form says that person must complete the certification on page 3.

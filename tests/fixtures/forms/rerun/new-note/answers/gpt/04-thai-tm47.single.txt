@@ -1,0 +1,19 @@
+| Blank | Entry |
+|---|---|
+| B01 Written at | Chiang Mai Immigration Office |
+| B02 Report date | 24 / November / 2569 B.E. |
+| B03 Full name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 |
+| B04 Nationality | Filipino |
+| B05 Visa | ☑ NON-IMM |
+| B06 Date of entry | 25 / August / 2569 B.E. |
+| B07 Arrived by | Air |
+| B08 Passport number | ID_P1 |
+| B09 Arrival card number | NEEDS-YOU |
+| B10 Lane or road | NEEDS-YOU |
+| B11 Tambol | NEEDS-YOU |
+| B12 Amphur | NEEDS-YOU |
+| B13 Province | Chiang Mai |
+| B14 Phone | PHONE_P1 |
+| B15 Signature | NEEDS-YOU |
+
+After mdoc restores your name, write it in block capitals in B03. Fill in B09 from your arrival card and B10–B12 from your current Thai address. Sign B15 by hand.

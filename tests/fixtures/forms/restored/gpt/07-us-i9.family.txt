@@ -1,0 +1,58 @@
+### Form I-9 Section 1
+
+**B01 Last Name**  
+RAGHUNATHAN
+
+**B02 First Name**  
+VIKRAM
+
+**B03 Middle Initial**  
+Enter only the first letter of your middle name by hand. Your stored middle name is below.
+
+ANAND
+
+**B04 Other Last Names Used**  
+None. You’ve never used another last name.
+
+**B05 Street Number and Name**  
+NEEDS-YOU. Enter the street number and name of your new U.S. home address.
+
+**B06 Apartment Number**  
+NEEDS-YOU if applicable. Enter your apartment number if you have one.
+
+**B07 City or Town**  
+NEEDS-YOU. Enter the city or town of your new home address.
+
+**B08 State**  
+NEEDS-YOU. Enter the state of your new home address.
+
+**B09 ZIP Code**  
+NEEDS-YOU. Enter the ZIP code of your new home address.
+
+**B10 Date of Birth**  
+Use the stored date below. If it’s in a different format, enter it by hand as two-digit month, two-digit day, and four-digit year, separated by slashes.
+
+22/11/1983
+
+**B11 U.S. Social Security Number**  
+NEEDS-YOU. You don’t have a U.S. Social Security number yet. Ask your employer how to handle this field while you wait for one.
+
+**B12 Employee’s Email Address**  
+NEEDS-YOU. Enter your email address.
+
+**B13 Employee’s Telephone Number**  
++44 7700 900123
+
+**B14 Citizenship or Immigration Status**  
+Check **box 4**, “An alien authorized to work until,” and enter **01/15/2029**.
+
+**B15 Foreign Passport Number and Country of Issuance**  
+Use the foreign passport option. Enter **India** as the country of issuance and use this passport number.
+
+Z4827163
+
+**B16 Signature of Employee**  
+NEEDS-YOU. Review the completed section and sign it yourself.
+
+**B17 Today’s Date**  
+NEEDS-YOU. Enter the date you actually sign, in **mm/dd/yyyy** format.

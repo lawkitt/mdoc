@@ -1,0 +1,51 @@
+Here's the admission form filled in from what you gave me. Fields marked NEEDS-YOU are ones I don't have the information for.
+
+**Top box (B01–B07)**
+This box is headed "FOR OFFICIAL USE ONLY", so the preschool may want to fill it in themselves. Check with them first. If they ask you to fill it, use these:
+
+- [B01] Name of Child: ANIKA RAGHUNATHAN
+- [B02] Date of Birth: 17/09/2019
+  The form wants Date / Month / Year in separate boxes. If the date in her passport is printed another way (for example with the month as a word), rewrite it by hand as day/month/year.
+- [B03] Sex: Male: (blank) Female: X
+- [B04] Religion: NEEDS-YOU (your daughter's religion, or "None" if you prefer)
+- [B05] Home Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+- [B06] Date of Full Immunization: NEEDS-YOU (the date from her vaccination record, as day/month/year)
+- [B07] Date of Admission: NEEDS-YOU / 01 / 2027 (the exact start day in January 2027 that the preschool gives you)
+
+**Application**
+- [B08] I hereby make application for admission of ANIKA RAGHUNATHAN to the NEEDS-YOU Preschool/Daycare (the name of the preschool in Roseau)
+- [B09] Name of Applicant: VIKRAM ANAND RAGHUNATHAN
+- [B10] Tel: (C) +44 7700 900123 / (W) (blank) / (H) (blank)
+  I've put your number under (C), cell. If it's actually a work or home line, move it to that box.
+- [B11] Email: NEEDS-YOU (your email address)
+- [B12] Relationship to child: Father
+
+**Information about the Child and Family**
+- [B13] Name of Child: ANIKA RAGHUNATHAN
+- [B14] Person with whom your child lives: Both parents, VIKRAM RAGHUNATHAN and MEERA RAGHUNATHAN
+- [B15] Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+- [B16] Number of Children in the Family: 1 (M) 0 (F) 1
+- [B17] Place of Child in the Family: 1st (only child)
+- [B18] Name of Mother: MEERA RAGHUNATHAN
+- [B19] Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+- [B20] Tel: Numbers: (C) +44 7700 900456 / (W) (blank) / (H) (blank)
+  Same as above: move it if her number isn't a mobile.
+- [B21] Email: NEEDS-YOU (your wife's email address)
+- [B22] Mother's Occupation: Pharmacist
+- [B23] Name of Father: VIKRAM ANAND RAGHUNATHAN
+- [B24] Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+- [B25] Tel: Numbers: (C) +44 7700 900123 / (W) (blank) / (H) (blank)
+- [B26] Email: NEEDS-YOU (your email address, the same one as B11)
+- [B27] Father's Occupation: Software Engineer
+- [B28] Names of people authorized to collect your child: VIKRAM RAGHUNATHAN and MEERA RAGHUNATHAN
+
+**In case of an emergency please call**
+- [B29] 1. Name of Person: VIKRAM RAGHUNATHAN Tel: (C) +44 7700 900123 / (W) (blank) / (H) (blank)
+- [B30] 2. Name of Person: MEERA RAGHUNATHAN Tel: (C) +44 7700 900456 / (W) (blank) / (H) (blank)
+
+**Notes**
+- I took your message to mean that you and your wife are the two emergency contacts. If you meant two other people, send me their names and phone numbers and I'll fill B29 and B30 with those.
+- I used your current home address everywhere, as you asked. Once you have an address in Dominica, update B05, B15, B19 and B24. The preschool will probably also want a local phone number, so update the phone boxes then too.
+- The form doesn't ask for passport details, so I've left those out.
+
+What's still needed: the preschool's name, your daughter's religion, her full-immunization date, the exact admission date in January 2027, and email addresses for you and your wife.

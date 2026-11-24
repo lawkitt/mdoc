@@ -1,0 +1,73 @@
+## Form 22 draft
+
+Enter the details marked **NEEDS-YOU** directly on the form. The property manager or owner supplies the submission methods, document requests and pet rules.
+
+### 1–3. Property and submission details
+
+- **B01 — NEEDS-YOU.** Property manager or owner’s full name, phone, email and agency details if applicable.
+- **B02 — NEEDS-YOU.** Street address, unit number if applicable, and postcode of the Brisbane flat.
+- **B03 — NEEDS-YOU.** Two submission methods from the property manager or owner.
+
+### 4. Occupants
+
+- **B04** — 1
+- **B05** — 0
+
+### 5. Applicant details
+
+**B06 — Full name.** Combine the three values by hand in the order shown on your passport. Use **Ms** if a title is requested.
+
+MARICEL
+
+BUENAFLOR
+
+ESCALANTE
+
+**B07 — Date of birth.** If the form requires a different date format, rewrite the restored date by hand.
+
+09 AUG 1991
+
+**B08 — Current address.** Copy the postcode into its separate box by hand if it appears in the restored address. **NEEDS-YOU** if the postcode is missing.
+
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+
+**B09 — Phone**
+
++65 8555 0143
+
+**B10 — NEEDS-YOU.** Your email address.
+
+### 6. Employment details
+
+- **B11 — NEEDS-YOU.** Current employer, if applicable. If you list the Brisbane employer, mark the job as upcoming.
+- **B12** — Nursing role in Brisbane, starting 1 February 2027. **NEEDS-YOU** for the exact job title and any current job title, if applicable.
+- **B13 — NEEDS-YOU.** Employment length and gross weekly income for any current job you list. For the Brisbane role, enter “Starts 1 February 2027” for length and fill in the gross weekly income by hand.
+- **B14 — NEEDS-YOU.** Employer name, phone and email for the employment you list.
+
+### 7–9. Supporting documents
+
+- **B15 — NEEDS-YOU.** Financial documents requested by the property manager or owner. If you’re using the upcoming nursing job to support your ability to pay rent, enter the start date and provide any supporting document they request.
+- **B16 — NEEDS-YOU.** Identity documents requested by the property manager or owner. You have a Philippine passport valid until 13 March 2032.
+- **B17 — NEEDS-YOU.** Applicant suitability documents requested by the property manager or owner.
+
+### 10. Rental history
+
+**B18 — Current rental address.** Use your Singapore address and enter its postcode separately by hand. **NEEDS-YOU** if the postcode is missing from the restored address.
+
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+
+- **B19** — June 2021 to present.
+- **B20 — NEEDS-YOU.** Current property manager or owner’s name, email and phone.
+- **B21 — NEEDS-YOU** if you have a second rental to list. Enter its address, postcode, rental period and the property manager or owner’s name, email and phone.
+- **B22** — Leave blank because you have rental history.
+
+### 11. References
+
+- **B23 — NEEDS-YOU.** First referee’s name, phone, email and relationship to you.
+- **B24 — NEEDS-YOU.** Second referee’s name, phone, email and relationship to you.
+
+### 12. Pets
+
+- **B25 — NEEDS-YOU.** The property manager or owner marks whether pet rules apply.
+- **B26** — No.
+- **B27** — Leave blank.

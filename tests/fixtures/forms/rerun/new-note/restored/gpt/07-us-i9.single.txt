@@ -1,0 +1,29 @@
+| Field | Entry |
+|---|---|
+| B01 Last name | ESCALANTE |
+| B02 First name | MARICEL |
+| B03 Middle initial | BUENAFLOR |
+| B04 Other last names used | N/A |
+| B05 Street number and name | NEEDS-YOU |
+| B06 Apartment number, if any | NEEDS-YOU |
+| B07 City or town | NEEDS-YOU |
+| B08 State | NEEDS-YOU |
+| B09 ZIP code | NEEDS-YOU |
+| B10 Date of birth | 09 AUG 1991 |
+| B11 U.S. Social Security number | NEEDS-YOU |
+| B12 Email address | NEEDS-YOU |
+| B13 Telephone number | +65 8555 0143 |
+| B14 Citizenship or immigration status | Check box 4, “An alien authorized to work until,” and enter **09/30/2029** |
+| B15 Foreign passport number | P4829173B |
+| B15 Country of issuance | Philippines |
+| B16 Employee signature | NEEDS-YOU |
+| B17 Date signed | NEEDS-YOU |
+
+After mdoc restores your details:
+
+- **B03 and B10:** Reduce your middle name to its first letter and rewrite your birth date in `mm/dd/yyyy` format.
+- **B05–B09:** Enter your new U.S. home address. Use B06 only if you have an apartment number.
+- **B11 and B12:** You don’t have a Social Security number yet, so leave the number boxes empty for now. Enter your email address directly on the form.
+- **B16 and B17:** Sign after accepting the job offer and no later than your first day of employment. Enter the date you actually sign in `mm/dd/yyyy` format.
+
+If a preparer or translator assisted you in completing Section 1, that person must complete the certification on page 3.

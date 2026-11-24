@@ -1,0 +1,75 @@
+Use capital letters for the form entries. Where an alias appears below, use the restored value and make any required formatting changes on your device.
+
+### Account opening
+
+- **B01 Date** — NEEDS-YOU. Enter the date you complete the form in the eight boxes, following the bank’s date order.
+- **B02 Branch** — NEEDS-YOU. Enter the HBZ branch handling the application.
+- **B03 Account type** — Mark **CURRENT**.
+
+### A. Account holder’s details
+
+**B04 Surname**
+
+ESCALANTE
+
+**B05 First name**
+
+MARICEL
+
+**B06 Identity number** — Enter **N/A** for the South African identity number.
+
+**B07 Date of birth**
+
+09 AUG 1991
+
+If the form requires a different date format, rewrite the restored date by hand.
+
+**B08 Passport number**
+
+P4829173B
+
+**B09 Passport issuing country** — **PHILIPPINES**  
+**Expiry date** — **13 MARCH 2032**
+
+**B10 Work, study or residence permit** — **N/A** for both permit and expiry date.  
+**B11 Alternative permit** — **N/A** for both permit and expiry date.
+
+**B12 Nationality** — **FILIPINO**  
+**“County of birth”** — NEEDS-YOU. Confirm whether the bank means *country* or *county*, then enter the corresponding information from your birthplace. If the restored birthplace lacks that detail, check your records.
+
+CEBU CITY
+
+**B13 Additional nationality** — NEEDS-YOU. Enter any additional nationality you hold, or **N/A** if you hold none.
+
+**B14 Physical residential address**
+
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+
+Split the restored Singapore home address across the address lines by hand and put the postal code in its own box. If the postal code is missing, NEEDS-YOU.
+
+**B15 Postal address and postal code** — NEEDS-YOU. Confirm where you receive mail. If it is your home address, copy it from B14 into the postal address lines and postal code box.
+
+**B16 Email address** — NEEDS-YOU. Enter your email address directly on the form.
+
+**B17–B20 Telephone and fax** — NEEDS-YOU. Identify whether the number below is your home, work or cell number and enter it in **B17**, **B18** or **B19** accordingly. Split it by hand into country code, area code where applicable, and number. Supply any remaining applicable numbers, including a fax number for **B20** if you have one.
+
++65 8555 0143
+
+**B21 Occupation** — **STAFF NURSE**
+
+### B. Beneficial ownership
+
+- **B22** — Mark **YES**.
+- **B23** — Leave blank. This field applies when B22 is **NO**.
+
+### C. FATCA
+
+| Field | Entry |
+|---|---|
+| **B24 U.S. citizenship** | Mark **NO**. |
+| **B25 U.S. permanent residency or substantial physical presence** | Mark **NO**. |
+| **B26 Birth in the U.S. or a U.S. territory** | **NEEDS-YOU.** Check your birthplace from B12 and mark **YES** or **NO**. |
+| **B27 U.S. person for another reason** | Mark **NO**. |
+| **B28 Transfers to U.S. accounts or regular directions from a U.S. address** | **NEEDS-YOU.** Confirm whether either applies and mark **YES** or **NO**. |
+| **B29 Power of attorney or signing authority for someone with a U.S. address** | **NEEDS-YOU.** Confirm whether this applies and mark **YES** or **NO**. |
+| **B30 In-care-of or hold-mail address, U.S. P.O. box or U.S. phone number** | **NEEDS-YOU.** Check the contact details and mail arrangements that will be on file and mark **YES** if any listed item applies, or **NO** if none does. |

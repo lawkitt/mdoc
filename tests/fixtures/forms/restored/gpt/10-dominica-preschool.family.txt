@@ -1,0 +1,99 @@
+Leave **B01–B07** blank for the preschool to complete. Your requested start is **January 2027** in **Roseau, Dominica**. I’ve listed you as the applicant and the first emergency contact.
+
+After mdoc restores the values, join each person’s name parts with spaces in the order shown. For each phone number, use C for cell, W for work, or H for home, according to the number you have. If the preschool requires an additional number, **NEEDS-YOU** for that number.
+
+```text
+Application heading
+NEEDS-YOU — name of the preschool or daycare
+
+[B08] Child applying for admission
+ANIKA
+RAGHUNATHAN
+NEEDS-YOU — name of the preschool or daycare
+
+[B09] Applicant’s name
+VIKRAM
+ANAND
+RAGHUNATHAN
+
+[B10] Applicant’s telephone
++44 7700 900123
+
+[B11] Applicant’s email
+NEEDS-YOU — your email address
+
+[B12] Relationship to child
+Father
+
+[B13] Child’s name
+ANIKA
+RAGHUNATHAN
+
+[B14] People the child lives with
+Both parents
+
+[B15] Current home address
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+[B16] Number of children in the family
+1 total, 0 male, 1 female
+
+[B17] Place of child in the family
+First and only child
+
+[B18] Mother’s name
+MEERA
+RAGHUNATHAN
+
+[B19] Mother’s address
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+[B20] Mother’s telephone
++44 7700 900456
+
+[B21] Mother’s email
+NEEDS-YOU — your wife’s email address
+
+[B22] Mother’s occupation
+Pharmacist
+
+[B23] Father’s name
+VIKRAM
+ANAND
+RAGHUNATHAN
+
+[B24] Father’s address
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+[B25] Father’s telephone
++44 7700 900123
+
+[B26] Father’s email
+NEEDS-YOU — use the same email address as B11
+
+[B27] Father’s occupation
+Software engineer
+
+[B28] People authorized to collect the child
+Father
+VIKRAM
+ANAND
+RAGHUNATHAN
+
+Mother
+MEERA
+RAGHUNATHAN
+
+[B29] First emergency contact
+VIKRAM
+ANAND
+RAGHUNATHAN
+Telephone
++44 7700 900123
+
+[B30] Second emergency contact
+MEERA
+RAGHUNATHAN
+Telephone
++44 7700 900456
+```

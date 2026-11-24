@@ -1,0 +1,68 @@
+## Part I
+
+**B01 · Beneficial owner’s name**  
+Enter your first, middle, and family names together on line 1, in that order.
+
+VIKRAM
+
+ANAND
+
+RAGHUNATHAN
+
+**B02 · Country of citizenship**  
+India
+
+**B03–B05 · Permanent residence address**  
+Split your home address by hand. Put the street and any apartment or suite number on B03. Put the city or town, state or province if applicable, and postal code on B04. Use your residential street address.
+
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+**B05 · Country**  
+NEEDS-YOU. Confirm the country in your home address and enter it on B05. If your home address is in the UK, enter United Kingdom.
+
+**B06 · Mailing address**  
+Leave blank if you receive mail at your permanent residence address. If you use a different mailing address, NEEDS-YOU. Enter the full mailing address directly on the form.
+
+**B07 · U.S. taxpayer identification number**  
+NEEDS-YOU if required. Confirm whether line 5 applies and, if it does, enter your SSN or ITIN directly on the form.
+
+**B08 · Foreign tax identifying number**  
+NEEDS-YOU. Enter your UK National Insurance number directly on the form.
+
+**B09 · FTIN not legally required**  
+Leave unchecked unless you can confirm that you are legally exempt from having a foreign tax identifying number.
+
+**B10 · Reference number**  
+NEEDS-YOU if your publisher requests one. Use the reference they provide.
+
+**B11 · Date of birth**  
+Reformat the passport date by hand as MM-DD-YYYY. Use two digits each for the month and day and four for the year.
+
+22/11/1983
+
+## Part II
+
+**B12 · Treaty country**  
+United Kingdom, provided you can certify that you are a UK resident within the meaning of the UK–US income tax treaty.
+
+**B13 · Special rate and conditions**  
+For the income type, enter **Copyright royalties from a book I wrote**. NEEDS-YOU for the applicable treaty article and paragraph, the withholding percentage, and the explanation of any eligibility conditions you meet. The supplied text does not give those details.
+
+## Part III
+
+**B14 · Capacity to sign**  
+Check the box when you sign if you can make the capacity certification printed on the form.
+
+**B15 · Signature and date**  
+NEEDS-YOU. Confirm that you can make the form’s certifications, then sign in your own name and enter the date you sign in MM-DD-YYYY format.
+
+**B16 · Printed name of signer**  
+Enter the same full name as on line 1.
+
+VIKRAM
+
+ANAND
+
+RAGHUNATHAN
+
+Give the completed, signed form to your U.S. publisher.

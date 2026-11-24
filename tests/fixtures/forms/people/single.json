@@ -1,0 +1,19 @@
+{
+  "person": "single",
+  "made_up": "A made-up single adult. No real person's data; names, numbers, address and phone are invented.",
+  "values": {
+    "SURNAME_P1": "ESCALANTE",
+    "GIVEN_P1": "MARICEL",
+    "MIDDLE_P1": "BUENAFLOR",
+    "DATE_P1": "09 AUG 1991",
+    "PLACE_P1": "CEBU CITY",
+    "ID_P1": "P4829173B",
+    "ISSUED_P1": "14 MAR 2022",
+    "AUTHORITY_P1": "DFA MANILA",
+    "ADDRESS_P1": "Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418",
+    "PHONE_P1": "+65 8555 0143"
+  },
+  "readable": {
+    "P1": "title Ms; sex female; nationality Filipino; document type passport; passport issued by the Philippines, valid until 13 March 2032"
+  }
+}

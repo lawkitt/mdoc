@@ -1,0 +1,162 @@
+```text
+[B01] Surname
+SURNAME_P1
+
+[B02] Given and middle names
+GIVEN_P1
+MIDDLE_P1
+
+[B03] Other names
+NEEDS-YOU
+
+[B04] Date of birth
+DATE_P1
+
+[B05] Place of birth
+PLACE_P1
+
+[B06] Sex
+Female
+
+[B07] Marital status
+Single
+
+[B08] Nationality or citizenship
+Filipino
+
+[B09] Former or other nationalities or citizenships
+NEEDS-YOU
+
+[B10] Government-issued ID number
+NEEDS-YOU
+
+[B11] Passport type
+NEEDS-YOU
+
+[B12] Passport number
+ID_P1
+
+[B13] Place of issue
+NEEDS-YOU
+
+[B14] Date of issue
+ISSUED_P1
+
+[B15] Issuing authority
+AUTHORITY_P1
+
+[B16] Date of expiry
+13/03/2032
+
+[B17] Certificate of Eligibility number
+NEEDS-YOU
+
+[B18] Purpose of visit
+Tourism (holiday)
+
+[B19] Intended length of stay
+10 days
+
+[B20] Date of arrival
+02/04/2027
+
+[B21] Port of entry
+Narita International Airport
+
+[B22] Airline
+NEEDS-YOU
+
+[B23] Hotel names
+NEEDS-YOU
+Hotel telephone numbers
+NEEDS-YOU
+
+[B24] Hotel addresses
+NEEDS-YOU
+
+[B25] Previous stays in Japan
+None
+
+[B26] Current residential address
+ADDRESS_P1
+
+[B27] Tel.
+PHONE_P1
+Mobile No.
+NEEDS-YOU
+
+[B28] Email
+NEEDS-YOU
+
+[B29] Current occupation and position
+Staff nurse
+
+[B30] Employer name
+NEEDS-YOU
+Employer telephone number
+NEEDS-YOU
+
+[B31] Employer address
+NEEDS-YOU
+
+[B32] Partner's occupation, or parents' occupation if applicant is a minor
+NEEDS-YOU
+
+[B33] Guarantor or reference in Japan
+Name                     NEEDS-YOU
+Telephone                NEEDS-YOU
+Address                  NEEDS-YOU
+Date of birth            NEEDS-YOU
+Sex                      NEEDS-YOU
+Relationship             NEEDS-YOU
+Occupation and position  NEEDS-YOU
+Nationality and status   NEEDS-YOU
+
+[B34] Inviter in Japan
+Name                     NEEDS-YOU
+Telephone                NEEDS-YOU
+Address                  NEEDS-YOU
+Date of birth            NEEDS-YOU
+Sex                      NEEDS-YOU
+Relationship             NEEDS-YOU
+Occupation and position  NEEDS-YOU
+Nationality and status   NEEDS-YOU
+
+[B35] Remarks or special circumstances
+NEEDS-YOU
+
+[B36] Criminal conviction
+NEEDS-YOU
+
+[B37] Sentence of imprisonment for one year or more
+NEEDS-YOU
+
+[B38] Deportation or removal
+NEEDS-YOU
+
+[B39] Drug offence conviction and sentence
+NEEDS-YOU
+
+[B40] Prostitution-related activity
+NEEDS-YOU
+
+[B41] Trafficking in persons
+NEEDS-YOU
+
+[B42] Details of any Yes answers
+NEEDS-YOU
+
+[B43] Date of application
+NEEDS-YOU
+
+[B44] Applicant signature
+NEEDS-YOU
+```
+
+**After your device restores your details**
+
+- **B02, B04, B05 and B14.** Put the restored given and middle names together in B02, in passport order. Write the restored birth and issue dates in day/month/year order. Arrange the restored birthplace as city, state or province, and country. Add any missing birthplace component by hand.
+- **B03, B09–B11, B13 and B17.** Confirm whether you have any other names or former or additional citizenships. Fill in the government-issued ID requested by B10. Check your passport for its category and place of issue. Enter the Certificate of Eligibility number if applicable.
+- **B22–B24 and B26–B31.** Add your airline and the names, telephone numbers, and addresses of both hotels once booked. List any other current residential addresses. If the restored phone number is a mobile number, move it to Mobile No. and fill in Tel. if you have a separate number. Add your email and employer’s contact details.
+- **B32–B35.** Complete the optional occupation and remarks fields if relevant. Supply guarantor or reference and inviter details where applicable. If the inviter and guarantor are the same person, write “same as above” in B34.
+- **B36–B44.** Answer each declaration yourself and follow Note 2 for suspended sentences. Complete B42 if any answer is Yes. Enter the actual application date in day/month/year order and sign the form yourself.

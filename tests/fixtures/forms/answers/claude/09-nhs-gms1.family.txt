@@ -1,0 +1,45 @@
+Here's how to fill in the GMS1 for your daughter. Everything in "Patient's details" is about her, not you. The form asks for BLOCK CAPITALS, so when you copy the restored values onto the paper form, write them in capitals.
+
+Patient's details
+
+- [B01] Title: NEEDS-YOU. Her title isn't in the details I have. For a girl you'd normally tick Miss, or leave it blank if she's young. Tick whichever you prefer.
+- [B02] Surname: SURNAME_P3
+- [B03] Date of birth: DATE_P3
+  This is her date of birth as printed in her passport. If the passport shows it differently (for example with the month in letters, or in another order), rewrite it by hand as day/month/year, e.g. 05/03/2021.
+- [B04] First names: GIVEN_P3
+  If she has a middle name, write it after this. I don't have one listed for her.
+- [B05] NHS No.: leave blank. She has never been registered with a GP, so she probably doesn't have one yet. The practice will arrange it.
+- [B06] Previous surname/s: leave blank, unless she has ever had another surname.
+- [B07] Tick Female.
+- [B08] Town and country of birth: PLACE_P3
+  The form needs the town and the country. If the stored value only has the town, add the country by hand after it.
+- [B09] Home address: ADDRESS_P1
+  This is your home address, which she lives at. If the stored address ends with the postcode, don't write the postcode here. Put it in B10.
+- [B10] Postcode: write the postcode from your home address (ADDRESS_P1) by hand in this box.
+- [B11] Telephone number: PHONE_P1
+  She doesn't have her own number listed, so use yours as the parent's contact number.
+
+Previous medical records (B12–B14)
+- She has never been registered with a GP, so leave B12, B13 and B14 blank.
+
+If you are from abroad (B15–B17)
+- [B15] First UK address where registered with a GP: leave blank. She has never been registered.
+- [B16] Date of leaving the UK: leave blank, unless she lived in the UK before, left and came back.
+- [B17] Date she first came to live in the UK: NEEDS-YOU. I don't have this date. If she was born abroad (check PLACE_P3), write the date she arrived to live in the UK. If she was born in the UK, leave it blank.
+
+Armed Forces (B18–B20)
+- Leave blank.
+
+Child under 5 (B21)
+- NEEDS-YOU. I can't see her age. If she is under 5, tick this box so she's registered for Child Health Surveillance. If she is 5 or older, leave it blank.
+
+Dispensing (B22)
+- Leave both boxes blank unless one of them really applies to you. Most people in Manchester live within a mile of a chemist.
+
+Signature and date
+- [B23] Tick "Signature on behalf of patient" and sign it yourself.
+- [B24] Date: NEEDS-YOU. Write the date you sign the form.
+
+Other notes
+- The form doesn't ask for passport details, so you don't need to write in her passport number or issue details. The practice may still ask to see her passport, and possibly proof of your address, when you hand the form in.
+- B21 mentions "the doctor named overleaf", and the form refers to organ donation overleaf. I can't see the back page, so check it and fill it in if it asks for anything.

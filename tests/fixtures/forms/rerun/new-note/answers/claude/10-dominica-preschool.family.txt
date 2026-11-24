@@ -1,0 +1,51 @@
+Here's the admission form filled in from what you gave me. Fields marked NEEDS-YOU are ones I don't have the information for.
+
+**Top box (B01–B07)**
+This box is headed "FOR OFFICIAL USE ONLY", so the preschool may want to fill it in themselves. Check with them first. If they ask you to fill it, use these:
+
+- [B01] Name of Child: GIVEN_P3 SURNAME_P3
+- [B02] Date of Birth: DATE_P3
+  The form wants Date / Month / Year in separate boxes. If the date in her passport is printed another way (for example with the month as a word), rewrite it by hand as day/month/year.
+- [B03] Sex: Male: (blank) Female: X
+- [B04] Religion: NEEDS-YOU (your daughter's religion, or "None" if you prefer)
+- [B05] Home Address: ADDRESS_P1
+- [B06] Date of Full Immunization: NEEDS-YOU (the date from her vaccination record, as day/month/year)
+- [B07] Date of Admission: NEEDS-YOU / 01 / 2027 (the exact start day in January 2027 that the preschool gives you)
+
+**Application**
+- [B08] I hereby make application for admission of GIVEN_P3 SURNAME_P3 to the NEEDS-YOU Preschool/Daycare (the name of the preschool in Roseau)
+- [B09] Name of Applicant: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+- [B10] Tel: (C) PHONE_P1 / (W) (blank) / (H) (blank)
+  I've put your number under (C), cell. If it's actually a work or home line, move it to that box.
+- [B11] Email: NEEDS-YOU (your email address)
+- [B12] Relationship to child: Father
+
+**Information about the Child and Family**
+- [B13] Name of Child: GIVEN_P3 SURNAME_P3
+- [B14] Person with whom your child lives: Both parents, GIVEN_P1 SURNAME_P1 and GIVEN_P2 SURNAME_P2
+- [B15] Address: ADDRESS_P1
+- [B16] Number of Children in the Family: 1 (M) 0 (F) 1
+- [B17] Place of Child in the Family: 1st (only child)
+- [B18] Name of Mother: GIVEN_P2 SURNAME_P2
+- [B19] Address: ADDRESS_P1
+- [B20] Tel: Numbers: (C) PHONE_P2 / (W) (blank) / (H) (blank)
+  Same as above: move it if her number isn't a mobile.
+- [B21] Email: NEEDS-YOU (your wife's email address)
+- [B22] Mother's Occupation: Pharmacist
+- [B23] Name of Father: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+- [B24] Address: ADDRESS_P1
+- [B25] Tel: Numbers: (C) PHONE_P1 / (W) (blank) / (H) (blank)
+- [B26] Email: NEEDS-YOU (your email address, the same one as B11)
+- [B27] Father's Occupation: Software Engineer
+- [B28] Names of people authorized to collect your child: GIVEN_P1 SURNAME_P1 and GIVEN_P2 SURNAME_P2
+
+**In case of an emergency please call**
+- [B29] 1. Name of Person: GIVEN_P1 SURNAME_P1 Tel: (C) PHONE_P1 / (W) (blank) / (H) (blank)
+- [B30] 2. Name of Person: GIVEN_P2 SURNAME_P2 Tel: (C) PHONE_P2 / (W) (blank) / (H) (blank)
+
+**Notes**
+- I took your message to mean that you and your wife are the two emergency contacts. If you meant two other people, send me their names and phone numbers and I'll fill B29 and B30 with those.
+- I used your current home address everywhere, as you asked. Once you have an address in Dominica, update B05, B15, B19 and B24. The preschool will probably also want a local phone number, so update the phone boxes then too.
+- The form doesn't ask for passport details, so I've left those out.
+
+What's still needed: the preschool's name, your daughter's religion, her full-immunization date, the exact admission date in January 2027, and email addresses for you and your wife.

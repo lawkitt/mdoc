@@ -1,0 +1,41 @@
+| Blank | Entry | What to check or complete by hand |
+|---|---|---|
+| B01 | ESCALANTE | Match the passport’s family name. |
+| B02 | MARICEL BUENAFLOR | Copy the passport’s Given Names field exactly. Include the middle name only if it appears in that field, and preserve the printed order. |
+| B03 | NEEDS-YOU | Chinese-character name, if you have one. |
+| B04 | Female [√] | |
+| B05 | 09 AUG 1991 | Rewrite the restored date as `yyyy/mm/dd`. |
+| B06 | FILIPINO | |
+| B07 | CEBU CITY | Enter only the country of birth. If the restored value gives only a city or province, confirm its country before filling this field. |
+| B08 | NEEDS-YOU | National identity number. |
+| B09 | NEEDS-YOU | Check Yes or No for prior use of another name when entering or leaving Korea. If Yes, give the family and given names used. |
+| B10 | NEEDS-YOU | Check Yes or No for multiple citizenships. If Yes, list the other citizenships. |
+| B11 | NEEDS-YOU | Check the passport category shown on your passport. If Other, specify the type. |
+| B12 | P4829173B | |
+| B13 | PHILIPPINES | |
+| B14 | NEEDS-YOU | Passport place of issue. If the passport gives only an issuing authority, confirm the place of issue separately. |
+| B15 | 14 MAR 2022 | Use the date format printed on the form, if specified. |
+| B16 | 2032/03/13 | |
+| B17 | NEEDS-YOU | Check Yes or No for another valid passport. If Yes, give its type, number, issuing country and expiry date. |
+| B18 | NEEDS-YOU | Full home-country address in the Philippines. If the restored address in B19 is your Philippine address, move it here. |
+| B19 | Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 | Use your full current residential address in Singapore. If the restored address belongs in B18, enter your Singapore address here by hand. |
+| B20 | +65 8555 0143 | Use this here if it is your mobile number. If it is your landline, move it to B21 and enter your mobile number here if you have one. |
+| B21 | NEEDS-YOU | Landline number, if you have one. |
+| B22 | NEEDS-YOU | Email address. |
+| B23 | NEEDS-YOU | Your mother’s full name in English. |
+| B24 | PHILIPPINES | |
+| B25 | NEEDS-YOU | Your mother’s telephone number. |
+| B26 | MOTHER | |
+| B27 | Single [√] | |
+| B28–B33 | Leave blank | The form asks for spouse details only if Married is checked. |
+| B34 | No [√], 0 children | |
+| B35 | Bachelor’s Degree [√] | |
+| B36 | NEEDS-YOU | Name of the school that awarded your nursing degree. |
+| B37 | NEEDS-YOU | School location, including city, province and country. |
+| B38 | NEEDS-YOU | Check your current status. If Other, describe it. |
+| B39 | NEEDS-YOU | Current company, institution or school name, as applicable. |
+| B40 | NEEDS-YOU | Current position or course, as applicable. |
+| B41 | NEEDS-YOU | Current company, institution or school address, as applicable. |
+| B42 | NEEDS-YOU | Current company, institution or school telephone number, as applicable. |
+
+Use block letters for text you write by hand. Section 6 asks about your current circumstances, so use the Seoul nursing job there only if it is already your current employment.

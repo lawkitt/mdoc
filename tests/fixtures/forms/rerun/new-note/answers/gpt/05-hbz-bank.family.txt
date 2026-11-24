@@ -1,0 +1,62 @@
+## HBZ savings account form
+
+I used **CAPE TOWN** for the branch and your current UK home address for both address sections. If you receive mail at a different address, enter it in B15.
+
+| Box | Field | Entry |
+|---|---|---|
+| B01 | Application date | NEEDS-YOU |
+| B02 | Branch | CAPE TOWN |
+| B03 | Account type | Tick SAVING |
+| B04 | Surname | SURNAME_P1 |
+| B05 | First name | GIVEN_P1 |
+| B06 | Identity number | N/A |
+| B07 | Date of birth | DATE_P1 |
+| B08 | Passport number | ID_P1 |
+| B09 | Passport issuing country | INDIA |
+| B09 | Passport expiry | 04 JUNE 2029 |
+| B10 | Permit type | SOUTH AFRICAN WORK PERMIT |
+| B10 | Permit expiry | 31 DECEMBER 2027 |
+| B11 | Alternative permit and expiry | Leave both blank |
+| B12 | Nationality | INDIAN |
+| B12 | “County of birth” | PLACE_P1 |
+| B13 | Additional nationality | NEEDS-YOU |
+| B14 | Residential address, line 1 | ADDRESS_P1 |
+| B14 | Residential address, line 2 | ADDRESS_P1 |
+| B14 | Residential address, line 3 | ADDRESS_P1 |
+| B14 | Residential postal code | ADDRESS_P1 |
+| B15 | Postal address, line 1 | ADDRESS_P1 |
+| B15 | Postal address, line 2 | ADDRESS_P1 |
+| B15 | Postal code | ADDRESS_P1 |
+| B16 | Email address | NEEDS-YOU |
+| B17 or B19 | Country code | PHONE_P1 |
+| B17 or B19 | Area code | PHONE_P1 |
+| B17 or B19 | Number | PHONE_P1 |
+| B18 | Work telephone | NEEDS-YOU |
+| B20 | Fax | NEEDS-YOU |
+| B21 | Occupation | SOFTWARE ENGINEER |
+| B22 | Beneficial owner of the funds | Tick YES |
+| B23 | Details of other beneficial owner | Leave all fields blank |
+
+## FATCA
+
+Based on your statement that you have no U.S. links, tick **NO** for each question.
+
+| Box | Question | Tick |
+|---|---|---|
+| B24 | U.S. citizenship | NO |
+| B25 | U.S. permanent residency or substantial physical presence | NO |
+| B26 | Birth in the U.S. or a U.S. territory | NO |
+| B27 | U.S. person for any other reason | NO |
+| B28 | U.S. transfer instructions or directions from a U.S. address | NO |
+| B29 | Power of attorney or signing authority for someone with a U.S. address | NO |
+| B30 | In-care-of or hold-mail address, U.S. P.O. box, or U.S. phone number | NO |
+
+Leave the explanation field in B27 blank.
+
+## Complete by hand after mdoc restores your details
+
+- **Dates and capitalization.** Enter the application date in B01 using the bank’s eight-box date order. If the restored birth date in B07 uses a different format from the form, rewrite it in the required format. Use capital letters for text entries.
+- **Birthplace.** Confirm whether B12 means *county* or *country*. Enter the requested part of the restored birthplace. If that detail is absent from the restored value, **NEEDS-YOU**.
+- **Addresses.** Split the restored UK address across the available lines in each section. Put only the postcode in each postcode box and leave unused address lines blank. If the restored address has no postcode, **NEEDS-YOU**.
+- **Telephone.** Use B17 if your number is a home landline or B19 if it is a mobile. Split it into country code, area code where applicable, and the remaining number. If you also have a number for the other row, **NEEDS-YOU** for that number.
+- **Missing details.** Supply your email, any additional nationality, and any applicable work telephone or fax number. Enter **N/A** for additional nationality, work telephone, or fax if you have none.

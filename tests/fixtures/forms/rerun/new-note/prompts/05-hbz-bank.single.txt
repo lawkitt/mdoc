@@ -1,0 +1,73 @@
+Use no tools: answer from the text below only.
+
+Note from mdoc: my personal details are replaced with aliases. Each alias
+stands for one value, which is put back on my device after your reply,
+exactly as it is stored. Write an alias exactly as listed, with nothing
+attached to it, in every blank it fills, even if another blank has it too.
+You cannot see or change the value, so where a form needs it in another
+shape, write the alias and tell me in words what to do with it by hand.
+Never guess or invent a real value, even as an example, and never ask me to
+type an identifier into this chat. If the form needs something that is not
+listed here, write NEEDS-YOU and say what is missing.
+
+P1 is "Me".
+- SURNAME_P1: my family name
+- GIVEN_P1: my first name
+- MIDDLE_P1: my middle name
+- DATE_P1: my date of birth, as printed in my passport
+- PLACE_P1: my place of birth
+- ID_P1: my passport number
+- ISSUED_P1: my passport's date of issue, as printed
+- AUTHORITY_P1: my passport's issuing authority, as printed
+- ADDRESS_P1: my home address
+- PHONE_P1: my phone number
+
+Readable facts: title Ms; sex female; nationality Filipino; document type passport; passport issued by the Philippines, valid until 13 March 2032.
+
+HBZ BANK LTD
+(A Subsidiary of Habib Bank AG Zurich)
+INDIVIDUAL ACCOUNT OPENING FORM
+Please complete un-shaded area in Capital Letters
+
+[B01] Date: [ ][ ][ ][ ][ ][ ][ ][ ]
+[B02] Branch: ....
+[B03] Type of Account: Current [ ]  Saving [ ]
+Please note you cannot open a call or time deposit account without opening either a current of savings account
+
+A. ACCOUNT HOLDER'S DETAIL
+[B04] Surname: ....
+[B05] First name: ....
+[B06] Identity number: ....
+[B07] Date of Birth: ....
+[B08] Passport number: ....
+[B09] Passport issuing country: ....   Expiry date: ....
+[B10] Work / study / residence permit: ....   Expiry date: ....
+[B11] Alternative type of permit (specify): ....   Expiry date: ....
+[B12] Nationality: ....   County of birth: ....
+[B13] Additional nationality (in case of dual nationality): ....
+[B14] Physical residential address: .... / .... / ....   Postal code: ....
+[B15] Postal address: .... / ....   Postal code: ....
+[B16] Email address: ....
+[B17] Home telephone no: Country Code ....  Area Code ....  Number ....
+[B18] Work telephone no: Country Code ....  Area Code ....  Number ....
+[B19] Cell. no: Country Code ....  Area Code ....  Number ....
+[B20] Fax no: Country Code ....  Area Code ....  Number ....
+[B21] Nature of profession / occupation: ....
+In case of US indicia (US Telephone Number, US Postal / E-mail Address) above, you are required to complete & sign a W-8BEN form & provide your Non-US Passport / Residence Permit / Work Permit / Government Issued ID.
+
+B. BENEFICIAL OWNERSHIP
+[B22] Are you the beneficial owner of the funds to be deposited with the bank? Yes [ ]  No [ ]
+If the answer to above is "NO", please complete the details of the beneficial owner below:
+[B23] Full name: ....  Identity number: ....  Date of Birth: ....  Passport number: ....  Passport issuing country: ....  Expiry date: ....  Residential address: ....  Postal code: ....  Nationality (if more than one please state all): ....  County of birth: ....
+
+C. USA FOREIGN ACCOUNT TAX COMPLIANCE ACT (FATCA)
+In order for us to comply with these obligations, please provide responses to the questions below (Place a cross in the applicable block)
+[B24] Are you a U.S. citizen? (sole or dual citizenship) Yes [ ]  No [ ]
+[B25] Are you a lawful permanent resident? (i.e. someone who holds a green card, or anyone who meets the 'substantial physical presence' test, as detailed on the IRS website) Yes [ ]  No [ ]
+[B26] Were you born in the United States or a U.S. territory? Yes [ ]  No [ ]
+[B27] Are you a 'US Person' under U.S. tax principles for any other reason? (For example dual residency, spouse filing jointly, long term permanent residency in the U.S., other). If yes, please specify: ....  Yes [ ]  No [ ]
+[B28] Will there be instructions to transfer funds to U.S. accounts or directions regularly received from a U.S. address? Yes [ ]  No [ ]
+[B29] Have you granted a Power of Attorney or signing authority to any person with a U.S. address? Yes [ ]  No [ ]
+[B30] Will there be an address on file which is "in care of" or "hold mail" or a U.S. P.O. Box and/or a U.S. telephone number? Yes [ ]  No [ ]
+
+I'm opening a current account at HBZ Bank in South Africa as a non-resident, to receive rent from a flat I own in Durban; I still live at my home address in Singapore. I have no South African ID number or permit, I'm a staff nurse, I'm the beneficial owner of the funds, and I'm not a US person in any way.

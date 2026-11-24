@@ -1,0 +1,73 @@
+Use block letters. Enter the passport names in the order shown in the passport, and fill in any missing identifiers directly on the form.
+
+### 1. Personal details
+
+**B01 Family name**
+
+SURNAME_P1
+
+- **B02 Given names** — Copy the passport’s Given Names field by hand, in the printed order. Include your middle name if it appears in that field.
+- **B03 Hanja name** — NEEDS-YOU. Confirm whether you have a Hanja name and enter it if applicable.
+- **B04 Sex** — Female [√]
+- **B05 Date of birth** — Convert the birth date printed in your passport to `yyyy/mm/dd` by hand. Use four digits for the year and two each for the month and day.
+- **B06 Nationality** — FILIPINO
+- **B07 Country of birth** — NEEDS-YOU. Enter the country where you were born.
+- **B08 National identity number** — NEEDS-YOU. Enter your national identity number directly on the form if you have one.
+- **B09 Other names used to enter or depart Korea** — NEEDS-YOU. Check Yes or No. If Yes, enter the family and given names you used.
+- **B10 Multiple citizenships** — NEEDS-YOU. Check Yes or No. If Yes, list your other citizenships.
+
+### 2. Passport information
+
+**B11 Passport type** — NEEDS-YOU. Check the type shown in your passport. If you select Other, specify the type.
+
+**B12 Passport number**
+
+ID_P1
+
+**B13 Country of passport** — PHILIPPINES
+
+**B14 Place of issue** — NEEDS-YOU. Enter the place where your passport was issued.
+
+**B15 Date of issue**
+
+ISSUED_P1
+
+**B16 Date of expiry** — 13 MARCH 2032
+
+**B17 Other valid passports** — NEEDS-YOU. Check Yes or No. If Yes, enter the other passport’s type, number, issuing country, and expiry date.
+
+### 3. Contact information
+
+**B18–B19 Addresses** — Use the address below in B18 if it is your home-country address in the Philippines. Use it in B19 if it is your current Singapore address and differs from B18. NEEDS-YOU for whichever required address this value does not cover.
+
+ADDRESS_P1
+
+**B20–B21 Phone numbers** — Put the number below in B20 if it is a mobile number or in B21 if it is a landline. NEEDS-YOU for any additional applicable number.
+
+PHONE_P1
+
+- **B22 Email** — NEEDS-YOU. Enter your email address.
+- **B23 Emergency contact name** — NEEDS-YOU. Enter your mother’s full name in English.
+- **B24 Emergency contact’s country of residence** — PHILIPPINES
+- **B25 Emergency contact phone** — NEEDS-YOU. Enter your mother’s phone number.
+- **B26 Relationship** — MOTHER
+
+### 4. Marital status and family details
+
+- **B27 Marital status** — Single [√]
+- **B28–B33 Spouse details** — Leave blank. The form asks for these fields only if you select Married.
+- **B34 Children** — No [√]. Number of children: 0.
+
+### 5. Education
+
+- **B35 Highest education completed** — Bachelor’s Degree [√]
+- **B36 School name** — NEEDS-YOU. Enter the institution that awarded your nursing degree.
+- **B37 School location** — NEEDS-YOU. Enter the institution’s city, province, and country as applicable.
+
+### 6. Employment
+
+- **B38 Current occupation or circumstances** — NEEDS-YOU. Select the option that describes your current circumstances. If you select Other, provide details.
+- **B39 Company, institution, or school** — NEEDS-YOU. Enter the name applicable to your current circumstances.
+- **B40 Position or course** — NEEDS-YOU. Enter your current position or course, if applicable.
+- **B41 Company, institution, or school address** — NEEDS-YOU. Enter its address, if applicable.
+- **B42 Company, institution, or school phone** — NEEDS-YOU. Enter its phone number, if applicable.

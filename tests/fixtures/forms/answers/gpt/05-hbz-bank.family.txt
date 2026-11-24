@@ -1,0 +1,58 @@
+Complete the unshaded fields in capital letters. Copy the passport details as stored. If a field requires a different date format or capitalization, adjust it by hand on the form.
+
+### Account setup
+
+- **B01 Date** — NEEDS-YOU. Enter the date you complete the form in the bank’s eight-digit format.
+- **B02 Branch** — CAPE TOWN. If the bank requires a specific branch name, NEEDS-YOU to supply it.
+- **B03 Type of account** — Mark **SAVING**.
+
+### A. Account holder’s details
+
+**B04 Surname**
+
+SURNAME_P1
+
+**B05 First name**
+
+GIVEN_P1
+
+**B06 Identity number** — N/A. You have no South African ID number.
+
+**B07 Date of birth**
+
+DATE_P1
+
+**B08 Passport number**
+
+ID_P1
+
+- **B09 Passport issuing country and expiry date** — INDIA, 04 JUNE 2029.
+- **B10 Permit and expiry date** — SOUTH AFRICAN WORK PERMIT, 31 DECEMBER 2027.
+- **B11 Alternative permit** — N/A.
+- **B12 Nationality and birthplace** — INDIAN. For the field printed “County of birth,” NEEDS-YOU to confirm whether the bank wants the country or county and enter that detail. Use your recorded birthplace as a reference.
+
+PLACE_P1
+
+**B13 Additional nationality** — NEEDS-YOU. Enter any additional nationality, or N/A if you have none.
+
+**B14 Physical residential address** — Use your current UK home address. Split it across the address lines by hand and copy the postcode into its own box. If the stored address omits the postcode, NEEDS-YOU to supply it.
+
+ADDRESS_P1
+
+- **B15 Postal address** — NEEDS-YOU to confirm where you receive mail. If you use your UK home address, copy it into the postal address lines and put the postcode in its own box.
+- **B16 Email address** — NEEDS-YOU. Enter your email address.
+- **B17–B19 Home, work and cell telephone** — NEEDS-YOU to identify which field the number below belongs in. Split it by hand into the country code, area code and number. Supply any other applicable phone numbers directly on the form.
+
+PHONE_P1
+
+- **B20 Fax** — NEEDS-YOU. Enter your fax number if you have one.
+- **B21 Occupation** — SOFTWARE ENGINEER.
+
+### B. Beneficial ownership
+
+- **B22** — Mark **YES**.
+- **B23** — Leave blank.
+
+### C. FATCA
+
+- **B24–B30** — Mark **NO** for all seven questions, based on your statement that you have no U.S. links. Leave the B27 explanation blank.

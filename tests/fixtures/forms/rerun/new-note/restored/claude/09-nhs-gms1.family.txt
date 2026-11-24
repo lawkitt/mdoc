@@ -1,0 +1,52 @@
+Here is the GMS1 filled in for your daughter (P3). You are signing for her, so the patient's details are hers. Where she shares your details (home address, phone), I've used yours.
+
+**Patient's details**
+
+- [B01] Title: NEEDS-YOU. No title is listed for your daughter. Most parents tick Miss for a girl, or leave it blank for a young child. It's your choice.
+- [B02] Surname: RAGHUNATHAN
+- [B03] Date of birth: 17/09/2019
+- [B04] First names: ANIKA. No middle name is listed for her. If she has one, add it here by hand.
+- [B05] NHS No.: leave blank. She has never been registered with a GP, and the practice will arrange a number if she doesn't have one. If she was born in the UK she may already have one. In that case write it in by hand.
+- [B06] Previous surname/s: leave blank
+- [B07] Female: ✔
+- [B08] Town and country of birth: MANCHESTER, U.K.. The form wants both town and country. If the stored value has only the town, add the country after it by hand.
+- [B09] Home address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+- [B10] Postcode: NEEDS-YOU. No separate postcode is listed. If 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom includes the postcode, copy just the postcode into this box by hand.
+- [B11] Telephone number: +44 7700 900123
+
+**Previous medical records**
+
+- [B12] Previous address in UK: leave blank
+- [B13] Name of previous doctor: leave blank, since she has never had a GP
+- [B14] Address of previous doctor: leave blank
+
+**If you are from abroad** (fill this in only if she was born outside the UK or came here from abroad)
+
+- [B15] First UK address where registered with a GP: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom, because this is her first GP registration
+- [B16] If previously resident in UK, date of leaving: leave blank, unless she lived in the UK before, left and came back
+- [B17] Date you first came to live in UK: NEEDS-YOU. I don't have the date she arrived to live in the UK. Write it in by hand.
+
+If she was born in the UK, leave B15–B17 blank.
+
+**Armed Forces**
+
+- [B18]–[B20]: leave blank
+
+**Child under 5**
+
+- [B21]: tick this if she is under 5. I can't see her date of birth, so please check it yourself.
+
+**Dispensing**
+
+- [B22]: leave both boxes blank. These are only for people who live far from a chemist or would struggle to get there, which isn't usual in Manchester.
+
+**Signature**
+
+- [B23]: ✔ Signature on behalf of patient, then sign it yourself by hand
+- [B24] Date: write the date you sign, by hand
+
+**Before you hand it in**
+
+- The form asks for BLOCK CAPITALS. I can't change how the stored values look, so if any of them aren't in capitals, write them out in capitals by hand.
+- Your passport details and your wife's aren't needed on this form. Neither are your daughter's passport details. The practice may still ask to see her passport as ID.
+- The back of the form (organ donation and the doctor's details) wasn't in your message, so I haven't filled it in.

@@ -1,0 +1,40 @@
+Here's how to fill in your W-8BEN for the brokerage. Wherever I've written an alias, mdoc will put your real value back in.
+
+**Part I: Identification of Beneficial Owner**
+
+- **[B01] Line 1, Name:** GIVEN_P1 MIDDLE_P1 SURNAME_P1
+- **[B02] Line 2, Country of citizenship:** Philippines
+- **[B03] Line 3, Permanent residence address (street, apt.):** ADDRESS_P1
+- **[B04] City or town, state or province, postal code:** ADDRESS_P1
+- **[B05] Country:** Singapore
+- **[B06] Line 4, Mailing address:** leave blank. Your mailing address is the same as your home address.
+- **[B07] Line 5, U.S. TIN (SSN or ITIN):** leave blank. You don't need one for a brokerage account when you aren't claiming treaty benefits.
+- **[B08] Line 6a, Foreign tax identifying number:** NEEDS-YOU. Your Singapore tax number isn't saved in mdoc. Write it here by hand. For most individuals it's the NRIC or FIN number IRAS uses as your tax reference. Please don't type it into this chat.
+- **[B09] Line 6b, FTIN not legally required:** leave unchecked. Singapore does issue tax numbers, so this doesn't apply to you.
+- **[B10] Line 7, Reference number(s):** leave blank, unless the brokerage tells you to put your account number here.
+- **[B11] Line 8, Date of birth (MM-DD-YYYY):** DATE_P1
+
+**Part II: Claim of Tax Treaty Benefits**
+
+- **[B12] Line 9:** leave blank.
+- **[B13] Line 10:** leave blank.
+
+The United States and Singapore have no income tax treaty, so you have no treaty benefits to claim. As a result, the default 30% U.S. withholding will usually apply to U.S. dividends. Being Filipino doesn't change that. Treaty benefits depend on where you're tax resident, not your citizenship.
+
+**Part III: Certification**
+
+- **[B14] Capacity to sign:** [X] check it. You're signing for yourself.
+- **[B15] Signature and date:** NEEDS-YOU. Sign by hand, and write the date you sign as MM-DD-YYYY.
+- **[B16] Print name of signer:** GIVEN_P1 MIDDLE_P1 SURNAME_P1
+
+**Things to fix by hand after the values are put back**
+
+1. **Address (lines 3 and B04):** ADDRESS_P1 is your whole home address, and it appears in both spots. On line 3, keep only the street, block, unit and building. On the city line, keep only the city and postal code (for example, "Singapore" plus your 6-digit postal code). Cross out the extra parts in each spot. Don't put "Singapore" on the country line twice.
+2. **Date of birth (line 8):** DATE_P1 is filled in the way your passport prints it. The form needs MM-DD-YYYY: two-digit month, two-digit day and four-digit year, separated by hyphens. If your passport shows the month as letters or puts the day first, rewrite it in that order.
+3. **Name order:** check that your name matches your passport. If your passport doesn't show a middle name, delete MIDDLE_P1 from lines 1 and B16.
+
+**Before you send it**
+
+- Give the form to the brokerage, not the IRS.
+- A W-8BEN usually stays valid until the end of the third calendar year after you sign it. If anything changes, for example you stop being a Singapore tax resident or move to a different country, tell the brokerage within 30 days and give them a new form.
+- I'm not a tax advisor. If you have U.S.-source income other than ordinary investments, or you spend a lot of time in the U.S., check with a tax professional.

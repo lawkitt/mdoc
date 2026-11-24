@@ -1,0 +1,92 @@
+## Schengen visa application
+
+This is your application only. Use the entries below for your business trip to the Munich trade fair. Complete each **NEEDS-YOU** item on your device if it applies.
+
+### Personal details and passport
+
+**B01 — Surname**
+
+SURNAME_P1
+
+**B02 — Surname at birth / former family names.** NEEDS-YOU. Confirm your surname at birth and any former family names. If your surname at birth is the same as your current surname, copy B01 where the form requires it.
+
+**B03 — Given names**
+
+GIVEN_P1
+
+MIDDLE_P1
+
+Include the second line only if your passport lists it among your given names. After the values are restored, enter the names together in the order and spelling shown in the passport.
+
+**B04 — Date of birth**
+
+DATE_P1
+
+After the value is restored, put it into day-month-year order by hand.
+
+**B05 — Place of birth**
+
+PLACE_P1
+
+- **B06 — Country of birth.** NEEDS-YOU. Enter your country of birth.
+- **B07 — Nationality.** Enter **Indian** as your current nationality. NEEDS-YOU. Add your nationality at birth if different and any other nationalities you hold.
+- **B08 — Sex.** Select **Male**.
+- **B09 — Civil status.** Select **Married**.
+- **B10 — Parental authority or legal guardian.** Leave blank if you are an adult. NEEDS-YOU if you are a minor. Enter the parent’s or guardian’s names, address if different from yours, phone, email and nationality.
+- **B11 — National identity number.** NEEDS-YOU if applicable. Enter it directly on the form.
+- **B12 — Travel document type.** NEEDS-YOU. Confirm the passport category and select the matching option. Select **Ordinary passport** if that is your passport type.
+
+**B13 — Travel document number**
+
+ID_P1
+
+**B14 — Date of issue**
+
+ISSUED_P1
+
+If the form requires a different date format, rearrange the restored date by hand.
+
+- **B15 — Valid until.** **04-06-2029**.
+- **B16 — Issued by (country).** **India**.
+- **B17 — Qualifying family member.** NEEDS-YOU if applicable. Enter the family member’s surname, given names, date of birth in day-month-year order, nationality, and passport or identity card number. If the family-member provision at the top of the form applies to you, leave starred fields 21, 22, 30, 31 and 32 blank, including their follow-on boxes.
+- **B18 — Family relationship.** NEEDS-YOU if B17 applies. Select the qualifying relationship.
+
+### Contact, residence and work
+
+**B19 — Home address**
+
+ADDRESS_P1
+
+**B19 — Telephone**
+
+PHONE_P1
+
+**B19 — Email.** NEEDS-YOU. Enter your email address.
+
+- **B20 — Residence outside your country of nationality.** Select **Yes** and enter **United Kingdom** as your country of residence if the form provides a space for it. NEEDS-YOU. Enter your UK residence permit type, number and expiry date.
+- **B21 — Current occupation.** **Software engineer**.
+- **B22 — Employer details.** NEEDS-YOU. Enter your employer’s name, address and telephone number.
+
+### Journey
+
+- **B23 — Purpose.** Select **Business**.
+- **B24 — Additional information.** **Attending a trade fair in Munich, Germany, from 8 to 13 March 2027.**
+- **B25 — Main destination.** **Germany**. NEEDS-YOU if you plan to visit any other Schengen states. List those too.
+- **B26 — First entry.** NEEDS-YOU. Enter the Schengen state where you first enter the area on your planned route.
+- **B27 — Number of entries.** NEEDS-YOU. Select single, two or multiple entries based on your itinerary and the visa you are requesting.
+- **B28 — Intended arrival.** NEEDS-YOU. Enter your planned date of entry into the Schengen area. Use **08-03-2027** if that is your arrival date.
+- **B29 — Intended departure.** NEEDS-YOU. Enter your planned date of exit from the Schengen area. Use **13-03-2027** if that is your departure date.
+- **B30 — Previous Schengen fingerprints.** Select **Yes**. They were collected in **2023**. If the form accepts only a full date, leave the date blank. Enter the visa sticker number only if known.
+- **B31 — Entry permit for the final destination.** NEEDS-YOU if applicable to your itinerary. Enter the permit’s issuer and validity dates.
+
+### Host, funding and signature
+
+- **B32 — Inviting person or accommodation.** NEEDS-YOU. Enter the inviting person’s name or, if there is no inviting person, the name of your hotel or other temporary accommodation.
+- **B33 — Contact details for B32.** NEEDS-YOU. Enter the address, email and telephone number.
+- **B34 — Inviting company or organisation.** NEEDS-YOU if applicable. Enter the name and address of the organisation that invited you.
+- **B35 — Inviting organisation’s contact details.** NEEDS-YOU if B34 applies. Enter the contact person’s names, address, phone and email, plus the organisation’s phone number.
+- **B36 — Travel and living costs.** Select **by a sponsor**. If your employer is listed in field 30 or 31, select **referred to in field 30 or 31**. Otherwise, select **other** and name your employer. NEEDS-YOU. Confirm which expenses your employer will cover and select the corresponding means of support.
+- **B37 — Person filling in the form.** Leave blank if you fill it in yourself. NEEDS-YOU if someone else fills it in. Enter that person’s surname and given names.
+- **B38 — Contact details of the person filling in the form.** Leave blank if you fill it in yourself. NEEDS-YOU if someone else fills it in. Enter that person’s address, email and phone.
+- **B39 — Place and date.** NEEDS-YOU. Enter the place and date when you sign.
+- **B40 — Signature.** NEEDS-YOU. Sign the form yourself. A parent or legal guardian signs where applicable.

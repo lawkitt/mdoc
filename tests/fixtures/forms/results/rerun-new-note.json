@@ -1,0 +1,289 @@
+{
+ "claude": {
+  "total": {
+   "answers": 6,
+   "r1_pass": 6,
+   "r1_tokens": 100,
+   "r1_bad": 0,
+   "r2_pass": 5,
+   "flags": 4,
+   "r3_pass": 6,
+   "blanks": 49,
+   "blanks_ok": 49,
+   "facts": 28,
+   "facts_ok": 28
+  },
+  "answers": {
+   "03-korea-cve.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 19
+   },
+   "03-korea-cve.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 14
+   },
+   "07-us-i9.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 11
+   },
+   "08-irs-w8ben.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? - **[B08] Line 6a, Foreign tax identifying number:** NEEDS-YOU. Your Singapore tax number isn't saved in mdoc. Write it here by hand. For most individuals it's the NRIC or FIN number IRAS uses as your",
+     "hand rule 2: pass: 'Write it here by hand' means on line 6a of the form; the line says the number is not saved and asks for nothing in the chat"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 12
+   },
+   "09-nhs-gms1.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 8
+   },
+   "10-dominica-preschool.family": {
+    "r1": [],
+    "r2": [
+     "hand fail: 'If you meant two other people, send me their names and phone numbers and I'll fill B29 and B30' asks the user to type phone numbers into the chat"
+    ],
+    "flags": [
+     "ask? - I took your message to mean that you and your wife are the two emergency contacts. If you meant two other people, send me their names and phone numbers and I'll fill B29 and B30 with those.",
+     "hand rule 2: fail: 'If you meant two other people, send me their names and phone numbers and I'll fill B29 and B30' asks the user to type phone numbers into the chat"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 36
+   }
+  }
+ },
+ "gpt": {
+  "total": {
+   "answers": 20,
+   "r1_pass": 20,
+   "r1_tokens": 200,
+   "r1_bad": 0,
+   "r2_pass": 20,
+   "flags": 3,
+   "r3_pass": 19,
+   "blanks": 127,
+   "blanks_ok": 126,
+   "facts": 94,
+   "facts_ok": 90
+  },
+  "answers": {
+   "01-schengen.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "01-schengen.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "02-japan-visa.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B11",
+      "ordinary",
+      "B11 Passport type | NEEDS-YOU |\n| \nB11, and check the place of issue for B13. For B17, check whether you have a Certificate of Eligibility number to enter."
+     ]
+    ],
+    "tokens": 10
+   },
+   "02-japan-visa.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B11",
+      "ordinary",
+      "B11] Passport type\nNEEDS-YOU\n\n[\nB09–B11, B13 and B17.** Confirm whether you have any other names or former or additional citizenships. Fill in the government-issued ID requested by B10. Check your passport for its catego"
+     ]
+    ],
+    "tokens": 10
+   },
+   "03-korea-cve.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 17
+   },
+   "03-korea-cve.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? | B19 | ADDRESS_P1 | Use your full current residential address in Singapore. If the restored address belongs in B18, enter your Singapore address here by hand. |",
+     "ask? | B20 | PHONE_P1 | Use this here if it is your mobile number. If it is your landline, move it to B21 and enter your mobile number here if you have one. |",
+     "hand rule 2: pass: both flagged lines tell the user to enter a number or address on the form by hand"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "04-thai-tm47.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 5
+   },
+   "04-thai-tm47.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 5
+   },
+   "05-hbz-bank.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 15
+   },
+   "05-hbz-bank.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "06-qld-rental.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B05",
+      "\\b1\\b|one",
+      "B05 | Occupants under 18 | NEEDS-YOU |\n| \nB05** Enter the number of the three occupants who are under 18. Check your daughter’s date of birth privately.\n- **"
+     ]
+    ],
+    "tokens": 7
+   },
+   "06-qld-rental.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "07-us-i9.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "07-us-i9.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "08-irs-w8ben.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B05",
+      "united kingdom|\\buk\\b",
+      "B05 Permanent residence, country | ADDRESS_P1 | Keep only the country. If the stored address lacks it, enter the country of your home address by hand. |\n|"
+     ]
+    ],
+    "tokens": 10
+   },
+   "08-irs-w8ben.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "09-nhs-gms1.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [
+     [
+      "B10",
+      [
+       "ADDRESS_P1"
+      ],
+      "missing ADDRESS_P1",
+      "B10 Postcode | NEEDS-YOU | Enter the home postcode separately. Copy it from the restored address if it appears there. |\n|"
+     ]
+    ],
+    "facts": [],
+    "tokens": 6
+   },
+   "09-nhs-gms1.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "10-dominica-preschool.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 39
+   },
+   "10-dominica-preschool.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 8
+   }
+  }
+ }
+}

@@ -1,0 +1,72 @@
+## Japan visa application for P1
+
+| Field | Entry |
+|---|---|
+| B01 Surname | RAGHUNATHAN |
+| B02 Given name | VIKRAM |
+| B02 Middle name | ANAND |
+| B03 Other names | NEEDS-YOU |
+| B04 Date of birth | 22/11/1983 |
+| B05 Place of birth | PUNE, MAHARASHTRA |
+| B06 Sex | Male |
+| B07 Marital status | Married |
+| B08 Nationality | Indian |
+| B09 Former or other nationalities | NEEDS-YOU |
+| B10 Government-issued ID number | NEEDS-YOU |
+| B11 Passport type | NEEDS-YOU |
+| B12 Passport number | Z4827163 |
+| B13 Place of issue | NEEDS-YOU |
+| B14 Date of issue | 05/06/2019 |
+| B15 Issuing authority | HIGH COMMISSION OF INDIA, LONDON |
+| B16 Date of expiry | 04/06/2029 |
+| B17 Certificate of Eligibility number | NEEDS-YOU |
+| B18 Purpose of visit | Tourism with family |
+| B19 Intended length of stay | 7 days |
+| B20 Date of arrival | 20/04/2027 |
+| B21 Port of entry | Kansai International Airport |
+| B22 Ship or airline | NEEDS-YOU |
+| B23 Accommodation or host name | NEEDS-YOU |
+| B23 Accommodation or host telephone | NEEDS-YOU |
+| B24 Accommodation or host address | NEEDS-YOU |
+| B25 Previous stays in Japan | One stay in October 2023, lasting 9 days. Exact dates NEEDS-YOU |
+| B26 Current residential address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B27 Telephone | +44 7700 900123 |
+| B27 Mobile number | NEEDS-YOU |
+| B28 Email | NEEDS-YOU |
+| B29 Current occupation and position | Software engineer |
+| B30 Employer name | NEEDS-YOU |
+| B30 Employer telephone | NEEDS-YOU |
+| B31 Employer address | NEEDS-YOU |
+| B32 Partner’s occupation | Pharmacist |
+
+After the values are restored, put both B02 names in the single given-and-middle-names blank in passport order. Format B04 and B14 as day/month/year. Put B05 in city, state or province, and country order, adding any missing components from your records. Add any other current residential addresses to B26. If the number in B27 is your mobile, put it in the Mobile No. blank and add a separate telephone number if applicable.
+
+For B03 and B09, confirm whether you have any other names or former or additional nationalities to report. Use your records to complete B10, confirm the passport category for B11, and check the place of issue for B13. For B17, check whether you have a Certificate of Eligibility number to enter.
+
+| Detail | B33 Guarantor or reference in Japan | B34 Inviter in Japan |
+|---|---|---|
+| Name | NEEDS-YOU | NEEDS-YOU |
+| Telephone | NEEDS-YOU | NEEDS-YOU |
+| Address | NEEDS-YOU | NEEDS-YOU |
+| Date of birth | NEEDS-YOU | NEEDS-YOU |
+| Sex | NEEDS-YOU | NEEDS-YOU |
+| Relationship to applicant | NEEDS-YOU | NEEDS-YOU |
+| Occupation and position | NEEDS-YOU | NEEDS-YOU |
+| Nationality and immigration status | NEEDS-YOU | NEEDS-YOU |
+
+Confirm whether B33 and B34 apply to your trip. If your inviter and guarantor are the same person, write “same as above” in B34.
+
+| Field | Entry |
+|---|---|
+| B35 Remarks or special circumstances, if any | NEEDS-YOU |
+| B36 Criminal conviction | NEEDS-YOU |
+| B37 Sentence of imprisonment for one year or more | NEEDS-YOU |
+| B38 Deportation or removal | NEEDS-YOU |
+| B39 Drug offence conviction and sentence | NEEDS-YOU |
+| B40 Prostitution-related activity | NEEDS-YOU |
+| B41 Trafficking in persons or involvement in such an offence | NEEDS-YOU |
+| B42 Details if any answer above is Yes | NEEDS-YOU |
+| B43 Date of application | NEEDS-YOU |
+| B44 Applicant signature | NEEDS-YOU |
+
+Answer B36–B41 individually and provide details in B42 for any Yes answer. Enter your application date in day/month/year order and sign B44 yourself.

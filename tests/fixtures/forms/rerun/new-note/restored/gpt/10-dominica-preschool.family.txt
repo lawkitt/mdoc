@@ -1,0 +1,49 @@
+## Applicant section
+
+| Blank | Entry |
+|---|---|
+| Form heading — preschool/daycare name | NEEDS-YOU |
+| B08 — child’s name | ANIKA RAGHUNATHAN |
+| B08 — preschool/daycare name | NEEDS-YOU |
+| B09 — applicant’s name | VIKRAM ANAND RAGHUNATHAN |
+| B10 — applicant’s phone | +44 7700 900123 |
+| B11 — applicant’s email | NEEDS-YOU |
+| B12 — relationship to child | Father |
+| B13 — child’s name | ANIKA RAGHUNATHAN |
+| B14 — people the child lives with | VIKRAM ANAND RAGHUNATHAN and MEERA RAGHUNATHAN |
+| B15 — child’s address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B16 — number of children | 0 male, 1 female |
+| B17 — place in the family | First and only child |
+| B18 — mother’s name | MEERA RAGHUNATHAN |
+| B19 — mother’s address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B20 — mother’s phone | +44 7700 900456 |
+| B21 — mother’s email | NEEDS-YOU |
+| B22 — mother’s occupation | Pharmacist |
+| B23 — father’s name | VIKRAM ANAND RAGHUNATHAN |
+| B24 — father’s address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B25 — father’s phone | +44 7700 900123 |
+| B26 — father’s email | NEEDS-YOU |
+| B27 — father’s occupation | Software engineer |
+| B28 — authorized to collect the child | VIKRAM ANAND RAGHUNATHAN and MEERA RAGHUNATHAN |
+| B29 — first emergency contact | VIKRAM ANAND RAGHUNATHAN |
+| B29 — first emergency contact’s phone | +44 7700 900123 |
+| B30 — second emergency contact | MEERA RAGHUNATHAN |
+| B30 — second emergency contact’s phone | +44 7700 900456 |
+
+B14 assumes your daughter currently lives with both parents. For each phone entry, put the restored number in the matching cell, work, or home box. The phone types and any additional numbers are NEEDS-YOU if the preschool requires them. Enter the preschool’s name and the requested email addresses directly on the form.
+
+## Official-use section
+
+Leave B01–B07 for preschool staff. These are the details to have ready if they ask.
+
+| Blank | Detail |
+|---|---|
+| B01 — child’s name | ANIKA RAGHUNATHAN |
+| B02 — date of birth | 17/09/2019 |
+| B03 — sex | Mark Female |
+| B04 — religion | NEEDS-YOU — child’s religion, if applicable |
+| B05 — home address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B06 — date of full immunization | NEEDS-YOU — date from the child’s health records |
+| B07 — admission date | NEEDS-YOU — exact admission date |
+
+For B02, transfer the restored passport date into the day, month, and year boxes in that order. The requested start is January 2027 in Roseau.

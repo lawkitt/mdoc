@@ -1,0 +1,34 @@
+Here's how to fill in your parts of the form. I've left everything about your nephew, his parents and the first emergency contact blank for your sister, as you asked.
+
+**Leave blank**
+- **B01–B07:** These sit under "FOR OFFICIAL USE ONLY", so the preschool fills them in.
+- **B13–B29:** Your sister fills these in (the child, the family, the parents, who may collect him, and emergency contact 1).
+
+**B08: I hereby make application for admission of .... to the .... Preschool/Daycare**
+- First blank (child's name): leave it for your sister.
+- Second blank (preschool name): NEEDS-YOU. The name of the preschool isn't in the form, so write it in by hand. Use the same name in the form's title line.
+
+**B09: Name of Applicant**
+GIVEN_P1 MIDDLE_P1 SURNAME_P1
+
+**B10: Tel**
+PHONE_P1
+The form has three boxes: (C) cell, (W) work and (H) home. I don't know which kind your number is, so put it in the matching box and leave the other two empty. If it's a mobile, that's (C).
+
+**B11: Email**
+NEEDS-YOU. You didn't give me an email address. Write yours in by hand, or leave it blank if you'd rather not give one.
+
+**B12: Relationship to child**
+Aunt (maternal)
+If the preschool is likely to want a reason, you could put "Aunt (maternal), applying on behalf of the mother".
+
+**B30: Emergency contact 2**
+- Name of Person: GIVEN_P1 SURNAME_P1
+- Tel: PHONE_P1, in the same box you used in B10. Leave the other two empty.
+
+**Things to check**
+- Your address, date of birth and passport details aren't asked for anywhere in your sections, so I've left them out.
+- The form has no signature line in the text I can see. If the paper copy has one for the applicant, you may need to sign as the applicant. Some preschools also want the parent's signature or a short note from your sister authorising you to apply. Ask the preschool which they need.
+- B28 (people authorised to collect him) is your sister's to fill in. If she wants you to be able to pick him up, she should add your name there too.
+
+I hope your sister feels better soon.

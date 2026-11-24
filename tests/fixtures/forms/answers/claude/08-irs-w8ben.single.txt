@@ -1,0 +1,36 @@
+Here's how I'd fill your W-8BEN, going by what you told me: you're an individual, Filipino by citizenship, a tax resident of Singapore only, and you live at your home address in Singapore.
+
+**Part I: Identification of Beneficial Owner**
+
+- **Line 1 (Name):** GIVEN_P1 MIDDLE_P1 SURNAME_P1
+- **Line 2 (Country of citizenship):** Philippines
+- **Line 3 (Permanent residence address):** ADDRESS_P1
+  ADDRESS_P1 is your whole address in one piece, but the form splits it in two. On the street line, keep only the street, building, unit and floor. Move the city and the postal code by hand to the "City or town, state or province" line below it (in Singapore that's normally just "Singapore" and the 6-digit postal code). Don't use a P.O. box or a c/o address.
+- **Country:** Singapore
+- **Line 4 (Mailing address):** leave blank, since your mail goes to the same address.
+- **Line 5 (U.S. TIN):** leave blank. You don't need an SSN or ITIN for an ordinary brokerage account, especially since you won't be claiming treaty benefits (see line 9).
+- **Line 6a (Foreign tax identifying number):** NEEDS-YOU. This is your Singapore tax number (usually your NRIC or FIN, or your IRAS tax reference number), and it isn't saved in mdoc. Write it on the form yourself; don't type it here. Your passport number doesn't count as an FTIN, so don't use it.
+- **Line 6b:** leave unchecked. Singapore issues tax numbers to its residents, so the "not legally required" box doesn't apply.
+- **Line 7 (Reference number):** leave blank, unless the brokerage asked you to put your account number here. If they did, copy it from your account yourself.
+- **Line 8 (Date of birth, MM-DD-YYYY):** the alias DATE_P1 is in your passport's format, not the one the form wants. Write it by hand as two-digit month, two-digit day, four-digit year, with hyphens. For example, a birthday printed as "05 JUN 1988" becomes 06-05-1988.
+
+**Part II: Claim of Tax Treaty Benefits**
+
+- **Line 9:** leave blank. The US and Singapore have no income tax treaty, so as a Singapore resident you have no treaty rate to claim. Don't write "Philippines" either: treaty benefits depend on where you're tax resident, not on your citizenship.
+- **Line 10:** leave blank.
+
+This means US dividends will usually have the standard 30% withheld. The form still matters, though. It shows you're not a US person, which keeps you out of 24% backup withholding and US information reporting, and it generally keeps capital gains and bank-deposit or portfolio interest free of US tax.
+
+**Part III: Certification**
+
+- **Capacity checkbox:** tick it. You're signing for yourself.
+- **Signature:** sign by hand, or e-sign if the brokerage offers it.
+- **Date:** the day you sign, in MM-DD-YYYY.
+- **Print name of signer:** GIVEN_P1 MIDDLE_P1 SURNAME_P1
+
+**Not needed on this form:** your place of birth, passport number, passport issue date and issuing authority, phone number, title and sex.
+
+A few reminders:
+- Send the form to the brokerage, not to the IRS.
+- It stays valid until the last day of the third calendar year after you sign it, unless something changes first. If you move, or become a US tax resident (for example by spending too many days in the US), tell the brokerage within 30 days and file a new form.
+- This is general guidance, not tax advice. If your situation is unusual, or you aren't sure you're tax resident only in Singapore, check with a tax adviser.

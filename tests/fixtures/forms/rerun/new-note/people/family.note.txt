@@ -1,0 +1,42 @@
+Note from mdoc: my personal details are replaced with aliases. Each alias
+stands for one value, which is put back on my device after your reply,
+exactly as it is stored. Write an alias exactly as listed, with nothing
+attached to it, in every blank it fills, even if another blank has it too.
+You cannot see or change the value, so where a form needs it in another
+shape, write the alias and tell me in words what to do with it by hand.
+Never guess or invent a real value, even as an example, and never ask me to
+type an identifier into this chat. If the form needs something that is not
+listed here, write NEEDS-YOU and say what is missing.
+
+P1 is "Me".
+- SURNAME_P1: my family name
+- GIVEN_P1: my first name
+- MIDDLE_P1: my middle name
+- DATE_P1: my date of birth, as printed in my passport
+- PLACE_P1: my place of birth
+- ID_P1: my passport number
+- ISSUED_P1: my passport's date of issue, as printed
+- AUTHORITY_P1: my passport's issuing authority, as printed
+- ADDRESS_P1: my home address
+- PHONE_P1: my phone number
+
+P2 is "Wife".
+- SURNAME_P2: her family name
+- GIVEN_P2: her first name
+- DATE_P2: her date of birth, as printed in her passport
+- PLACE_P2: her place of birth
+- ID_P2: her passport number
+- ISSUED_P2: her passport's date of issue, as printed
+- AUTHORITY_P2: her passport's issuing authority, as printed
+- PHONE_P2: her phone number
+
+P3 is "Daughter".
+- SURNAME_P3: her family name
+- GIVEN_P3: her first name
+- DATE_P3: her date of birth, as printed in her passport
+- PLACE_P3: her place of birth
+- ID_P3: her passport number
+- ISSUED_P3: her passport's date of issue, as printed
+- AUTHORITY_P3: her passport's issuing authority, as printed
+
+Readable facts: P1: title Mr; sex male; nationality Indian; document type passport; passport issued by India, valid until 4 June 2029. P2: title Mrs; sex female; nationality Indian; document type passport; passport issued by India, valid until 10 August 2030. P3: sex female; nationality Indian; document type passport; passport issued by India, valid until 1 January 2027.

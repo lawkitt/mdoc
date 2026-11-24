@@ -1,0 +1,123 @@
+{
+  "_about": "One user message per form and person, and what scoring expects. 'aliases': blank id (or ids joined by ',' meaning any of them) -> aliases that blank must carry (rule 3). 'facts': blank id -> regex (case-insensitive) a readable fact or a message fact must match there (reported beside rule 3, not part of it).",
+  "01-schengen": {
+    "single": {
+      "message": "I'm applying for a short-stay Schengen visa for a holiday in Italy, flying into Rome on 14 May 2027 and leaving on 28 May 2027. I'm single, I work as a staff nurse in Singapore on an employment pass, I've never had Schengen fingerprints taken, and I'm paying for everything myself.",
+      "aliases": {"B01": ["SURNAME_P1"], "B03": ["GIVEN_P1"], "B04": ["DATE_P1"], "B05": ["PLACE_P1"], "B13": ["ID_P1"], "B14": ["ISSUED_P1"], "B19": ["ADDRESS_P1", "PHONE_P1"]},
+      "facts": {"B07": "filipino|philippin", "B08": "female", "B09": "single", "B12": "ordinary", "B15": "2032", "B16": "philippines", "B28": "14", "B29": "28"}
+    },
+    "family": {
+      "message": "This is my own Schengen visa application for a trade fair in Munich, Germany, from 8 to 13 March 2027; my wife and daughter are not coming. I'm married, I live in the UK on a residence permit, I work as a software engineer and my company is paying, and my fingerprints were taken for a Schengen visa in 2023 but I don't know the date.",
+      "aliases": {"B01": ["SURNAME_P1"], "B03": ["GIVEN_P1"], "B04": ["DATE_P1"], "B05": ["PLACE_P1"], "B13": ["ID_P1"], "B14": ["ISSUED_P1"], "B19": ["ADDRESS_P1", "PHONE_P1"]},
+      "facts": {"B07": "indian|india", "B08": "male", "B09": "married", "B12": "ordinary", "B15": "2029", "B16": "india", "B25": "german", "B23": "business"}
+    }
+  },
+  "02-japan-visa": {
+    "single": {
+      "message": "I'm applying for a Japan visa for a 10-day holiday, arriving at Narita by air on 2 April 2027 and staying in hotels in Tokyo and Kyoto that I haven't booked yet. I've never been to Japan, I'm single, and I work as a staff nurse.",
+      "aliases": {"B01": ["SURNAME_P1"], "B02": ["GIVEN_P1", "MIDDLE_P1"], "B04": ["DATE_P1"], "B05": ["PLACE_P1"], "B12": ["ID_P1"], "B14": ["ISSUED_P1"], "B15": ["AUTHORITY_P1"], "B26": ["ADDRESS_P1"], "B27": ["PHONE_P1"]},
+      "facts": {"B06": "female", "B07": "single", "B08": "filipino|philippin", "B11": "ordinary", "B16": "2032", "B19": "10", "B21": "narita"}
+    },
+    "family": {
+      "message": "I'm applying for a Japan visa for a week of tourism with my family, arriving at Kansai airport on 20 April 2027; this form is just mine. I'm married, I work as a software engineer, my wife is a pharmacist, and we stayed in Japan once before, for 9 days in October 2023.",
+      "aliases": {"B01": ["SURNAME_P1"], "B02": ["GIVEN_P1", "MIDDLE_P1"], "B04": ["DATE_P1"], "B05": ["PLACE_P1"], "B12": ["ID_P1"], "B14": ["ISSUED_P1"], "B15": ["AUTHORITY_P1"], "B26": ["ADDRESS_P1"], "B27": ["PHONE_P1"]},
+      "facts": {"B06": "male", "B07": "married", "B08": "indian|india", "B11": "ordinary", "B16": "2029", "B32": "pharmacist", "B25": "2023"}
+    }
+  },
+  "03-korea-cve": {
+    "single": {
+      "message": "I've been offered a nursing job in Seoul and the employer asked me to fill in this application for a Certificate of Visa Eligibility. I'm single with no children, I have a bachelor's degree in nursing, I live in Singapore, and for emergencies my contact is my mother, who lives in the Philippines.",
+      "aliases": {"B01": ["SURNAME_P1"], "B02": ["GIVEN_P1"], "B05": ["DATE_P1"], "B12": ["ID_P1"], "B15": ["ISSUED_P1"], "B18,B19": ["ADDRESS_P1"], "B20": ["PHONE_P1"]},
+      "facts": {"B04": "female", "B06": "filipino|philippin", "B13": "philippines", "B16": "2032", "B27": "single", "B34": "no", "B35": "bachelor", "B24": "philippines"}
+    },
+    "family": {
+      "message": "My company is transferring me to its Seoul office, and I need this application for a Certificate of Visa Eligibility for myself. I'm married with one daughter, I have a master's degree in computer science, and my wife is my emergency contact; we live together in the UK and she'll stay there until she joins me.",
+      "aliases": {"B01": ["SURNAME_P1"], "B02": ["GIVEN_P1"], "B05": ["DATE_P1"], "B12": ["ID_P1"], "B15": ["ISSUED_P1"], "B18,B19": ["ADDRESS_P1"], "B20": ["PHONE_P1"], "B23": ["GIVEN_P2", "SURNAME_P2"], "B25": ["PHONE_P2"], "B28": ["SURNAME_P2"], "B29": ["GIVEN_P2"], "B30": ["DATE_P2"], "B32": ["ADDRESS_P1"], "B33": ["PHONE_P2"]},
+      "facts": {"B04": "male", "B06": "indian|india", "B13": "india", "B16": "2029", "B27": "married", "B31": "indian|india", "B34": "1", "B35": "master", "B24": "united kingdom|\\buk\\b", "B26": "wife|spouse"}
+    }
+  },
+  "04-thai-tm47": {
+    "single": {
+      "message": "I've been living in Chiang Mai on a non-immigrant visa since I arrived by air on 25 August 2026, and I'm doing my 90-day report today, 24 November 2026, at the Chiang Mai immigration office. My Thai address and my arrival card number are not saved in mdoc; use my usual phone number.",
+      "aliases": {"B03": ["GIVEN_P1", "SURNAME_P1"], "B08": ["ID_P1"], "B14": ["PHONE_P1"]},
+      "facts": {"B02": "2569", "B04": "filipino|philippin", "B05": "non", "B06": "2569", "B07": "air|plane|aircraft|flight"}
+    },
+    "family": {
+      "message": "I entered Thailand on 26 August 2026 at Suvarnabhumi airport on a non-immigrant visa to work remotely from Bangkok, and I'm filing my 90-day report today, 24 November 2026, at the Bangkok immigration office. My wife and daughter file their own; my Thai address and arrival card number are not saved in mdoc.",
+      "aliases": {"B03": ["GIVEN_P1", "SURNAME_P1"], "B08": ["ID_P1"], "B14": ["PHONE_P1"]},
+      "facts": {"B02": "2569", "B04": "indian|india", "B05": "non", "B06": "2569", "B07": "air|plane|aircraft|flight"}
+    }
+  },
+  "05-hbz-bank": {
+    "single": {
+      "message": "I'm opening a current account at HBZ Bank in South Africa as a non-resident, to receive rent from a flat I own in Durban; I still live at my home address in Singapore. I have no South African ID number or permit, I'm a staff nurse, I'm the beneficial owner of the funds, and I'm not a US person in any way.",
+      "aliases": {"B04": ["SURNAME_P1"], "B05": ["GIVEN_P1"], "B07": ["DATE_P1"], "B08": ["ID_P1"], "B14": ["ADDRESS_P1"], "B19": ["PHONE_P1"]},
+      "facts": {"B09": "philippines.*2032|2032.*philippines", "B12": "filipino|philippin", "B03": "current", "B22": "yes"}
+    },
+    "family": {
+      "message": "I need to open a savings account at HBZ Bank in Cape Town for a one-year work assignment starting next month, on a South African work permit valid until 31 December 2027. Use my current UK home address for now; I'm a software engineer, I'm the beneficial owner, I have no South African ID number, and nothing about me is linked to the US.",
+      "aliases": {"B04": ["SURNAME_P1"], "B05": ["GIVEN_P1"], "B07": ["DATE_P1"], "B08": ["ID_P1"], "B14": ["ADDRESS_P1"], "B19": ["PHONE_P1"]},
+      "facts": {"B09": "india.*2029|2029.*india", "B12": "indian|india", "B03": "sav", "B10": "2027", "B22": "yes"}
+    }
+  },
+  "06-qld-rental": {
+    "single": {
+      "message": "I'm applying to rent a one-bedroom flat in Brisbane because I'm starting a nursing job there on 1 February 2027; I'll live alone and have no pets. My current home is a flat in Singapore that I've rented since June 2021.",
+      "aliases": {"B06": ["GIVEN_P1", "SURNAME_P1"], "B07": ["DATE_P1"], "B08": ["ADDRESS_P1"], "B09": ["PHONE_P1"], "B18": ["ADDRESS_P1"]},
+      "facts": {"B04": "\\b1\\b|one", "B05": "\\b0\\b|none|zero", "B26": "no", "B19": "2021"}
+    },
+    "family": {
+      "message": "We're applying to rent a house in Brisbane for the three of us, my wife, our daughter and me, and I'm the applicant on this form. We have no pets, and we've rented our current home in Manchester since March 2020.",
+      "aliases": {"B06": ["GIVEN_P1", "SURNAME_P1"], "B07": ["DATE_P1"], "B08": ["ADDRESS_P1"], "B09": ["PHONE_P1"], "B18": ["ADDRESS_P1"]},
+      "facts": {"B04": "\\b3\\b|three", "B05": "\\b1\\b|one", "B26": "no", "B19": "2020"}
+    }
+  },
+  "07-us-i9": {
+    "single": {
+      "message": "I'm starting a nursing job in Houston next Monday and need to fill in Section 1 of my I-9. I'm on an H-1B visa, authorized to work until 30 September 2029, I've never used another last name, I don't have a Social Security number yet, and my new US address is not saved in mdoc.",
+      "aliases": {"B01": ["SURNAME_P1"], "B02": ["GIVEN_P1"], "B03": ["MIDDLE_P1"], "B10": ["DATE_P1"], "B13": ["PHONE_P1"], "B15": ["ID_P1"]},
+      "facts": {"B14": "09/30/2029", "B15": "philippines"}
+    },
+    "family": {
+      "message": "Please help with Section 1 of the I-9 for my new job in Seattle. I'm on an L-1 visa, authorized to work until 15 January 2029, I've never used another last name, I have no Social Security number yet, and our new US address is not saved in mdoc.",
+      "aliases": {"B01": ["SURNAME_P1"], "B02": ["GIVEN_P1"], "B03": ["MIDDLE_P1"], "B10": ["DATE_P1"], "B13": ["PHONE_P1"], "B15": ["ID_P1"]},
+      "facts": {"B14": "01/15/2029", "B15": "india"}
+    }
+  },
+  "08-irs-w8ben": {
+    "single": {
+      "message": "A US brokerage asked me for a W-8BEN for my investment account. I'm a tax resident of Singapore only, I live at my home address there, and my Singapore tax number is not saved in mdoc.",
+      "aliases": {"B01": ["GIVEN_P1", "SURNAME_P1"], "B03,B04": ["ADDRESS_P1"], "B11": ["DATE_P1"], "B16": ["GIVEN_P1", "SURNAME_P1"]},
+      "facts": {"B02": "philippines|filipino", "B05": "singapore"}
+    },
+    "family": {
+      "message": "My US publisher needs a W-8BEN for royalty payments on a book I wrote. I'm a UK tax resident and live at my home address, my UK National Insurance number is not saved in mdoc, and I want the UK–US treaty rate on the royalties.",
+      "aliases": {"B01": ["GIVEN_P1", "SURNAME_P1"], "B03,B04": ["ADDRESS_P1"], "B11": ["DATE_P1"], "B16": ["GIVEN_P1", "SURNAME_P1"]},
+      "facts": {"B02": "india", "B05": "united kingdom|\\buk\\b", "B12": "united kingdom|\\buk\\b"}
+    }
+  },
+  "09-nhs-gms1": {
+    "single": {
+      "message": "I've just moved to the UK from Singapore on a Health and Care Worker visa and I'm registering with a GP in Leeds. I arrived on 3 November 2026, I've never lived in the UK before, I've never had another surname, and my new Leeds address is not saved in mdoc.",
+      "aliases": {"B02": ["SURNAME_P1"], "B03": ["DATE_P1"], "B04": ["GIVEN_P1"], "B08": ["PLACE_P1"], "B11": ["PHONE_P1"]},
+      "facts": {"B01": "\\bms\\b", "B07": "female", "B17": "2026"}
+    },
+    "family": {
+      "message": "I'm registering our daughter with our GP in Manchester; she lives with us at my home address, and I'm signing on her behalf. She has never been registered with a GP before.",
+      "aliases": {"B02": ["SURNAME_P3"], "B03": ["DATE_P3"], "B04": ["GIVEN_P3"], "B08": ["PLACE_P3"], "B09": ["ADDRESS_P1"], "B10": ["ADDRESS_P1"], "B11": ["PHONE_P1"]},
+      "facts": {"B07": "female", "B23": "behalf"}
+    }
+  },
+  "10-dominica-preschool": {
+    "single": {
+      "message": "My sister is in hospital and asked me to start this preschool application for her son; I'm applying on her behalf as his aunt, and I'm the second emergency contact. Leave everything about him, his parents and the first contact for my sister to fill in.",
+      "aliases": {"B09": ["GIVEN_P1", "SURNAME_P1"], "B10": ["PHONE_P1"], "B30": ["GIVEN_P1", "SURNAME_P1", "PHONE_P1"]},
+      "facts": {"B12": "aunt"}
+    },
+    "family": {
+      "message": "We're applying for our daughter to start preschool in Roseau in January 2027, as we're moving to Dominica for my work; for now use our current home address. She is our only child, my wife and I are the only people allowed to collect her and our two emergency contacts, my wife is a pharmacist and I'm a software engineer.",
+      "aliases": {"B01,B08,B13": ["GIVEN_P3", "SURNAME_P3"], "B02": ["DATE_P3"], "B05,B15": ["ADDRESS_P1"], "B09": ["GIVEN_P1", "SURNAME_P1"], "B10": ["PHONE_P1"], "B18": ["GIVEN_P2", "SURNAME_P2"], "B20": ["PHONE_P2"], "B23": ["GIVEN_P1", "SURNAME_P1"], "B25": ["PHONE_P1"], "B28": ["GIVEN_P1", "GIVEN_P2"], "B29,B30": ["GIVEN_P1", "GIVEN_P2", "PHONE_P1", "PHONE_P2"]},
+      "facts": {"B03": "female", "B12": "father", "B22": "pharmacist", "B27": "engineer"}
+    }
+  }
+}

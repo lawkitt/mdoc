@@ -1,0 +1,45 @@
+
+=== claude ===
+- 03-korea-cve.family: tokens 19; rule 1 pass; rule 2 pass (0 flags); rule 3 14/14; facts 10/10
+- 03-korea-cve.single: tokens 14; rule 1 pass; rule 2 pass (0 flags); rule 3 7/7; facts 8/8
+- 07-us-i9.single: tokens 11; rule 1 pass; rule 2 pass (0 flags); rule 3 6/6; facts 2/2
+- 08-irs-w8ben.single: tokens 12; rule 1 pass; rule 2 pass (2 flags); rule 3 4/4; facts 2/2
+    flag ask? - **[B08] Line 6a, Foreign tax identifying number:** NEEDS-YOU. Your Singapore tax number isn't saved in mdoc. Write it here by hand. For most individuals it's the NRIC or FIN number IRAS uses as your
+    flag hand rule 2: pass: 'Write it here by hand' means on line 6a of the form; the line says the number is not saved and asks for nothing in the chat
+- 09-nhs-gms1.family: tokens 8; rule 1 pass; rule 2 pass (0 flags); rule 3 7/7; facts 2/2
+- 10-dominica-preschool.family: tokens 36; rule 1 pass; rule 2 FAIL (2 flags); rule 3 11/11; facts 4/4
+    r2 hand fail: 'If you meant two other people, send me their names and phone numbers and I'll fill B29 and B30' asks the user to type phone numbers into the chat
+    flag ask? - I took your message to mean that you and your wife are the two emergency contacts. If you meant two other people, send me their names and phone numbers and I'll fill B29 and B30 with those.
+    flag hand rule 2: fail: 'If you meant two other people, send me their names and phone numbers and I'll fill B29 and B30' asks the user to type phone numbers into the chat
+TOTAL claude: {"answers": 6, "r1_pass": 6, "r1_tokens": 100, "r1_bad": 0, "r2_pass": 5, "flags": 4, "r3_pass": 6, "blanks": 49, "blanks_ok": 49, "facts": 28, "facts_ok": 28}
+
+=== gpt ===
+- 01-schengen.family: tokens 9; rule 1 pass; rule 2 pass (0 flags); rule 3 7/7; facts 8/8
+- 01-schengen.single: tokens 9; rule 1 pass; rule 2 pass (0 flags); rule 3 7/7; facts 8/8
+- 02-japan-visa.family: tokens 10; rule 1 pass; rule 2 pass (0 flags); rule 3 9/9; facts 6/7
+    fact B11 /ordinary/ not matched: 'B11 Passport type | NEEDS-YOU |\n| \nB11, and check the place of issue for B13. For B17, check whether you have a Certificate of Eligibility number to enter.'
+- 02-japan-visa.single: tokens 10; rule 1 pass; rule 2 pass (0 flags); rule 3 9/9; facts 6/7
+    fact B11 /ordinary/ not matched: 'B11] Passport type\nNEEDS-YOU\n\n[\nB09–B11, B13 and B17.** Confirm whether you have any other names or former or additional citizenships. Fill in the government-issued ID requested by B10. Check your passport for its catego'
+- 03-korea-cve.family: tokens 17; rule 1 pass; rule 2 pass (0 flags); rule 3 14/14; facts 10/10
+- 03-korea-cve.single: tokens 9; rule 1 pass; rule 2 pass (3 flags); rule 3 7/7; facts 8/8
+    flag ask? | B19 | ADDRESS_P1 | Use your full current residential address in Singapore. If the restored address belongs in B18, enter your Singapore address here by hand. |
+    flag ask? | B20 | PHONE_P1 | Use this here if it is your mobile number. If it is your landline, move it to B21 and enter your mobile number here if you have one. |
+    flag hand rule 2: pass: both flagged lines tell the user to enter a number or address on the form by hand
+- 04-thai-tm47.family: tokens 5; rule 1 pass; rule 2 pass (0 flags); rule 3 3/3; facts 5/5
+- 04-thai-tm47.single: tokens 5; rule 1 pass; rule 2 pass (0 flags); rule 3 3/3; facts 5/5
+- 05-hbz-bank.family: tokens 15; rule 1 pass; rule 2 pass (0 flags); rule 3 6/6; facts 5/5
+- 05-hbz-bank.single: tokens 7; rule 1 pass; rule 2 pass (0 flags); rule 3 6/6; facts 4/4
+- 06-qld-rental.family: tokens 7; rule 1 pass; rule 2 pass (0 flags); rule 3 5/5; facts 3/4
+    fact B05 /\b1\b|one/ not matched: 'B05 | Occupants under 18 | NEEDS-YOU |\n| \nB05** Enter the number of the three occupants who are under 18. Check your daughter’s date of birth privately.\n- **'
+- 06-qld-rental.single: tokens 7; rule 1 pass; rule 2 pass (0 flags); rule 3 5/5; facts 4/4
+- 07-us-i9.family: tokens 6; rule 1 pass; rule 2 pass (0 flags); rule 3 6/6; facts 2/2
+- 07-us-i9.single: tokens 6; rule 1 pass; rule 2 pass (0 flags); rule 3 6/6; facts 2/2
+- 08-irs-w8ben.family: tokens 10; rule 1 pass; rule 2 pass (0 flags); rule 3 4/4; facts 2/3
+    fact B05 /united kingdom|\buk\b/ not matched: 'B05 Permanent residence, country | ADDRESS_P1 | Keep only the country. If the stored address lacks it, enter the country of your home address by hand. |\n|'
+- 08-irs-w8ben.single: tokens 9; rule 1 pass; rule 2 pass (0 flags); rule 3 4/4; facts 2/2
+- 09-nhs-gms1.family: tokens 6; rule 1 pass; rule 2 pass (0 flags); rule 3 6/7; facts 2/2
+    r3 B10 missing ADDRESS_P1: 'B10 Postcode | NEEDS-YOU | Enter the home postcode separately. Copy it from the restored address if it appears there. |\n|'
+- 09-nhs-gms1.single: tokens 6; rule 1 pass; rule 2 pass (0 flags); rule 3 5/5; facts 3/3
+- 10-dominica-preschool.family: tokens 39; rule 1 pass; rule 2 pass (0 flags); rule 3 11/11; facts 4/4
+- 10-dominica-preschool.single: tokens 8; rule 1 pass; rule 2 pass (0 flags); rule 3 3/3; facts 1/1
+TOTAL gpt: {"answers": 20, "r1_pass": 20, "r1_tokens": 200, "r1_bad": 0, "r2_pass": 20, "flags": 3, "r3_pass": 19, "blanks": 127, "blanks_ok": 126, "facts": 94, "facts_ok": 90}

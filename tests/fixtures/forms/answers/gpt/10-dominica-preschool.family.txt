@@ -1,0 +1,99 @@
+Leave **B01–B07** blank for the preschool to complete. Your requested start is **January 2027** in **Roseau, Dominica**. I’ve listed you as the applicant and the first emergency contact.
+
+After mdoc restores the values, join each person’s name parts with spaces in the order shown. For each phone number, use C for cell, W for work, or H for home, according to the number you have. If the preschool requires an additional number, **NEEDS-YOU** for that number.
+
+```text
+Application heading
+NEEDS-YOU — name of the preschool or daycare
+
+[B08] Child applying for admission
+GIVEN_P3
+SURNAME_P3
+NEEDS-YOU — name of the preschool or daycare
+
+[B09] Applicant’s name
+GIVEN_P1
+MIDDLE_P1
+SURNAME_P1
+
+[B10] Applicant’s telephone
+PHONE_P1
+
+[B11] Applicant’s email
+NEEDS-YOU — your email address
+
+[B12] Relationship to child
+Father
+
+[B13] Child’s name
+GIVEN_P3
+SURNAME_P3
+
+[B14] People the child lives with
+Both parents
+
+[B15] Current home address
+ADDRESS_P1
+
+[B16] Number of children in the family
+1 total, 0 male, 1 female
+
+[B17] Place of child in the family
+First and only child
+
+[B18] Mother’s name
+GIVEN_P2
+SURNAME_P2
+
+[B19] Mother’s address
+ADDRESS_P1
+
+[B20] Mother’s telephone
+PHONE_P2
+
+[B21] Mother’s email
+NEEDS-YOU — your wife’s email address
+
+[B22] Mother’s occupation
+Pharmacist
+
+[B23] Father’s name
+GIVEN_P1
+MIDDLE_P1
+SURNAME_P1
+
+[B24] Father’s address
+ADDRESS_P1
+
+[B25] Father’s telephone
+PHONE_P1
+
+[B26] Father’s email
+NEEDS-YOU — use the same email address as B11
+
+[B27] Father’s occupation
+Software engineer
+
+[B28] People authorized to collect the child
+Father
+GIVEN_P1
+MIDDLE_P1
+SURNAME_P1
+
+Mother
+GIVEN_P2
+SURNAME_P2
+
+[B29] First emergency contact
+GIVEN_P1
+MIDDLE_P1
+SURNAME_P1
+Telephone
+PHONE_P1
+
+[B30] Second emergency contact
+GIVEN_P2
+SURNAME_P2
+Telephone
+PHONE_P2
+```

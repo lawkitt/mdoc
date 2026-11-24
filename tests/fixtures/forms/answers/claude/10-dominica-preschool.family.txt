@@ -1,0 +1,47 @@
+Here's the form filled in from what you gave me. Anything marked NEEDS-YOU is something I don't have.
+
+**Important first: your daughter's passport expires on 1 January 2027.** That's when you're moving and when she starts. Renew it before you travel. The school, immigration and your work permit paperwork will probably all want a valid passport.
+
+**Top box (B01–B07): "For official use only"**
+This box sits under the "For official use only" heading, so the preschool may want to fill it in themselves. If they ask you to do it, use these:
+- [B01] Name of Child: GIVEN_P3 SURNAME_P3
+- [B02] Date of Birth: DATE_P3. The form wants Day / Month / Year. If the date in her passport is in a different order, rewrite it by hand in that order.
+- [B03] Sex: Female: X (leave Male blank)
+- [B04] Religion: NEEDS-YOU (or leave blank if you'd rather not say)
+- [B05] Home Address: ADDRESS_P1
+- [B06] Date of Full Immunization: NEEDS-YOU. Take this from her vaccination record.
+- [B07] Date of Admission: NEEDS-YOU. Add the exact start day in January 2027 once the school confirms it.
+
+**Application**
+- [B08] I hereby make application for admission of GIVEN_P3 SURNAME_P3 to the NEEDS-YOU (the preschool's name in Roseau) Preschool/Daycare
+- [B09] Name of Applicant: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+- [B10] Tel: (C) PHONE_P1 / (W) leave blank / (H) leave blank. If your number is a landline and not a mobile, move it to (H) or (W).
+- [B11] Email: NEEDS-YOU (your email address)
+- [B12] Relationship to child: Father
+
+**Information about the Child and Family**
+- [B13] Name of Child: GIVEN_P3 SURNAME_P3
+- [B14] Person with whom your child lives: Both parents: GIVEN_P1 SURNAME_P1 and GIVEN_P2 SURNAME_P2
+- [B15] Address: ADDRESS_P1
+- [B16] Number of Children in the Family: 1 (M) 0 (F) 1
+- [B17] Place of Child in the Family: 1st (only child)
+- [B18] Name of Mother: GIVEN_P2 SURNAME_P2
+- [B19] Address: ADDRESS_P1
+- [B20] Tel: Numbers: (C) PHONE_P2 / (W) leave blank / (H) leave blank
+- [B21] Email: NEEDS-YOU (your wife's email address)
+- [B22] Mother's Occupation: Pharmacist
+- [B23] Name of Father: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+- [B24] Address: ADDRESS_P1
+- [B25] Tel: Numbers: (C) PHONE_P1 / (W) leave blank / (H) leave blank
+- [B26] Email: NEEDS-YOU (your email address, the same as B11)
+- [B27] Father's Occupation: Software Engineer
+- [B28] Names of people authorized to collect your child: GIVEN_P1 SURNAME_P1 (father) and GIVEN_P2 SURNAME_P2 (mother)
+
+**In case of an emergency please call:**
+- [B29] 1. Name of Person: GIVEN_P2 SURNAME_P2  Tel: (C) PHONE_P2 / (W) blank / (H) blank
+- [B30] 2. Name of Person: GIVEN_P1 SURNAME_P1  Tel: (C) PHONE_P1 / (W) blank / (H) blank
+
+**Notes**
+- Your address and phone numbers are your current ones. Once you're settled in Dominica, give the preschool your local address and any new local numbers.
+- I've listed the two of you as the emergency contacts, as you asked. Some preschools also like a third person locally who isn't a parent. If they ask, add someone once you know people in Roseau.
+- Remember to fill in the NEEDS-YOU items: religion (optional), immunization date, start date, the preschool's name and both email addresses.

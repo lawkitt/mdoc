@@ -1,0 +1,46 @@
+Here is the HBZ Bank individual account opening form filled in for you (P1). It's a single-holder form, so your wife's and daughter's details aren't needed. The form asks for capital letters. Where a value comes back in lower case, copy it onto the paper form in capitals.
+
+**Header**
+- [B01] Date: NEEDS-YOU. Write the date you sign the form, as day, month, year in the 8 boxes (DDMMYYYY).
+- [B02] Branch: CAPE TOWN
+- [B03] Type of Account: Saving [X], Current [ ]
+
+**A. Account holder's detail**
+- [B04] Surname: RAGHUNATHAN
+- [B05] First name: VIKRAM. If the bank wants every given name as it appears in your passport, add ANAND after it.
+- [B06] Identity number: N/A (you have no South African ID number)
+- [B07] Date of Birth: 22/11/1983
+- [B08] Passport number: Z4827163
+- [B09] Passport issuing country: INDIA. Expiry date: 04 JUN 2029
+- [B10] Work / study / residence permit: SOUTH AFRICAN WORK PERMIT. Expiry date: 31 DEC 2027. NEEDS-YOU: if the bank wants the permit number too, copy it from the permit by hand. I don't have it.
+- [B11] Alternative type of permit: leave blank
+- [B12] Nationality: INDIAN. Country of birth: the form wants the country, but PUNE, MAHARASHTRA is your place of birth (probably a town or city). Write by hand the country that place is in. If PUNE, MAHARASHTRA already is a country, just write that.
+- [B13] Additional nationality: leave blank (you have only Indian nationality listed)
+- [B14] Physical residential address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom (your current UK home address). The form splits it into three lines plus a separate postal code box. Split it by hand: street on the first line, town/city on the second, country (UNITED KINGDOM) on the third, and the postcode in "Postal code".
+- [B15] Postal address: AS ABOVE (or write 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom again, split the same way)
+- [B16] Email address: NEEDS-YOU. No email address is listed, so fill it in yourself.
+- [B17] Home telephone no: leave blank
+- [B18] Work telephone no: leave blank
+- [B19] Cell. no: +44 7700 900123. The form splits it into Country Code / Area Code / Number. Split it by hand: the international dialling code (e.g. 44 for a UK number) in Country Code, and the rest of the number, without the leading 0, across Area Code and Number.
+- [B20] Fax no: leave blank
+- [B21] Nature of profession / occupation: SOFTWARE ENGINEER
+
+**B. Beneficial ownership**
+- [B22] Are you the beneficial owner of the funds? Yes [X]
+- [B23] Beneficial owner details: leave blank (only needed if B22 is "No")
+
+**C. FATCA** (you said nothing about you is linked to the US)
+- [B24] U.S. citizen? No [X]
+- [B25] Lawful permanent resident (green card / substantial presence)? No [X]
+- [B26] Born in the U.S. or a U.S. territory? No [X]
+- [B27] "US Person" for any other reason? No [X] (leave "please specify" blank)
+- [B28] Transfers to U.S. accounts / directions from a U.S. address? No [X]
+- [B29] Power of Attorney / signing authority to a person with a U.S. address? No [X]
+- [B30] "In care of" / "hold mail" / U.S. P.O. Box / U.S. phone number? No [X]
+
+Because there are no US indicia, you don't need the W-8BEN form.
+
+**Before you submit, check these**
+1. Fill in the NEEDS-YOU items: the date, your email address, and the work permit number if they ask for it.
+2. South African banks have to verify a customer's identity and address under FICA. With a UK address, expect HBZ to ask for proof of that address (a recent utility bill or bank statement), plus your passport and work permit. They may also ask for a South African address once you have one. Bring copies of all of these, and ask the branch whether they need anything else, such as a letter from your employer about the assignment.
+3. Your daughter's passport expires on 1 January 2027, during your assignment. That doesn't affect this form, but it's worth noting if she's travelling with you.

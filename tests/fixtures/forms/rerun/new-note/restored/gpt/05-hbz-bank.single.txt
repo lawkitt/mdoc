@@ -1,0 +1,45 @@
+### HBZ Bank individual account opening form
+
+| Ref. | Field | Entry |
+|---|---|---|
+| B01 | Date | NEEDS-YOU |
+| B02 | Branch | NEEDS-YOU |
+| B03 | Type of account | CURRENT |
+| B04 | Surname | ESCALANTE |
+| B05 | First name | MARICEL |
+| B06 | Identity number | N/A |
+| B07 | Date of birth | 09 AUG 1991 |
+| B08 | Passport number | P4829173B |
+| B09 | Passport issuing country | PHILIPPINES |
+| B09 | Passport expiry date | 13 MARCH 2032 |
+| B10 | Work / study / residence permit and expiry | N/A |
+| B11 | Alternative permit and expiry | N/A |
+| B12 | Nationality | FILIPINO |
+| B12 | County of birth | CEBU CITY |
+| B13 | Additional nationality | NEEDS-YOU |
+| B14 | Physical residential address | Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 |
+| B14 | Residential postal code | NEEDS-YOU |
+| B15 | Postal address and postal code | NEEDS-YOU |
+| B16 | Email address | NEEDS-YOU |
+| B17 or B19 | Home or cell telephone, depending on the type of number | +65 8555 0143 |
+| B18 | Work telephone | NEEDS-YOU |
+| B20 | Fax | NEEDS-YOU |
+| B21 | Occupation | STAFF NURSE |
+| B22 | Beneficial owner of the funds | YES |
+| B23 | Details of another beneficial owner | Leave blank |
+| B24 | U.S. citizen | NO |
+| B25 | U.S. permanent resident or meets the form’s presence test | NO |
+| B26 | Born in the U.S. or a U.S. territory | NEEDS-YOU |
+| B27 | U.S. person for any other reason | NO |
+| B28 | Transfers to U.S. accounts or regular instructions from a U.S. address | NEEDS-YOU |
+| B29 | Power of attorney or signing authority granted to someone with a U.S. address | NEEDS-YOU |
+| B30 | In-care-of address, hold mail, U.S. P.O. box, or U.S. telephone on file | NEEDS-YOU |
+
+### Complete by hand
+
+- **B01–B03.** Enter the form date in the order required by the eight boxes, fill in your chosen branch, and tick **Current**.
+- **B07.** After the date is restored, copy it in the format the form requires.
+- **B12–B13.** Confirm whether the bank means *country* or *county* of birth. After the place is restored, enter the requested part. For B13, provide any additional nationality or mark **N/A** if you have none.
+- **B14–B16.** Split your restored Singapore home address across the residential address lines and put its postal code in the separate box. Supply the code if it is missing from the restored address. Confirm where you receive mail. If it is the same address, copy it and its postal code into B15. Add your email in B16.
+- **B17–B20.** Put your restored number in B17 if it is a home number or B19 if it is a mobile number. Split it by hand into the country code, area code if applicable, and number. Confirm whether you have a separate number for the other field, a work number, or a fax number.
+- **B24–B30.** Mark the indicated **No** boxes and leave B27’s explanation blank. Answer B26 from your birthplace and confirm B28–B30 from the arrangements for this account.

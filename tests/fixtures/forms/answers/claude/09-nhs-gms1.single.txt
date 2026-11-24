@@ -1,0 +1,44 @@
+Here's how to fill in the GMS1 from what you've told me. The form asks for BLOCK CAPITALS. I can't see how your saved values are written, so where a value comes back in lower case, copy it onto the form in capitals.
+
+**Patient's details**
+
+- **[B01]** Tick **Ms**.
+- **[B02] Surname:** SURNAME_P1
+- **[B03] Date of birth:** DATE_P1
+  This is in your passport's format. If the practice asks for DD/MM/YYYY, rewrite it in that shape by hand.
+- **[B04] First names:** GIVEN_P1 MIDDLE_P1
+  The box says "First names", so put your middle name after your first name.
+- **[B05] NHS No.:** Leave blank. You've never lived in the UK, so you don't have one yet. The practice will arrange one when it registers you.
+- **[B06] Previous surname/s:** Leave blank, or write NONE. You've never had another surname.
+- **[B07]** Tick **Female**.
+- **[B08] Town and country of birth:** PLACE_P1
+  The box needs both the town and the country. If your saved place of birth is only a town, add the country after it by hand. I can't tell which country that is, so don't go by your nationality alone.
+- **[B09] Home address:** NEEDS-YOU. Your new Leeds address isn't saved in mdoc, so write it in by hand. Don't use ADDRESS_P1 here: that's your saved address, which is probably your old Singapore one.
+- **[B10] Postcode:** NEEDS-YOU. Write your Leeds postcode by hand.
+- **[B11] Telephone number:** PHONE_P1
+  If that's your Singapore number and you now have a UK number, write the UK one instead (NEEDS-YOU), since the surgery will want a number it can reach you on here. If you keep the Singapore number, check it includes the country code (+65).
+
+**Tracing your previous medical records**
+
+- **[B12] Previous address in UK**, **[B13] Name of previous doctor**, **[B14] Address of previous doctor:** Leave all three blank, or write N/A. You've never lived in the UK.
+
+**If you are from abroad**
+
+- **[B15] Your first UK address where registered with a GP:** This is your first GP registration in the UK, so the answer is your Leeds address. NEEDS-YOU: write it by hand, the same as in B09.
+- **[B16] If previously resident in UK, date of leaving:** Leave blank, or write N/A. You've never lived in the UK.
+- **[B17] Date you first came to live in UK:** 03/11/2026 (3 November 2026)
+
+**Armed Forces [B18]–[B20]:** Leave blank. This doesn't apply to you.
+
+**Child under 5 [B21]:** Leave unticked. This doesn't apply to you.
+
+**Dispensing [B22]:** Leave both boxes unticked. In Leeds you'll almost certainly be within a mile of a chemist. Only tick one if it's really true for you.
+
+**Signature and date**
+
+- **[B23]** Tick **Signature of Patient** and sign by hand.
+- **[B24] Date:** NEEDS-YOU. Write the date you sign the form.
+
+Your passport number, issue date and issuing authority don't go anywhere on this form, so leave them off. The practice may still ask to see your passport or your visa status when you hand the form in. Some practices also ask for proof of your Leeds address.
+
+The organ donation section is on the back of the form, which wasn't included here. Fill it in by hand if you want to.

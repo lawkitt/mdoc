@@ -1,0 +1,249 @@
+Reading additional input from stdin...
+OpenAI Codex v0.172.0
+--------
+workdir: /private/var/folders/vc/b3qk63h13wg_7f6fxfjw986r0000gn/T/tmp.zoR46pAUCt
+model: gpt-6.2-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a20cbe-5886-7d83-bac5-1ff6434ef7e2
+--------
+user
+Use no tools: answer from the text below only.
+
+Note from mdoc: my personal details are replaced with aliases. Each alias
+stands for one value, which is put back on my device after your reply,
+exactly as it is stored. Write an alias exactly as listed, with nothing
+attached to it. You cannot see or change the value, so where a form needs it
+in another shape, tell me in words what to do with it by hand. Never guess or
+invent a real value, and never ask me to type an identifier into this chat.
+If the form needs something that is not listed here, write NEEDS-YOU and say
+what is missing.
+
+P1 is "Me".
+- SURNAME_P1: my family name
+- GIVEN_P1: my first name
+- MIDDLE_P1: my middle name
+- DATE_P1: my date of birth, as printed in my passport
+- PLACE_P1: my place of birth
+- ID_P1: my passport number
+- ISSUED_P1: my passport's date of issue, as printed
+- AUTHORITY_P1: my passport's issuing authority, as printed
+- ADDRESS_P1: my home address
+- PHONE_P1: my phone number
+
+Readable facts: title Ms; sex female; nationality Filipino; document type passport; passport issued by the Philippines, valid until 13 March 2032.
+
+Rental application (Form 22)
+Residential Tenancies and Rooming Accommodation Act 2008 (Sections 57B–57D and 457C–457E, 458A, 458B)
+This rental application form should be used by all applicants and property managers or owners for residential tenancies.
+
+Information to complete this application
+If there is more than 1 applicant applying for the same property, each applicant needs to complete a separate application form (e.g. if applying with a partner, spouse or friends each person needs to complete a separate application form).
+Property managers/owners should indicate on the application form ways to submit an application under item 3, documents requested under items 7, 8 and 9, whether the premises is subject to body corporate by-laws, park rules or other laws relating to keeping pets under item 12, as well as provide information regarding tenancy databases under item 15.
+Applicants should complete all other items on the form.
+
+1 Property manager/owner details
+[B01] Full name: ....  Phone: ....  Email: ....  Agency details (if applicable): ....
+2 Address of the premises
+[B02] ....  Postcode: ....
+3 Ways to submit your application
+Note: The property manager/owner should indicate the submission methods
+[B03] Submit your application using one of the following two methods: 1 ....  2 ....
+4 Number of occupants
+[B04] Total number of occupants (including those under 18 years of age) intended to reside on the premises: [ ]
+[B05] Number of occupants under 18 years of age: [ ]
+5 Applicant details
+Personal details
+[B06] Full name: ....
+[B07] Date of birth: ....
+[B08] Current address: ....  Postcode: ....
+[B09] Phone: ....
+[B10] Email: ....
+6 Employment details
+[B11] Current employer: ....
+[B12] Job title: ....
+[B13] Length of employment: ....   Gross weekly income: ....
+[B14] Employer name: ....  Employer phone: ....  Employer email: ....
+Note: If you cannot provide details of your current employment or income, please provide other details about your ability to pay rent under item 7, Financial information.
+7 Financial information
+Note: The property manager/owner should indicate which financial information documents are requested.
+[B15] Please provide the following documents to verify your ability to pay rent: 1 ....  2 ....  If not receiving regular income (e.g. self-employed, casual, freelance, between employment), please provide details of previous employment or other documents supporting your financial ability to pay rent, such as: pay slips from previous employment; bank statements (without transaction details); Centrelink payment statements/letters; proof of savings or assets; Other ....
+8 Verification of identity
+Note: The property manager/owner should indicate which identity documents are requested.
+[B16] Please provide the following documents to verify your identity. You should discuss the most suitable method of identity verification if you are unable to provide the requested documents: 1 ....  2 ....
+9 Applicant suitability
+Note: The property manager/owner should indicate which documents are requested.
+[B17] Please provide the following documents to support your suitability: 1 ....  2 ....
+10 Rental history
+Property 1
+[B18] Current/previous address: ....  Postcode: ....
+[B19] Rental period (Start – End): ....
+[B20] Property manager/owner name: ....  Property manager/owner email: ....  Property manager/owner phone: ....
+Property 2
+[B21] Previous address: ....  Postcode: ....  Rental period (Start – End): ....  Property manager/owner name: ....  Property manager/owner email: ....  Property manager/owner phone: ....
+[B22] If you do not have a rental history, you may provide details of your prior living arrangements (optional): ....  Examples: living with family, previous homeowner.
+11 References
+Please provide 2 referees who can verify your ability to care for the premises
+[B23] Name: ....  Phone: ....  Email: ....  Referee's connection to applicant: ....
+[B24] Name: ....  Phone: ....  Email: ....  Referee's connection to applicant: ....
+12 Pet details
+Note: The property manager/owner should indicate whether there are body corporate by-laws, park rules or other laws relating to keeping pets at the premises.
+[B25] Are there body-corporate by-laws, park rules or other laws about keeping pets at the premises? [ ] Yes  [ ] No  [ ] Not applicable
+[B26] Do you intend to keep pets at the premises? [ ] Yes  [ ] No
+[B27] If yes, provide details: Type/s of pets: ....  Number of pets: ....  Other information about the pet/s (optional): ....
+
+I'm applying to rent a one-bedroom flat in Brisbane because I'm starting a nursing job there on 1 February 2027; I'll live alone and have no pets. My current home is a flat in Singapore that I've rented since June 2021.
+warning: `[features].multi_agent` is deprecated. It still controls the V1 fallback. `[agents].enabled = false` disables subagent tools even when the model selects a subagent version, unless `[features].multi_agent_v2` is enabled.
+warning: `[features].multi_agent` is deprecated. It still controls the V1 fallback. `[agents].enabled = false` disables subagent tools even when the model selects a subagent version, unless `[features].multi_agent_v2` is enabled.
+codex
+## Form 22 draft
+
+Enter the details marked **NEEDS-YOU** directly on the form. The property manager or owner supplies the submission methods, document requests and pet rules.
+
+### 1–3. Property and submission details
+
+- **B01 — NEEDS-YOU.** Property manager or owner’s full name, phone, email and agency details if applicable.
+- **B02 — NEEDS-YOU.** Street address, unit number if applicable, and postcode of the Brisbane flat.
+- **B03 — NEEDS-YOU.** Two submission methods from the property manager or owner.
+
+### 4. Occupants
+
+- **B04** — 1
+- **B05** — 0
+
+### 5. Applicant details
+
+**B06 — Full name.** Combine the three values by hand in the order shown on your passport. Use **Ms** if a title is requested.
+
+GIVEN_P1
+
+MIDDLE_P1
+
+SURNAME_P1
+
+**B07 — Date of birth.** If the form requires a different date format, rewrite the restored date by hand.
+
+DATE_P1
+
+**B08 — Current address.** Copy the postcode into its separate box by hand if it appears in the restored address. **NEEDS-YOU** if the postcode is missing.
+
+ADDRESS_P1
+
+**B09 — Phone**
+
+PHONE_P1
+
+**B10 — NEEDS-YOU.** Your email address.
+
+### 6. Employment details
+
+- **B11 — NEEDS-YOU.** Current employer, if applicable. If you list the Brisbane employer, mark the job as upcoming.
+- **B12** — Nursing role in Brisbane, starting 1 February 2027. **NEEDS-YOU** for the exact job title and any current job title, if applicable.
+- **B13 — NEEDS-YOU.** Employment length and gross weekly income for any current job you list. For the Brisbane role, enter “Starts 1 February 2027” for length and fill in the gross weekly income by hand.
+- **B14 — NEEDS-YOU.** Employer name, phone and email for the employment you list.
+
+### 7–9. Supporting documents
+
+- **B15 — NEEDS-YOU.** Financial documents requested by the property manager or owner. If you’re using the upcoming nursing job to support your ability to pay rent, enter the start date and provide any supporting document they request.
+- **B16 — NEEDS-YOU.** Identity documents requested by the property manager or owner. You have a Philippine passport valid until 13 March 2032.
+- **B17 — NEEDS-YOU.** Applicant suitability documents requested by the property manager or owner.
+
+### 10. Rental history
+
+**B18 — Current rental address.** Use your Singapore address and enter its postcode separately by hand. **NEEDS-YOU** if the postcode is missing from the restored address.
+
+ADDRESS_P1
+
+- **B19** — June 2021 to present.
+- **B20 — NEEDS-YOU.** Current property manager or owner’s name, email and phone.
+- **B21 — NEEDS-YOU** if you have a second rental to list. Enter its address, postcode, rental period and the property manager or owner’s name, email and phone.
+- **B22** — Leave blank because you have rental history.
+
+### 11. References
+
+- **B23 — NEEDS-YOU.** First referee’s name, phone, email and relationship to you.
+- **B24 — NEEDS-YOU.** Second referee’s name, phone, email and relationship to you.
+
+### 12. Pets
+
+- **B25 — NEEDS-YOU.** The property manager or owner marks whether pet rules apply.
+- **B26** — No.
+- **B27** — Leave blank.
+tokens used
+9,851
+## Form 22 draft
+
+Enter the details marked **NEEDS-YOU** directly on the form. The property manager or owner supplies the submission methods, document requests and pet rules.
+
+### 1–3. Property and submission details
+
+- **B01 — NEEDS-YOU.** Property manager or owner’s full name, phone, email and agency details if applicable.
+- **B02 — NEEDS-YOU.** Street address, unit number if applicable, and postcode of the Brisbane flat.
+- **B03 — NEEDS-YOU.** Two submission methods from the property manager or owner.
+
+### 4. Occupants
+
+- **B04** — 1
+- **B05** — 0
+
+### 5. Applicant details
+
+**B06 — Full name.** Combine the three values by hand in the order shown on your passport. Use **Ms** if a title is requested.
+
+GIVEN_P1
+
+MIDDLE_P1
+
+SURNAME_P1
+
+**B07 — Date of birth.** If the form requires a different date format, rewrite the restored date by hand.
+
+DATE_P1
+
+**B08 — Current address.** Copy the postcode into its separate box by hand if it appears in the restored address. **NEEDS-YOU** if the postcode is missing.
+
+ADDRESS_P1
+
+**B09 — Phone**
+
+PHONE_P1
+
+**B10 — NEEDS-YOU.** Your email address.
+
+### 6. Employment details
+
+- **B11 — NEEDS-YOU.** Current employer, if applicable. If you list the Brisbane employer, mark the job as upcoming.
+- **B12** — Nursing role in Brisbane, starting 1 February 2027. **NEEDS-YOU** for the exact job title and any current job title, if applicable.
+- **B13 — NEEDS-YOU.** Employment length and gross weekly income for any current job you list. For the Brisbane role, enter “Starts 1 February 2027” for length and fill in the gross weekly income by hand.
+- **B14 — NEEDS-YOU.** Employer name, phone and email for the employment you list.
+
+### 7–9. Supporting documents
+
+- **B15 — NEEDS-YOU.** Financial documents requested by the property manager or owner. If you’re using the upcoming nursing job to support your ability to pay rent, enter the start date and provide any supporting document they request.
+- **B16 — NEEDS-YOU.** Identity documents requested by the property manager or owner. You have a Philippine passport valid until 13 March 2032.
+- **B17 — NEEDS-YOU.** Applicant suitability documents requested by the property manager or owner.
+
+### 10. Rental history
+
+**B18 — Current rental address.** Use your Singapore address and enter its postcode separately by hand. **NEEDS-YOU** if the postcode is missing from the restored address.
+
+ADDRESS_P1
+
+- **B19** — June 2021 to present.
+- **B20 — NEEDS-YOU.** Current property manager or owner’s name, email and phone.
+- **B21 — NEEDS-YOU** if you have a second rental to list. Enter its address, postcode, rental period and the property manager or owner’s name, email and phone.
+- **B22** — Leave blank because you have rental history.
+
+### 11. References
+
+- **B23 — NEEDS-YOU.** First referee’s name, phone, email and relationship to you.
+- **B24 — NEEDS-YOU.** Second referee’s name, phone, email and relationship to you.
+
+### 12. Pets
+
+- **B25 — NEEDS-YOU.** The property manager or owner marks whether pet rules apply.
+- **B26** — No.
+- **B27** — Leave blank.

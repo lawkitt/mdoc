@@ -1,0 +1,94 @@
+Use block letters when copying entries onto the form. For each `NEEDS-YOU` item, check the relevant document or fill it in privately on your device.
+
+### 1. Personal details
+
+**B01 Family Name**
+
+ESCALANTE
+
+**B02 Given Names**
+
+MARICEL
+
+BUENAFLOR
+
+Copy your given names into B02 by hand, in the order shown in the passport’s given-name field. Include the middle name if it appears in that field.
+
+- **B03 Name in Chinese characters** — NEEDS-YOU. Confirm whether you have a name in Chinese characters to enter.
+- **B04 Sex** — Check **Female**.
+- **B05 Date of Birth** — Use the value below. If its printed format differs, write it by hand as `yyyy/mm/dd`, using four digits for the year and two each for the month and day.
+
+09 AUG 1991
+
+- **B06 Nationality** — FILIPINO.
+- **B07 Country of Birth** — NEEDS-YOU if the birthplace below does not identify the country. If it does, write only the country by hand.
+
+CEBU CITY
+
+- **B08 National Identity No.** — NEEDS-YOU. Enter your national identity number privately if you have one.
+- **B09 Other names used to enter or depart Korea** — NEEDS-YOU. Check Yes or No. If Yes, enter the family and given names you used.
+- **B10 Multiple citizenships** — NEEDS-YOU. Check Yes or No. If Yes, list your other citizenships.
+
+### 2. Passport information
+
+- **B11 Passport Type** — NEEDS-YOU. Check the passport category shown on your document. If you select Other, specify the type.
+
+**B12 Passport No.**
+
+P4829173B
+
+- **B13 Country of Passport** — PHILIPPINES.
+- **B14 Place of Issue** — NEEDS-YOU. Check the passport for the place of issue. If the issuing authority below explicitly identifies that place, copy only the place by hand.
+
+DFA MANILA
+
+**B15 Date of Issue**
+
+14 MAR 2022
+
+- **B16 Date of Expiry** — 13 MARCH 2032.
+- **B17 Other valid passport** — NEEDS-YOU. Check Yes or No. If Yes, provide its type, number, issuing country and expiry date.
+
+### 3. Contact information
+
+- **B18 Home Country Address** — NEEDS-YOU if the saved address below is not your home-country address. Enter the full home-country address.
+- **B19 Current Residential Address** — Enter your full Singapore address if it differs from B18. NEEDS-YOU if the saved address below is not your current Singapore address.
+
+Use the saved address for whichever field it matches.
+
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+
+- **B20 Cell Phone No.** — NEEDS-YOU if the saved number below is not your mobile number.
+- **B21 Telephone No.** — NEEDS-YOU if you have a separate telephone number and it is missing here.
+
+Copy the saved number into the field that matches its type.
+
++65 8555 0143
+
+- **B22 Email** — NEEDS-YOU. Enter your email address.
+- **B23 Emergency Contact Name** — NEEDS-YOU. Enter your mother’s full name in English.
+- **B24 Emergency Contact Country of Residence** — PHILIPPINES.
+- **B25 Emergency Contact Telephone No.** — NEEDS-YOU. Enter your mother’s phone number.
+- **B26 Relationship** — MOTHER.
+
+### 4. Marital status and family
+
+- **B27 Marital Status** — Check **Single**.
+- **B28–B33 Spouse Details** — Leave blank. These fields apply only if you select Married.
+- **B34 Children** — Check **No**. Leave the child-count box blank.
+
+### 5. Education
+
+- **B35 Highest Education** — Check **Bachelor’s Degree**. Your degree is in nursing.
+- **B36 School Name** — NEEDS-YOU. Enter the name of the school that awarded your nursing degree.
+- **B37 School Location** — NEEDS-YOU. Enter the school’s city, province and country.
+
+### 6. Employment
+
+B38 asks about your current circumstances. The Seoul nursing offer alone does not establish your current employment status.
+
+- **B38 Current Personal Circumstances** — NEEDS-YOU. Check the option that applies to you now. If you select Other, provide details.
+- **B39 Company, Institution or School Name** — NEEDS-YOU. Enter the name that corresponds to your current status, if applicable.
+- **B40 Position or Course** — NEEDS-YOU. Enter your current position or course, if applicable.
+- **B41 Company, Institution or School Address** — NEEDS-YOU. Enter its full address, if applicable.
+- **B42 Telephone No.** — NEEDS-YOU. Enter its telephone number, if applicable.

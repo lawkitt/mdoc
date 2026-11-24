@@ -1,0 +1,92 @@
+Here is your form filled in for you only. Your wife's and daughter's details are not used, because they are not travelling. Wherever I write NEEDS-YOU, I don't have that detail.
+
+About dates: the form wants day-month-year (for example 08-03-2027). Your passport dates are put back exactly as printed. If your passport prints them another way, such as with a month name or slashes, rewrite them by hand as DD-MM-YYYY.
+
+Personal details
+
+- [B01] 1. Surname: RAGHUNATHAN
+- [B02] 2. Surname at birth: NEEDS-YOU. Fill this in only if your family name was ever different. Otherwise leave it blank.
+- [B03] 3. First name(s): VIKRAM ANAND
+  (Fields 1-3 must match your passport. If your passport's "Given name(s)" line doesn't include your middle name, write only the first name.)
+- [B04] Date of birth: 22/11/1983
+- [B05] 5. Place of birth: PUNE, MAHARASHTRA
+- [B06] 6. Country of birth: NEEDS-YOU. Your country of birth isn't in the list.
+- [B07] 7. Current nationality: Indian
+  Nationality at birth, if different: leave blank if it was also Indian. Otherwise NEEDS-YOU.
+  Other nationalities: leave blank if you have none.
+- [B08] 8. Sex: [x] Male
+- [B09] 9. Civil status: [x] Married
+- [B10] 10. Parental authority / legal guardian: not applicable (you are an adult). Leave blank.
+- [B11] 11. National identity number: "where applicable". Indian applicants normally leave this blank.
+
+Travel document
+
+- [B12] 12. Type of travel document: [x] Ordinary passport (assuming it's a regular passport, type "P", not a diplomatic or official one)
+- [B13] 13. Number of travel document: Z4827163
+- [B14] 14. Date of issue: 05/06/2019
+- [B15] 15. Valid until: 04-06-2029
+- [B16] 16. Issued by (country): India
+  (This form asks only for the country, so you don't need your passport's issuing authority here.)
+
+EU family member
+
+- [B17] 17. Personal data of EU/EEA/CH/UK family member: not applicable. Leave blank.
+- [B18] 18. Family relationship: not applicable. Leave blank.
+
+Address, residence and work
+
+- [B19] 19. Home address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+  E-mail address: NEEDS-YOU. No email is in the list.
+  Tel.: +44 7700 900123
+  (If the stored number has no country code, add +44 in front of it by hand.)
+- [B20] 20. Residence in another country: [x] Yes
+  Residence permit or equivalent: UK residence permit
+  No.: NEEDS-YOU (your UK residence permit or eVisa reference number)
+  Valid until: NEEDS-YOU (its expiry date, as DD-MM-YYYY)
+- [B21] *21. Current occupation: Software engineer
+- [B22] *22. Employer, employer's address and telephone number: NEEDS-YOU (your company's name, address and phone number)
+
+The trip
+
+- [B23] 23. Purpose of the journey: [x] Business
+- [B24] 24. Additional information on purpose of stay: Attending a trade fair in Munich, Germany, from 8 to 13 March 2027. Add the fair's name here. NEEDS-YOU for the name.
+- [B25] 25. Member State of main destination: Germany
+- [B26] 26. Member State of first entry: NEEDS-YOU. This depends on your route. If you fly straight to Munich (or anywhere else in Germany), it's Germany. If you change planes in another Schengen country, such as Amsterdam or Paris, put that country.
+- [B27] 27. Number of entries requested: [x] Single entry. Tick Multiple entries if you'd like a visa that covers future trips too. The consulate decides what to grant either way.
+- [B28] Intended date of arrival: 08-03-2027
+- [B29] Intended date of departure: 13-03-2027
+  (If you're actually flying in the day before or leaving the day after, use your real flight dates.)
+- [B30] 28. Fingerprints collected previously: [x] Yes
+  Date, if known: leave blank (you don't know it)
+  Visa sticker number, if known: optional. If your 2023 Schengen visa sticker is still in your passport, copy its number from there by hand. Otherwise leave blank.
+- [B31] 29. Entry permit for final destination: not applicable. Leave blank.
+
+Accommodation and inviting company
+
+- [B32] *30. Inviting person, or name of hotel(s): NEEDS-YOU (the name of your hotel in Munich)
+- [B33] Address and e-mail of the hotel: NEEDS-YOU
+  Telephone No.: NEEDS-YOU
+- [B34] *31. Name and address of inviting company/organisation: NEEDS-YOU. Use whoever sent you an invitation letter, if anyone: the trade fair organiser, or a German company you're meeting. If nobody invited you, leave it blank and bring your fair registration or ticket instead.
+- [B35] Contact person in company/organisation, and telephone: NEEDS-YOU (from the invitation letter, if you have one)
+
+Costs
+
+- [B36] *32. Cost of travelling and living is covered:
+  [x] by a sponsor
+  [x] other (please specify): my employer (the company in field 22)
+  If the company that invited you in field 31 is your own employer, tick "referred to in field 30 or 31" instead.
+  Means of support: [x] All expenses covered during the stay
+  Also tick Pre-paid transport if your company has already booked your flights.
+  Bring a letter from your employer saying it is paying for the trip.
+
+Person filling in the form
+
+- [B37] 33. Person filling in the form, if different: not applicable (you're filling it in yourself). Leave blank.
+- [B38] Their address, e-mail and telephone: leave blank.
+
+Signing
+
+- [B39] Place and date: write these by hand when you sign. Use the town where you sign and that day's date as DD-MM-YYYY.
+- [B40] Signature of applicant: sign by hand. Leave the parental authority/legal guardian signature blank.
+
+Still needed from you: country of birth, email address, residence permit number and expiry, employer's name, address and phone, the trade fair's name, hotel details, and inviting company details if you have an invitation. Also say whether your name was ever different and whether you have any other nationality.

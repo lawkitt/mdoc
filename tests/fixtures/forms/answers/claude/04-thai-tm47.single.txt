@@ -1,0 +1,32 @@
+Here's your TM.47 (90-day report) filled in. Thai immigration forms use the Buddhist Era year, so 2026 is written as 2569.
+
+[B01] Written at: Chiang Mai Immigration Office
+[B02] Date: 24 / Month: November / Year: 2569
+[B03] Full name: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+   Write this by hand in BLOCK CAPITALS, exactly as your name appears in your passport. The form asks for block letters and I can't change how the stored values look.
+[B04] Nationality: FILIPINO
+[B05] Visa: tick [X] NON-IMM
+[B06] Entered Thailand on: 25 / Month: August / Year: 2569
+[B07] By: AIR
+   Some offices like to see the flight number too, e.g. "AIR / PR 123". If you have it, add it by hand.
+[B08] Passport no.: ID_P1
+[B09] Arrival card no.: NEEDS-YOU
+   This number isn't saved in mdoc. Look on your arrival card: the paper TM.6 stub stapled in your passport, or, if you came in on the digital arrival card (TDAC), the number on its confirmation. Write it in yourself.
+[B10] Lane/Road: NEEDS-YOU
+[B11] Tambol: NEEDS-YOU
+[B12] Amphur: NEEDS-YOU
+[B13] Province: CHIANG MAI
+   Your Thai address isn't saved in mdoc, so fill in B10 to B12 by hand: house number, soi/road, then the sub-district (tambon) and district (amphoe). The address on your lease or your TM.30 receipt is the safest to copy, since immigration checks it against what's on file. I left your home address (ADDRESS_P1) out on purpose, because this form wants where you're staying in Thailand.
+[B14] Phone: PHONE_P1
+   You asked for your usual number, so that's what's here. If it isn't a Thai number and you have one, officers usually prefer the Thai one.
+[B15] Signature: sign by hand, the same way you signed your passport.
+
+The office usually also asks for copies of these, each signed by you:
+- your passport photo page
+- your current non-immigrant visa
+- your latest entry stamp
+- your arrival card or TDAC
+
+Bring your passport itself as well. If you've already done a 90-day report before, bring the previous receipt slip too.
+
+Not used on this form: your date and place of birth, and your passport's issue date and issuing authority.

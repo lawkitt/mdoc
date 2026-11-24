@@ -1,0 +1,29 @@
+## GMS1 for your daughter
+
+Use block capitals on the paper form. After mdoc restores the values, check whether any letters need to be capitalized by hand.
+
+| Box | What to enter |
+| --- | --- |
+| B01 Title | NEEDS-YOU. Tick the title she uses. |
+| B02 Surname | SURNAME_P3 |
+| B03 Date of birth | DATE_P3 |
+| B04 First names | GIVEN_P3 |
+| B05 NHS number | NEEDS-YOU. Enter her NHS number if known. |
+| B06 Previous surnames | NEEDS-YOU. Enter any previous surnames, or leave blank if she has had none. |
+| B07 Sex | Tick **Female**. |
+| B08 Town and country of birth | PLACE_P3 |
+| B09 Home address | ADDRESS_P1 |
+| B10 Postcode | Copy the postcode from the restored home address into this box by hand. If the address does not include it, NEEDS-YOU for the postcode. |
+| B11 Telephone | PHONE_P1 |
+| B12 Previous UK address | NEEDS-YOU. Enter a previous UK address if relevant to tracing her medical records. |
+| B13–B14 Previous doctor’s name and address | Leave blank. This is her first GP registration. |
+| B15 First UK address where registered with a GP | If the “from abroad” section applies, use the address from B09 for this first registration. |
+| B16 Date of leaving the UK | NEEDS-YOU. Enter the date only if she previously lived in the UK and then left. |
+| B17 Date she first came to live in the UK | NEEDS-YOU if she moved to the UK from abroad. Enter the date she first came to live here. |
+| B18–B20 Armed Forces details | Leave blank if the Armed Forces section does not apply. If it does, NEEDS-YOU for her address before enlisting, service or personnel number, and enlistment date. |
+| B21 Child Health Surveillance | Tick only if she is under five and you want her registered for it. NEEDS-YOU to confirm both. |
+| B22 Dispensing | Leave unticked unless she needs the GP to dispense medicines or appliances. If she does, NEEDS-YOU to confirm which statement applies. |
+| B23 Signature | Tick **Signature on behalf of patient** and sign by hand. |
+| B24 Date | NEEDS-YOU. Enter the date you sign. |
+
+For B08, check that the restored birthplace includes both the town and the country. If either is missing, NEEDS-YOU to add it by hand. B11 uses your phone number as her parent contact.
