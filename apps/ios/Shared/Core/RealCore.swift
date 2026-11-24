@@ -1326,6 +1326,14 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return snapshot()
     }
 
+    func proposeRules() throws -> DocumentSnapshot {
+        reopenIfPending()
+        // Saved as a tap is. It stays unscanned: Ready only below the floor
+        // (`findsNoNames`), as for names marked by hand.
+        defer { scheduleSave() }
+        return snapshot(of: try core { try ffi.proposeRules() })
+    }
+
     func hideTarget(_ range: SourceRange) throws -> WordsTarget {
         try core { try ffi.hideTarget(range: range.textRange) }
     }

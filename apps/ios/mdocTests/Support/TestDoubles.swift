@@ -72,6 +72,7 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
         try base.fixWords(candidate, words: words)
     }
     func propose(_ names: [SampleDocument.Name]) throws -> DocumentSnapshot { try base.propose(names) }
+    func proposeRules() throws -> DocumentSnapshot { try base.proposeRules() }
     func rename(_ candidate: CandidateID, scope: Scope, to alias: String) throws -> DocumentSnapshot {
         try base.rename(candidate, scope: scope, to: alias)
     }
