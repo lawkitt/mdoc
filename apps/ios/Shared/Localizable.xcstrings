@@ -247,6 +247,9 @@
     "%lld×" : {
 
     },
+    "**Paste reply?** Copy the AI app's answer, then paste it here to read it with the real names." : {
+
+    },
     "1 document" : {
 
     },
@@ -310,6 +313,12 @@
     "Address" : {
 
     },
+    "AI connector" : {
+
+    },
+    "AI connector (preview)" : {
+
+    },
     "AI replies you save with Restore with mdoc or Paste reply show here, restored." : {
 
     },
@@ -359,6 +368,12 @@
 
     },
     "Appearance" : {
+
+    },
+    "Ask AI" : {
+
+    },
+    "Ask AI shares a ready document's text, names replaced, with an AI app. Back in mdoc, Paste reply? restores its answer." : {
 
     },
     "Asks before downloading over cellular." : {
@@ -536,6 +551,9 @@
 
     },
     "Save" : {
+
+    },
+    "Shares the text, names replaced, with an AI app. Back in mdoc, paste its answer." : {
 
     },
     "Show" : {

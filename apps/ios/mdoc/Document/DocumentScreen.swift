@@ -22,6 +22,7 @@ struct DocumentScreen: View {
     @State private var darkPageBounces = 0
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     private var isRegular: Bool { layout.isRegular }
     @State private var screenHeight: CGFloat = 800
@@ -112,6 +113,20 @@ struct DocumentScreen: View {
             // shows once it closes.
             .sheet(item: $model.share, onDismiss: { app?.takeInChanges() }) { items in
                 ActivityView(items: items.items)
+            }
+            // Ask AI: its end starts the wait for the AI app's answer.
+            .sheet(item: $model.askAIShare, onDismiss: { app?.takeInChanges() }) { items in
+                ActivityView(items: items.items, excluded: DocumentViewModel.askAIExcludedActivities) {
+                    model.askAIFinished(completed: $0)
+                }
+            }
+            // Back from the AI app, "Paste reply?" shows (`+AskAI`).
+            .onChange(of: scenePhase) { _, phase in
+                switch phase {
+                case .background: model.appLeft()
+                case .active: model.appReturned()
+                default: break
+                }
             }
             .alert(
                 "Something went wrong",
@@ -553,6 +568,18 @@ struct DocumentScreen: View {
         // as Find names again is (ADR 0115).
         Section {
             let blocked = model.handOffBlockedReason
+            if preferences.aiConnectorPreview {
+                Button {
+                    model.askAI()
+                } label: {
+                    Label("Ask AI", systemImage: "sparkles")
+                    if let blocked {
+                        Text(blocked)
+                    }
+                }
+                .disabled(blocked != nil)
+                .accessibilityIdentifier("ask-ai")
+            }
             Button {
                 model.copyForAI { UIPasteboard.general.string = $0 }
             } label: {
@@ -740,6 +767,11 @@ struct DocumentScreen: View {
         VStack(spacing: 8) {
             if let notice = model.notice {
                 noticeLabel(notice)
+            }
+            if preferences.aiConnectorPreview && model.showsReplyBanner {
+                ReplyBanner(
+                    onPaste: { model.restore(reply: $0) }, onType: { model.showsReplySheet = true },
+                    onClose: model.dismissReplyBanner)
             }
             if let prompt = model.passwordPrompt, model.runningJob == nil {
                 PasswordCard(prompt: prompt, unlock: model.importUnlockAction)

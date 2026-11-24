@@ -5,10 +5,13 @@ import UIKit
 /// The system share sheet for text or a file.
 struct ActivityView: UIViewControllerRepresentable {
     let items: [Any]
+    /// The system's entries left out (Ask AI's, which are no AI app).
+    var excluded: [UIActivity.ActivityType] = []
     var onComplete: (Bool) -> Void = { _ in }
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
         let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        controller.excludedActivityTypes = excluded
         controller.completionWithItemsHandler = { _, completed, _, _ in
             onComplete(completed)
         }
