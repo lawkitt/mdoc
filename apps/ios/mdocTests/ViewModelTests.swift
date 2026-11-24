@@ -1,3 +1,4 @@
+import LinkPresentation
 import PDFKit
 import UIKit
 import XCTest
@@ -129,9 +130,10 @@ final class DocumentViewModelTests: XCTestCase {
         model.errorMessage = nil
         model.replaceAllPending()
         model.share(asFile: false)
-        // The text travels with the document's title as the share preview.
+        // The text travels with the file's name, without `.md`, as the
+        // share preview.
         let item = try XCTUnwrap(model.share?.items.first as? TitledText)
-        XCTAssertEqual(item.title, model.snapshot.title)
+        XCTAssertEqual(item.title, "Letter before claim")
         XCTAssertTrue(item.text.contains(maya.alias))
         XCTAssertFalse(item.text.contains("Maya Ellison"))
         // Save to Files gets the same text as a .md file.
@@ -155,6 +157,53 @@ final class DocumentViewModelTests: XCTestCase {
         model.share(asFile: false)
         let files = try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
         XCTAssertEqual(files, [url.lastPathComponent])
+    }
+
+    /// A title that names someone leaves pseudonymized (#1188): Share as
+    /// text's subject and preview title are the file's name without `.md`,
+    /// and neither they nor Share as file's name, nor a menu's Share, hold
+    /// an original from the document.
+    func testShareCarriesNoOriginalInItsSubjectPreviewTitleOrFileName() throws {
+        let seeded = try Fixture.seeded()
+        let title = "Maya Ellison v Brightwater Joinery Ltd"
+        let session = try seeded.library.importDocument(.text(Letters.letter), title: title, into: seeded.ellison)
+        _ = try session.recognize(observer: TestObserver())
+        _ = try session.propose(Letters.names)
+        let model = try seeded.model(session.id)
+        model.replaceAllPending()
+        XCTAssertEqual(model.snapshot.title, title, "the title holds its names as written")
+        let originals = Set(model.snapshot.candidates.map(\.original) + Letters.names.map(\.wording))
+        let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" }?.alias)
+        let joinery = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Brightwater Joinery Ltd" }?.alias)
+        func assertNoOriginal(_ carried: String, _ what: String) {
+            for original in originals where carried.contains(original) {
+                XCTFail("\(what) holds \(original): \(carried)")
+            }
+        }
+
+        model.share(asFile: false)
+        let item = try XCTUnwrap(model.share?.items.first as? TitledText)
+        let file = try XCTUnwrap(item.file)
+        let controller = UIActivityViewController(activityItems: [item], applicationActivities: nil)
+        let preview = try XCTUnwrap(item.activityViewControllerLinkMetadata(controller)?.title)
+        XCTAssertEqual(preview, "\(maya) v \(joinery)")
+        XCTAssertEqual(file.lastPathComponent, "\(maya) v \(joinery).md")
+        assertNoOriginal(preview, "the preview title")
+        assertNoOriginal(file.lastPathComponent, "the file's name")
+        for type: UIActivity.ActivityType? in [nil, .mail, .message, .airDrop, TitledText.saveToFiles] {
+            let subject = item.activityViewController(controller, subjectForActivityType: type)
+            XCTAssertEqual(subject, preview, "the subject for \(type?.rawValue ?? "any app")")
+            assertNoOriginal(subject, "the subject for \(type?.rawValue ?? "any app")")
+        }
+
+        model.share(asFile: true)
+        let shared = try XCTUnwrap(model.share?.items.first as? URL)
+        assertNoOriginal(shared.lastPathComponent, "Share as file's name")
+
+        // A row's or the title menu's Share goes through the same share.
+        let menu = try XCTUnwrap(Fixture.app(seeded).shareItems(for: session.id)?.items.first as? TitledText)
+        assertNoOriginal(menu.activityViewController(controller, subjectForActivityType: .mail), "a menu Share's subject")
+        assertNoOriginal(try XCTUnwrap(menu.activityViewControllerLinkMetadata(controller)?.title), "a menu Share's preview title")
     }
 
     func testCopyForAIConfirms() throws {
