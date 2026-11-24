@@ -49,3 +49,9 @@ ios:mdocUITests/EditToolbarUITests/testHardwareKeys  #837  2026-12-11
 # a drop plus a retried pass (#1074).
 ios:mdocUITests/TableEditingUITests/testThePencilInALongTableKeepsThePlaceAndTheWord  #1073  2026-12-22
 ios:mdocUITests/IdentitiesGesturesUITests/testRowsSwipeLeftAndASwipeRightClosesIdentities  #1074  2026-12-22
+
+# Took two unrelated PRs out of the merge queue on the PC's Android job,
+# 2026-11-24 (#1172, #1174): the test asserts the raw shot is gone before
+# ScanSession.clean deletes it, which it does just after recording the page.
+android:io.github.lawkitt.mdoc.PhotoImportTest#aCameraShotIsDeletedOnceItsCleanCopyIsKept  #1100  2026-12-24
+android:io.github.lawkitt.mdoc.PhotoImportTest#aPageCleanedAfterTheSnapshotIsRestored  #1100  2026-12-24
