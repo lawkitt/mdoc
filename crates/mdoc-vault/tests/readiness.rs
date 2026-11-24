@@ -383,3 +383,41 @@ fn a_fingerprint_saved_without_a_scan_reads_ready_until_the_text_changes() {
     );
     assert!(vault.text_for_ai(&letter).is_err());
 }
+
+/// The AI connector's read (ADR 0126): `text_for_ai_in` hands out a
+/// Document of the named Project only, and says nothing of one elsewhere,
+/// not even that it is not Ready.
+#[test]
+fn text_for_ai_in_refuses_a_document_of_another_project_or_unfiled() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let shared = project_with(&vault, &[person("PERSON_1", &["Anna Petrova"])]);
+    let other = project_with(&vault, &[person("PERSON_1", &["Boris Ivanov"])]);
+    let letter = document(&vault, Some(&shared), "PERSON_1 signed.");
+    let elsewhere = document(&vault, Some(&other), "PERSON_1 wrote.");
+    let unfiled = document(&vault, None, "PERSON_1 called.");
+    let draft = document(&vault, Some(&other), "Not reviewed.");
+    for id in [&letter, &elsewhere, &unfiled] {
+        save_ready(&vault, id);
+    }
+
+    assert_eq!(
+        vault.text_for_ai_in(&shared, &letter).unwrap(),
+        vault.text_for_ai(&letter).unwrap()
+    );
+    for id in [&elsewhere, &unfiled, &draft] {
+        assert!(vault.text_for_ai(id).is_ok() || id == &draft);
+        assert!(
+            matches!(
+                vault.text_for_ai_in(&shared, id),
+                Err(VaultError::NotFound { .. })
+            ),
+            "{id}"
+        );
+    }
+    vault.move_document(&letter, Some(&other)).unwrap();
+    assert!(matches!(
+        vault.text_for_ai_in(&shared, &letter),
+        Err(VaultError::NotFound { .. })
+    ));
+}

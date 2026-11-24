@@ -13,7 +13,7 @@ use mdoc_pii::restore::RestoreMap;
 use sha2::Digest;
 
 /// Whether a Document may leave for an AI now: Copy for AI, Share, the
-/// shelf, later MCP.
+/// shelf, the AI connector.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Readiness {
     Ready,
@@ -98,7 +98,27 @@ impl Vault {
     /// [`VaultError::ExcludedFromAi`], or [`VaultError::NotReady`] unless
     /// [`Self::readiness`] finds it Ready.
     pub fn text_for_ai(&self, id: &str) -> Result<String, VaultError> {
+        self.checked_for_ai(self.document(id)?)
+    }
+
+    /// [`Self::text_for_ai`] of a Document of `project` only, from the
+    /// same read of its record: the AI connector's reads (ADR 0126). A
+    /// Document elsewhere, in another Project or Unfiled, is
+    /// [`VaultError::NotFound`] before anything of its readiness is told.
+    pub fn text_for_ai_in(&self, project: &str, id: &str) -> Result<String, VaultError> {
         let document = self.document(id)?;
+        if document.project.as_deref() != Some(project) {
+            return Err(VaultError::NotFound {
+                kind: crate::ObjectKind::Document,
+                id: id.to_owned(),
+            });
+        }
+        self.checked_for_ai(document)
+    }
+
+    /// The one outbound check: exclusion, then readiness against the names
+    /// `document`'s Project holds now.
+    fn checked_for_ai(&self, document: Document) -> Result<String, VaultError> {
         if document.exclude_from_ai {
             return Err(VaultError::ExcludedFromAi);
         }

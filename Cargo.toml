@@ -11,7 +11,7 @@ publish = false
 [workspace]
 # Upstream code with one Linux glyph-offset correction; not a workspace crate.
 exclude = ["vendor"]
-members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-editor-core", "crates/mdoc-history", "crates/mdoc-markdown", "crates/mdoc-pii", "crates/gpui-pdf", "crates/mdoc-spell", "crates/mdoc-store", "crates/mdoc-vault", "crates/mdoc-import", "crates/mdoc-detect", "crates/mdoc-ffi"]
+members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-editor-core", "crates/mdoc-history", "crates/mdoc-markdown", "crates/mdoc-pii", "crates/gpui-pdf", "crates/mdoc-spell", "crates/mdoc-store", "crates/mdoc-vault", "crates/mdoc-connector", "crates/mdoc-import", "crates/mdoc-detect", "crates/mdoc-ffi"]
 resolver = "2"
 
 # Module dependencies stay visible (ADR 0069): every workspace crate denies
@@ -310,6 +310,10 @@ roxmltree = "0.21"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 # Locks fixtures for the password card's tests.
 craft-offcrypto = { workspace = true }
+# The AI connector's service (Milestone 2): only the exits suite reaches it
+# until the listener lands (item 7); `exits-suite` lets that suite take its
+# check out.
+mdoc-connector = { path = "crates/mdoc-connector", features = ["exits-suite"] }
 
 # PDF rasterization is CPU-heavy. Keep application/editor code debuggable while
 # avoiding unoptimized pixel/vector loops during `cargo run` and tests.
