@@ -493,12 +493,6 @@ or ChatGPT apps themselves are the maintainer's.
     answer with aliases and delivers it. Not in CI. *Blocked by:* items 7, 9
     and Vault & Projects item 30. *Done when:* the run passes on macOS and its
     transcript is on the issue, with the maintainer's rows listed.
-13. **[Desktop] Prefactor: the shelf's rows as a view.** *From
-    [#1164](https://github.com/lawkitt/mdoc/issues/1164) (ADR 0128).* The rows that
-    list Ready documents with Copy and drag become a view the popup hosts
-    today and the companion can host. No behaviour changes. *Blocked by:*
-    Vault & Projects item 23. *Done when:* the shelf's tests and renders pass
-    unchanged.
 14. **[macOS] The companion window.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
     (ADR 0128).* One floating window toggled from the menu bar icon: the AI
     project and Stop sharing, its documents with their state, the latest
