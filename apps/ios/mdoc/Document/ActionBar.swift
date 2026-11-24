@@ -148,15 +148,15 @@ struct ActionBar: View {
             }
     }
 
-    /// Paste, which opens the reply sheet.
+    /// Paste: one tap restores the reply on the clipboard. HTML first, so
+    /// a table copied from the ChatGPT app stays one.
     private func pasteReply(accessibilityLabel: LocalizedStringKey) -> some View {
-        Button {
-            model.showsReplySheet = true
-        } label: {
-            Label("Paste", systemImage: "arrow.uturn.backward")
-                .frame(maxWidth: .infinity)
+        PasteControl(look: .bar, types: [.html, .plainText]) { providers in
+            Task { @MainActor in
+                if let text = await PastedReply.text(from: providers) { model.restore(reply: text) }
+            }
         }
-        .secondaryAction()
+        .frame(minHeight: BigButton.height)
         .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityIdentifier("paste-reply")
     }

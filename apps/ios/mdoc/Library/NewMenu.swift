@@ -4,8 +4,9 @@ import VisionKit
 /// The New menu: New document, Paste, Files, Photos, Scan. The first item
 /// opens nearest the button, so the camera is last, away from it, and a
 /// double tap cannot open it (ADR 0088). New document opens an empty
-/// document in edit mode (ADR 0109); the others open their add flow through
-/// `Presenter`. Shared by the sidebar and the Documents page.
+/// document in edit mode (ADR 0109), and Paste opens the clipboard's text
+/// as a document; the others open their add flow through `Presenter`.
+/// Shared by the sidebar and the Documents page.
 struct NewMenuItems: View {
     let app: AppModel
 
@@ -17,11 +18,12 @@ struct NewMenuItems: View {
         }
         .accessibilityHint(Text("An empty document to write in."))
         .accessibilityIdentifier("new-document")
-        Button {
-            app.navigator.present(.intake(.paste))
-        } label: {
-            Label("Paste text", systemImage: "doc.on.clipboard")
+        // The system's Paste, so one tap pastes without iOS's prompt.
+        PasteButton(payloadType: String.self) { strings in
+            guard let text = strings.first else { return }
+            Task { @MainActor in app.paste(text) }
         }
+        .accessibilityIdentifier("paste-text")
         Button {
             app.navigator.present(.intake(.files))
         } label: {
@@ -64,9 +66,13 @@ struct AddTiles: View {
         AddTile(title: "Files", spoken: "Add from Files", id: "empty-files", systemImage: "folder", color: .blue) {
             app.navigator.present(.intake(.files))
         }
-        AddTile(title: "Paste", spoken: "Paste text", id: "empty-paste", systemImage: "doc.on.clipboard", color: .orange) {
-            app.navigator.present(.intake(.paste))
+        PasteControl(look: .tile, types: [.plainText]) { providers in
+            Task { @MainActor in
+                if let text = await PastedReply.plainText(from: providers) { app.paste(text) }
+            }
         }
+        .frame(maxWidth: .infinity, minHeight: 96)
+        .accessibilityIdentifier("empty-paste")
     }
 }
 

@@ -121,7 +121,6 @@ final class DocumentViewModel {
     /// document first showed in a regular window.
     private var settledPlacement: IdentitiesPlacement?
     private(set) var pane: Pane = .text
-    var showsReplySheet = false
     var share: ShareItems?
     var errorMessage: String?
     /// A short confirmation such as "Copied for AI".
@@ -540,7 +539,6 @@ final class DocumentViewModel {
         guard !trimmed.isEmpty else { return }
         perform { try session.restoreReply(reply) }
         if snapshot.reply != nil {
-            showsReplySheet = false
             show(.reply)
         }
     }

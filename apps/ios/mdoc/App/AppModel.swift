@@ -449,11 +449,12 @@ final class AppModel {
         }
     }
 
-    /// Paste's one sheet: the text, its title and its Project at once
-    /// (ADR 0087).
-    func addText(_ text: String, title: String, into project: ProjectID?) {
+    /// Paste: the clipboard's text opens as a document titled by its first
+    /// line, in the Project whose page shows, else in Unfiled. Rename and
+    /// Move to Project change either after, so it asks nothing.
+    func paste(_ text: String) {
         guard let pending = Importer.text(text) else { return }
-        finishImport(pending, title: title, into: project)
+        finishImport(pending, title: pending.suggestedTitle, into: intakeProject)
     }
 
     /// Try a sample (ADR 0099): the made-up agreement in the phone's

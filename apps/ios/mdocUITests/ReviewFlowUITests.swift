@@ -68,13 +68,8 @@ final class ReviewFlowUITests: XCTestCase {
         XCTAssertTrue(sheet.waitForExistence(timeout: 10))
         MdocUITest.closeShareSheet(app)
 
-        // Restore: paste the AI's reply into the document.
-        app.buttons["paste-reply"].tap()
-        let editor = app.textViews["reply-editor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: MdocUITest.timeout))
-        editor.tap()
-        editor.typeText("Write to EMAIL_1 today. EMAIL_9 is new.")
-        app.buttons["reply-restore"].tap()
+        // Restore: one Paste restores the AI's reply on the clipboard.
+        MdocUITest.pasteReply("Write to EMAIL_1 today. EMAIL_9 is new.", in: app)
 
         let restored = app.textViews["restored-text"]
         XCTAssertTrue(restored.waitForExistence(timeout: 10))
@@ -228,6 +223,22 @@ enum MdocUITest {
     static func openSettings(_ app: XCUIApplication) {
         revealSidebar(app)
         app.buttons["settings-button"].firstMatch.tap()
+    }
+
+    /// Puts `text` on the clipboard, as copying it in another app would,
+    /// for the app's Paste to read.
+    static func copy(_ text: String) {
+        UIPasteboard.general.string = text
+    }
+
+    /// Paste on the document's bar: one tap restores the reply on the
+    /// clipboard.
+    @MainActor
+    static func pasteReply(_ text: String, in app: XCUIApplication) {
+        copy(text)
+        let paste = app.descendants(matching: .any)["paste-reply"].firstMatch
+        XCTAssertTrue(paste.waitForExistence(timeout: timeout))
+        paste.tap()
     }
 
     /// The first document row the sidebar's search lists before anything is

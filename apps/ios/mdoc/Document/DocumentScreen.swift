@@ -89,11 +89,6 @@ struct DocumentScreen: View {
             .sheet(item: Binding(get: { sameAsCandidate.map(PickerSource.init) }, set: { if $0 == nil { sameAsCandidate = nil } })) {
                 sameAsPicker($0.id)
             }
-            .sheet(isPresented: $model.showsReplySheet) {
-                ReplySheet(projectName: model.snapshot.projectName) { reply in
-                    model.restore(reply: reply)
-                }
-            }
             // A reply saved through Restore with mdoc from this share sheet
             // shows once it closes.
             .sheet(item: $model.share, onDismiss: { app?.takeInChanges() }) { items in
