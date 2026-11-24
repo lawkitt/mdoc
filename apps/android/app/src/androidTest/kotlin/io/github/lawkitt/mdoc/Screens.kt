@@ -23,8 +23,19 @@ fun ComposeTestRule.shown(matcher: SemanticsMatcher): SemanticsNodeInteraction =
 /** The node on screen with `text`. */
 fun ComposeTestRule.shownText(text: String, substring: Boolean = false): SemanticsNodeInteraction = shown(hasText(text, substring))
 
+/**
+ * Whether a node matches `matcher`: false, not an error, while no window is
+ * resumed. An activity is paused for a moment while it takes a new intent or
+ * is recreated, and Compose finds no hierarchy then (#1159).
+ */
+fun ComposeTestRule.exists(matcher: SemanticsMatcher): Boolean = try {
+    onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty()
+} catch (error: IllegalStateException) {
+    if (error.message?.startsWith("No compose hierarchies found") == true) false else throw error
+}
+
 fun ComposeTestRule.waitForShown(matcher: SemanticsMatcher, timeout: Long = 15_000) = try {
-    waitUntil(timeout) { onAllNodes(matcher and onScreen).fetchSemanticsNodes().isNotEmpty() }
+    waitUntil(timeout) { exists(matcher and onScreen) }
 } catch (error: Throwable) {
     dump()
     throw error
