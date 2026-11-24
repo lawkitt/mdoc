@@ -769,6 +769,39 @@ fn a_missing_original_leaves_the_saved_markdown_open(cx: &mut TestAppContext) {
     });
 }
 
+/// Review of #1145 (P2-7): a file open in a tab comes to the front again
+/// only while its bytes are unchanged; replaced at the same path, it is
+/// imported as a new document, never shown as the old import.
+#[gpui::test]
+fn reopening_a_replaced_file_imports_its_new_bytes(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lease.md");
+    std::fs::write(&path, "First version.").unwrap();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![path.clone()], cx);
+    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    assert_eq!(text_of(&tabs, cx), "First version.");
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    // Unchanged: its tab comes to the front, nothing is imported.
+    open(&tabs, vec![path.clone()], cx);
+    assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), first);
+    let vault = vault(&tabs, cx);
+    assert_eq!(vault.documents().len(), 1);
+    // Replaced in another app: a new document with the new text.
+    std::fs::write(&path, "Second version.").unwrap();
+    open(&tabs, vec![path.clone()], cx);
+    assert!(!cx.has_pending_prompt(), "new bytes are no repeat");
+    let second = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    assert_ne!(second, first);
+    assert_eq!(text_of(&tabs, cx), "Second version.");
+    assert_eq!(vault.documents().len(), 2);
+    // The path now finds the new import.
+    open(&tabs, vec![path], cx);
+    assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), second);
+    assert_eq!(vault.documents().len(), 2);
+}
+
 #[gpui::test]
 fn a_second_open_of_a_file_still_importing_asks_as_a_repeat(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();

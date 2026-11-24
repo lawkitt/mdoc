@@ -1534,7 +1534,8 @@ impl Workspace {
     }
 
     /// Open `paths`, supported or not, as Vault documents: Unfiled, or in
-    /// Project `project`. A file open already comes to the front.
+    /// Project `project`. A file open already, unchanged, comes to the
+    /// front.
     fn finish_open(
         &mut self,
         paths: Vec<(PathBuf, bool)>,
@@ -1548,16 +1549,10 @@ impl Workspace {
         let (supported, unsupported): (Vec<_>, Vec<_>) =
             paths.into_iter().partition(|(_, supported)| *supported);
         self.post_unsupported(unsupported.into_iter().map(|(path, _)| path));
-        let (open, new): (Vec<_>, Vec<_>) = supported
-            .into_iter()
-            .map(|(path, _)| path)
-            .partition(|path| self.open_tab_for(path, cx).is_some());
-        if new.is_empty()
-            && let Some(id) = open.first().and_then(|path| self.open_tab_for(path, cx))
-        {
-            self.activate(id, window, cx);
-        }
-        self.admit(new, project, window, cx);
+        // Each is hashed first: a file open in a tab comes to the front only
+        // while its bytes are the ones that tab imported (`intake`).
+        let paths = supported.into_iter().map(|(path, _)| path).collect();
+        self.admit(paths, project, window, cx);
         cx.notify();
     }
 
