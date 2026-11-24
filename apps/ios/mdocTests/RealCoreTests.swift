@@ -764,6 +764,16 @@ extension RealCoreTests {
         XCTAssertEqual(recordedProject(note.id, in: seeded.storage), .some(ellison))
         XCTAssertEqual(note.snapshot().projectID, seeded.ellison)
 
+        // The record unreadable: not taken for no record, it stops the
+        // delete too.
+        let record = seeded.storage.intake.appendingPathComponent("pending.json")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: record.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: record.path) }
+        XCTAssertThrowsError(try library.deleteProject(seeded.ellison, documents: .moveToUnfiled))
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: record.path)
+        XCTAssertTrue(library.vault.projects().contains { $0.id == ellison }, "the Project stays")
+        XCTAssertEqual(recordedProject(note.id, in: seeded.storage), .some(ellison))
+
         // The Vault unwritable: the delete fails, and the record is back.
         try Fixture.setVault(seeded.storage, writable: false)
         defer { try? Fixture.setVault(seeded.storage, writable: true) }

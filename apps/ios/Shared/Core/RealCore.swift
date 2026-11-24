@@ -551,15 +551,11 @@ final class RealLibrary: Library, @unchecked Sendable {
                     do {
                         // Their records land in Unfiled first: a stop before
                         // the Project goes leaves none naming it once gone.
-                        for session in leaving {
-                            try pending.place(session.id, in: nil)
-                        }
+                        try pending.place(leaving.map(\.id), in: nil)
                         try core { try vault.deleteProject(id: id, documents: .moveToUnfiled) }
                     } catch {
-                        for session in leaving {
-                            session.rejoin(id)
-                            try? pending.place(session.id, in: id)
-                        }
+                        leaving.forEach { $0.rejoin(id) }
+                        try? pending.place(leaving.map(\.id), in: id)
                         throw error
                     }
                 }
@@ -725,16 +721,17 @@ final class RealLibrary: Library, @unchecked Sendable {
         pending.markOCRStarted(session.id)
     }
 
-    /// A saved document keeps its id for the rest of the run; its first
-    /// save ends its import, and its received files go: the Vault keeps
-    /// what it keeps of them.
-    fileprivate func saved(_ session: RealSession, vaultID: String) {
-        let first = lock.withLock {
-            let first = ids[vaultID] != session.id
-            ids[vaultID] = session.id
-            return first
-        }
-        guard first else { return }
+    /// A saved document keeps its id for the rest of the run. An import is
+    /// known by it before it stops joining its Project, so a Project's
+    /// delete lists it as one of the Project's documents or as an import,
+    /// never neither (#1140).
+    fileprivate func keepID(_ session: RealSession, vaultID: String) {
+        lock.withLock { ids[vaultID] = session.id }
+    }
+
+    /// An import's first save ends it, and its received files go: the
+    /// Vault keeps what it keeps of them.
+    fileprivate func importSaved(_ session: RealSession) {
         pending.remove(session.id)
     }
 
@@ -1508,6 +1505,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 
     private func recordSaved(vaultID: String) {
         library.noteChange()
+        library.keepID(self, vaultID: vaultID)
         let first = lock.withLock {
             let first = savedID == nil
             savedID = vaultID
@@ -1520,7 +1518,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             }
             return first
         }
-        if first { library.saved(self, vaultID: vaultID) }
+        if first { library.importSaved(self) }
     }
 }
 
@@ -1831,14 +1829,16 @@ final class PendingImports: @unchecked Sendable {
         }
     }
 
-    /// The Project an import is to join, `nil` Unfiled: its Project is
-    /// being deleted, its documents moved, or that delete failed. Throws
-    /// when the record can't be written.
-    func place(_ id: DocumentID, in projectID: String?) throws {
+    /// The Project imports are to join, `nil` Unfiled, in one write: their
+    /// Project is being deleted, its documents moved, or that delete
+    /// failed. Throws when the record can't be read or written.
+    func place(_ ids: [DocumentID], in projectID: String?) throws {
+        guard !ids.isEmpty else { return }
         try lock.withLock {
-            var entries = load()
-            guard entries[id.rawValue] != nil else { return }
-            entries[id.rawValue]?.projectID = projectID
+            var entries = try read()
+            for id in ids where entries[id.rawValue] != nil {
+                entries[id.rawValue]?.projectID = projectID
+            }
             try write(entries)
         }
     }
@@ -1868,6 +1868,12 @@ final class PendingImports: @unchecked Sendable {
     private func load() -> [String: Stored] {
         guard let data = try? Data(contentsOf: url) else { return [:] }
         return (try? JSONDecoder().decode([String: Stored].self, from: data)) ?? [:]
+    }
+
+    /// `load`, throwing when the record is there but can't be read.
+    private func read() throws -> [String: Stored] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+        return try JSONDecoder().decode([String: Stored].self, from: Data(contentsOf: url))
     }
 
     private func save(_ entries: [String: Stored]) {
