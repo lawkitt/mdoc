@@ -42,7 +42,8 @@ pub struct Exported {
 impl Vault {
     /// Write Project `id`'s documents into a new folder inside `into`,
     /// which must lie outside the Vault. A pasted or new document has no
-    /// original; one whose conversion never finished has no Markdown.
+    /// original; one whose conversion never finished has no Markdown, and
+    /// one whose text was cleared since has an empty one.
     pub fn export_project(&self, id: &str, into: &Path) -> Result<Exported, VaultError> {
         let project = self.project(id)?;
         // Checked before anything is created, whatever alias names it.
@@ -67,7 +68,9 @@ impl Vault {
                 if document.project.as_deref() != Some(id) {
                     return Ok(false);
                 }
-                if !document.markdown.is_empty() || document.original.is_none() {
+                // Only a conversion that never finished has no Markdown; a
+                // text its user cleared is written, empty.
+                if !document.pending_conversion() {
                     let (_, mut file) =
                         names.create(&folder, &safe_stem(&document.title), ".md")?;
                     file.write_all(document.markdown.as_bytes())?;
