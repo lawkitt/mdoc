@@ -13,7 +13,9 @@ use mdoc_store::{
     document::Document,
     document_id::{DocumentId, VaultId},
 };
-use mdoc_vault::{DocumentOrigin, MoveUndo, NewDocument, ProjectDocuments, SourceKind};
+use mdoc_vault::{
+    DocumentOrigin, MoveUndo, NewDocument, ProjectDocuments, ReviewCounts, SourceKind,
+};
 
 /// One autosave, of the text a document showed when it was queued.
 pub(super) enum Write {
@@ -30,6 +32,8 @@ pub(super) enum Write {
         names: Box<Names>,
         /// Scanned, and no proposals left: its text is Ready.
         ready: bool,
+        /// What its review counts now, for lists without a live view.
+        counts: Option<ReviewCounts>,
     },
     /// The Project the target names, as the window holds it then.
     Project,
@@ -85,6 +89,7 @@ enum Job {
         notes: Option<Notes>,
         names: Box<Names>,
         ready: bool,
+        counts: Option<ReviewCounts>,
     },
     Project(Box<mdoc_vault::Project>),
 }
@@ -169,7 +174,9 @@ impl Workspace {
         };
         let target = DocumentId::Vault(document.clone());
         match vault.set_notes(document.as_str(), notes.clone()) {
-            Ok(_) => {
+            // Deleted meanwhile: nothing to keep them with, and nothing to
+            // write them again (a quit's last pass would ask forever).
+            Ok(_) | Err(mdoc_vault::VaultError::NotFound { .. }) => {
                 for view in self.tabs.iter().filter_map(|tab| tab.view()) {
                     view.update(cx, |view, _| {
                         if view.session.document.is(&target) {
@@ -178,8 +185,6 @@ impl Workspace {
                     });
                 }
             }
-            // Deleted meanwhile: nothing to keep them with.
-            Err(mdoc_vault::VaultError::NotFound { .. }) => self.notes_write_failed(&target, cx),
             Err(error) => {
                 self.notes_write_failed(&target, cx);
                 let tab = self.find_document(&target, None, cx);
@@ -276,10 +281,10 @@ impl Workspace {
         }
     }
 
-    /// Before the window closes: write any document edited since the
-    /// quit's own writes were queued, a keystroke while they ran. Returns
-    /// whether a write now runs or waits. Replies and Projects are not
-    /// asked again: their edits come only through a document's.
+    /// Before the window closes: write whatever was edited since the
+    /// quit's own writes were queued, a keystroke while they ran, in every
+    /// editable field: the text, Notes and the reply box. Returns whether a
+    /// write now runs or waits.
     pub(super) fn autosave_late_edits(
         &mut self,
         window: &mut Window,
@@ -290,7 +295,7 @@ impl Workspace {
             if let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) {
                 view.update(cx, |view, _| view.cancel_autosave());
             }
-            self.autosave_document(id, window, cx);
+            self.autosave(id, window, cx);
         }
         self.document_writer.busy()
     }
@@ -369,6 +374,7 @@ impl Workspace {
                 notes,
                 names,
                 ready,
+                counts,
             } => Job::Vault {
                 markdown,
                 title,
@@ -376,6 +382,7 @@ impl Workspace {
                 notes,
                 names,
                 ready,
+                counts,
             },
         };
         let vault = self.vault.vault().cloned();
@@ -552,7 +559,7 @@ impl Workspace {
     fn advance_writer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(next) = self.document_writer.finished() {
             self.run_write(next, window, cx);
-        } else if self.quit_flow.finishing() {
+        } else if self.quit_flow.finishing() && !self.late_pass {
             self.finish_quit(window, cx);
         }
         // A Copy for AI waiting for what it shows to be written.
@@ -607,6 +614,7 @@ impl Workspace {
             notes,
             names,
             ready,
+            counts,
         } = write
         else {
             return Ok(());
@@ -619,6 +627,7 @@ impl Workspace {
             notes,
             names,
             ready,
+            counts,
         };
         save_vault(vault, &document, job)?;
         view.update(cx, |view, cx| {
@@ -659,6 +668,13 @@ fn vault_write(
     cx: &gpui::App,
 ) -> Write {
     let names = view.pii.review();
+    // Proposals left as the window counts them (`remaining`), so Home and
+    // the Project page say Needs review once the view is gone.
+    let counts = review.as_ref().map(|_| ReviewCounts {
+        proposed: names.remaining() as u64,
+        replaced: names.applied().len() as u64,
+        kept: names.kept_mentions().len() as u64,
+    });
     Write::Vault {
         title: view
             .session
@@ -677,6 +693,7 @@ fn vault_write(
             not_names: names.not_a_name_pairs(),
         }),
         ready: super::shelf_source::ready(view, cx),
+        counts,
     }
 }
 
@@ -689,6 +706,7 @@ fn save_vault(vault: &mdoc_vault::Vault, id: &VaultId, job: Job) -> Result<(), S
         notes,
         names,
         ready,
+        counts,
     } = job
     else {
         return Ok(());
@@ -699,8 +717,8 @@ fn save_vault(vault: &mdoc_vault::Vault, id: &VaultId, job: Job) -> Result<(), S
             // Its text is written: it opens as text from now on.
             document.unconverted = false;
             document.review = review.map(|review| *review);
-            // Counted from the review it replaces: lists count it again.
-            document.counts = None;
+            // Counted from the review it saves; none without one.
+            document.counts = counts;
             if let (Some(notes), Some(original)) = (notes, document.original.as_mut()) {
                 original.info.import_warning = notes.warning;
                 original.info.left_out = notes.left_out;

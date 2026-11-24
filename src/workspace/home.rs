@@ -50,11 +50,18 @@ pub(super) struct Strip {
 }
 
 /// Whether `summary` needs review: it was never saved Ready (desktop marks
-/// a document scanned only by a Ready save), or its live view has
-/// `proposed` proposals left now. A document kept from AI never does. The
-/// Project page's Documents segment uses the same rule.
+/// a document scanned only by a Ready save), or it has proposals left
+/// ([`proposals`]). A document kept from AI never does. The Project page's
+/// Documents segment uses the same rule.
 pub(super) fn needs_review(summary: &DocumentSummary, proposed: Option<usize>) -> bool {
     !summary.exclude_from_ai && (proposed.is_some_and(|n| n > 0) || !summary.scanned)
+}
+
+/// Proposals left in `summary`'s document: what its live view has now,
+/// `live`, or else what its last save counted.
+pub(super) fn proposals(summary: &DocumentSummary, live: Option<usize>) -> Option<usize> {
+    live.or_else(|| (summary.counts).map(|counts| counts.proposed as usize))
+        .filter(|&n| n > 0)
 }
 
 /// The Continue strip: documents that need review and saved replies,
@@ -68,7 +75,7 @@ pub(super) fn strip(
     let mut cards: Vec<Card> = documents
         .iter()
         .filter_map(|summary| {
-            let proposed = live.get(&summary.id).copied().filter(|&n| n > 0);
+            let proposed = proposals(summary, live.get(&summary.id).copied());
             needs_review(summary, proposed).then(|| Card::Document {
                 summary: summary.clone(),
                 proposed,
@@ -242,6 +249,23 @@ mod tests {
                 Card::Reply(reply) => reply.id.clone(),
             })
             .collect()
+    }
+
+    #[test]
+    fn proposals_come_from_the_live_view_or_else_the_last_save() {
+        let mut lease = document("a", "Lease", None, 1);
+        assert_eq!(proposals(&lease, None), None);
+        lease.counts = Some(mdoc_vault::ReviewCounts {
+            proposed: 2,
+            ..Default::default()
+        });
+        assert_eq!(proposals(&lease, None), Some(2));
+        assert_eq!(
+            proposals(&lease, Some(0)),
+            None,
+            "the live view says none now"
+        );
+        assert_eq!(proposals(&lease, Some(3)), Some(3));
     }
 
     #[test]

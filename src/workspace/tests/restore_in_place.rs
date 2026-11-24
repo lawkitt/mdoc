@@ -378,7 +378,8 @@ fn a_reply_in_the_box_is_saved_once_it_settles_and_listed_on_reopen(cx: &mut Tes
     settle(cx);
     let edited = vault(&tabs, cx).replies();
     assert_eq!(edited.len(), 1, "an edit replaces the reply it saved");
-    assert_ne!(edited[0].id, first[0].id);
+    // In place: a document promoted from it still finds it.
+    assert_eq!(edited[0].id, first[0].id);
     let markdown = vault(&tabs, cx).reply(&edited[0].id).unwrap().markdown;
     assert_eq!(markdown, "PERSON_1 replied, from the box.");
     // Cleared, the box keeps the saved reply; a new paste is a new reply.

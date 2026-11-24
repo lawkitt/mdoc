@@ -445,16 +445,37 @@ impl Workspace {
             }
             return;
         };
-        let mut failed = None;
+        // Only while every one is still Unfiled, compared under the Vault's
+        // write lock: one moved into a Project since the question (a folder
+        // sheet finishing) stops it, and the question comes again.
+        let ids: Vec<String> = (documents.iter())
+            .map(|document| document.as_str().to_string())
+            .collect();
+        let failed = match vault.delete_unfiled_documents(&ids) {
+            Ok(false) => {
+                for document in &documents {
+                    self.moving.remove(document);
+                }
+                self.notices.post(
+                    "A document moved into a Project before it was deleted, so nothing was                      deleted. Choose again.",
+                );
+                self.delete_documents(ids, window, cx);
+                cx.notify();
+                return;
+            }
+            Ok(true) => None,
+            Err(error) => Some(error),
+        };
         for document in &documents {
             // A failure after its record went (its folder's cleanup) still
             // deleted it; one before keeps it, and its live view and edits.
-            let result = vault.delete_document(document.as_str());
-            let gone = result.is_ok()
-                || !(vault.documents().iter()).any(|summary| summary.id == document.as_str());
-            if let Err(error) = result {
-                failed = Some(error);
-            }
+            // Only a record known to be gone counts: one that can't be read
+            // for now is missing from the summaries too.
+            let gone = failed.is_none()
+                || matches!(
+                    vault.document(document.as_str()),
+                    Err(mdoc_vault::VaultError::NotFound { .. })
+                );
             self.moving.remove(document);
             if !gone {
                 continue;

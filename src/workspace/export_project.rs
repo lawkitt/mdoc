@@ -56,18 +56,22 @@ impl Workspace {
                 return;
             };
             // Edits made while the chooser was up go too; then wait for
-            // every write queued, and any still running.
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.autosave_all(window, cx);
-                this.queue_project_writes(window, cx);
-            });
-            while this
-                .update(cx, |this, _| this.document_writer.busy())
-                .unwrap_or(false)
-            {
-                cx.background_executor()
-                    .timer(std::time::Duration::from_millis(50))
-                    .await;
+            // every write queued, and any still running. A second pass
+            // writes what was typed during the wait (notes still in their
+            // pause), and the check below refuses anything later.
+            for _ in 0..2 {
+                let _ = this.update_in(cx, |this, window, cx| {
+                    this.autosave_all(window, cx);
+                    this.queue_project_writes(window, cx);
+                });
+                while this
+                    .update(cx, |this, _| this.document_writer.busy())
+                    .unwrap_or(false)
+                {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(50))
+                        .await;
+                }
             }
             // A member whose write failed would export an older revision:
             // nothing is exported, and the notice says which.
@@ -96,16 +100,22 @@ impl Workspace {
 
 impl Workspace {
     /// What of Project `project` the window holds that the Vault doesn't:
-    /// its open members whose text or review is not written, by name, and
-    /// "its names" when the Project's own write failed.
+    /// its open members (linked, or filed there by the Vault) whose text,
+    /// review or notes are not written, by name, and "its names" when the
+    /// Project's own write failed.
     fn project_unsaved(&self, project: &str, cx: &gpui::App) -> Vec<String> {
         let mut unsaved: Vec<String> = (self.tabs.iter())
             .filter(|tab| {
                 tab.view().is_some_and(|view| {
                     let view = view.read(cx);
-                    (view.project.link()).is_some_and(|link| link.id == project)
+                    // Filed there by the Vault too: a move's reload lets
+                    // the link go until it loads again.
+                    let filed = (view.session.document.vault.as_ref())
+                        .is_some_and(|id| self.project_of(id.as_str()).as_deref() == Some(project));
+                    ((view.project.link()).is_some_and(|link| link.id == project) || filed)
                         && (self.unsaved.contains(&tab.id())
                             || view.unsaved(cx)
+                            || view.notes.unsaved()
                             || view.saved_review() != view.session.document.review)
                 })
             })

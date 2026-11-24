@@ -154,6 +154,16 @@ impl ProjectPage {
 }
 
 impl Workspace {
+    /// Whether a member's row says Needs review: a live document by what
+    /// its review holds now, another by what its last save counted.
+    pub(super) fn member_needs_review(&self, summary: &DocumentSummary, cx: &gpui::App) -> bool {
+        let live = VaultId::parse(&summary.id)
+            .and_then(|document| self.find_document(&DocumentId::Vault(document), None, cx))
+            .and_then(|tab| self.tabs.get(tab)?.view().cloned())
+            .map(|view| view.read(cx).pii.review().remaining());
+        super::home::needs_review(summary, super::home::proposals(summary, live))
+    }
+
     /// The Project tab `tab` shows in the sidebar under: its view's, or,
     /// before it loads, the one the Vault files its document in.
     pub(super) fn sidebar_project_link(
@@ -867,13 +877,9 @@ impl Workspace {
             let Some(document) = VaultId::parse(&summary.id) else {
                 continue;
             };
-            // A live document says what its review holds now.
-            let proposed = (self.find_document(&DocumentId::Vault(document.clone()), None, cx))
-                .and_then(|tab| self.tabs.get(tab)?.view().cloned())
-                .map(|view| view.read(cx).pii.review().remaining());
             let detail = format!(
                 "{}{}",
-                if !super::home::needs_review(summary, proposed) {
+                if !self.member_needs_review(summary, cx) {
                     ""
                 } else {
                     "Needs review · "

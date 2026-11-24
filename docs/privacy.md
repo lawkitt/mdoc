@@ -4,8 +4,10 @@ Your documents never leave your computer. Opening, converting, recognizing and
 pseudonymizing all run locally. mdoc keeps what you import until you delete
 it: each document, its original file and its replacements, encrypted in the
 Vault under a key the macOS Keychain or Windows data protection holds.
-Settings › Vault shows that key as a recovery key, which mdoc never writes to
-disk; keep it to open the Vault on a new computer. mdoc goes online only for:
+Settings › Vault › Show Recovery Key shows that key as a recovery key, with
+no Copy button, and mdoc never writes it to a plain file; keep it to open the
+Vault on a new computer. A document's notes stay on your computer: Copy for AI
+and Share never include them. mdoc goes online only for:
 
 - **Model downloads**, after you approve them: the text recognition runtime and
   models from GitHub, and the pseudonymization model from Hugging Face. Each file

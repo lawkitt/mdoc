@@ -1434,3 +1434,300 @@ fn the_project_page_moves_a_document_whose_tab_never_loaded(cx: &mut TestAppCont
         assert_eq!(view.read(cx).pii.review().applied().len(), 1);
     });
 }
+
+/// Review of #1145, round 2 (P1): a name applied while a move waits joins
+/// the source Project's names before the move reads the document, so it
+/// is renumbered clear of the alias the destination gives someone else.
+#[gpui::test]
+fn a_name_applied_while_a_move_waits_moves_with_its_document(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let other = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Boris Ivanov signed.",
+        &[("Boris Ivanov", Person)],
+    );
+    let to = new_project(&tabs, cx, other);
+    let text = "Anna Petrova wrote.";
+    let tab = open_applied(&tabs, cx, dir.path(), "a.md", text, &[]);
+    new_project(&tabs, cx, tab);
+    settle(cx);
+    // Boris's document is edited, so its write runs first and the move
+    // waits behind it.
+    let other_view = view_of(&tabs, cx, other);
+    other_view.update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            let later = format!("{} Later.", editor.text());
+            editor.set_text(later, cx);
+        })
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.autosave_all(window, cx);
+        tabs.move_tab(tab, Some(to.clone()), window, cx);
+    });
+    let view = view_of(&tabs, cx, tab);
+    view.update_in(cx, |view, window, cx| {
+        view.pii.set_reviewing(true);
+        view.pii
+            .review_mut()
+            .add_manual(text, 0.."Anna Petrova".len(), Person)
+            .unwrap();
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+    });
+    cx.run_until_parked();
+    let document = stored(&tabs, cx, tab);
+    assert_eq!(document.project.as_deref(), Some(to.as_str()));
+    assert_eq!(document.markdown, "PERSON_2 wrote.");
+    let names = vault(&tabs, cx).project(&to).unwrap().mapping.exported();
+    assert!(
+        names
+            .iter()
+            .any(|n| n.alias == "PERSON_2" && n.originals.iter().any(|o| &**o == "Anna Petrova")),
+        "{names:?}"
+    );
+    assert!(
+        names
+            .iter()
+            .any(|n| n.alias == "PERSON_1" && n.originals.iter().any(|o| &**o == "Boris Ivanov")),
+        "{names:?}"
+    );
+}
+
+/// Review of #1145, round 2 (P1): a document moved into a Project while
+/// Delete's question for Unfiled documents is up is never deleted: nothing
+/// goes, and the question comes again for the ones still Unfiled.
+#[gpui::test]
+fn an_unfiled_delete_never_takes_a_document_moved_into_a_project_while_it_asked(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let first = open_applied(&tabs, cx, dir.path(), "a.md", "Ann wrote.", &[]);
+    let second = open_applied(&tabs, cx, dir.path(), "b.md", "Ben wrote.", &[]);
+    let ids: Vec<String> = cx.update(|_, cx| {
+        [first, second]
+            .iter()
+            .map(|tab| {
+                tabs.read(cx)
+                    .tab_document(*tab, cx)
+                    .unwrap()
+                    .as_str()
+                    .to_string()
+            })
+            .collect()
+    });
+    let vault = vault(&tabs, cx);
+    let project = vault
+        .create_project(mdoc_vault::NewProject {
+            name: "Lease".into(),
+            colour: None,
+            pinned: false,
+        })
+        .unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.delete_documents(ids.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    // A folder sheet's Add to a Project ends while the question shows.
+    vault.move_document(&ids[1], Some(&project.id)).unwrap();
+    cx.simulate_prompt_answer("Delete");
+    cx.run_until_parked();
+    assert!(vault.document(&ids[0]).is_ok(), "nothing was deleted");
+    assert!(vault.document(&ids[1]).is_ok(), "the moved document stays");
+    cx.update(|_, cx| {
+        let notice = tabs.read(cx).notices.message().unwrap();
+        assert!(notice.contains("Choose again"), "{notice}");
+    });
+    // Asked again, about the one still Unfiled: it goes.
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Delete");
+    cx.run_until_parked();
+    assert!(vault.document(&ids[0]).is_err());
+    assert_eq!(
+        vault.document(&ids[1]).unwrap().project.as_deref(),
+        Some(project.id.as_str())
+    );
+}
+
+/// Review of #1145, round 2 (P2): Move to New Project writes the new
+/// Project's categories and dismissed hints with the move itself, so no
+/// later write can fail after the move is in and report it as not done.
+#[gpui::test]
+fn move_to_new_project_writes_its_settings_with_the_move(cx: &mut TestAppContext) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.md");
+    std::fs::write(&path, "Anna wrote.").unwrap();
+    // Armed, the Vault takes two Project writes and fails the third.
+    let armed = Arc::new(AtomicBool::new(false));
+    let writes = Arc::new(AtomicUsize::new(0));
+    let root = dir.path().join("vault");
+    let hook: mdoc_vault::FaultHook = {
+        let (armed, writes) = (armed.clone(), writes.clone());
+        Arc::new(move |step| {
+            let project = step.kind == mdoc_vault::ObjectKind::Project
+                && step.stage == mdoc_vault::Stage::BeforeRename;
+            if armed.load(Ordering::SeqCst) && project && writes.fetch_add(1, Ordering::SeqCst) >= 2
+            {
+                mdoc_vault::Fault::Crash
+            } else {
+                mdoc_vault::Fault::Continue
+            }
+        })
+    };
+    let (tabs, cx) = boot_home_with(cx, Session::default(), move |tabs, _, _| {
+        tabs.use_vault(mdoc_vault::Vault::open_with_hook(root, &[3; 32], hook).unwrap())
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+    cx.run_until_parked();
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    armed.store(true, Ordering::SeqCst);
+    let project = new_project(&tabs, cx, tab);
+    assert_eq!(writes.load(Ordering::SeqCst), 2, "the move's two writes");
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(
+            tabs.notices.message().is_none(),
+            "{:?}",
+            tabs.notices.message()
+        );
+        assert!(tabs.moving.is_empty(), "the tab loaded again");
+    });
+    let stored = vault(&tabs, cx).project(&project).unwrap();
+    let skip = cx.update(|_, cx| {
+        let preferences = tabs.read(cx).preferences.borrow();
+        preferences
+            .current
+            .as_ref()
+            .unwrap()
+            .categories
+            .skip
+            .clone()
+    });
+    assert_eq!(stored.skip, skip);
+}
+
+/// Review of #1152 (P1): a proposal applied while a move waits, whose
+/// alias another member has retired since, is renumbered before the
+/// document is written, so the moved text restores to its own person.
+#[gpui::test]
+fn a_retired_alias_applied_while_a_move_waits_is_renumbered_first(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let other = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "c.md",
+        "Boris Ivanov signed.",
+        &[("Boris Ivanov", Person)],
+    );
+    let to = new_project(&tabs, cx, other);
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Anna Petrova called.",
+        &[("Anna Petrova", Person)],
+    );
+    let from = new_project(&tabs, cx, first);
+    let tab = open_applied(&tabs, cx, dir.path(), "a.md", "Anna Petrova wrote.", &[]);
+    move_tab(&tabs, cx, tab, Some(&from));
+    settle(cx);
+    // The move waits behind another write.
+    let other_view = view_of(&tabs, cx, other);
+    other_view.update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            let later = format!("{} Later.", editor.text());
+            editor.set_text(later, cx);
+        })
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.autosave_all(window, cx);
+        tabs.move_tab(tab, Some(to.clone()), window, cx);
+    });
+    // Meanwhile the first member's Not a name retires PERSON_1 in the
+    // Project, as its save would; the tab's proposal still names it.
+    let first_id = cx.update(|_, cx| tabs.read(cx).tab_document(first, cx).unwrap());
+    tabs.update(cx, |tabs, _| {
+        tabs.projects.edit(&from, |project| {
+            let anna = (project.mapping.identities.iter_mut())
+                .find(|identity| identity.alias == "PERSON_1")?;
+            anna.originals.clear();
+            anna.not_a_name_by = Some(first_id.as_str().to_string());
+            Some(())
+        })
+    });
+    assert!(
+        project(&tabs, cx, &from)
+            .mapping
+            .reserved_aliases()
+            .contains(&"PERSON_1".to_string())
+    );
+    // Then the tab applies its proposal.
+    let view = view_of(&tabs, cx, tab);
+    view.update_in(cx, |view, window, cx| {
+        view.pii.set_reviewing(true);
+        let text = view.editor.read(cx).text().to_string();
+        if view.pii.review().remaining() == 0 {
+            view.pii
+                .review_mut()
+                .add_manual(&text, 0.."Anna Petrova".len(), Person)
+                .unwrap();
+        }
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+    });
+    cx.run_until_parked();
+    let document = stored(&tabs, cx, tab);
+    assert_eq!(document.project.as_deref(), Some(to.as_str()));
+    let names = vault(&tabs, cx).project(&to).unwrap().mapping.exported();
+    let restored = mdoc_pii::restore::RestoreMap::new(names)
+        .restore_in_place(&document.markdown)
+        .text;
+    assert_eq!(restored, "Anna Petrova wrote.", "{}", document.markdown);
+}
+
+/// Review of #1152 (P2): an Unfiled delete that fails because a record
+/// can't be read for now keeps the document's tab and its edits: only a
+/// record known to be gone closes it.
+#[cfg(windows)]
+#[gpui::test]
+fn an_unfiled_delete_that_cannot_read_a_record_keeps_its_tab(cx: &mut TestAppContext) {
+    use std::os::windows::fs::OpenOptionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let tab = open_applied(&tabs, cx, dir.path(), "a.md", "Ann wrote.", &[]);
+    let view = view_of(&tabs, cx, tab);
+    view.update(cx, |view, cx| {
+        view.editor
+            .update(cx, |editor, cx| editor.set_text("Ann wrote, edited.", cx));
+        view.cancel_autosave();
+    });
+    let id = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
+    let vault = vault(&tabs, cx);
+    let record = vault.root().join("docs").join(id.as_str()).join("doc.enc");
+    // Another program holds the record with no sharing: it can't be read.
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(&record)
+        .unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.forget_documents(vec![id.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    drop(held);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.tabs.contains(tab), "the tab stays");
+        assert!(tabs.notices.message().is_some());
+    });
+    assert_eq!(text_of(&view, cx), "Ann wrote, edited.");
+    assert!(vault.document(id.as_str()).is_ok(), "nothing was deleted");
+}
