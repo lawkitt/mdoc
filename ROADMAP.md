@@ -395,14 +395,6 @@ GUI rows in [#1146](https://github.com/lawkitt/mdoc/issues/1146) and one day
 of real use by the maintainer on the landed build gate its next candidate;
 items 33–35 are polish and do not.
 
-24. **[Docs] Words and release notes.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* `privacy.md` says
-    mdoc keeps what you import until you delete it; the glossary's tab and
-    case entries are rewritten; the release notes say to restore outstanding
-    replies before updating; no "Case" as a container remains in code, UI or
-    docs. *Blocked by:* items 14, 23. *Done when:* docs lint passes, and a
-    search for the old container term finds only the `CASE_1` category and
-    letter case.
 26. **[iOS] Document notes and Promote to Document.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3.* As item
     25, over the core API it adds. *Blocked by:* items 23, 25. *Done when:*
@@ -855,6 +847,10 @@ never lists, role-aware aliases and hidden Office content moved to 0.4.0.
   one click to accept), with a morphology dictionary, after measuring how
   often captured replies put aliases in oblique cases. *From the 2026-10-31
   competitor scan.*
+- **[Detection] Later: phone numbers by rules.** Phone numbers found by rules,
+  before the name finder is installed and on phones below the floor; today
+  only the detector finds them. Not a 0.4.0 gate. *From iOS item 33 (#1155)
+  and the maintainer, 2026-11-24.*
 - **[Detection] To grill: the next detection language.** Rivals cover
   7–46 languages and court a market each: Occlira German, Anoni and
   Lexanon French, Amaze Polish. mdoc covers EN/RU. Pick by demand with the
