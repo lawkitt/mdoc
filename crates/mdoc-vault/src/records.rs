@@ -135,6 +135,17 @@ pub struct Document {
     /// review.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counts: Option<ReviewCounts>,
+    /// The user's private notes (#1091 Decision 3), as typed; empty: none.
+    /// Never part of what leaves for an AI ([`crate::Vault::text_for_ai`]),
+    /// nor of its summary: lists and search never read them. Export
+    /// Project writes them beside the Markdown.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub notes: String,
+    /// The AI Reply it was promoted from ([`crate::Vault::promote_reply`]);
+    /// set only there, and kept as stored by every later write. The Reply
+    /// may have been deleted since.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_reply: Option<String>,
 }
 
 impl Document {

@@ -7,6 +7,7 @@
 //! ```text
 //! <picked>/<Project name>/
 //!   <Title>.md
+//!   <Title>.notes.md            only when its notes are not empty
 //!   Originals/<original file name>
 //! ```
 //!
@@ -23,6 +24,8 @@ use std::{
 
 /// The Originals subfolder's name.
 pub const ORIGINALS: &str = "Originals";
+/// What a Document's notes file adds to its Markdown file's stem.
+const NOTES: &str = ".notes.md";
 /// Longest name stem written, in bytes, leaving room for " 99" and an
 /// extension under the 255-byte limit of common file systems.
 const MAX_STEM: usize = 120;
@@ -67,10 +70,19 @@ impl Vault {
                 if document.project.as_deref() != Some(id) {
                     return Ok(false);
                 }
+                let mut stem = safe_stem(&document.title);
                 if !document.markdown.is_empty() || document.original.is_none() {
-                    let (_, mut file) =
-                        names.create(&folder, &safe_stem(&document.title), ".md")?;
+                    let (path, mut file) = names.create(&folder, &stem, ".md")?;
                     file.write_all(document.markdown.as_bytes())?;
+                    file.sync_all()?;
+                    // Its notes take the name its Markdown got, " 2" and all.
+                    if let Some(taken) = path.file_stem() {
+                        stem = taken.to_string_lossy().into_owned();
+                    }
+                }
+                if !document.notes.trim().is_empty() {
+                    let (_, mut file) = names.create(&folder, &stem, NOTES)?;
+                    file.write_all(document.notes.as_bytes())?;
                     file.sync_all()?;
                 }
                 if let Some(kept) = &document.original {

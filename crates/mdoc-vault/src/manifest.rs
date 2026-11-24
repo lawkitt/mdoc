@@ -210,6 +210,7 @@ impl Record for Document {
         self.id.clone_from(&stored.id);
         self.project.clone_from(&stored.project);
         self.original.clone_from(&stored.original);
+        self.from_reply.clone_from(&stored.from_reply);
         self.unconverted &= stored.pending_conversion() && self.markdown.is_empty();
         if self.project.is_some() {
             self.mapping = crate::mapping::Mapping::default();
