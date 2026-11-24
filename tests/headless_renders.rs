@@ -430,6 +430,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                             | "project-page-lists"
                             | "rename-project"
                             | "project-categories"
+                            | "new-project-page"
                     ),
                     "{theme}/{name}"
                 );
