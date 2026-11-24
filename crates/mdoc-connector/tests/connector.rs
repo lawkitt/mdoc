@@ -117,7 +117,7 @@ fn no_read_reaches_another_project_or_unfiled() {
     f.connector.share(&shared).unwrap();
 
     let listed: Vec<_> = f.listed().into_iter().map(|row| row.0).collect();
-    assert_eq!(listed, [letter.clone()]);
+    assert_eq!(listed, std::slice::from_ref(&letter));
     for id in [&elsewhere, &unfiled, &"0".repeat(32)] {
         for part in [None, Some(1)] {
             assert!(
