@@ -786,6 +786,12 @@ impl Workspace {
             cx.notify();
             return;
         }
+        // A name applied while the move waited joins the source Project's
+        // names, which `write_now` writes before the move reads them; if
+        // they can't be written, nothing moves.
+        if let Some(tab) = tab {
+            self.project_changed(tab, cx);
+        }
         let from = self.project_of(id);
         let before = vault.document(id).ok();
         let title = before.as_ref().map(|d| d.title.clone()).unwrap_or_default();

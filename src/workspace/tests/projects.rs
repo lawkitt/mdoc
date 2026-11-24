@@ -1434,3 +1434,65 @@ fn the_project_page_moves_a_document_whose_tab_never_loaded(cx: &mut TestAppCont
         assert_eq!(view.read(cx).pii.review().applied().len(), 1);
     });
 }
+
+/// Review of #1145, round 2 (P1): a name applied while a move waits joins
+/// the source Project's names before the move reads the document, so it
+/// is renumbered clear of the alias the destination gives someone else.
+#[gpui::test]
+fn a_name_applied_while_a_move_waits_moves_with_its_document(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let other = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Boris Ivanov signed.",
+        &[("Boris Ivanov", Person)],
+    );
+    let to = new_project(&tabs, cx, other);
+    let text = "Anna Petrova wrote.";
+    let tab = open_applied(&tabs, cx, dir.path(), "a.md", text, &[]);
+    new_project(&tabs, cx, tab);
+    settle(cx);
+    // Boris's document is edited, so its write runs first and the move
+    // waits behind it.
+    let other_view = view_of(&tabs, cx, other);
+    other_view.update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            let later = format!("{} Later.", editor.text());
+            editor.set_text(later, cx);
+        })
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.autosave_all(window, cx);
+        tabs.move_tab(tab, Some(to.clone()), window, cx);
+    });
+    let view = view_of(&tabs, cx, tab);
+    view.update_in(cx, |view, window, cx| {
+        view.pii.set_reviewing(true);
+        view.pii
+            .review_mut()
+            .add_manual(text, 0.."Anna Petrova".len(), Person)
+            .unwrap();
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+    });
+    cx.run_until_parked();
+    let document = stored(&tabs, cx, tab);
+    assert_eq!(document.project.as_deref(), Some(to.as_str()));
+    assert_eq!(document.markdown, "PERSON_2 wrote.");
+    let names = vault(&tabs, cx).project(&to).unwrap().mapping.exported();
+    assert!(
+        names
+            .iter()
+            .any(|n| n.alias == "PERSON_2" && n.originals.iter().any(|o| &**o == "Anna Petrova")),
+        "{names:?}"
+    );
+    assert!(
+        names
+            .iter()
+            .any(|n| n.alias == "PERSON_1" && n.originals.iter().any(|o| &**o == "Boris Ivanov")),
+        "{names:?}"
+    );
+}
