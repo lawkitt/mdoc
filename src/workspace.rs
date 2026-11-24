@@ -318,6 +318,9 @@ pub(super) struct Workspace {
     moving: std::collections::HashSet<mdoc_store::document_id::VaultId>,
     /// Of those, the ones whose tab loads them again now.
     reloading: std::collections::HashSet<mdoc_store::document_id::VaultId>,
+    /// A quit's last pass is queueing writes: one that runs and ends at
+    /// once does not finish the quit from inside it.
+    late_pass: bool,
     /// Moves and deletes in the writer's queue are numbered.
     next_op: u64,
     /// The window, for writes that end after the call that queued them.
@@ -568,6 +571,7 @@ impl Workspace {
             projects: Default::default(),
             moving: Default::default(),
             reloading: Default::default(),
+            late_pass: false,
             next_op: 0,
             window_handle: window.window_handle(),
             vault: Default::default(),
@@ -1194,11 +1198,7 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                // A move's reload ends, done or with its tab gone: autosaves
-                // resume with the moved text.
-                if this.reloading.remove(&loading) {
-                    this.moving.remove(&loading);
-                }
+                this.move_reload_ended(&loading, window, cx);
                 if !this.tabs.contains(id) {
                     // Its viewing copy may have been made after the tab went.
                     if let Some(dir) = this.viewing_dir(id) {
@@ -1948,17 +1948,44 @@ impl Workspace {
 
     /// The quit's last step, once documents, Projects and the session are
     /// written: the Vault's summaries, then the window.
+    /// A move's reload of `document` ends, done or with its tab gone:
+    /// autosaves resume with the moved text, and a quit waiting for it goes
+    /// on once the view holds that text.
+    fn move_reload_ended(
+        &mut self,
+        document: &mdoc_store::document_id::VaultId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.reloading.remove(document) {
+            return;
+        }
+        self.moving.remove(document);
+        cx.defer_in(window, |this, window, cx| {
+            if this.quit_flow.finishing() && !this.late_pass {
+                this.finish_quit(window, cx);
+            }
+        });
+    }
+
     fn finish_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // A move's reload waits too: a reply in its box saves only after.
         if !self.quit_flow.finishing()
             || self.session_writer.writing()
             || self.document_writer.busy()
+            || !self.reloading.is_empty()
         {
             return;
         }
         // Editing stays open while the last writes run: a keystroke since
         // they were queued is written before the window closes, and this
         // runs again once that write ends (a failed one cancels the quit).
-        if self.autosave_late_edits(window, cx) {
+        // Notes and replies write at once: one that failed has cancelled
+        // the quit by now.
+        self.late_pass = true;
+        let busy = self.autosave_late_edits(window, cx);
+        self.late_pass = false;
+        if busy || !self.quit_flow.finishing() {
             return;
         }
         // The tab list as it stands now that every document has its id.

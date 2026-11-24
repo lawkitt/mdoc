@@ -371,3 +371,56 @@ fn an_unfiled_reply_promotes_into_unfiled_and_review_marks_its_names(cx: &mut Te
         );
     });
 }
+
+/// Review of #1145, round 2 (P2): correcting a reply in the Share box
+/// after it was promoted keeps its id, so the promoted document still
+/// opens it instead of reading "From a deleted AI reply".
+#[gpui::test]
+fn editing_a_promoted_reply_in_its_box_keeps_the_link(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.inspector = Inspector::Share;
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    view.update_in(cx, |view, window, cx| {
+        view.fill_reply("PERSON_1 wrote bakc.", window, cx);
+        view.open_saved_reply(cx);
+    });
+    cx.run_until_parked();
+    let reply = cx
+        .update(|_, cx| Some(tabs.read(cx).reply_page.as_ref()?.id().to_string()))
+        .expect("Open reply shows it");
+    let document = promote(&tabs, cx);
+    // Back in the source document, a typo is fixed in the same box.
+    view.update_in(cx, |view, window, cx| {
+        view.fill_reply("PERSON_1 wrote back.", window, cx)
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.autosave(tab, window, cx));
+    cx.run_until_parked();
+    let vault = vault(&tabs, cx);
+    assert_eq!(vault.replies().len(), 1, "one fill of the box, one reply");
+    assert_eq!(
+        vault.reply(&reply).unwrap().markdown,
+        "PERSON_1 wrote back."
+    );
+    assert_eq!(
+        vault
+            .document(document.as_str())
+            .unwrap()
+            .from_reply
+            .as_deref(),
+        Some(reply.as_str())
+    );
+    let promoted = cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        let tab = tabs.find_document(&DocumentId::Vault(document.clone()), None, cx);
+        tabs.tabs.get(tab.unwrap()).unwrap().view().unwrap().clone()
+    });
+    cx.update(|_, cx| assert!(!promoted.read(cx).from_reply.clone().unwrap().gone));
+}

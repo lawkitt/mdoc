@@ -404,3 +404,35 @@ fn a_reply_pasted_during_a_move_is_refused(cx: &mut TestAppContext) {
         .unwrap_or_default();
     assert!(notice.contains("is moving"), "{notice}");
 }
+
+/// Review of #1152 (P2): a reply open on its page shows the box's edit once
+/// it is saved in place, so Promote takes the text the page shows.
+#[gpui::test]
+fn a_reply_page_shows_its_reply_edited_in_the_box(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.inspector = crate::document_view::Inspector::Share;
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    view.update_in(cx, |view, window, cx| {
+        view.fill_reply("PERSON_1 wrote bakc.", window, cx);
+        view.open_saved_reply(cx);
+    });
+    cx.run_until_parked();
+    let id = shown_reply(&tabs, cx).expect("Open reply shows it");
+    assert!(page_text(&tabs, cx).contains("wrote bakc."));
+    view.update_in(cx, |view, window, cx| {
+        view.fill_reply("PERSON_1 wrote back.", window, cx)
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.autosave(tab, window, cx));
+    cx.run_until_parked();
+    assert_eq!(shown_reply(&tabs, cx).as_deref(), Some(id.as_str()));
+    let page = page_text(&tabs, cx);
+    assert!(page.contains("wrote back."), "{page}");
+}

@@ -301,11 +301,24 @@ impl Workspace {
 
     /// A member tab's mapping changed: fold it into its Project.
     pub(super) fn project_changed(&mut self, id: u64, cx: &mut Context<Self>) {
+        if let Err(error) = self.fold_into_project(id, cx) {
+            self.notices
+                .post(format!("Could not keep the Project's names: {error}"));
+        }
+    }
+
+    /// [`Self::project_changed`]; an error when an alias the Project has
+    /// retired could not be reconciled, and nothing was folded.
+    pub(super) fn fold_into_project(
+        &mut self,
+        id: u64,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
         let Some(view) = self.tab_view(id) else {
-            return;
+            return Ok(());
         };
         let Some(member) = self.tab_document(id, cx) else {
-            return;
+            return Ok(());
         };
         let member = member.as_str().to_string();
         if let Some(project) = view
@@ -333,19 +346,16 @@ impl Workspace {
                 })
             {
                 let identities = project.mapping.exported();
-                if let Err(error) = view.update(cx, |view, cx| {
+                view.update(cx, |view, cx| {
                     view.join_project_identities(&identities, &reserved, cx)
-                }) {
-                    self.notices
-                        .post(format!("Could not keep the Project's names: {error}"));
-                    return;
-                }
+                })
+                .map_err(|error| error.to_string())?;
             }
         }
         let (link, identities, not_names, kept) = {
             let v = view.read(cx);
             let Some(link) = v.project.link().cloned() else {
-                return;
+                return Ok(());
             };
             let review = v.pii.review();
             (
@@ -419,7 +429,7 @@ impl Workspace {
             let added = project.mapping.identities.len() > before.identities.len();
             Some((renames, added, project.mapping.exported(), lists))
         }) else {
-            return;
+            return Ok(());
         };
         view.update(cx, |view, _| view.project.set_names(exported.clone()));
         self.write_project(&link.id, cx);
@@ -427,7 +437,7 @@ impl Workspace {
             self.project_lists_changed(&link.id, &lists, cx);
         }
         if renames.is_empty() && !added {
-            return;
+            return Ok(());
         }
         // Other open members follow, each as an edit in its own history.
         for tab in &self.tabs {
@@ -442,6 +452,7 @@ impl Workspace {
                 });
             }
         }
+        Ok(())
     }
 
     /// The aliases of `project`'s identities that its members' saved text
@@ -772,19 +783,29 @@ impl Workspace {
         };
         let id = document.as_str();
         // What its tab shows now, typed while the move waited included, is
-        // what moves; if it can't be written, nothing moves.
+        // what moves. A name applied meanwhile joins the source Project's
+        // names first: reconciling an alias the Project retired since
+        // rewrites the text, which is then written as it shows, and
+        // `write_now` writes those names before the move reads them. If any
+        // of it fails, nothing moves.
         let tab = self.find_document(&DocumentId::Vault(document.clone()), None, cx);
-        if let Some(tab) = tab
-            && let Err(error) = self.write_tab_now(tab, &vault, cx)
-        {
-            self.moving.remove(&document);
-            let title =
-                (self.tab_view(tab)).map_or_else(String::new, |v| v.read(cx).display_name());
-            self.notices.post(format!(
-                "Could not move “{title}”: its text could not be saved. {error}"
-            ));
-            cx.notify();
-            return;
+        if let Some(tab) = tab {
+            let written = self
+                .fold_into_project(tab, cx)
+                .map_err(|error| format!("its names could not be kept. {error}"))
+                .and_then(|()| {
+                    (self.write_tab_now(tab, &vault, cx))
+                        .map_err(|error| format!("its text could not be saved. {error}"))
+                });
+            if let Err(error) = written {
+                self.moving.remove(&document);
+                let title =
+                    (self.tab_view(tab)).map_or_else(String::new, |v| v.read(cx).display_name());
+                self.notices
+                    .post(format!("Could not move \u{201c}{title}\u{201d}: {error}"));
+                cx.notify();
+                return;
+            }
         }
         let from = self.project_of(id);
         let before = vault.document(id).ok();
@@ -809,17 +830,13 @@ impl Workspace {
                             colour: None,
                             pinned: false,
                         };
-                        let moved = vault.move_document_to_new_project(id, new)?;
                         // Its categories start from Settings › Detection, and
-                        // the hints it dismissed stay dismissed.
-                        let mut moved = moved;
-                        if let Some(project) = &moved.project {
-                            moved.project = Some(vault.update_project(&project.id, |project| {
-                                project.skip = skip;
-                                project.dismissed_hints = dismissed;
-                            })?);
-                        }
-                        Ok(moved)
+                        // the hints it dismissed stay dismissed: written with
+                        // the move, so nothing can fail once it is in.
+                        vault.move_document_to_new_project_with(id, new, |project| {
+                            project.skip = skip;
+                            project.dismissed_hints = dismissed;
+                        })
                     });
                 let made = (result.as_ref().ok())
                     .and_then(|moved| moved.project.as_ref().map(|p| p.id.clone()));
@@ -1194,7 +1211,12 @@ impl Workspace {
                 else {
                     continue;
                 };
-                if let Err(error) = self.write_tab_now(tab, &vault, cx) {
+                // A name applied while the delete waited joins the
+                // Project's names, which each member takes to Unfiled; an
+                // alias reconciled on the way is in the text written next.
+                let written = (self.fold_into_project(tab, cx))
+                    .and_then(|()| self.write_tab_now(tab, &vault, cx));
+                if let Err(error) = written {
                     for member in &members {
                         self.moving.remove(member);
                     }
@@ -1210,9 +1232,6 @@ impl Workspace {
                     cx.notify();
                     return;
                 }
-                // A name applied while the delete waited joins the
-                // Project's names, which each member takes to Unfiled.
-                self.project_changed(tab, cx);
             }
             // The Project's names as the window holds them, written before
             // anything moves; if they can't be, nothing moves.

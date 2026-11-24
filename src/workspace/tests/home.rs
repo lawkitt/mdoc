@@ -484,3 +484,74 @@ fn the_palette_scrolls_to_the_selected_row(cx: &mut TestAppContext) {
     draw(cx);
     assert_eq!(tabs.read_with(cx, |w, _| w.palette_offset()), px(0.));
 }
+
+/// Review of #1145, round 2 (P2): a document saved Ready once, then left
+/// with a proposal, still needs review on Home and its Project page after
+/// a restart: its save counted the proposal.
+#[gpui::test]
+fn a_pending_proposal_needs_review_after_a_restart(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("vault");
+    let (tabs, cx) = boot_on_vault(cx, Session::default(), &root);
+    let text = "Anna Petrova met Boris Ivanov.";
+    let tab = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        text,
+        &[("Anna Petrova", Person)],
+    );
+    let project = new_project(&tabs, cx, tab);
+    settle(cx);
+    let id = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
+    let vault = vault(&tabs, cx);
+    let stored = vault.document(id.as_str()).unwrap();
+    assert!(stored.scanned, "saved Ready once");
+    // A new proposal, left as it is, and saved.
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        let shown = view.editor.read(cx).text().to_string();
+        let start = shown.find("Boris Ivanov").unwrap();
+        view.pii
+            .review_mut()
+            .add_manual(&shown, start..start + "Boris Ivanov".len(), Person)
+            .unwrap();
+        view.save_now(cx);
+    });
+    settle(cx);
+    assert_eq!(
+        vault
+            .document(id.as_str())
+            .unwrap()
+            .counts
+            .map(|c| c.proposed),
+        Some(1)
+    );
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    drop(vault);
+    // Restarted with no tabs: no live view counts it.
+    let (tabs, cx) = boot_on_vault(&mut cx.cx, Session::default(), &root);
+    draw(cx);
+    assert_eq!(strip_documents(&tabs, cx), [id.as_str().to_string()]);
+    cx.update(|_, cx| {
+        let (strip, _) = tabs.read(cx).home_strip_now(cx).unwrap();
+        assert_eq!(strip.need_review, 1);
+        let Some(crate::workspace::home::Card::Document { proposed, .. }) = strip.cards.first()
+        else {
+            panic!("the document's card");
+        };
+        assert_eq!(*proposed, Some(1));
+    });
+    // The Project page's row says so too.
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        let summary = (tabs.opened_vault().unwrap().documents_in(Some(&project)))
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(tabs.member_needs_review(&summary, cx));
+    });
+}

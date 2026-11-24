@@ -906,3 +906,132 @@ fn a_desktop_save_drops_the_counts_of_the_review_it_replaces(cx: &mut TestAppCon
     assert_eq!(saved.markdown, "# Note, edited");
     assert_eq!(saved.counts, None);
 }
+
+/// Review of #1145, round 2 (P2): Import Again of a Markdown file changed
+/// while the question was up stores the Markdown and the original from the
+/// same bytes, the ones admission read.
+#[gpui::test]
+fn import_again_keeps_one_snapshot_of_a_changed_markdown_file(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (first, second) = (dir.path().join("First.md"), dir.path().join("Second.md"));
+    std::fs::write(&first, "# Note").unwrap();
+    std::fs::write(&second, "# Note").unwrap();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![first], cx);
+    open(&tabs, vec![second.clone()], cx);
+    assert!(cx.has_pending_prompt());
+    // Another editor saves the file while the question shows.
+    std::fs::write(&second, "# Note, changed").unwrap();
+    cx.simulate_prompt_answer("Import Again");
+    cx.run_until_parked();
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
+    let summaries = vault.documents();
+    assert_eq!(summaries.len(), 2);
+    let read = mdoc_vault::source_sha256(&b"# Note"[..]).unwrap();
+    for summary in summaries {
+        let document = vault.document(&summary.id).unwrap();
+        assert_eq!(document.markdown, "# Note");
+        assert_eq!(document.original.unwrap().sha256, read, "the same bytes");
+    }
+}
+
+/// Review of #1145, round 2 (P2): a converted file changed while the
+/// repeated-import question was up is admitted again as it is now, so a
+/// change that makes it a repeat of another document asks again.
+#[gpui::test]
+fn import_again_admits_a_changed_converted_file_again(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let (a, c) = (
+        std::fs::read(fixtures.join("import/text.docx")).unwrap(),
+        std::fs::read(fixtures.join("import/handmade-hidden.docx")).unwrap(),
+    );
+    let paths: Vec<_> = ["A.docx", "B.docx", "C.docx"]
+        .iter()
+        .map(|name| dir.path().join(name))
+        .collect();
+    std::fs::write(&paths[0], &a).unwrap();
+    std::fs::write(&paths[1], &a).unwrap();
+    std::fs::write(&paths[2], &c).unwrap();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![paths[0].clone(), paths[2].clone()], cx);
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
+    assert_eq!(vault.documents().len(), 2);
+    open(&tabs, vec![paths[1].clone()], cx);
+    assert_eq!(
+        cx.pending_prompt().unwrap().0,
+        "“B.docx” is already in mdoc"
+    );
+    // Saved meanwhile with C's bytes: a repeat of C now, not of A.
+    std::fs::write(&paths[1], &c).unwrap();
+    cx.simulate_prompt_answer("Import Again");
+    cx.run_until_parked();
+    assert!(
+        cx.has_pending_prompt(),
+        "asked again, for the bytes it has now"
+    );
+    cx.simulate_prompt_answer("Open Existing");
+    cx.run_until_parked();
+    assert_eq!(vault.documents().len(), 2, "nothing imported unasked");
+}
+
+/// Review of #1152 (P2): a converted file changed while the repeat question
+/// was up is checked before its record is written, so no document of the
+/// changed bytes is ever published, not even for a moment.
+#[gpui::test]
+fn a_changed_converted_file_never_publishes_a_document(cx: &mut TestAppContext) {
+    use std::sync::{Mutex, atomic::Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let (a, c) = (
+        std::fs::read(fixtures.join("import/text.docx")).unwrap(),
+        std::fs::read(fixtures.join("import/handmade-hidden.docx")).unwrap(),
+    );
+    let (first, second) = (dir.path().join("A.docx"), dir.path().join("B.docx"));
+    std::fs::write(&first, &a).unwrap();
+    std::fs::write(&second, &a).unwrap();
+    // The Documents whose records are written while armed.
+    let armed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let written = Arc::new(Mutex::new(std::collections::HashSet::new()));
+    let root = dir.path().join("vault");
+    let hook: mdoc_vault::FaultHook = {
+        let (armed, written) = (armed.clone(), written.clone());
+        Arc::new(move |step| {
+            if armed.load(Ordering::SeqCst)
+                && step.kind == mdoc_vault::ObjectKind::Document
+                && step.stage == mdoc_vault::Stage::BeforeRename
+            {
+                written.lock().unwrap().insert(step.id.to_string());
+            }
+            mdoc_vault::Fault::Continue
+        })
+    };
+    let (tabs, cx) = boot_home_with(cx, Session::default(), move |tabs, _, _| {
+        tabs.use_vault(Vault::open_with_hook(root, &[3; 32], hook).unwrap())
+    });
+    open(&tabs, vec![first], cx);
+    open(&tabs, vec![second.clone()], cx);
+    assert!(cx.has_pending_prompt());
+    // Saved meanwhile with other bytes.
+    std::fs::write(&second, &c).unwrap();
+    armed.store(true, Ordering::SeqCst);
+    cx.simulate_prompt_answer("Import Again");
+    cx.run_until_parked();
+    // Admitted again as new bytes, a new document; none was written for
+    // the bytes it was asked about and then taken back.
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
+    let documents = vault.documents();
+    assert_eq!(documents.len(), 2);
+    for id in written.lock().unwrap().iter() {
+        assert!(
+            documents.iter().any(|d| &d.id == id),
+            "{id} was published, then deleted"
+        );
+    }
+    let sha = mdoc_vault::source_sha256(&c[..]).unwrap();
+    assert!(
+        documents
+            .iter()
+            .any(|d| d.source_sha256.as_deref() == Some(sha.as_str()))
+    );
+}

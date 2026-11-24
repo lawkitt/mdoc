@@ -11,7 +11,8 @@ use mdoc_vault::{DocumentOrigin, NewDocument, OriginalInfo, SourceKind};
 use std::path::{Path, PathBuf};
 
 /// A file read for admission: its source's hash, and the text of a
-/// Markdown or plain text file.
+/// Markdown or plain text file, from one read of its bytes: an import
+/// seals those same bytes as its original.
 pub(super) struct Admitted {
     path: PathBuf,
     sha256: String,
@@ -60,15 +61,21 @@ fn file_name(path: &Path) -> String {
 /// Read `path` for admission.
 fn admit_one(path: PathBuf) -> Result<Admitted, (String, String)> {
     let failed = |error: std::io::Error| (file_name(&path), error.to_string());
-    let sha256 = std::fs::File::open(&path)
-        .and_then(mdoc_vault::source_sha256)
-        .map_err(failed)?;
     let kind = source_kind(&path);
-    // Markdown and plain text are their own text; any other file converts.
-    let text = (!needs_conversion(&path))
-        .then(|| std::fs::read_to_string(&path))
-        .transpose()
-        .map_err(failed)?;
+    // Markdown and plain text are their own text, hashed from the same
+    // read; any other file converts, and its import checks its hash.
+    let (sha256, text) = if needs_conversion(&path) {
+        let sha256 = std::fs::File::open(&path)
+            .and_then(mdoc_vault::source_sha256)
+            .map_err(failed)?;
+        (sha256, None)
+    } else {
+        let bytes = std::fs::read(&path).map_err(failed)?;
+        let sha256 = mdoc_vault::source_sha256(&bytes[..]).map_err(failed)?;
+        let text = String::from_utf8(bytes)
+            .map_err(|error| failed(std::io::Error::new(std::io::ErrorKind::InvalidData, error)))?;
+        (sha256, Some(text))
+    };
     Ok(Admitted {
         path,
         sha256,
@@ -273,10 +280,14 @@ impl Workspace {
                 _ => plan.push(Ok(file)),
             }
         }
+        let again = project.clone();
         let task = cx.background_executor().spawn(async move {
-            plan.into_iter()
-                .map(|step| match step {
-                    Err(existing) => Ok(Err(existing)),
+            // Converted files whose bytes changed since admission: admitted
+            // again, as they are now.
+            let mut changed = Vec::new();
+            let steps = (plan.into_iter())
+                .filter_map(|step| match step {
+                    Err(existing) => Some(Ok(Err(existing))),
                     Ok(file) => {
                         let name = file_name(&file.path);
                         let title = file
@@ -284,6 +295,10 @@ impl Workspace {
                             .file_stem()
                             .map(|stem| stem.to_string_lossy().into_owned())
                             .unwrap_or_else(|| name.clone());
+                        let info = OriginalInfo {
+                            file_name: name.clone(),
+                            ..OriginalInfo::default()
+                        };
                         let new = NewDocument {
                             project: project.clone(),
                             title: title.clone(),
@@ -291,26 +306,48 @@ impl Workspace {
                             origin: DocumentOrigin::Ordinary,
                             markdown: file.text.unwrap_or_default(),
                         };
-                        let info = OriginalInfo {
-                            file_name: name.clone(),
-                            ..OriginalInfo::default()
+                        let imported = if needs_conversion(&file.path) {
+                            // Only the bytes admission hashed: changed since,
+                            // it is not what was asked about, so nothing is
+                            // written and it is admitted again.
+                            let imported = std::fs::File::open(&file.path)
+                                .map_err(mdoc_vault::VaultError::from)
+                                .and_then(|source| {
+                                    vault.import_document_expecting(new, source, info, &file.sha256)
+                                });
+                            match imported {
+                                Ok(None) => {
+                                    changed.push(file.path);
+                                    return None;
+                                }
+                                Ok(Some(document)) => Ok(document),
+                                Err(error) => Err(error),
+                            }
+                        } else {
+                            // The bytes admission read are the original.
+                            let source = std::io::Cursor::new(new.markdown.clone().into_bytes());
+                            vault.import_document(new, source, info)
                         };
-                        std::fs::File::open(&file.path)
-                            .map_err(mdoc_vault::VaultError::from)
-                            .and_then(|source| vault.import_document(new, source, info))
-                            .map_err(|error| (name, error.to_string()))
-                            .and_then(|document| {
-                                VaultId::parse(&document.id)
-                                    .map(|id| Ok((id, title, file.path)))
-                                    .ok_or_else(|| (document.title, "Invalid id.".into()))
-                            })
+                        Some(
+                            imported
+                                .map_err(|error| (name, error.to_string()))
+                                .and_then(|document| {
+                                    VaultId::parse(&document.id)
+                                        .map(|id| Ok((id, title, file.path)))
+                                        .ok_or_else(|| (document.title, "Invalid id.".into()))
+                                }),
+                        )
                     }
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            (steps, changed)
         });
         cx.spawn_in(window, async move |this, cx| {
-            let imported = task.await;
+            let (imported, changed) = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
+                if !changed.is_empty() {
+                    this.admit_queue.push_front((changed, again));
+                }
                 this.show_imported(imported, window, cx)
             });
         })
