@@ -387,10 +387,6 @@ and desktop tracks can run side by side once the core items they need are
 done. Desktop items 16–22 share one integration branch, because the app is
 not coherent between them and `main` stays releasable; item 23 lands them.
 
-13. **[Android] Android sidebar and Project page.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* As item 11.
-    *Blocked by:* item 12. *Done when:* the Android job passes with tests of
-    the Project page and the delete question.
 16. **[Desktop] Documents live in the Vault and save themselves.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The Vault opens at
     launch through the existing key flow. Every import, paste, new document
