@@ -1692,3 +1692,42 @@ fn a_retired_alias_applied_while_a_move_waits_is_renumbered_first(cx: &mut TestA
         .text;
     assert_eq!(restored, "Anna Petrova wrote.", "{}", document.markdown);
 }
+
+/// Review of #1152 (P2): an Unfiled delete that fails because a record
+/// can't be read for now keeps the document's tab and its edits: only a
+/// record known to be gone closes it.
+#[cfg(windows)]
+#[gpui::test]
+fn an_unfiled_delete_that_cannot_read_a_record_keeps_its_tab(cx: &mut TestAppContext) {
+    use std::os::windows::fs::OpenOptionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let tab = open_applied(&tabs, cx, dir.path(), "a.md", "Ann wrote.", &[]);
+    let view = view_of(&tabs, cx, tab);
+    view.update(cx, |view, cx| {
+        view.editor
+            .update(cx, |editor, cx| editor.set_text("Ann wrote, edited.", cx));
+        view.cancel_autosave();
+    });
+    let id = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
+    let vault = vault(&tabs, cx);
+    let record = vault.root().join("docs").join(id.as_str()).join("doc.enc");
+    // Another program holds the record with no sharing: it can't be read.
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(&record)
+        .unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.forget_documents(vec![id.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    drop(held);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.tabs.contains(tab), "the tab stays");
+        assert!(tabs.notices.message().is_some());
+    });
+    assert_eq!(text_of(&view, cx), "Ann wrote, edited.");
+    assert!(vault.document(id.as_str()).is_ok(), "nothing was deleted");
+}

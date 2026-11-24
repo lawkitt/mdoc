@@ -469,7 +469,13 @@ impl Workspace {
         for document in &documents {
             // A failure after its record went (its folder's cleanup) still
             // deleted it; one before keeps it, and its live view and edits.
-            let gone = !(vault.documents().iter()).any(|summary| summary.id == document.as_str());
+            // Only a record known to be gone counts: one that can't be read
+            // for now is missing from the summaries too.
+            let gone = failed.is_none()
+                || matches!(
+                    vault.document(document.as_str()),
+                    Err(mdoc_vault::VaultError::NotFound { .. })
+                );
             self.moving.remove(document);
             if !gone {
                 continue;
