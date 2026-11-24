@@ -28,7 +28,8 @@ Markdown edits; DOCX rendering is approximate. UI label: **Source**.
 asking the AI to keep placeholders exactly.
 
 **Restore**: replacing aliases in a pasted AI reply with the primary
-wordings of the source's mapping, saved in a case or not. UI label: **Paste AI Reply** (Title Case in menus).
+wordings of the document's or its Project's mapping. UI label: **Paste AI
+Reply** (Title Case in menus).
 
 **Reply box**: the Share panel's "AI reply" field that restores a pasted
 reply in place.
@@ -36,8 +37,8 @@ reply in place.
 **Reply view**: the view switcher's read-only Reply segment showing the
 restored reply.
 
-**Unresolved token**: an alias-shaped token in AI output that matches no case
-identity, such as an invented `PERSON_9`.
+**Unresolved token**: an alias-shaped token in AI output that matches no
+identity of the mapping, such as an invented `PERSON_9`.
 
 **Home**: the page shown with no document: drop zone, quick actions and the
 **Continue** strip.
@@ -94,9 +95,6 @@ consistent aliases that keep useful relationships. Avoid "anonymization".
 **Replacement mapping**: the local association between originals and aliases,
 kept apart from the Markdown handed off.
 
-**At-risk tab**: a tab that closing or quitting would lose something from:
-unsaved changes, an unsaved mapping, or both.
-
 **Vault**: mdoc's encrypted local store holding Projects, Documents, AI Replies and Source Originals under opaque names.
 
 **Unfiled**: a Vault document in no Project, with its own mapping and replies.
@@ -109,8 +107,8 @@ unsaved changes, an unsaved mapping, or both.
 
 **AI project**: the one Project the desktop MCP connector serves, chosen in mdoc.
 
-**Keychain explainer**: the dialog shown before the first case-key access and
-after a denial.
+**Keychain explainer**: the dialog shown before the first Vault key access
+and after a denial.
 
 **Variant proposal**: a suggested form ("Ms Raman", "Рамана", "Мариша") of a
 known identity.
@@ -119,10 +117,11 @@ known identity.
 document.
 
 **Case number**: the category of a claim or case number after a label (Claim
-No, Дело №). Not a **Case**.
+No, Дело №), aliased `CASE_1`. Never a container of documents: that is a
+**Project**.
 
-**Always and Never lists**: wordings always or never proposed, per case and
-user-wide.
+**Always and Never lists**: wordings always or never proposed, per Project
+and user-wide.
 
 **Not a name**: unmarking with no trace.
 
@@ -159,8 +158,8 @@ manifest with a role: tune, held-out or regression
 **Decision history**: the document's list of pseudonymization decisions with
 times. UI label: **What you did**.
 
-**Pseudonymize Clipboard**: replacing the clipboard text's known case names
-with their aliases, without detection. **Restore Clipboard**: replacing
+**Pseudonymize Clipboard**: replacing the clipboard text's known Project
+names with their aliases, without detection. **Restore Clipboard**: replacing
 aliases in it with each identity's primary wording.
 
 **Shelf**: the macOS menu bar item's panel of pseudonymized documents and
@@ -242,10 +241,10 @@ holding legal vocabulary, never names.
 file-drop zone.
 
 **Rail** and **hover reveal**: the collapsed sidebar's icon strip, and the
-full document list that slides out over the editor on hover.
+Project tree that slides out over the editor on hover.
 
-**Back/Forward**: per-window history of tab activations, Home and the case
-page.
+**Back/Forward**: per-window history of the documents viewed, Home and
+Project pages. There are no tabs: the **Project tree** is the navigation.
 
 **Region**: a part of the window that F6 / ⇧F6 move focus between.
 

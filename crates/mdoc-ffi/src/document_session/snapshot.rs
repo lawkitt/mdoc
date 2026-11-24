@@ -186,7 +186,7 @@ pub struct ReviewSnapshot {
     pub mentions: Vec<Mention>,
     /// In category order (Person, Organization, …), then by first mention.
     pub identities: Vec<IdentityRow>,
-    /// Merge hints, without the ones dismissed here or in the case.
+    /// Merge hints, without the ones dismissed here or in the Project.
     pub link_hints: Vec<LinkHint>,
     pub proposed: u64,
     pub replaced: u64,

@@ -548,7 +548,7 @@ fn a_deferred_drop_keeps_its_project_header(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let case = new_project(&tabs, cx, tab);
+    let project_id = new_project(&tabs, cx, tab);
     let other = tempfile::tempdir().unwrap();
     let path = folder(other.path(), "Unrelated", &["note.md"]);
     tabs.update(cx, |tabs, cx| tabs.install_prompts(cx));
@@ -558,7 +558,7 @@ fn a_deferred_drop_keeps_its_project_header(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|window, _| assert!(window.has_active_prompt()));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths_into(vec![path], Some(case), window, cx)
+        tabs.open_paths_into(vec![path], Some(project_id), window, cx)
     });
     cx.run_until_parked();
     assert!(!sheet_open(&tabs, cx));

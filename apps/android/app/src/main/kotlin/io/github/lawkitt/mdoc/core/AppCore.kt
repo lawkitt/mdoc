@@ -3,9 +3,9 @@ package io.github.lawkitt.mdoc.core
 import android.app.ActivityManager
 import android.content.Context
 import android.system.Os
-import io.github.lawkitt.mdoc.storage.CaseKeyStore
-import io.github.lawkitt.mdoc.storage.KeystoreCaseKeyStore
+import io.github.lawkitt.mdoc.storage.KeystoreVaultKeyStore
 import io.github.lawkitt.mdoc.storage.MdocStorage
+import io.github.lawkitt.mdoc.storage.VaultKeyStore
 import java.io.File
 import uniffi.mdoc_ffi.ReplyVault
 import uniffi.mdoc_ffi.Runtimes
@@ -49,7 +49,7 @@ class AppCore(
         fun make(
             context: Context,
             storage: MdocStorage = MdocStorage.app(context).prepare(),
-            keys: CaseKeyStore = KeystoreCaseKeyStore(storage.caseKeyFile),
+            keys: VaultKeyStore = KeystoreVaultKeyStore(storage.vaultKeyFile),
             physicalMemory: Long = physicalMemory(context),
         ): AppCore {
             // OCR's PDF reader wants a cache folder; Android has no platform one.

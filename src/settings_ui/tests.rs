@@ -726,7 +726,7 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
     custom.pseudonymization.threshold = 0.8;
     custom.spelling.enabled = false;
     custom.updates.check_automatically = false;
-    custom.cases.ask_before_closing = false;
+    custom.retired_close.ask_before_closing = false;
     custom.categories.set(mdoc_pii::Category::Person, false);
     custom.general.menu_bar = false;
     // Notes already seen stay seen through a reset.
@@ -810,7 +810,7 @@ fn model_choices_save_immediately_and_failures_revert(cx: &mut TestAppContext) {
     assert_eq!(shared.borrow().snapshot().unwrap(), Preferences::default());
 }
 #[gpui::test]
-fn failed_save_restores_numbers_cases_and_models(cx: &mut TestAppContext) {
+fn failed_save_restores_numbers_choices_and_models(cx: &mut TestAppContext) {
     let shared = Store::in_memory();
     let dir = tempfile::tempdir().unwrap();
     let invalid = dir.path().join("not-a-directory");
@@ -823,7 +823,7 @@ fn failed_save_restores_numbers_cases_and_models(cx: &mut TestAppContext) {
         panel.draft.ocr.dpi = 300;
         panel.draft.ocr.minimum_confidence = 0.9;
         panel.draft.pseudonymization.threshold = 0.2;
-        panel.draft.cases.ask_before_closing = false;
+        panel.draft.retired_close.ask_before_closing = false;
         panel.persist(cx);
     });
     cx.run_until_parked();

@@ -26,7 +26,7 @@ enum RealCore {
 // MARK: - Conversions
 
 extension ProjectColour {
-    /// The swatch nearest a case's stored hue (ADR 0077).
+    /// The swatch nearest a Project's stored hue (ADR 0077).
     init(hue: UInt32) {
         let hues: [(ProjectColour, Double)] = [
             (.red, 0), (.orange, 30), (.amber, 45), (.green, 130), (.teal, 175), (.blue, 215), (.violet, 270), (.pink, 330),
@@ -1359,8 +1359,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 
     /// A review tap in one core call (ADR 0104): the action by mention or
     /// identity id, and the snapshot after it. The change is saved into
-    /// the library and its case right after, off the main thread, as a
-    /// case member autosaves on desktop.
+    /// the library and its Project right after, off the main thread, as a
+    /// Project member autosaves on desktop.
     private func review(_ action: ReviewAction) throws -> DocumentSnapshot {
         reopenIfPending()
         defer { scheduleSave() }
@@ -1420,7 +1420,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         saver.cancel()
         do {
             // A job's save a locked phone held back goes first: it joins
-            // the case chosen at import, and saves the taps too.
+            // the Project chosen at import, and saves the taps too.
             try library.saveDeferred(id)
             try savePendingNow()
         } catch {

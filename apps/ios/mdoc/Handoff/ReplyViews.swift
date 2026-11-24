@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Paste reply: the AI's answer, restored with this document's case.
+/// Paste reply: the AI's answer, restored with this document's Project.
 struct ReplySheet: View {
     let projectName: String?
     let onRestore: (String) -> Void
@@ -15,7 +15,7 @@ struct ReplySheet: View {
                     ?? String(localized: "mdoc puts back the names from this document."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    // Its full height up to six lines (a case is named after a
+                    // Its full height up to six lines (a Project is named after a
                     // title, which can be long), so the editor keeps its room.
                     .lineLimit(6)
                     .fixedSize(horizontal: false, vertical: true)

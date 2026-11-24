@@ -1,8 +1,8 @@
 //! Mappings in the Vault through its public interface (#1091, Testing
 //! Decisions, seam 1: move and alias reconciliation, Project deletion):
-//! the case store's mapping tests (`mdoc_store::cases`) and the mobile
-//! core's move tests (`mdoc_ffi::document_session`), with Document ids in
-//! place of paths and Unfiled beside Projects.
+//! the desktop's earlier mapping tests and the mobile core's move tests
+//! (`mdoc_ffi::document_session`), with Document ids in place of paths and
+//! Unfiled beside Projects.
 use mdoc_pii::{Category, restore::ExportedIdentity, restore::RestoreMap};
 use mdoc_vault::{
     DocumentOrigin, Fault, FaultHook, Identity, Mapping, MoveUndo, NewDocument, NewProject,
@@ -138,7 +138,7 @@ fn is_id(id: &str) -> bool {
     id.len() == 32 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-// The case store's mapping rules.
+// The mapping rules.
 
 #[test]
 fn identities_have_stable_random_ids() {
@@ -574,7 +574,7 @@ fn a_forgotten_identity_is_not_refilled_by_a_not_a_name_undo() {
     let folder = Folder::new();
     let vault = folder.open();
     let names = [person("PERSON_1", &["Alex Kim", "A. Kim"])];
-    let (project, document) = saved(&vault, "PERSON_1 wrote.", &names, "Case");
+    let (project, document) = saved(&vault, "PERSON_1 wrote.", &names, "Lease");
     let dropped = [("PERSON_1".to_string(), "A. Kim".to_string())];
     let mut forgot = false;
     let project = vault
@@ -601,7 +601,7 @@ fn not_a_name_notes_follow_renames() {
         &vault,
         "PERSON_1 wrote.",
         &[person("PERSON_1", &["Alex Kim"])],
-        "Case",
+        "Lease",
     );
     let pair = [("PERSON_1".to_string(), "Alex Kim".to_string())];
     let project = vault
@@ -1270,7 +1270,7 @@ fn a_moved_document_leaves_its_not_a_name_wordings_off() {
         &vault,
         "PERSON_1 wrote.",
         &[person("PERSON_1", &["Alex Kim"])],
-        "Case",
+        "Lease",
     );
     let street = new_document(&vault, Some(&project), "Street", "Alex Kim Street is long.");
     let pair = [("PERSON_1".to_string(), "Alex Kim".to_string())];
@@ -1374,7 +1374,7 @@ fn a_project_delete_goes_only_with_the_documents_it_asked_about() {
     let folder = Folder::new();
     let vault = folder.open();
     let names = [person("PERSON_1", &["Ann Lee"])];
-    let (project, first) = saved(&vault, "PERSON_1 wrote.", &names, "Case");
+    let (project, first) = saved(&vault, "PERSON_1 wrote.", &names, "Lease");
     let asked = vec![first.clone()];
     // Filed in while the question was up, as an import finishing would.
     let late = new_document(&vault, Some(&project), "Late", "PERSON_1 called.");
@@ -1429,7 +1429,7 @@ fn a_crash_deleting_a_project_is_finished_by_deleting_again() {
     let (project, documents) = {
         let vault = folder.open();
         let names = [person("PERSON_1", &["Ann Lee"])];
-        let (project, first) = saved(&vault, "PERSON_1 wrote.", &names, "Case");
+        let (project, first) = saved(&vault, "PERSON_1 wrote.", &names, "Lease");
         let second = new_document(&vault, Some(&project), "Second", "PERSON_1 called.");
         let mut documents = vec![first, second];
         documents.sort();
@@ -1479,7 +1479,7 @@ fn a_document_unreadable_for_now_refuses_a_project_delete() {
         &vault,
         "PERSON_1 wrote.",
         &[person("PERSON_1", &["Ann Lee"])],
-        "Case",
+        "Lease",
     );
     let file = folder.root.join("docs").join(&document).join("doc.enc");
     let mode =

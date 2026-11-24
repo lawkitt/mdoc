@@ -18,12 +18,12 @@ in `apps/ios/README.md`.
 
 ## The core and the app
 
-- Every rule about documents, review, cases, aliases, file names and restore
+- Every rule about documents, Projects, review, aliases, file names and restore
   lives in `crates/mdoc-ffi` or below: the app lays out what a snapshot says,
   never derives a review fact itself, and moves a rule it finds into the core.
 - View-model and snapshot tests run the real core over temporary storage
-  with a fixed case key; there is no fake library or document session.
-- Test fakes and the fixed case key are never compiled into the app or the
+  with a fixed Vault key; there is no fake library or document session.
+- Test fakes and the fixed Vault key are never compiled into the app or the
   extension.
 - Each piece of state has one owner: one navigation model for what is open
   and presented, and a document's model for intent.
@@ -50,12 +50,12 @@ in `apps/ios/README.md`.
 - Nothing starts in the background on its own; only a job the user started
   continues there.
 - Nothing outside the app (widgets, Live Activities, Spotlight,
-  notifications, quick actions) shows a document's or case's title, because
+  notifications, quick actions) shows a document's or Project's title, because
   titles hold client names.
 
 ## Design
 
-- A case's color marks the case only, never a state.
+- A Project's color marks the Project only, never a state.
 - Anything tappable that isn't a button is a filled capsule; plain text
   never acts.
 - A state mark is never an ink disc, because a column of them reads as

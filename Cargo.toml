@@ -56,8 +56,9 @@ craft-cfb = { git = "https://github.com/storytold/craft-libs.git", rev = "712b35
 [dependencies]
 regex = "1"
 pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "7e35e4daaafee464727a5bab952e9d3859f3cc7f", features = ["ocr"] }
-# App data lives under data_local_dir / cache_dir (settings, session, cases,
-# models, updates, crash report); a bump must keep those paths (ADR 0053).
+# App data lives under data_local_dir / cache_dir (settings, session, the
+# Vault and its key, models, updates, crash report); a bump must keep those
+# paths (ADR 0053).
 dirs = "7"
 sha2 = "0.11"
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
@@ -203,8 +204,8 @@ panic = "unwind"
 strip = false
 
 [package.metadata.packager]
-# Never set appdata-paths: the NSIS uninstaller would delete the case key at
-# %LOCALAPPDATA%\mdoc\cases\key.dpapi, making saved cases unreadable.
+# Never set appdata-paths: the NSIS uninstaller would delete the Vault key at
+# %LOCALAPPDATA%\mdoc\cases\key.dpapi, making the Vault unreadable.
 product-name = "mdoc"
 identifier = "io.github.lawkitt.mdoc"
 category = "Productivity"
@@ -301,7 +302,7 @@ entitlements = "resources/entitlements.plist"
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
-# Tests never ask the OS for the build's signature or the case key: those
+# Tests never ask the OS for the build's signature or the Vault key: those
 # calls panic (development.md, Tests and OS services; ADR 0095).
 mdoc-store = { path = "crates/mdoc-store", features = ["deny-os-services"] }
 # tests/docx_worker.rs inspects the worker's DOCX package.

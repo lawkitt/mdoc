@@ -60,7 +60,7 @@ struct Presenter: ViewModifier {
     private var sheets: Sheets { Sheets(app: app) }
 }
 
-/// Rename…, New case… and errors.
+/// Rename…, New Project… and errors.
 private struct Dialogs: ViewModifier {
     let app: AppModel
     @Binding var draft: String
@@ -131,7 +131,7 @@ private struct Dialogs: ViewModifier {
                 Button("Move") {
                     if let id = movingToNewProject { app.move(id, to: .newProject(name: draft)) }
                 }
-                // A case needs a name (#677).
+                // A Project needs a name (#677).
                 .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } message: {
                 Text("The document leaves where it is for a new Project. Replies already sent still restore with the names they were sent with.")

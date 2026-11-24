@@ -1581,10 +1581,10 @@ fn command_palette_routes_every_settings_category(cx: &mut TestAppContext) {
     }
 }
 
-/// Public synthetic input through the real editor/review/case host. Timings are
+/// Public synthetic input through the real editor/review/Project host. Timings are
 /// observations until release/native budgets are qualified.
 #[gpui::test]
-#[ignore = "review/diagnostics/compare/case CPU matrix; run serially on an idle machine"]
+#[ignore = "review/diagnostics/compare/Project CPU matrix; run serially on an idle machine"]
 fn review_host_performance(cx: &mut TestAppContext) {
     use crate::perf_tests::{draw, report};
     use mdoc_pii::Category;
@@ -1656,7 +1656,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
         &wordings,
     );
     let first_view = active(&tabs, cx);
-    let case = new_project(&tabs, cx, first);
+    let project_id = new_project(&tabs, cx, first);
     for name in ["second.md", "third.md"] {
         let member = open_applied(
             &tabs,
@@ -1666,7 +1666,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
             &format!("{text}{name}"),
             &wordings,
         );
-        move_tab(&tabs, cx, member, Some(&case));
+        move_tab(&tabs, cx, member, Some(&project_id));
     }
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(first, window, cx));
     for phase in ["proposed_panel", "applied_panel", "before_after"] {
@@ -1731,7 +1731,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
     cx.run_until_parked();
     draw(cx);
     eprintln!(
-        "REVIEW_PERF case_fanout_3_members_ms={:.3} rss_kib={:?}",
+        "REVIEW_PERF project_fanout_3_members_ms={:.3} rss_kib={:?}",
         start.elapsed().as_secs_f64() * 1000.,
         crate::perf_tests::rss_kib()
     );
@@ -1744,7 +1744,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
                 view.read(cx)
                     .project
                     .link()
-                    .is_some_and(|link| link.id == case)
+                    .is_some_and(|link| link.id == project_id)
             })
             .collect();
         assert_eq!(members.len(), 3);

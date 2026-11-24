@@ -49,7 +49,7 @@ From a lawkitt/web checkout, with this release installed in `/Applications`:
 videos/mdoc/capture/all.sh
 ```
 
-It runs mdoc in an isolated profile (your own session and cases are untouched),
+It runs mdoc in an isolated profile (your own session and Vault are untouched),
 drives the window, and writes stills, clips and films. The README files are the
 `review`, `restore`, `compare` and `court-ocr` stills resized to 2000 px, and the
 `detect,popup,apply,chat,restore` cut encoded as WebP (1280 px, 12 fps,

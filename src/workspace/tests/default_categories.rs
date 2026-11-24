@@ -118,7 +118,7 @@ fn unticking_withdraws_unapplied_proposals_only_in_tabs_without_a_project(cx: &m
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
     let text = "Anna Petrova met Bob Day and Cara Lin at 1 Main St.";
-    // A member tab: its case decides, whatever Settings says.
+    // A Project's document: its Project decides, whatever Settings says.
     let member = open_applied(
         &tabs,
         cx,
@@ -130,7 +130,7 @@ fn unticking_withdraws_unapplied_proposals_only_in_tabs_without_a_project(cx: &m
     new_project(&tabs, cx, member);
     let member_view = active(&tabs, cx);
     detect(&member_view, cx, &[("Bob Day", Category::Person)]);
-    // A tab without a case: an applied name, a manual one and scan proposals.
+    // A document without a Project: an applied name, a manual one and scan proposals.
     open_applied(
         &tabs,
         cx,
@@ -177,6 +177,6 @@ fn unticking_withdraws_unapplied_proposals_only_in_tabs_without_a_project(cx: &m
     });
     assert!(
         originals(&member_view, cx).contains(&"Bob Day".to_string()),
-        "the member follows its case"
+        "the document follows its Project"
     );
 }

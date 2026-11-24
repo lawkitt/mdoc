@@ -241,7 +241,7 @@ pub enum SourceKind {
     Text,
 }
 
-/// The eight Project swatches, in hue order: the case store's.
+/// The eight Project swatches, in hue order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Colour {
     Red,

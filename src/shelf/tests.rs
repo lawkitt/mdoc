@@ -206,7 +206,7 @@ fn a_stored_document_is_ready_only_when_the_outbound_check_passes() {
     assert_eq!(changed.text_for_ai(), None);
     assert!(changed.preview.is_none());
     assert_eq!(changed.drag_card(), None);
-    // Never saved while ready: as a case member with no fingerprint was.
+    // Never saved while ready: as a Project's document with no fingerprint was.
     let never = refused(mdoc_vault::Readiness::NotReviewed);
     assert_eq!(never.readiness, Readiness::ChangedSinceReview);
     let missed = refused(mdoc_vault::Readiness::NamesNotReplaced(2));
@@ -509,7 +509,7 @@ fn replaced_counts_mentions_and_its_breakdown_distinct_names() {
         "PERSON_1 met ORG_1, then PERSON_1 left. PERSON_9 is no one's.",
         0,
     );
-    // The case lists the same person again.
+    // The Project lists the same person again.
     open.names
         .push(identity("PERSON_1", Category::Person, &["Anna Petrova"]));
     let row = ShelfDocument::of_tab(open).unwrap();

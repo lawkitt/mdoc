@@ -534,7 +534,7 @@ impl DocumentSession {
         self.with_document(|document| document.review.set_owner(identity, owner))
     }
 
-    /// × on a merge hint: hidden from now on, and in the document's case
+    /// × on a merge hint: hidden from now on, and in the document's Project
     /// once it saves. Not an undo step.
     pub fn dismiss_hint(&self, from: u64, into: u64) -> Result<ReviewSnapshot, CoreError> {
         self.with_document(|document| document.review.dismiss_hint(from, into))
@@ -1706,7 +1706,7 @@ mod tests {
     /// Same as saved, then undone and saved again: the document has two
     /// people again and restores each to its own. Its mapping keeps the
     /// merge, as on desktop: a save never reverses a merge
-    /// (`unmerged_members_cannot_reverse_a_case_merge`).
+    /// (`unmerged_documents_cannot_reverse_a_merge`).
     #[test]
     fn an_undone_merge_is_two_people_in_the_document_again() {
         let scratch = Scratch::new();
@@ -1753,7 +1753,7 @@ mod tests {
     fn a_dismissed_hint_is_kept_in_the_project() {
         let scratch = Scratch::new();
         let vault = vault(&scratch);
-        let project = vault.create_project("Case".into()).unwrap();
+        let project = vault.create_project("Lease".into()).unwrap();
         let session = session("Maya Bennett met Ms Bennett.", "Letter");
         session
             .join_project(vault.clone(), project.id.clone())
