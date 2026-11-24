@@ -1,3 +1,4 @@
+import MdocFFI
 import UIKit
 import XCTest
 @testable import mdoc
@@ -34,19 +35,35 @@ final class DocumentNotesTests: XCTestCase {
     }
 
     /// Notes typed and paused on are saved by the save that follows
-    /// typing, with no explicit save.
+    /// typing, with no explicit save. The test waits for the notes to be
+    /// in the Vault, not for the pause or the app's save event: a loaded
+    /// runner may run the utility queue's save late (queue run
+    /// 45412213450).
     func testNotesSaveOnceTypingPauses() throws {
         let seeded = try Fixture.seeded()
         let library = try XCTUnwrap(seeded.core.library as? RealLibrary)
         library.typingPause = .milliseconds(10)
-        let saved = expectation(description: "saved")
+        let failures = SaveFailures()
         library.observeSaves { event in
-            if case .saved = event { saved.fulfill() }
+            if case .failed(_, let error) = event { failures.add(error) }
         }
+        let id = try vaultID(seeded.quotation, in: seeded).rawValue
         try seeded.session(seeded.quotation).setNotes(Self.notes)
-        wait(for: [saved], timeout: 10)
+        let vault = library.vault
+        let saved = expectation(
+            for: NSPredicate { _, _ in Self.storedNotes(id, in: vault) == Self.notes || failures.any }, evaluatedWith: nil)
+        wait(for: [saved], timeout: 120)
+        XCTAssertEqual(failures.messages, [], "the save failed")
         let again = try RealCore.make(storage: seeded.storage, keys: FixedVaultKeyStore(), physicalMemory: Fixture.belowFloor)
-        XCTAssertEqual(try again.library.session(for: try vaultID(seeded.quotation, in: seeded)).notes(), Self.notes)
+        XCTAssertEqual(try again.library.session(for: DocumentID(rawValue: id)).notes(), Self.notes)
+    }
+
+    /// Document `id`'s notes as its record in `vault` holds them now, read
+    /// through a session of its own; nil while it can't be read.
+    nonisolated private static func storedNotes(_ id: String, in vault: MdocFFI.Vault) -> String? {
+        let session = MdocFFI.DocumentSession()
+        guard (try? session.openFromVault(vault: vault, id: id)) != nil else { return nil }
+        return session.notes()
     }
 
     /// Search reads titles and the text, never notes: neither the
@@ -127,4 +144,17 @@ final class DocumentNotesTests: XCTestCase {
         XCTAssertEqual(app.library.documents.count, before)
         XCTAssertNil(app.navigator.openDocument)
     }
+}
+
+/// The saves that failed, as the library tells them, from any thread.
+private final class SaveFailures: @unchecked Sendable {
+    private let lock = NSLock()
+    private var errors: [String] = []
+
+    func add(_ error: mdoc.CoreError) {
+        lock.withLock { errors.append(error.localizedDescription) }
+    }
+
+    var any: Bool { lock.withLock { !errors.isEmpty } }
+    var messages: [String] { lock.withLock { errors } }
 }
