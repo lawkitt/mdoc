@@ -862,3 +862,43 @@ fn a_reply_unreadable_for_now_refuses_deleting_its_owner() {
     assert!(vault.document(&note).is_ok());
     assert_eq!(restored(&vault, &reply.id), "Ann Lee.");
 }
+
+/// Review of #1145, round 2 (P2): a shared reply edited in place keeps its
+/// id, app and time, binds its new text, and is refused once deleted.
+#[test]
+fn a_shared_reply_updated_in_place_keeps_its_id() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let names = [
+        person("PERSON_1", &["Ann Lee"]),
+        person("PERSON_2", &["Bo Li"]),
+    ];
+    let document = unfiled(&vault, "PERSON_1 met PERSON_2.", &names);
+    let from = SharedFrom::Document(document.clone());
+    let first = vault
+        .save_shared_reply(
+            &from,
+            "Reply".into(),
+            Some("Chat".into()),
+            "PERSON_1 wrote.".into(),
+        )
+        .unwrap();
+    let updated = vault
+        .update_shared_reply(&first.id, &from, "Reply".into(), "PERSON_2 wrote.".into())
+        .unwrap();
+    assert_eq!(updated.id, first.id);
+    assert_eq!(updated.created, first.created);
+    assert_eq!(updated.source_app.as_deref(), Some("Chat"));
+    assert_eq!(vault.replies().len(), 1);
+    drop(vault);
+    let vault = folder.open();
+    let stored = vault.reply(&first.id).unwrap();
+    assert_eq!(stored, updated);
+    assert_eq!(vault.restore_reply(&first.id).unwrap().text, "Bo Li wrote.");
+    vault.delete_reply(&first.id).unwrap();
+    assert!(matches!(
+        vault.update_shared_reply(&first.id, &from, "Reply".into(), "Again.".into()),
+        Err(VaultError::NotFound { .. })
+    ));
+    assert!(vault.replies().is_empty());
+}

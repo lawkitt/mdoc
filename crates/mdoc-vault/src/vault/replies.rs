@@ -163,6 +163,36 @@ impl Vault {
         self.save_reply_locked(&lock, new, &mapping)
     }
 
+    /// [`Self::save_shared_reply`] in place of AI Reply `id`: the same id,
+    /// so a Document promoted from it still points at it, with `markdown`
+    /// bound again as a new save would bind it. Its app and creation time
+    /// stay. `NotFound` once it is deleted: save a new one instead.
+    pub fn update_shared_reply(
+        &self,
+        id: &str,
+        from: &SharedFrom,
+        title: String,
+        markdown: String,
+    ) -> Result<Reply, VaultError> {
+        if !is_id(id) {
+            return Err(VaultError::InvalidId);
+        }
+        let lock = self.write_lock()?;
+        let stored: Reply = self.load_record(id)?;
+        let (owner, mapping) = self.shared_owner(from)?;
+        let reply = Reply {
+            id: stored.id,
+            bindings: mapping.bindings(&markdown),
+            owner,
+            title,
+            source_app: stored.source_app,
+            markdown,
+            created: stored.created,
+        };
+        self.write_reply(&lock, &reply)?;
+        Ok(reply)
+    }
+
     fn save_reply_locked(
         &self,
         lock: &WriteLock<'_>,

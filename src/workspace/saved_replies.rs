@@ -258,17 +258,26 @@ impl Workspace {
                     }
                     Some((markdown, revision)) => {
                         let from = SharedFrom::Document(document.as_str().to_string());
-                        match vault.save_shared_reply(&from, title, None, markdown) {
+                        // One fill of the box makes one reply, its id kept
+                        // across edits: a document promoted from it still
+                        // finds it. Deleted meanwhile, it is saved anew.
+                        let updated = match &saved {
+                            Some(old) => match vault.update_shared_reply(
+                                old,
+                                &from,
+                                title.clone(),
+                                markdown.clone(),
+                            ) {
+                                Err(VaultError::NotFound { .. }) => None,
+                                result => Some(result),
+                            },
+                            None => None,
+                        };
+                        let result = updated.unwrap_or_else(|| {
+                            vault.save_shared_reply(&from, title, None, markdown)
+                        });
+                        match result {
                             Ok(reply) => {
-                                // One fill of the box makes one reply.
-                                if let Some(old) = &saved
-                                    && let Err(error) = vault.delete_reply(old)
-                                    && !matches!(error, VaultError::NotFound { .. })
-                                {
-                                    self.notices.post(format!(
-                                        "Could not replace an earlier AI reply: {error}"
-                                    ));
-                                }
                                 view.update(cx, |view, _| {
                                     view.reply.mark_saved(&reply.id, revision)
                                 });
