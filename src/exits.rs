@@ -16,9 +16,9 @@ use std::cell::Cell;
 pub(crate) enum Gate {
     /// The editor's Copy for AI (`Workspace::try_copy_for_ai`).
     EditorCopyForAi,
-    /// The shelf's Copy for AI, a click or ⌘C (`ShelfView::copy`).
+    /// The shelf's Copy for AI, a click or ⌘C (`ShelfRows::copy`).
     ShelfCopy,
-    /// The shelf's drag: its text and its `.md` file (`ShelfView::drag`).
+    /// The shelf's drag: its text and its `.md` file (`ShelfRows::drag`).
     ShelfDrag,
     // Milestone 2: the connector joins here, with a gate at its one
     // `Vault::text_for_ai` call and its exit in the suite's table.

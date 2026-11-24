@@ -1,15 +1,13 @@
 //! The shelf's view: the borderless popup under the menu bar
-//! item. Pseudonymized documents as small previews to open, drag out or
-//! Copy for AI; Restart to update; the Clipboard section with Pseudonymize
-//! and Restore for one source; and one footer row: Open mdoc, Settings and
-//! Quit. It closes on a click outside (the panel loses key status), Esc, a
-//! Copy for AI after its "Copied", or an action that brings mdoc forward.
-//!
-//! Only ready documents copy or drag; previews and exports hold
-//! pseudonymized text only (the menu bar shows in screen shares).
+//! item. The shelf's rows ([`ShelfRows`]): pseudonymized documents as small
+//! previews to open, drag out or Copy for AI; Restart to update; the
+//! Clipboard section with Pseudonymize and Restore for one source; and one
+//! footer row: Open mdoc, Settings and Quit. It closes on a click outside
+//! (the panel loses key status), Esc, a Copy for AI after its "Copied", or
+//! an action that brings mdoc forward.
 
 mod note;
-mod row;
+mod rows;
 
 pub(crate) use note::NoteView;
 pub(crate) use note::{NOTE_HEIGHT, NOTE_WIDTH};
@@ -20,19 +18,20 @@ pub(crate) use note::{NOTE_HEIGHT, NOTE_WIDTH};
 ))]
 pub(crate) use note::{NOTE_TEXT, NOTE_TITLE};
 #[cfg(test)]
-pub(crate) use row::row_label;
+pub(crate) use rows::row_label;
+pub(crate) use rows::{ShelfRows, ShelfRowsEvent, clear_exports};
 
 use crate::{
     menu_bar,
-    shelf::{self, ShelfDocument, ShelfExports, ShelfKey},
+    shelf::{self, ShelfDocument, ShelfKey},
     style::Theme,
     ui,
     workspace::{ClipboardNames, ClipboardSource, Quit, Workspace},
 };
 use gpui::{
-    AnyElement, App, ClipboardItem, Context, ExternalPaths, FocusHandle, Focusable, Global, Hsla,
-    KeyBinding, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, SharedString,
-    Task, Window, WindowHandle, actions, div, prelude::*, px,
+    AnyElement, App, ClipboardItem, Context, Entity, ExternalPaths, FocusHandle, Focusable, Global,
+    Hsla, KeyBinding, Render, SharedString, Subscription, Task, Window, WindowHandle, actions, div,
+    prelude::*, px,
 };
 use mdoc_pii::restore::RestoreMap;
 use std::{cell::Cell, rc::Rc, time::Duration};
@@ -58,10 +57,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
 }
 
 const PADDING: f32 = 8.;
-const ROW_GAP: f32 = 2.;
-const HINT: f32 = 22.;
 const ACTION_ROW: f32 = 30.;
-const EMPTY: f32 = 44.;
 const DIVIDER: f32 = 9.;
 const CLIPBOARD_HEADING: f32 = 20.;
 const CLIPBOARD_BUTTONS: f32 = 28.;
@@ -70,8 +66,6 @@ const SECTION_GAP: f32 = 4.;
 const CLIPBOARD: f32 = CLIPBOARD_HEADING + CLIPBOARD_BUTTONS + SOURCE_LINE + 2. * SECTION_GAP;
 const FOOTER: f32 = 30.;
 const PICKER_HEADING: f32 = 24.;
-/// A drag starts after the pointer moves this far with the button down.
-const DRAG_DISTANCE: f32 = 4.;
 /// "Copied" shows this long before the shelf closes.
 pub(crate) const COPIED_FOR: Duration = Duration::from_millis(800);
 /// A clipboard result stays on the source line this long.
@@ -132,14 +126,6 @@ fn project_source(sources: &[ClipboardSource], id: &str) -> Option<ClipboardSour
         .cloned()
 }
 
-/// Each row's "N replaced" as last painted, for renders to hover.
-#[cfg(all(
-    debug_assertions,
-    feature = "headless-renders",
-    any(target_os = "macos", target_os = "windows")
-))]
-type CountBounds = Rc<std::cell::RefCell<Vec<(usize, gpui::Bounds<Pixels>)>>>;
-
 /// What the shelf shows, read from the workspace when it opens.
 pub(crate) struct ShelfContent {
     pub documents: Vec<ShelfDocument>,
@@ -154,26 +140,6 @@ pub(crate) struct ShelfContent {
 #[derive(Default)]
 struct PickedSource(Option<ClipboardSource>);
 impl Global for PickedSource {}
-
-/// The drag exports, alive until quit.
-#[derive(Default)]
-struct Exports(Option<ShelfExports>);
-impl Global for Exports {}
-
-/// Remove every shelf export, at quit.
-pub(crate) fn clear_exports(cx: &mut App) {
-    if let Some(exports) = cx.try_global::<Exports>().and_then(|e| e.0.as_ref()) {
-        exports.clear();
-    }
-}
-
-fn export(document: &ShelfDocument, cx: &mut App) -> Option<std::path::PathBuf> {
-    if cx.try_global::<Exports>().is_none_or(|e| e.0.is_none()) {
-        let exports = ShelfExports::create().ok()?;
-        cx.set_global(Exports(Some(exports)));
-    }
-    cx.global::<Exports>().0.as_ref()?.export(document).ok()?
-}
 
 impl ShelfContent {
     pub(crate) fn of(workspace: &Workspace, cx: &App) -> Self {
@@ -207,42 +173,17 @@ impl ShelfContent {
         }
     }
 
-    /// Whether the drag hint shows: before the first drop, over a preview.
-    fn shows_hint(&self) -> bool {
-        self.drag_hint
-            && self
-                .documents
-                .iter()
-                .any(|d| d.readiness.is_ready() && d.preview.is_some())
-    }
-
     /// The shelf's height for this content, before the screen limits it.
     pub(crate) fn height(&self) -> f32 {
-        self.list_height() + self.chrome_height()
+        rows::height(&self.documents, self.drag_hint) + chrome_height(self.update.is_some())
     }
+}
 
-    /// The document list's height, the hint included.
-    fn list_height(&self) -> f32 {
-        if self.documents.is_empty() {
-            return EMPTY;
-        }
-        self.documents
-            .iter()
-            .map(|d| ROW_GAP + row::height(d))
-            .sum::<f32>()
-            + if self.shows_hint() { HINT } else { 0. }
-    }
-
-    /// Everything but the list: padding, dividers, Restart to update, the
-    /// Clipboard section and the footer.
-    fn chrome_height(&self) -> f32 {
-        let update = if self.update.is_some() {
-            ACTION_ROW
-        } else {
-            0.
-        };
-        2. * PADDING + DIVIDER + update + CLIPBOARD + DIVIDER + FOOTER
-    }
+/// Everything but the rows: padding, dividers, Restart to update, the
+/// Clipboard section and the footer.
+fn chrome_height(update: bool) -> f32 {
+    let update = if update { ACTION_ROW } else { 0. };
+    2. * PADDING + DIVIDER + update + CLIPBOARD + DIVIDER + FOOTER
 }
 
 /// A clipboard action.
@@ -255,18 +196,16 @@ pub(crate) enum ClipboardRow {
 pub(crate) struct ShelfView {
     workspace: WindowHandle<Workspace>,
     theme: Rc<Cell<Theme>>,
-    content: ShelfContent,
     focus: FocusHandle,
-    /// One focus handle per document row, for ↑↓ and the focus ring.
-    rows: Vec<FocusHandle>,
-    /// Each row's preview as it fits two lines, and its title as it fits
-    /// with its width, measured once.
-    fitted: Vec<Option<shelf::Preview>>,
-    titles: Vec<(String, f32)>,
-    /// A press on a ready row that may become a drag: its row and place.
-    press: Option<(usize, Point<Pixels>)>,
-    /// The row whose Copy for AI just ran; the shelf closes after it.
-    copied: Option<usize>,
+    /// The documents, a view of their own.
+    rows: Entity<ShelfRows>,
+    _rows_events: Subscription,
+    sources: Vec<ClipboardSource>,
+    /// The clipboard rows' source.
+    source: Option<ClipboardSource>,
+    /// The version Restart to update installs.
+    update: Option<String>,
+    /// Set after a row's Copy for AI; the shelf closes when it ends.
     closing: Option<Task<()>>,
     /// The source picker replaces the list while open.
     picking: bool,
@@ -274,26 +213,11 @@ pub(crate) struct ShelfView {
     picker_rows: Vec<FocusHandle>,
     /// The ▾ that opens the picker; focus returns to it.
     pick_button: FocusHandle,
-    /// The running drag was dropped on the shelf itself: not a drop.
-    dropped_here: bool,
     /// Set when the shelf is its own popup: it then follows its content.
     fit: Option<Rc<Fit>>,
     /// The last clipboard action's result, on the source line for a while.
     result: Option<String>,
     result_clear: Option<Task<()>>,
-    /// Where each row's "N replaced" was painted, so a render can hover it.
-    #[cfg(all(
-        debug_assertions,
-        feature = "headless-renders",
-        any(target_os = "macos", target_os = "windows")
-    ))]
-    counts: CountBounds,
-    /// The last drag's payload and card, for tests (no native drag runs
-    /// there).
-    #[cfg(test)]
-    pub(crate) dragged: Option<(String, std::path::PathBuf)>,
-    #[cfg(test)]
-    pub(crate) dragged_card: Option<(String, String)>,
 }
 
 impl ShelfView {
@@ -303,38 +227,32 @@ impl ShelfView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let ShelfContent {
+            documents,
+            sources,
+            source,
+            update,
+            drag_hint,
+        } = content;
         let theme = workspace
             .read(cx)
             .map(|workspace| workspace.theme_cell())
             .unwrap_or_default();
         let focus = cx.focus_handle().tab_stop(false);
-        let picker_rows = content
-            .sources
+        let picker_rows = sources
             .iter()
             .map(|_| cx.focus_handle().tab_stop(true))
             .collect();
-        let rows: Vec<_> = content
-            .documents
-            .iter()
-            .map(|_| cx.focus_handle().tab_stop(true))
-            .collect();
-        let fitted = content
-            .documents
-            .iter()
-            .map(|document| {
-                document
-                    .preview
-                    .as_ref()
-                    .map(|preview| row::fit_preview(preview, row::PREVIEW_WIDTH, window))
-            })
-            .collect();
-        let titles = content
-            .documents
-            .iter()
-            .map(|document| row::fit_title(document, window))
-            .collect();
+        let rows = cx.new(|cx| ShelfRows::new(workspace, documents, drag_hint, window, cx));
+        let rows_events =
+            cx.subscribe_in(&rows, window, |this, _, event, window, cx| match *event {
+                ShelfRowsEvent::Copied(index) => this.after_copy(index, window, cx),
+                ShelfRowsEvent::Dragged(index) => this.used(index, cx),
+                ShelfRowsEvent::Open(index) => this.open(index, window, cx),
+            });
         // Focus starts on the first row.
-        window.focus(rows.first().unwrap_or(&focus), cx);
+        let first = rows.read(cx).first_row().cloned();
+        window.focus(first.as_ref().unwrap_or(&focus), cx);
         // A click outside takes key status from the panel: close it.
         cx.observe_window_activation(window, |_, window, cx| {
             if !window.is_window_active() {
@@ -346,34 +264,29 @@ impl ShelfView {
         Self {
             workspace,
             theme,
-            content,
             focus,
             rows,
-            fitted,
-            titles,
-            press: None,
-            copied: None,
+            _rows_events: rows_events,
+            sources,
+            source,
+            update,
             closing: None,
             picking: false,
             picker_rows,
             pick_button: cx.focus_handle().tab_stop(true),
-            dropped_here: false,
             fit: None,
             result: None,
             result_clear: None,
-            #[cfg(all(
-                debug_assertions,
-                feature = "headless-renders",
-                any(target_os = "macos", target_os = "windows")
-            ))]
-            counts: Rc::default(),
-            #[cfg(test)]
-            dragged: None,
-            #[cfg(test)]
-            dragged_card: None,
         }
     }
 
+    /// The rows, for tests.
+    #[cfg(test)]
+    pub(crate) fn rows(&self) -> &Entity<ShelfRows> {
+        &self.rows
+    }
+
+    /// What the shelf shows now, for tests and renders.
     #[cfg(any(
         test,
         all(
@@ -382,8 +295,15 @@ impl ShelfView {
             any(target_os = "macos", target_os = "windows")
         )
     ))]
-    pub(crate) fn content(&self) -> &ShelfContent {
-        &self.content
+    pub(crate) fn content(&self, cx: &App) -> ShelfContent {
+        let rows = self.rows.read(cx);
+        ShelfContent {
+            documents: rows.documents().to_vec(),
+            sources: self.sources.clone(),
+            source: self.source.clone(),
+            update: self.update.clone(),
+            drag_hint: rows.drag_hint(),
+        }
     }
 
     /// The row whose "Copied" shows, for tests and renders.
@@ -395,8 +315,8 @@ impl ShelfView {
             any(target_os = "macos", target_os = "windows")
         )
     ))]
-    pub(crate) fn copied(&self) -> Option<usize> {
-        self.copied
+    pub(crate) fn copied(&self, cx: &App) -> Option<usize> {
+        self.rows.read(cx).copied()
     }
 
     /// Show "Copied" on `index` without copying or closing, for renders.
@@ -405,8 +325,8 @@ impl ShelfView {
         feature = "headless-renders",
         any(target_os = "macos", target_os = "windows")
     ))]
-    pub(crate) fn show_copied(&mut self, index: usize) {
-        self.copied = Some(index);
+    pub(crate) fn show_copied(&mut self, index: usize, cx: &mut App) {
+        self.rows.update(cx, |rows, _| rows.show_copied(index));
     }
 
     /// The middle of row `index`'s "N replaced" as last painted, for
@@ -416,12 +336,8 @@ impl ShelfView {
         feature = "headless-renders",
         any(target_os = "macos", target_os = "windows")
     ))]
-    pub(crate) fn count_center(&self, index: usize) -> Option<Point<Pixels>> {
-        self.counts
-            .borrow()
-            .iter()
-            .find(|(row, _)| *row == index)
-            .map(|(_, bounds)| bounds.center())
+    pub(crate) fn count_center(&self, index: usize, cx: &App) -> Option<gpui::Point<gpui::Pixels>> {
+        self.rows.read(cx).count_center(index)
     }
 
     /// The shelf is its own popup, `height` tall with at most `max` under
@@ -462,7 +378,7 @@ impl ShelfView {
     }
 
     pub(crate) fn open(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(document) = self.content.documents.get(index) else {
+        let Some(document) = self.rows.read(cx).documents().get(index) else {
             return;
         };
         let key = document.key.clone();
@@ -474,13 +390,12 @@ impl ShelfView {
 
     /// The row is the document used last: the clipboard source follows it.
     fn used(&mut self, index: usize, cx: &mut Context<Self>) {
-        let Some(document) = self.content.documents.get(index) else {
+        let Some(document) = self.rows.read(cx).documents().get(index) else {
             return;
         };
         let source = match (&document.project, &document.key) {
-            (Some(project), _) => project_source(&self.content.sources, &project.id),
+            (Some(project), _) => project_source(&self.sources, &project.id),
             (None, ShelfKey::Tab(id)) => self
-                .content
                 .sources
                 .iter()
                 .find(|s| matches!(s, ClipboardSource::Tab { id: tab, .. } if tab == id))
@@ -493,69 +408,56 @@ impl ShelfView {
         }
     }
 
-    /// Row `index`, if listed ready, checked again as its text is about to
-    /// leave: the Vault's outbound check runs now, and a row it refuses
-    /// shows why and hands out nothing.
-    fn checked_again(&mut self, index: usize, window: &mut Window, cx: &App) -> Option<String> {
-        let listed = self.content.documents.get(index)?;
-        listed.text_for_ai()?;
-        let now = (self.workspace.read(cx).ok())
-            .and_then(|workspace| workspace.shelf_row(&listed.key, cx))
-            .filter(|now| now.key == listed.key)?;
-        let text = now.text_for_ai().map(str::to_owned);
-        self.fitted[index] = (now.preview.as_ref())
-            .map(|preview| row::fit_preview(preview, row::PREVIEW_WIDTH, window));
-        self.titles[index] = row::fit_title(&now, window);
-        self.content.documents[index] = now;
-        text
-    }
-
-    /// A test of the exits suite took `gate`'s check out: row `index`
-    /// hands out what it listed, unchecked.
-    #[cfg(test)]
-    fn unchecked(&self, gate: crate::exits::Gate, index: usize) -> Option<Option<String>> {
-        crate::exits::taken_out(gate).then(|| {
-            let listed = self.content.documents.get(index)?;
-            listed.text_for_ai().map(str::to_owned)
-        })
-    }
-
-    /// Copy for AI on a ready row: the text a drag carries, then ✓ "Copied"
-    /// and the shelf closes after [`COPIED_FOR`].
+    /// Copy for AI on row `index`, a click or a key: [`ShelfRows::copy`].
     pub(crate) fn copy(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        #[cfg(test)]
-        let text = (self.unchecked(crate::exits::Gate::ShelfCopy, index))
-            .unwrap_or_else(|| self.checked_again(index, window, cx));
-        #[cfg(not(test))]
-        let text = self.checked_again(index, window, cx);
-        let Some(text) = text else {
-            cx.notify();
-            return;
-        };
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
-        self.copied = Some(index);
+        self.rows
+            .update(cx, |rows, cx| rows.copy(index, window, cx));
+    }
+
+    /// Row `index` was copied for AI: "Copied" shows, then the shelf closes
+    /// after [`COPIED_FOR`].
+    fn after_copy(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.used(index, cx);
         self.closing = Some(cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(COPIED_FOR).await;
             let _ = this.update_in(cx, |this, window, cx| this.close(window, cx));
         }));
-        cx.notify();
     }
 
-    fn focused_row(&self, window: &Window) -> Option<usize> {
+    /// Drag row `index` out, as a press and move does: [`ShelfRows::drag`].
+    #[cfg(test)]
+    pub(crate) fn drag(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.rows
+            .update(cx, |rows, cx| rows.drag(index, window, cx));
+    }
+
+    /// The running drag was released over the shelf itself.
+    pub(crate) fn dropped_on_shelf(&mut self, cx: &mut Context<Self>) {
+        self.rows.update(cx, |rows, _| rows.dropped_on_shelf());
+    }
+
+    /// A drag ended, as AppKit reports it: [`ShelfRows::drag_ended`].
+    #[cfg(test)]
+    pub(crate) fn drag_ended(&mut self, dropped: bool, cx: &mut Context<Self>) {
+        self.rows
+            .update(cx, |rows, cx| rows.drag_ended(dropped, cx));
+    }
+
+    fn focused_row(&self, window: &Window, cx: &App) -> Option<usize> {
         if self.picking {
             return None;
         }
-        self.rows.iter().position(|row| row.is_focused(window))
+        self.rows.read(cx).focused_row(window)
     }
 
     /// ↑↓ move within the list that shows: the documents, or the picker.
     fn move_focus(&mut self, by: isize, window: &mut Window, cx: &mut Context<Self>) {
-        let targets = if self.picking {
-            &self.picker_rows
-        } else {
-            &self.rows
-        };
+        if !self.picking {
+            self.rows
+                .update(cx, |rows, cx| rows.move_focus(by, window, cx));
+            return;
+        }
+        let targets = &self.picker_rows;
         if targets.is_empty() {
             return;
         }
@@ -577,10 +479,9 @@ impl ShelfView {
         }
         self.picking = true;
         let at = self
-            .content
             .sources
             .iter()
-            .position(|source| Some(source) == self.content.source.as_ref())
+            .position(|source| Some(source) == self.source.as_ref())
             .unwrap_or(0);
         if let Some(target) = self.picker_rows.get(at) {
             window.focus(target, cx);
@@ -594,125 +495,12 @@ impl ShelfView {
         cx.notify();
     }
 
-    fn mouse_down(&mut self, index: usize, event: &MouseDownEvent) {
-        self.press = self
-            .content
-            .documents
-            .get(index)
-            .filter(|d| d.readiness.is_ready())
-            .map(|_| (index, event.position));
-    }
-
-    fn mouse_move(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((index, start)) = self.press else {
-            return;
-        };
-        if event.pressed_button != Some(MouseButton::Left) {
-            self.press = None;
-            return;
-        }
-        let moved = event.position - start;
-        if moved.x.abs().max(moved.y.abs()) < px(DRAG_DISTANCE) {
-            return;
-        }
-        self.press = None;
-        self.drag(index, window, cx);
-    }
-
-    /// Drag a ready document: its Copy for AI text and a fresh `.md` export
-    /// on one pasteboard item, under a card with its title and preview. The
-    /// first drop retires the hint.
-    pub(crate) fn drag(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        #[cfg(test)]
-        let text = (self.unchecked(crate::exits::Gate::ShelfDrag, index))
-            .unwrap_or_else(|| self.checked_again(index, window, cx));
-        #[cfg(not(test))]
-        let text = self.checked_again(index, window, cx);
-        let Some(text) = text else {
-            cx.notify();
-            return;
-        };
-        let Some(document) = self.content.documents.get(index) else {
-            return;
-        };
-        let card = document.drag_card();
-        let Some(path) = export(document, cx) else {
-            return;
-        };
-        self.dropped_here = false;
-        #[cfg(all(target_os = "macos", not(test)))]
-        {
-            let workspace = self.workspace;
-            let view = cx.entity().downgrade();
-            let async_cx = cx.to_async();
-            // AppKit reports the end inside its own event: finish on GPUI's
-            // executor. The shelf may have closed by then.
-            let on_end = Box::new(move |dropped: bool| {
-                let cx = async_cx.clone();
-                cx.foreground_executor()
-                    .clone()
-                    .spawn(async move {
-                        cx.update(|cx| match view.upgrade() {
-                            Some(view) => view.update(cx, |view, cx| view.drag_ended(dropped, cx)),
-                            None if dropped => {
-                                let _ = workspace.update(cx, |workspace, _, cx| {
-                                    workspace.update_general(
-                                        |general| general.shelf_drag_hint_shown = true,
-                                        cx,
-                                    )
-                                });
-                            }
-                            None => {}
-                        });
-                    })
-                    .detach();
-            });
-            let card = card.as_ref().map(|(title, line)| gpui_macos::DragCard {
-                title,
-                line,
-                dark: self.theme.get() == Theme::Dark,
-            });
-            gpui_macos::start_text_and_file_drag(window, &text, &path, card, on_end);
-        }
-        #[cfg(not(all(target_os = "macos", not(test))))]
-        let _ = window;
-        #[cfg(test)]
-        {
-            self.dragged = Some((text, path));
-            self.dragged_card = card;
-        }
-        #[cfg(not(any(target_os = "macos", test)))]
-        let _ = (text, path, card);
-        self.used(index, cx);
-    }
-
-    /// The running drag was released over the shelf itself.
-    pub(crate) fn dropped_on_shelf(&mut self) {
-        self.dropped_here = true;
-    }
-
-    /// A drag ended; a drop somewhere retires "Drag a preview into any app"
-    /// for good.
-    // Only the macOS drag reports its end; elsewhere there is no shelf.
-    #[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
-    pub(crate) fn drag_ended(&mut self, dropped: bool, cx: &mut Context<Self>) {
-        // A drop back on the shelf took nothing anywhere.
-        let elsewhere = dropped && !std::mem::take(&mut self.dropped_here);
-        if !elsewhere || !std::mem::take(&mut self.content.drag_hint) {
-            return;
-        }
-        let _ = self.workspace.update(cx, |workspace, _, cx| {
-            workspace.update_general(|general| general.shelf_drag_hint_shown = true, cx)
-        });
-        cx.notify();
-    }
-
     fn pick(&mut self, source: ClipboardSource, cx: &mut Context<Self>) {
-        if self.content.source.as_ref() != Some(&source) {
+        if self.source.as_ref() != Some(&source) {
             self.result = None;
         }
         cx.set_global(PickedSource(Some(source.clone())));
-        self.content.source = Some(source);
+        self.source = Some(source);
         cx.notify();
     }
 
@@ -730,7 +518,7 @@ impl ShelfView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(source) = self.content.source.clone() else {
+        let Some(source) = self.source.clone() else {
             return;
         };
         let names = self
@@ -786,15 +574,14 @@ impl ShelfView {
     /// The source line: a recent result, or "Names from Ivanov".
     pub(crate) fn source_line(&self) -> Option<String> {
         self.result.clone().or_else(|| {
-            self.content
-                .source
+            self.source
                 .as_ref()
                 .map(|source| format!("Names from {}", source.name()))
         })
     }
 
     pub(crate) fn clipboard_locked(&self, cx: &App) -> bool {
-        let Some(source) = &self.content.source else {
+        let Some(source) = &self.source else {
             return false;
         };
         self.workspace.read(cx).is_ok_and(|workspace| {
@@ -868,7 +655,7 @@ impl ShelfView {
     fn clipboard_section(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let enabled = self.content.source.is_some();
+        let enabled = self.source.is_some();
         let buttons = if enabled && self.clipboard_locked(cx) {
             div().flex().flex_row().child(self.clipboard_button(
                 "shelf-unlock",
@@ -919,7 +706,7 @@ impl ShelfView {
                     .when(self.result.is_some(), |v| v.text_color(p.header_fg))
                     .child(line),
             )
-            .when(self.content.sources.len() > 1, |v| {
+            .when(self.sources.len() > 1, |v| {
                 v.child(
                     ui::control("shelf-pick", "▾", theme, true)
                         .track_focus(&self.pick_button)
@@ -971,8 +758,8 @@ impl ShelfView {
                     .text_color(p.header_muted)
                     .child("Clipboard names from"),
             )
-            .children(self.content.sources.iter().enumerate().map(|(i, source)| {
-                let chosen = self.content.source.as_ref() == Some(source);
+            .children(self.sources.iter().enumerate().map(|(i, source)| {
+                let chosen = self.source.as_ref() == Some(source);
                 let picked = source.clone();
                 ui::control(("shelf-source", i), source.name().to_string(), theme, true)
                     .track_focus(&self.picker_rows[i])
@@ -1033,19 +820,6 @@ impl ShelfView {
             )
             .into_any_element()
     }
-
-    fn hint(&self) -> AnyElement {
-        let p = self.theme.get().pdf_style();
-        div()
-            .h(px(HINT))
-            .flex()
-            .items_center()
-            .justify_center()
-            .text_size(px(11.))
-            .text_color(p.header_muted)
-            .child("Drag a preview into any app")
-            .into_any_element()
-    }
 }
 
 impl Render for ShelfView {
@@ -1054,23 +828,8 @@ impl Render for ShelfView {
         let p = theme.pdf_style();
         let list: AnyElement = if self.picking {
             self.picker(cx)
-        } else if self.content.documents.is_empty() {
-            div()
-                .h(px(EMPTY))
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_color(p.header_muted)
-                .child("Pseudonymized documents appear here")
-                .into_any_element()
         } else {
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(ROW_GAP))
-                .children((0..self.content.documents.len()).map(|i| self.document_row(i, cx)))
-                .when(self.content.shows_hint(), |v| v.child(self.hint()))
-                .into_any_element()
+            self.rows.clone().into_any_element()
         };
         div()
             .id("shelf")
@@ -1098,7 +857,7 @@ impl Render for ShelfView {
                 cx.listener(|this, _: &ShelfDown, window, cx| this.move_focus(1, window, cx)),
             )
             .on_action(cx.listener(|this, _: &ShelfCopyForAi, window, cx| {
-                if let Some(index) = this.focused_row(window) {
+                if let Some(index) = this.focused_row(window, cx) {
                     this.copy(index, window, cx)
                 }
             }))
@@ -1107,12 +866,8 @@ impl Render for ShelfView {
                     this.copy(row.0 - 1, window, cx)
                 }
             }))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|this, _, _, _| this.press = None),
-            )
             // A drag released over the shelf lands here, not in another app.
-            .on_drop(cx.listener(|this, _: &ExternalPaths, _, _| this.dropped_on_shelf()))
+            .on_drop(cx.listener(|this, _: &ExternalPaths, _, cx| this.dropped_on_shelf(cx)))
             .size_full()
             .overflow_y_scroll()
             .bg(surface(theme))
@@ -1125,7 +880,7 @@ impl Render for ShelfView {
 impl ShelfView {
     /// Everything the shelf shows, in one column the popup measures.
     fn body(&self, list: AnyElement, cx: &mut Context<Self>) -> AnyElement {
-        let update = self.content.update.clone();
+        let update = self.update.clone();
         div()
             .relative()
             .flex_shrink_0()
