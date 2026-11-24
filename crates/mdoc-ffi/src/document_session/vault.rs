@@ -282,15 +282,19 @@ impl DocumentSession {
     }
 
     /// `discard_if_empty` for a document in the Vault, or to be saved
-    /// there: a new document left empty goes, its record too once saved.
-    /// True when it went; the session then holds no document.
+    /// there: a new document left empty, with no notes either, goes, its
+    /// record too once saved. True when it went; the session then holds no
+    /// document.
     pub fn discard_if_empty_in_vault(&self, vault: Arc<Vault>) -> Result<bool, CoreError> {
         let _saving = self.lock_saving();
         let mut guard = self.lock_document();
         let Some(document) = guard.as_ref() else {
             return Ok(false);
         };
-        if document.origin != DocumentOrigin::New || !document.review.text.trim().is_empty() {
+        if document.origin != DocumentOrigin::New
+            || !document.review.text.trim().is_empty()
+            || !document.notes.trim().is_empty()
+        {
             return Ok(false);
         }
         if let Some(id) = document.vault.as_ref().and_then(|p| p.id.as_ref()) {

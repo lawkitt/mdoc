@@ -35,6 +35,8 @@ struct DocumentScreen: View {
     @State private var textViewport = PageViewport()
     /// The saved reply a promoted document came from, shown restored.
     @State private var shownFromReply: SavedReply?
+    /// Promote to Document from that sheet, once it has closed.
+    @State private var promoting: ReplyID?
 
     private var hasRightPane: Bool { model.hasRightPane }
 
@@ -94,10 +96,10 @@ struct DocumentScreen: View {
             .sheet(isPresented: $model.showsNotes) {
                 NotesSheet(model: model)
             }
-            .sheet(item: $shownFromReply) { reply in
+            .sheet(item: $shownFromReply, onDismiss: promoteFromSheet) { reply in
                 if let app {
                     SavedReplySheet(reply: reply, restored: app.library.restore(reply.id)) {
-                        app.promote(reply.id)
+                        promoting = reply.id
                     }
                 }
             }
@@ -198,6 +200,13 @@ struct DocumentScreen: View {
                 }
             }
         }
+    }
+
+    /// Promote to Document asked for in the reply sheet that just closed.
+    private func promoteFromSheet() {
+        guard let reply = promoting else { return }
+        promoting = nil
+        app?.promote(reply)
     }
 
     /// Promote to Document of the reply the pane shows (#1091 Decision 3).
@@ -507,11 +516,17 @@ struct DocumentScreen: View {
         // The document's own notes, and the reply it was promoted from
         // (#1091 Decision 3).
         Section {
+            // The core keeps notes with the document it has read: until
+            // then nothing typed could be kept.
             Button {
                 model.showsNotes = true
             } label: {
                 Label("Notes", systemImage: "note.text")
+                if model.snapshot.phase == nil {
+                    Text("Once the document is read")
+                }
             }
+            .disabled(model.snapshot.phase == nil)
             .accessibilityIdentifier("document-notes")
             switch model.snapshot.promotedFrom {
             case .reply(let reply):

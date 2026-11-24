@@ -7,7 +7,7 @@ import XCTest
 /// saved reply becomes a new document in its Project, with the way back.
 @MainActor
 final class DocumentNotesTests: XCTestCase {
-    private static let notes = "Call the Brightwater office on Monday about the deposit."
+    private static let notes = "Call the Halvorsen office on Monday about the deposit."
 
     /// The Vault's id of a seeded document, as a library opened again
     /// lists it.
@@ -49,6 +49,20 @@ final class DocumentNotesTests: XCTestCase {
         XCTAssertEqual(try again.library.session(for: try vaultID(seeded.quotation, in: seeded)).notes(), Self.notes)
     }
 
+    /// Search reads titles and the text, never notes: neither the
+    /// sidebar's search nor Find in document finds a word only the notes
+    /// have.
+    func testNotesAreNotSearched() throws {
+        let seeded = try Fixture.seeded()
+        let app = Fixture.app(seeded)
+        let model = try seeded.model(seeded.quotation)
+        model.setNotes(Self.notes)
+        model.saveNotes()
+        app.library.refresh()
+        XCTAssertTrue(app.library.search("Halvorsen").documents.isEmpty)
+        XCTAssertTrue(model.matches(of: "Halvorsen").isEmpty)
+    }
+
     /// Copy for AI and Share send the document's text alone: never its
     /// notes, as text or as the shared file.
     func testNotesNeverLeaveWithCopyForAIOrShare() throws {
@@ -65,7 +79,7 @@ final class DocumentNotesTests: XCTestCase {
         let file = try String(contentsOf: try XCTUnwrap(shared.file), encoding: .utf8)
         XCTAssertNil(model.errorMessage)
         for text in [copied, shared.text, file] {
-            XCTAssertFalse(text.contains("Brightwater office"), text)
+            XCTAssertFalse(text.contains("Halvorsen"), text)
         }
     }
 

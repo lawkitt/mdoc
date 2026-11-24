@@ -170,8 +170,8 @@ fn an_unsaved_new_document_follows_too() {
     assert_eq!(vault.document(saved.id).unwrap().title, "Notes");
 }
 
-/// Left empty, a new document goes; with text, renamed, or not new, it
-/// stays.
+/// Left empty, a new document goes; with text, notes, renamed, or not new,
+/// it stays.
 #[test]
 fn an_empty_new_document_is_discarded() {
     let scratch = Scratch::new();
@@ -198,11 +198,15 @@ fn an_empty_new_document_is_discarded() {
         .unwrap();
     assert!(!discard(&renamed).unwrap());
 
+    let (noted, _) = new_document(&vault, "New document");
+    noted.set_notes("Ring the bank.".into()).unwrap();
+    assert!(!discard(&noted).unwrap(), "its notes keep it");
+
     let ordinary = DocumentSession::new();
     ordinary.import_text(String::new(), "Empty".into()).unwrap();
     ordinary.save_into_vault(vault.clone()).unwrap();
     assert!(!discard(&ordinary).unwrap());
-    assert_eq!(vault.documents().len(), 3);
+    assert_eq!(vault.documents().len(), 4);
 }
 
 /// The sample is told apart in the Vault's list, so Try a sample finds it

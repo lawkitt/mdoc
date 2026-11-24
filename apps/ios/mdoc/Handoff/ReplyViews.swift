@@ -184,7 +184,8 @@ struct PromoteButton: View {
 struct SavedReplySheet: View {
     let reply: SavedReply
     let restored: Result<RestoreResult, CoreError>
-    /// Nil: the reply can't be promoted here.
+    /// Nil: the reply can't be promoted here. Called as the sheet closes:
+    /// the presenter promotes once it has gone, so an error can show.
     var onPromote: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var share: ShareItems?
@@ -212,8 +213,8 @@ struct SavedReplySheet: View {
                             .accessibilityIdentifier("share-reply")
                             if let onPromote {
                                 PromoteButton {
-                                    dismiss()
                                     onPromote()
+                                    dismiss()
                                 }
                             }
                             Spacer()
