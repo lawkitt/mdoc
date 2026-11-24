@@ -1552,3 +1552,61 @@ fn an_unfiled_delete_never_takes_a_document_moved_into_a_project_while_it_asked(
         Some(project.id.as_str())
     );
 }
+
+/// Review of #1145, round 2 (P2): Move to New Project writes the new
+/// Project's categories and dismissed hints with the move itself, so no
+/// later write can fail after the move is in and report it as not done.
+#[gpui::test]
+fn move_to_new_project_writes_its_settings_with_the_move(cx: &mut TestAppContext) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.md");
+    std::fs::write(&path, "Anna wrote.").unwrap();
+    // Armed, the Vault takes two Project writes and fails the third.
+    let armed = Arc::new(AtomicBool::new(false));
+    let writes = Arc::new(AtomicUsize::new(0));
+    let root = dir.path().join("vault");
+    let hook: mdoc_vault::FaultHook = {
+        let (armed, writes) = (armed.clone(), writes.clone());
+        Arc::new(move |step| {
+            let project = step.kind == mdoc_vault::ObjectKind::Project
+                && step.stage == mdoc_vault::Stage::BeforeRename;
+            if armed.load(Ordering::SeqCst) && project && writes.fetch_add(1, Ordering::SeqCst) >= 2
+            {
+                mdoc_vault::Fault::Crash
+            } else {
+                mdoc_vault::Fault::Continue
+            }
+        })
+    };
+    let (tabs, cx) = boot_home_with(cx, Session::default(), move |tabs, _, _| {
+        tabs.use_vault(mdoc_vault::Vault::open_with_hook(root, &[3; 32], hook).unwrap())
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+    cx.run_until_parked();
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    armed.store(true, Ordering::SeqCst);
+    let project = new_project(&tabs, cx, tab);
+    assert_eq!(writes.load(Ordering::SeqCst), 2, "the move's two writes");
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(
+            tabs.notices.message().is_none(),
+            "{:?}",
+            tabs.notices.message()
+        );
+        assert!(tabs.moving.is_empty(), "the tab loaded again");
+    });
+    let stored = vault(&tabs, cx).project(&project).unwrap();
+    let skip = cx.update(|_, cx| {
+        let preferences = tabs.read(cx).preferences.borrow();
+        preferences
+            .current
+            .as_ref()
+            .unwrap()
+            .categories
+            .skip
+            .clone()
+    });
+    assert_eq!(stored.skip, skip);
+}

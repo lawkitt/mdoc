@@ -815,17 +815,13 @@ impl Workspace {
                             colour: None,
                             pinned: false,
                         };
-                        let moved = vault.move_document_to_new_project(id, new)?;
                         // Its categories start from Settings › Detection, and
-                        // the hints it dismissed stay dismissed.
-                        let mut moved = moved;
-                        if let Some(project) = &moved.project {
-                            moved.project = Some(vault.update_project(&project.id, |project| {
-                                project.skip = skip;
-                                project.dismissed_hints = dismissed;
-                            })?);
-                        }
-                        Ok(moved)
+                        // the hints it dismissed stay dismissed: written with
+                        // the move, so nothing can fail once it is in.
+                        vault.move_document_to_new_project_with(id, new, |project| {
+                            project.skip = skip;
+                            project.dismissed_hints = dismissed;
+                        })
                     });
                 let made = (result.as_ref().ok())
                     .and_then(|moved| moved.project.as_ref().map(|p| p.id.clone()));

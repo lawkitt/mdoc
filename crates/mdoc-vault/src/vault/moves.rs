@@ -54,7 +54,8 @@ pub enum ProjectDocuments {
 /// Where a move goes.
 enum Target<'a> {
     Project(&'a str),
-    New(NewProject),
+    /// A new Project, set up before its first write.
+    New(NewProject, Box<dyn FnOnce(&mut Project) + 'a>),
     /// Unfiled, starting from this mapping of its own.
     Unfiled(Mapping),
 }
@@ -103,8 +104,21 @@ impl Vault {
         document: &str,
         new: NewProject,
     ) -> Result<Moved, VaultError> {
+        self.move_document_to_new_project_with(document, new, |_| {})
+    }
+
+    /// [`Self::move_document_to_new_project`], the new Project set up by
+    /// `setup` (its categories, its dismissed hints) before its first
+    /// write: one move, so a failure leaves neither the Project nor the
+    /// move behind.
+    pub fn move_document_to_new_project_with(
+        &self,
+        document: &str,
+        new: NewProject,
+        setup: impl FnOnce(&mut Project),
+    ) -> Result<Moved, VaultError> {
         let lock = self.write_lock()?;
-        self.move_locked(&lock, document, Target::New(new), &[])
+        self.move_locked(&lock, document, Target::New(new, Box::new(setup)), &[])
     }
 
     /// Undo a move: the Document moves back as [`Self::move_document`]
@@ -217,8 +231,8 @@ impl Vault {
                 return Err(VaultError::AlreadyThere);
             }
             Target::Project(id) => (Landing::Project(self.load_record(id)?), None),
-            Target::New(new) => {
-                let project = self.create_project_locked(lock, new)?;
+            Target::New(new, setup) => {
+                let project = self.create_project_locked(lock, new, setup)?;
                 (Landing::Project(project.clone()), Some(project.id))
             }
             Target::Unfiled(_) if stored.project.is_none() => return Err(VaultError::AlreadyThere),

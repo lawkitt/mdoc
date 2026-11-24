@@ -322,16 +322,19 @@ impl Vault {
 
     pub fn create_project(&self, new: NewProject) -> Result<Project, VaultError> {
         let lock = self.write_lock()?;
-        self.create_project_locked(&lock, new)
+        self.create_project_locked(&lock, new, |_| {})
     }
 
+    /// Create a Project from `new`, set up by `setup` before its first
+    /// write.
     fn create_project_locked(
         &self,
         lock: &WriteLock<'_>,
         new: NewProject,
+        setup: impl FnOnce(&mut Project),
     ) -> Result<Project, VaultError> {
         let now = now();
-        let project = Project {
+        let mut project = Project {
             id: new_id()?,
             name: new.name,
             colour: new.colour,
@@ -344,6 +347,7 @@ impl Vault {
             skip: Vec::new(),
             dismissed_hints: Vec::new(),
         };
+        setup(&mut project);
         self.write_record(lock, &project)?;
         Ok(project)
     }
