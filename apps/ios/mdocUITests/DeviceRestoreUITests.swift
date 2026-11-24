@@ -172,7 +172,7 @@ final class DeviceRestoreUITests: XCTestCase {
         XCTAssertTrue(mdoc.waitForExistence(timeout: MdocUITest.timeout), dump(notes, "share-sheet"))
         mdoc.tap()
 
-        let picker = notes.descendants(matching: .any)["restore-case-picker"].firstMatch
+        let picker = notes.descendants(matching: .any)["restore-project-picker"].firstMatch
         XCTAssertTrue(picker.waitForExistence(timeout: 30), dump(notes, "extension"))
         XCTAssertEqual(picker.label, place, "the extension's default place")
         let save = notes.buttons["restore-save"].firstMatch

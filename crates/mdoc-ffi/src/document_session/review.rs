@@ -3,7 +3,7 @@
 //! `mdoc_pii::Review` as the same `mdoc_history` transactions, in the same
 //! order, as on desktop (`src/pii/ui.rs` `commit_plans` and
 //! `checkpoint_review`, `src/pii/ui/mapping/popup.rs`, `src/pii/ui/mapping.rs`
-//! and `src/pii/ui/case_sync.rs`). The history is a line of states, each
+//! and `src/pii/ui/project_sync.rs`). The history is a line of states, each
 //! one user action, typing coalesced into "Typing" steps (`typing`): Undo
 //! and Redo travel it as desktop's editor does (`history`), and the identity
 //! tools are desktop's mapping changes (`mapping`).
@@ -78,7 +78,7 @@ pub(crate) struct ReviewText {
     base: Option<history::Saved>,
     /// The step in progress's edits, one sorted batch per transaction.
     edits: Vec<Vec<SourceEdit>>,
-    /// Merge hints dismissed here or in the case, by the wordings that
+    /// Merge hints dismissed here or in the Project, by the wordings that
     /// matched (`MergeHint::pair`).
     dismissed: HashSet<(Arc<str>, Arc<str>)>,
     /// Mention ids that survive changes (`ids`).
@@ -442,7 +442,7 @@ impl ReviewText {
     }
 
     /// × on the hint from `from` into `into`: it stays hidden, and saving
-    /// keeps it hidden in the case. Not an undo step, as on desktop.
+    /// keeps it hidden in the Project. Not an undo step, as on desktop.
     pub fn dismiss_hint(&mut self, from: u64, into: u64) -> Result<(), CoreError> {
         let hint = self
             .merge_hints()
@@ -453,7 +453,7 @@ impl ReviewText {
         Ok(())
     }
 
-    /// Hints the case's members dismissed (`dismiss_case_hints`).
+    /// Hints the Project's documents dismissed (`dismiss_project_hints`).
     pub fn dismiss_pairs(&mut self, pairs: &[(String, String)]) {
         for (a, b) in pairs {
             self.dismissed
@@ -461,7 +461,7 @@ impl ReviewText {
         }
     }
 
-    /// Every dismissed pair, sorted, for the case (`dismissed_hint_pairs`).
+    /// Every dismissed pair, sorted, for the Project (`dismissed_hint_pairs`).
     pub fn dismissed_pairs(&self) -> Vec<(String, String)> {
         let mut pairs: Vec<_> = self
             .dismissed
@@ -760,32 +760,32 @@ impl ReviewText {
         Ok(())
     }
 
-    /// Line this document up with a case (`join_case_identities`): names the
-    /// case knows take its aliases, colliding ones the next free number, and
-    /// the case's other names are proposed wherever they occur.
+    /// Line this document up with a Project (`join_project_identities`):
+    /// names the Project knows take its aliases, colliding ones the next free
+    /// number, and the Project's other names are proposed wherever they occur.
     pub fn join(
         &mut self,
-        case: &[ExportedIdentity],
+        project: &[ExportedIdentity],
         reserved: &[String],
     ) -> Result<(), CoreError> {
-        let step = Step::new(StepKind::JoinCase, String::new(), Focus::default());
-        self.step(step, |document, _| document.join_now(case, reserved))
+        let step = Step::new(StepKind::JoinProject, String::new(), Focus::default());
+        self.step(step, |document, _| document.join_now(project, reserved))
     }
 
     fn join_now(
         &mut self,
-        case: &[ExportedIdentity],
+        project: &[ExportedIdentity],
         reserved: &[String],
     ) -> Result<(), CoreError> {
         let document = self.review.export_identities_with_ids();
-        let plan = plan_join(case, &document, reserved);
+        let plan = plan_join(project, &document, reserved);
         self.review.reserve_aliases(reserved);
         let history = self.history;
         let old = self.review.identity_snapshot();
         self.retag(&plan.changes)?;
-        // Joining again (each save does, against the case as stored now)
-        // seeds only names this review does not know yet, as a case-wide
-        // sync does (`sync_case_identities`).
+        // Joining again (each save does, against the Project as stored now)
+        // seeds only names this review does not know yet, as a Project-wide
+        // sync does (`sync_project_identities`).
         let unmatched: Vec<_> = plan
             .unmatched
             .into_iter()
@@ -807,15 +807,15 @@ impl ReviewText {
         Ok(())
     }
 
-    /// A saved document reopened (`open_case_mapping`): its mapping's
+    /// A saved document reopened (`open_project_mapping`): its mapping's
     /// names are proposed with every retired alias in `reserved` kept
     /// back, and alias tokens already in the text become their applied
     /// replacements, so Copy for AI and restore know them. No step.
-    pub fn open_case(&mut self, case: &[ExportedIdentity], reserved: &[String]) {
+    pub fn open_mapping(&mut self, mapping: &[ExportedIdentity], reserved: &[String]) {
         let text = self.text.clone();
         self.review.reserve_aliases(reserved);
-        let ids = self.review.seed(case, &text);
-        self.review.relink(&text, case, &ids, self.history);
+        let ids = self.review.seed(mapping, &text);
+        self.review.relink(&text, mapping, &ids, self.history);
     }
 
     /// Retag identities and rewrite their applied aliases as one step
@@ -1110,7 +1110,7 @@ mod tests {
 
     #[test]
     fn a_reopened_member_relinks_its_aliases() {
-        let case = [ExportedIdentity {
+        let project = [ExportedIdentity {
             alias: "PERSON_1".into(),
             previous: Vec::new(),
             category: Category::Person,
@@ -1118,7 +1118,7 @@ mod tests {
             originals: vec![Arc::from("Ann Lee")],
         }];
         let mut document = ReviewText::new("PERSON_1 wrote to Ann Lee.".into());
-        document.open_case(&case, &[]);
+        document.open_mapping(&project, &[]);
         assert_eq!(document.review.applied().len(), 1);
         assert_eq!(document.review.remaining(), 1);
         document.replace_all().unwrap();
@@ -1175,17 +1175,17 @@ mod tests {
     }
 
     #[test]
-    fn joining_a_case_takes_its_aliases_and_proposes_its_names() {
+    fn joining_a_project_takes_its_aliases_and_proposes_its_names() {
         let text = "Ivan Petrov and Anna Ivanova signed.";
         let mut document = document(text, &[("Anna Ivanova", Category::Person)]);
-        let case = [ExportedIdentity {
+        let project = [ExportedIdentity {
             alias: "PERSON_4".into(),
             previous: Vec::new(),
             category: Category::Person,
             custom: false,
             originals: vec![Arc::from("Ivan Petrov")],
         }];
-        document.join(&case, &["PERSON_1".into()]).unwrap();
+        document.join(&project, &["PERSON_1".into()]).unwrap();
         document.replace_all().unwrap();
         assert_eq!(document.text, "PERSON_4 and PERSON_5 signed.");
     }
@@ -1558,23 +1558,23 @@ mod tests {
     }
 
     #[test]
-    fn joining_a_case_is_one_step() {
+    fn joining_a_project_is_one_step() {
         let text = "Ivan Petrov and Anna Ivanova signed.";
         let mut document = document(text, &[("Anna Ivanova", Category::Person)]);
         document.replace_all().unwrap();
         let before = shown(&mut document);
-        let case = [ExportedIdentity {
+        let project = [ExportedIdentity {
             alias: "PERSON_1".into(),
             previous: Vec::new(),
             category: Category::Person,
             custom: false,
             originals: vec![Arc::from("Ivan Petrov")],
         }];
-        document.join(&case, &[]).unwrap();
+        document.join(&project, &[]).unwrap();
         // Anna renumbered and Ivan proposed, in one step.
         assert_eq!(document.text, "Ivan Petrov and PERSON_2 signed.");
         assert_eq!(document.review.remaining(), 1);
-        assert_eq!(undo_label(&document), "Join case");
+        assert_eq!(undo_label(&document), "Join Project");
         round_trip(&mut document, &before);
     }
 
@@ -1604,7 +1604,7 @@ mod tests {
         assert_eq!(document.review.merge_hints().len(), 1);
         assert_eq!(document.undo.len(), steps, "no step");
         assert!(document.dismiss_hint(from, into).is_err(), "hidden already");
-        // The case keeps it hidden in another document.
+        // The Project keeps it hidden in another document.
         let mut other = hinted();
         other.dismiss_pairs(&document.dismissed_pairs());
         assert!(other.merge_hints().is_empty());

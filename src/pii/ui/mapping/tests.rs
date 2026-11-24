@@ -2906,7 +2906,7 @@ fn review_footer_fits_at_minimum_window_size(cx: &mut gpui::TestAppContext) {
                 app.update_in(cx, |app, window, cx| {
                     app.apply_replacements(cx);
                     let identity = app.pii.review.applied()[0].step.identity;
-                    // A case mapping can change while the text still uses its
+                    // A Project mapping can change while the text still uses its
                     // old alias, exposing the footer's Update aliases action.
                     app.pii
                         .review

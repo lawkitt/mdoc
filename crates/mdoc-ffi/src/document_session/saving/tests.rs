@@ -299,7 +299,7 @@ fn a_tap_during_a_slow_save_returns_at_once() {
 fn a_rejoin_is_told_after_a_failed_write() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let sessions: Vec<_> = [
         ("Ann Lee signed.", "Ann Lee"),
         ("Bob Hart signed.", "Bob Hart"),
@@ -373,7 +373,7 @@ fn a_document_replaced_during_the_save_is_not_marked_saved() {
 fn a_save_whose_record_failed_saves_next_time() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let (session, id) = saved(
         &vault,
         Some(&project.id),
@@ -478,7 +478,7 @@ fn not_a_name_leaves_the_mapping_and_undo_brings_it_back() {
 fn not_a_name_stays_in_the_project_while_another_document_uses_it() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let sessions: Vec<_> = ["Ann Lee signed.", "Ann Lee paid."]
         .into_iter()
         .map(|text| saved(&vault, Some(&project.id), text, &["Ann Lee"], true))
@@ -524,7 +524,7 @@ fn undoing_not_a_name_after_keep_instead_refills_the_mapping() {
 fn a_wording_the_project_keeps_stays_off_when_the_document_opens() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let sessions: Vec<_> = ["Ann Lee signed.", "Ann Lee paid."]
         .into_iter()
         .map(|text| saved(&vault, Some(&project.id), text, &["Ann Lee"], true))
@@ -555,7 +555,7 @@ fn a_wording_the_project_keeps_stays_off_when_the_document_opens() {
 fn undo_after_another_documents_save_keeps_the_alias() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let (ann, ann_id) = saved(&vault, Some(&project.id), "Ann Lee signed.", &[], false);
     let (bob, bob_id) = saved(&vault, Some(&project.id), "Bob Hart paid.", &[], false);
     propose(&ann, &["Ann Lee"]);
@@ -586,7 +586,7 @@ fn undo_after_another_documents_save_keeps_the_alias() {
 fn a_longer_alias_elsewhere_does_not_keep_a_shorter_ones_wording() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let (session, id) = saved(
         &vault,
         Some(&project.id),
@@ -635,7 +635,7 @@ fn a_longer_alias_elsewhere_does_not_keep_a_shorter_ones_wording() {
 fn undo_survives_joining_the_project_again() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let b = DocumentSession::new();
     b.import_text("Ann Lee paid Bob Hart.".into(), "B".into())
         .unwrap();

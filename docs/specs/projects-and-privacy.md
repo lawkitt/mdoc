@@ -1,6 +1,6 @@
-# Cases and privacy
+# Projects and privacy
 
-Mappings, saved cases and their key, restoring AI replies, what never leaves
+Mappings, the Vault and its key, restoring AI replies, what never leaves
 the device, and crash reports. The user-facing summary is
 [privacy.md](../privacy.md); keep it true when a rule here changes. Terms are
 in [CONTEXT.md](../../CONTEXT.md).
@@ -24,14 +24,21 @@ in [CONTEXT.md](../../CONTEXT.md).
   password-protected originals stay locked on disk.
 - Never write a plaintext key file or a plaintext fallback, not for dev
   builds and not as an opt-in; without a keyring, the Vault is unavailable.
-- The key is the only way to read the Vault, so desktop shows a recovery key
-  in Settings (never written to disk by mdoc), accepts one on the wrong-key
-  screen, and exports a Project as Markdown and originals. Mobile offers neither: its files never reach a
-  backup, and device transfer is its way to a new phone.
+- The key is the only way to read the Vault, so desktop shows a recovery key,
+  accepts one on the wrong-key screen, and exports a Project as Markdown and
+  originals. Mobile offers neither: its files never reach a backup, and device
+  transfer is its way to a new phone.
+- The recovery key shows only behind Settings › Vault › Show Recovery Key,
+  with no Copy button, and never reaches a log, a notice or a plain file.
+- An accepted recovery key goes to its own slot in the OS key store
+  (`vault-key`), read before the old key, which is never rewritten.
 - mdoc keeps every import, with its original and mapping, until the user
   deletes it; [privacy.md](../privacy.md) says so in those words.
 - A build that introduces the Vault leaves the old cases folder and key
   untouched.
+- The Vault folder sits beside the key's folder, never inside it (`vault`
+  beside `cases`, `vault-dev` beside `cases-dev`), so a dev build never opens
+  the release Vault.
 - Text leaves (Copy for AI, Share, shelf, MCP) only after a fresh check
   against the Project's names; a stored copy of AI-ready text is never served.
 - A saved AI reply restores by the identities its aliases meant when saved,
@@ -44,15 +51,23 @@ in [CONTEXT.md](../../CONTEXT.md).
 - Moving a document into a Project reconciles matching originals to the target
   Project's aliases and updates the document text undoably; deleting a non-empty
   Project always asks whether to move documents to Unfiled or delete them.
+- Deleting a Project deletes its own AI replies whichever way its documents
+  go; a document's replies go with the document.
 - There is no project-wide undo: a change reaches other open members as an edit
   in each one's own history.
 - Encryption at rest protects against other people and casual inspection,
   not against malware running as the same user.
 - Pseudonymized text is still personal data; never call a Project or its output
   anonymous.
+- A Document's notes are private: no Copy for AI, Share, shelf or connector
+  read sends them. Only Export Project writes them, as `<Title>.notes.md`
+  beside the Markdown.
+- Promote to Document copies a saved reply, restored with its place's mapping
+  as it is then, into a new unreviewed Document with no original; the reply
+  stays.
 - A Project colour marks the Project, never a state.
 
-## Case key access
+## Vault key access
 
 - The per-query `kSecUseAuthenticationUIFail` flag does not prevent the
   macOS password dialog; only the process-wide

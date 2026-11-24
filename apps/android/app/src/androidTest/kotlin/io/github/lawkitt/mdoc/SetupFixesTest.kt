@@ -49,14 +49,14 @@ class SetupFixesTest {
 
     @Test
     fun aCoreThatFailsToOpenShowsOnHomeAndDoesNotCrash() {
-        app.openCore = { error("The stored case key is damaged.") }
+        app.openCore = { error("The stored Vault key is damaged.") }
         app.reopenCore()
         ActivityScenario.launch(MainActivity::class.java).use {
             compose.waitUntil(10_000) {
                 compose.onAllNodes(hasText("mdoc could not open its documents")).fetchSemanticsNodes().isNotEmpty()
             }
             // With the reason, and not as an empty library.
-            compose.onNodeWithText("The stored case key is damaged.").assertExists()
+            compose.onNodeWithText("The stored Vault key is damaged.").assertExists()
             compose.onNodeWithText("No documents yet").assertDoesNotExist()
         }
     }

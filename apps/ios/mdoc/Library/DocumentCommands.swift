@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A document's menu on its sidebar row and its Documents page row (ADR
-/// 0102): Rename…, Move to case, Share, Delete. The title's menu has the
+/// 0102): Rename…, Move to Project, Share, Delete. The title's menu has the
 /// same items in its own groups (ADR 0114). What a command asks for is
 /// presented by `Presenter`.
 struct DocumentMenuItems: View {
@@ -15,7 +15,7 @@ struct DocumentMenuItems: View {
     }
 }
 
-/// Rename… and Move to case ›.
+/// Rename… and Move to Project ›.
 struct DocumentFileItems: View {
     let app: AppModel
     let document: LibraryDocument
@@ -101,7 +101,7 @@ struct DocumentDeleteButton: View {
     }
 }
 
-/// Move to case › All projects…: every other case, searchable.
+/// Move to Project › All Projects…: every other Project, searchable.
 struct ProjectPicker: View {
     let projects: [ProjectSummary]
     let onPick: (ProjectID) -> Void

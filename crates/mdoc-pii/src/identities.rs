@@ -561,10 +561,10 @@ fn contained_name(whole: &str, part: &str) -> bool {
             .any(|(start, _)| exact_boundary(whole, &(start..start + part.len()), part))
 }
 impl Review {
-    /// Match the case identity by both its aliases and original wording.
+    /// Match the Project's identity by both its aliases and original wording.
     /// A join may have reassigned a creation alias to a different person.
     /// Dormant seeds and pending renames still retain their wording ownership.
-    pub fn forget_case_identity(&mut self, aliases: &[&str], originals: &[String]) {
+    pub fn forget_project_identity(&mut self, aliases: &[&str], originals: &[String]) {
         let ids: Vec<_> =
             self.identities
                 .ids()
@@ -609,7 +609,7 @@ impl Review {
     }
     /// Stop proposing `category`: forget its identities that are
     /// scan proposals only. An identity that replaced text (now or in undo
-    /// history), or that has a manual, case or restored variant, stays.
+    /// history), or that has a manual, Project or restored variant, stays.
     /// Returns how many identities were forgotten.
     pub fn withdraw_detected(&mut self, category: Category) -> usize {
         let ids: Vec<_> = self
@@ -776,7 +776,7 @@ impl Review {
                 .count()
     }
     /// A variant off only by default: an undone step that switched it on
-    /// (a case join, a manual addition) withdrew it. No Keep of its own.
+    /// (a Project join, a manual addition) withdrew it. No Keep of its own.
     pub(super) fn withdrawn(&self, group: u64) -> bool {
         self.variant(group).is_some_and(|g| g.keep_default)
             && !self
@@ -792,7 +792,7 @@ impl Review {
     pub fn rename_identity(&mut self, id: u64, alias: &str) -> Result<(), String> {
         self.revision.advance();
         if self.reserved_tokens.contains(alias) {
-            return Err("That alias was retired by the case. Choose another alias.".into());
+            return Err("That alias was retired by the Project. Choose another alias.".into());
         }
         if !valid_replacement(alias) {
             return Err("Use an ASCII alias with letters, digits, underscores or hyphens (up to 128 characters).".into());
@@ -886,8 +886,8 @@ impl Review {
             .chain(self.identities.ids())
             .find(|id| self.identity(*id).is_some_and(|i| i.alias == alias))
     }
-    /// Give several identities new aliases (and categories) at once, as a case
-    /// does when a document joins it. The result must leave active aliases
+    /// Give several identities new aliases (and categories) at once, as a
+    /// Project does when a document joins it. The result must leave active aliases
     /// unique; nothing changes otherwise.
     pub fn reassign_aliases(
         &mut self,

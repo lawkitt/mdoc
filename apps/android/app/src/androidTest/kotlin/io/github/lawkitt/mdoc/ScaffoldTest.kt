@@ -3,7 +3,7 @@ package io.github.lawkitt.mdoc
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.lawkitt.mdoc.core.AppCore
-import io.github.lawkitt.mdoc.storage.KeystoreCaseKeyStore
+import io.github.lawkitt.mdoc.storage.KeystoreVaultKeyStore
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import java.io.File
 import org.junit.Assert.assertArrayEquals
@@ -23,11 +23,11 @@ class ScaffoldTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
-    fun caseKeyIsMadeOnceAndUnwrapsAgain() {
+    fun vaultKeyIsMadeOnceAndUnwrapsAgain() {
         val file = File(context.noBackupFilesDir, "test-case-key.bin").apply { delete() }
         val alias = "mdoc-case-key-test"
-        val first = KeystoreCaseKeyStore(file, alias).key()
-        val again = KeystoreCaseKeyStore(file, alias).key()
+        val first = KeystoreVaultKeyStore(file, alias).key()
+        val again = KeystoreVaultKeyStore(file, alias).key()
         assertEquals(32, first.size)
         assertArrayEquals(first, again)
         assertTrue("the stored key is wrapped, not the key itself", !file.readBytes().contentEquals(first))
@@ -37,12 +37,12 @@ class ScaffoldTest {
     @Test
     fun vaultStoresADocumentUnderTheKeystoreKey() {
         val storage = MdocStorage.app(context, folder = "scaffold-test").prepare()
-        val key = storage.caseKeyFile
+        val key = storage.vaultKeyFile
         try {
             val core = AppCore.make(
                 context,
                 storage = storage,
-                keys = KeystoreCaseKeyStore(key, "mdoc-case-key-test"),
+                keys = KeystoreVaultKeyStore(key, "mdoc-case-key-test"),
             )
             DocumentSession().use { session ->
                 session.importText("Letter to Maya Bennett.", "Letter")

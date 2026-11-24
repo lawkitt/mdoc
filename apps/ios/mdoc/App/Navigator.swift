@@ -37,16 +37,16 @@ enum Presentation: Identifiable {
     /// An import of a file already in mdoc: Open Existing or Import Again
     /// (#1091 Decision 7).
     case repeatedImport(RepeatedImport)
-    /// Move to case › New case…: a name for the case the document moves to.
+    /// Move to Project › New Project…: a name for the Project the document moves to.
     case moveToNewProject(DocumentID)
-    /// Move to case › All projects…: every other case, to move the document to.
+    /// Move to Project › All Projects…: every other Project, to move the document to.
     case chooseProject(DocumentID)
     /// Share from a document's menu: the reviewed text.
     case share(ShareItems)
     case settings
     /// An add flow from Start, the sidebar's New menu or the Documents page.
     case intake(Intake)
-    /// Something brought in, waiting for its title and case.
+    /// Something brought in, waiting for its title and Project.
     case importing(PendingImport)
     /// Try a sample on an edited sample: "Restore the sample?"
     case restoreSample(DocumentID)

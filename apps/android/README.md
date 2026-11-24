@@ -90,8 +90,8 @@ emulator: a keep rule R8 needs and the rules lack fails the job.
 
 - `core/AppCore.kt` makes the core's `Vault` (Projects, documents, replies),
   the Restore screen's `ReplyVault`, and `Setup` (models).
-- The case key is 32 random bytes wrapped by an Android Keystore key
-  (`storage/CaseKeyStore.kt`); documents, cases and models stay out of
+- The Vault key is 32 random bytes wrapped by an Android Keystore key
+  (`storage/VaultKeyStore.kt`); documents, Projects and models stay out of
   backups and device transfers (`res/xml/data_extraction_rules.xml`).
 - The APK extracts its native libraries: the core opens PDFium and ONNX
   Runtime by file path beside itself. The app sets `PDF_INSPECTOR_MODEL_CACHE`

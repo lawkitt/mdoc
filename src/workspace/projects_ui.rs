@@ -1724,8 +1724,8 @@ impl Workspace {
                         .text_size(px(12.))
                         .text_color(palette.header_muted)
                         .child(
-                            "No Projects yet. Right-click a tab, or open Share, and choose \
-                             Move to New Project.",
+                            "No Projects yet. Right-click a document in the sidebar, or open \
+                             Share, and choose Move to New Project.",
                         ),
                 )
             })

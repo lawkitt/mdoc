@@ -15,17 +15,17 @@ pub(crate) struct JoinSummary {
 }
 
 impl DocumentView {
-    /// Forget this case identity without touching a different identity whose
+    /// Forget this Project identity without touching a different identity whose
     /// alias collided before it joined. An older scan may not re-seed it.
     pub(crate) fn forget_project_identity(
         &mut self,
         aliases: &[&str],
         originals: &[String],
-        case: &[ExportedIdentity],
+        identities: &[ExportedIdentity],
         cx: &mut Context<Self>,
     ) {
         self.pii.cancel();
-        self.pii.review.forget_case_identity(aliases, originals);
+        self.pii.review.forget_project_identity(aliases, originals);
         self.pii.mapping.forget_project_originals(originals);
         self.pii.review.reserve_aliases(
             &aliases
@@ -33,7 +33,7 @@ impl DocumentView {
                 .map(|alias| alias.to_string())
                 .collect::<Vec<_>>(),
         );
-        self.project.set_names(case.to_vec());
+        self.project.set_names(identities.to_vec());
         self.review_changed(cx);
         cx.notify();
     }
@@ -71,14 +71,14 @@ impl DocumentView {
     /// proposed wherever they occur.
     pub(crate) fn join_project_identities(
         &mut self,
-        case: &[ExportedIdentity],
+        identities: &[ExportedIdentity],
         reserved: &[String],
         cx: &mut Context<Self>,
     ) -> Result<JoinSummary, String> {
         let document = self.pii.review.export_identities_with_ids();
-        let plan = plan_join(case, &document, reserved);
+        let plan = plan_join(identities, &document, reserved);
         self.pii.review.reserve_aliases(reserved);
-        self.project.set_names(case.to_vec());
+        self.project.set_names(identities.to_vec());
         let history = self.editor.read(cx).history_id();
         let old = self.pii.review.identity_snapshot();
         self.retag_identities(&plan.changes, cx)?;
@@ -118,10 +118,10 @@ impl DocumentView {
     pub(crate) fn sync_project_identities(
         &mut self,
         renames: &[(String, ExportedIdentity)],
-        case: &[ExportedIdentity],
+        identities: &[ExportedIdentity],
         cx: &mut Context<Self>,
     ) {
-        self.project.set_names(case.to_vec());
+        self.project.set_names(identities.to_vec());
         let review = &self.pii.review;
         let changes: Vec<_> = renames
             .iter()
@@ -135,7 +135,7 @@ impl DocumentView {
         if let Err(error) = self.retag_identities(&changes, cx) {
             self.pii.error = Some(format!("Could not follow a change to the Project: {error}"));
         }
-        let missing: Vec<_> = case
+        let missing: Vec<_> = identities
             .iter()
             .filter(|c| self.pii.review.identity_by_alias(&c.alias).is_none())
             .cloned()

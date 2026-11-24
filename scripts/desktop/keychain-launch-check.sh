@@ -1,36 +1,37 @@
 #!/usr/bin/env bash
 # Usage: scripts/desktop/keychain-launch-check.sh [/Applications/mdoc.app]
 # Release check: launching mdoc never shows the macOS Keychain
-# password dialog, even when a case key exists that this build cannot read
+# password dialog, even when a Vault key exists that this build cannot read
 # silently. Run on a clean macOS user account with the signed release
 # installed and quit.
 #
-# It seeds a login-keychain case key with `security add-generic-password`,
+# It seeds a login-keychain Vault key with `security add-generic-password`,
 # whose access list trusts only /usr/bin/security, exactly like a key made by
 # another build. Then it launches the app and watches for the dialog. Expected:
-# no dialog, and the bar "Saved cases are locked…" with Unlock… in the window.
-# The seeded key and cases folder are removed afterwards.
+# no dialog, and the bar "Your documents are locked…" with Unlock… in the
+# window. The seeded key and its folder are removed afterwards. The key keeps
+# the names an earlier build gave it for saved cases (`case-key`, `cases`).
 # shellcheck source=../lib.sh
 source "$(dirname "$0")/../lib.sh"
 
 app=${1:-/Applications/mdoc.app}
 [ -d "$app" ] || die "$app not found"
 service=io.github.lawkitt.mdoc
-cases="$HOME/Library/Application Support/mdoc/cases"
+key_dir="$HOME/Library/Application Support/mdoc/cases"
 pgrep -xq mdoc && die "quit mdoc first"
 security find-generic-password -s "$service" -a case-key >/dev/null 2>&1 &&
-  die "a case key already exists; run this on a clean user account"
-[ -e "$cases" ] && die "$cases already exists; run this on a clean user account"
+  die "a Vault key already exists; run this on a clean user account"
+[ -e "$key_dir" ] && die "$key_dir already exists; run this on a clean user account"
 
 cleanup() {
   pkill -x mdoc 2>/dev/null || true
   security delete-generic-password -s "$service" -a case-key >/dev/null 2>&1 || true
-  rm -rf "$cases"
+  rm -rf "$key_dir"
 }
 trap cleanup EXIT
 
 security add-generic-password -s "$service" -a case-key -X "$(openssl rand -hex 32)"
-mkdir -p "$cases"
+mkdir -p "$key_dir"
 open "$app"
 echo "launched $(basename "$app"); watching for a Keychain dialog for 15 s"
 
@@ -55,6 +56,6 @@ Did a Keychain password dialog appear? [y/N] " answer
     *) die "FAIL: launch showed the Keychain dialog" ;;
   esac
 done
-read -rp "Does the window show \"Saved cases are locked…\" with Unlock…? [y/N] " answer
-[[ $answer == [yY]* ]] || die "FAIL: no locked-cases bar"
-echo "PASS: no Keychain dialog at launch; cases locked"
+read -rp "Does the window show \"Your documents are locked…\" with Unlock…? [y/N] " answer
+[[ $answer == [yY]* ]] || die "FAIL: no locked-documents bar"
+echo "PASS: no Keychain dialog at launch; documents locked"

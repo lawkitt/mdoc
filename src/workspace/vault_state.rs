@@ -4,7 +4,7 @@
 //! Vault does not open, or WrongKey when it was sealed with another key
 //! (a recovery key opens it). Tabs whose document waits for the key are kept
 //! here and load once it opens.
-use mdoc_store::cases::CaseError;
+use mdoc_store::os_key::KeyError;
 use mdoc_vault::{Vault, VaultError};
 use std::{
     path::{Path, PathBuf},
@@ -16,7 +16,7 @@ pub(super) enum Opening {
     Opened(Box<Vault>),
     /// Reading the key would show the macOS password dialog.
     MayAsk,
-    Key(CaseError),
+    Key(KeyError),
     /// The Vault in this folder was sealed with another key.
     WrongKey(PathBuf),
     Vault(VaultError),
@@ -102,7 +102,7 @@ impl VaultState {
         self.access = match opening {
             Opening::Opened(vault) => Access::Open(Arc::from(vault)),
             Opening::MayAsk => Access::Locked,
-            Opening::Key(CaseError::KeyDenied) => Access::Denied,
+            Opening::Key(KeyError::KeyDenied) => Access::Denied,
             Opening::Key(error) => Access::Unavailable(key_unavailable(&error)),
             Opening::WrongKey(root) => Access::WrongKey(root),
             Opening::Vault(error) => Access::Unavailable(vault_unavailable(&error)),
@@ -139,13 +139,13 @@ impl VaultState {
     }
 }
 
-fn key_unavailable(error: &CaseError) -> String {
+fn key_unavailable(error: &KeyError) -> String {
     match error {
-        CaseError::NoKeyStore => "mdoc keeps documents encrypted with a key held by the macOS \
+        KeyError::NoKeyStore => "mdoc keeps documents encrypted with a key held by the macOS \
             Keychain, Windows data protection or a Secret Service keyring, and this system has \
             none."
             .into(),
-        CaseError::KeyringUnavailable(why) => format!(
+        KeyError::KeyringUnavailable(why) => format!(
             "mdoc keeps documents encrypted with a key in a Secret Service keyring (GNOME \
              Keyring or KWallet), which is not available: {why}"
         ),
@@ -182,7 +182,7 @@ mod tests {
         state.wait(7);
         state.forget(7);
         assert_eq!(
-            state.opened(Opening::Key(CaseError::KeyDenied)),
+            state.opened(Opening::Key(KeyError::KeyDenied)),
             VaultEffect::None
         );
         assert!(state.denied() && state.needs_key());
@@ -198,7 +198,7 @@ mod tests {
     fn no_key_store_leaves_documents_unavailable_and_says_why() {
         let mut state = VaultState::default();
         state.wait(2);
-        let VaultEffect::Fail(tabs, why) = state.opened(Opening::Key(CaseError::NoKeyStore)) else {
+        let VaultEffect::Fail(tabs, why) = state.opened(Opening::Key(KeyError::NoKeyStore)) else {
             panic!("unavailable");
         };
         assert_eq!(tabs, vec![2]);

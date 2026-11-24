@@ -4,8 +4,8 @@ import Foundation
 /// environment: every UI-test flag in one place (ADR 0104). A normal launch
 /// has none of them.
 struct LaunchConfiguration: Sendable, Equatable {
-    /// Launch argument for UI tests: a separate, fresh storage root, case
-    /// key and preferences, and a device below the detector floor, so no
+    /// Launch argument for UI tests: a separate, fresh storage root, the
+    /// Vault key and preferences, and a device below the detector floor, so no
     /// model is needed; the seeded document is scanned with the structured
     /// rules.
     static let uiTestingArgument = "-mdoc-ui-testing"

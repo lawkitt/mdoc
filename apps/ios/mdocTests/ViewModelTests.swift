@@ -14,7 +14,7 @@ final class DocumentViewModelTests: XCTestCase {
         return (try seeded.model(pick(seeded), findsNames: findsNames, slow: seconds), seeded)
     }
 
-    /// A new document of its own case on a fresh core, not yet read.
+    /// A new document of its own Project on a fresh core, not yet read.
     private func imported(
         _ source: (MdocStorage) throws -> ImportSource, title: String = "Note", memory: UInt64 = Fixture.belowFloor,
         findsNames: Bool = true

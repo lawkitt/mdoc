@@ -3,7 +3,7 @@ import XCTest
 
 /// The sidebar's navigation and its document commands (ADR 0102), over the
 /// real core and the seeded library: a document, a section's page or Start
-/// in the main area; Rename and Move to case with Undo.
+/// in the main area; Rename and Move to Project with Undo.
 @MainActor
 final class SidebarModelTests: XCTestCase {
     private var seeded: Seeded!
@@ -105,13 +105,13 @@ final class SidebarModelTests: XCTestCase {
         XCTAssertEqual(app.library.topProjects.map(\.id), Array(app.library.projects.prefix(5)).map(\.id))
     }
 
-    /// Move to case › New case… names the case as every new case is named
+    /// Move to Project › New Project… names the Project as every new Project is named
     /// (#677): trimmed, a blank name refused, a taken one numbered.
     func testMoveToANewProjectTrimsAndNumbersTheName() throws {
         let app = try app()
         let before = app.library.projects.count
         app.move(seeded.letter, to: .newProject(name: "   "))
-        XCTAssertEqual(app.library.projects.count, before, "a blank name makes no case")
+        XCTAssertEqual(app.library.projects.count, before, "a blank name makes no Project")
         XCTAssertNil(app.toast)
         app.move(seeded.letter, to: .newProject(name: "  Harbour Street lease "))
         let moved = try XCTUnwrap(app.library.document(seeded.letter)?.projectID)

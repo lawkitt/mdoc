@@ -707,7 +707,7 @@ fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<crate::shelf_ui:
 
 /// The shelf's own controls: Copy for AI and a drag carry the
 /// editor's bytes for a ready row and nothing for one that is not; Restore
-/// Clipboard uses the current case; a click brings the tab forward.
+/// Clipboard uses the current Project; a click brings the document forward.
 #[gpui::test]
 fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -762,7 +762,7 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
             crate::shelf_ui::row_label(&view.content().documents[pending_row])
         })
         .unwrap();
-    // The case is named after its first document: masked too.
+    // The Project is named after its first document: masked too.
     assert_eq!(label, "memo, PERSON_1 contract, 1 left to review");
     let names_from = shelf
         .read_with(cx, |view, _| view.source_line().unwrap())
@@ -798,7 +798,7 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
     assert_eq!(std::fs::read_to_string(&file).unwrap(), editor_copy);
     assert_eq!(file.file_name().unwrap(), "PERSON_1 contract.md");
 
-    // Restore Clipboard with the case of the document used last.
+    // Restore Clipboard with the Project of the document used last.
     cx.write_to_clipboard(gpui::ClipboardItem::new_string(
         "PERSON_1 owes ORG_1; PERSON_9 is new.".into(),
     ));
@@ -855,7 +855,7 @@ fn assert_first_proposal_shown(tabs: &Entity<Workspace>, cx: &mut VisualTestCont
 fn the_shelf_is_reachable_by_keyboard_and_the_picker_keeps_focus(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
-    // Two sources: a case, and a tab without one through its mapping.
+    // Two sources: a Project, and a document without one through its mapping.
     let cased = open_applied(
         &tabs,
         cx,
@@ -973,7 +973,7 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
         })
         .unwrap();
     assert!(hint, "the hint shows before the first drag");
-    // A tab without a case is named without `.md` (GUI run of #280).
+    // A document without a Project is named without `.md` (GUI run of #280).
     let sources = shelf
         .read_with(cx, |view, _| view.content().sources.clone())
         .unwrap();

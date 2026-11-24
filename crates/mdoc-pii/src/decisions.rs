@@ -60,8 +60,8 @@ pub enum Decision {
         category: Category,
     },
     Restore(Mentions),
-    JoinCase {
-        case: String,
+    JoinProject {
+        project: String,
     },
 }
 
@@ -108,7 +108,7 @@ impl Decision {
             Self::Add { original, .. } => format!("Added “{original}”"),
             Self::Restore(One(original)) => format!("Restored “{original}”"),
             Self::Restore(Many(n)) => format!("Restored {}", count(*n, "name", "names")),
-            Self::JoinCase { case } => format!("Joined case “{case}”"),
+            Self::JoinProject { project } => format!("Joined Project “{project}”"),
         }
     }
 }
@@ -244,7 +244,7 @@ impl DecisionLog {
         }
         path.steps_to(entry.history)
     }
-    /// The wordings this document's manual marks put on its case's Always
+    /// The wordings this document's manual marks put on its Project's Always
     /// list, each in the category it was marked in: every mark
     /// still done, or past the undo limit, oldest first. Undoing a mark
     /// takes it off.
@@ -263,7 +263,7 @@ impl DecisionLog {
 }
 
 impl Review {
-    /// The wordings this document's Keeps put on its case's Never list: the
+    /// The wordings this document's Keeps put on its Project's Never list: the
     /// kept wordings of each identity with no mention still
     /// proposed or replaced, so keeping one mention of a name lists
     /// nothing. A kept mention outside any identity counts once no mention

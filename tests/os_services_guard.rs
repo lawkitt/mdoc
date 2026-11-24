@@ -6,17 +6,17 @@
 #[test]
 #[should_panic(expected = "a test asked the OS for the build identity")]
 fn a_test_that_asks_for_the_build_identity_fails() {
-    mdoc_store::cases::build_identity();
+    mdoc_store::os_key::build_identity();
 }
 
 #[test]
 #[should_panic(expected = "a test asked the OS for the Vault key")]
 fn a_test_that_reads_the_vault_key_fails() {
-    let _ = mdoc_store::cases::vault_key(false);
+    let _ = mdoc_store::os_key::vault_key(false);
 }
 
 #[test]
 #[should_panic(expected = "a test asked the OS for the Vault key")]
 fn a_test_that_reads_the_vault_key_quietly_fails() {
-    let _ = mdoc_store::cases::vault_key(true);
+    let _ = mdoc_store::os_key::vault_key(true);
 }

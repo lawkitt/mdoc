@@ -1931,7 +1931,7 @@ impl Review {
         }
         // A scan's one-word form of a known name that is also an ordinary
         // word ("Grant") counts only capitalised mid-sentence, whoever
-        // proposed it; a mark by hand lifts that, and a case's or restored
+        // proposed it; a mark by hand lifts that, and a Project's or restored
         // wording keeps every mention. Only a scan sets it, so no undo step
         // changes a variant's own flag.
         let ordinary: Vec<u64> = self

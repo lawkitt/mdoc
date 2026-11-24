@@ -2,7 +2,7 @@ package io.github.lawkitt.mdoc
 
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.lawkitt.mdoc.core.AppCore
-import io.github.lawkitt.mdoc.storage.FixedCaseKeyStore
+import io.github.lawkitt.mdoc.storage.FixedVaultKeyStore
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import org.junit.rules.ExternalResource
 import java.util.UUID
@@ -27,7 +27,7 @@ class TestCore(
         storage = MdocStorage.app(app, "test-${UUID.randomUUID()}").prepare()
         val isolated = storage
         val memory = physicalMemory
-        app.openCore = { AppCore.make(it, storage = isolated, keys = FixedCaseKeyStore(), physicalMemory = memory) }
+        app.openCore = { AppCore.make(it, storage = isolated, keys = FixedVaultKeyStore(), physicalMemory = memory) }
         app.reopenCore()
     }
 
