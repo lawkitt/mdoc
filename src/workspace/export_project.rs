@@ -1,13 +1,32 @@
-//! Export Project… (#1091 Decision 22): the folder picker, then the
-//! Vault writes the Project's Markdown and originals into a new folder in
-//! it, off the main thread ([`mdoc_vault::Vault::export_project`]). A
-//! notice says what was written, and what could not be.
-use super::Workspace;
+//! Export Project… (#1091 Decision 22): the folder picker, then a job on
+//! the writer (ADR 0130) writes what the Project's open members show, and
+//! the Vault writes the Project's Markdown and originals into a new folder
+//! in the one picked, off the main thread
+//! ([`mdoc_vault::Vault::export_project`]), with nothing else writing
+//! meanwhile. A notice says what was written, and what could not be.
+use super::{Workspace, autosave::Ran, autosave::Write, document_writer::Target};
 use gpui::{Context, PathPromptOptions, Window};
+use std::path::PathBuf;
+
+/// An Export Project waiting for its turn.
+pub(super) struct Export {
+    project: String,
+    name: String,
+    into: PathBuf,
+}
+
+/// Tests only: what an export's job found stored when it exported.
+#[cfg(test)]
+pub(super) struct ExportSeen {
+    pub(super) folder: PathBuf,
+    pub(super) names: Vec<mdoc_pii::restore::ExportedIdentity>,
+    /// Each member's id, title, Markdown and notes.
+    pub(super) documents: Vec<(String, String, String, String)>,
+}
 
 impl Workspace {
     /// Export Project… in the Project page's ⋯ menu: ask for a folder and
-    /// export Project `project` into it.
+    /// export Project `project` into it once the jobs before are done.
     pub(super) fn export_project(
         &mut self,
         project: String,
@@ -26,10 +45,6 @@ impl Workspace {
                 return;
             }
         };
-        // Edits not written yet go first, so the export has them, and a
-        // Project save that failed is tried again.
-        self.autosave_all(window, cx);
-        self.queue_project_writes(window, cx);
         let folder = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,
@@ -55,81 +70,145 @@ impl Workspace {
             let Some(into) = into else {
                 return;
             };
-            // Edits made while the chooser was up go too; then wait for
-            // every write queued, and any still running. A second pass
-            // writes what was typed during the wait (notes still in their
-            // pause), and the check below refuses anything later.
-            for _ in 0..2 {
-                let _ = this.update_in(cx, |this, window, cx| {
-                    this.autosave_all(window, cx);
-                    this.queue_project_writes(window, cx);
-                });
-                while this
-                    .update(cx, |this, _| this.document_writer.busy())
-                    .unwrap_or(false)
-                {
-                    cx.background_executor()
-                        .timer(std::time::Duration::from_millis(50))
-                        .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if this.quit_flow.quitting() {
+                    return;
                 }
-            }
-            // A member whose write failed would export an older revision:
-            // nothing is exported, and the notice says which.
-            let unsaved = this
-                .update(cx, |this, cx| this.project_unsaved(&project, cx))
-                .unwrap_or_default();
-            if !unsaved.is_empty() {
-                let _ = this.update(cx, |this, cx| {
-                    this.notices.post(unsaved_notice(&name, &unsaved));
-                    cx.notify();
-                });
-                return;
-            }
-            let exported = cx
-                .background_executor()
-                .spawn(async move { vault.export_project(&project, &into) })
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                this.notices.post(exported_notice(&name, exported));
-                cx.notify();
+                this.next_op += 1;
+                let target = Target::Op(this.next_op);
+                let export = Export {
+                    project,
+                    name,
+                    into,
+                };
+                this.queue_write(target, Write::Export(export), window, cx);
             });
         })
         .detach();
     }
-}
 
-impl Workspace {
-    /// What of Project `project` the window holds that the Vault doesn't:
-    /// its open members (linked, or filed there by the Vault) whose text,
-    /// review or notes are not written, by name, and "its names" when the
-    /// Project's own write failed.
-    fn project_unsaved(&self, project: &str, cx: &gpui::App) -> Vec<String> {
-        let mut unsaved: Vec<String> = (self.tabs.iter())
+    /// Export at the head of the writer's queue: what every open member
+    /// shows is written first (its names, then its text, then its notes),
+    /// and the Project's names; if any of it can't be, nothing is exported.
+    /// The export runs off the main thread, and the job holds the queue
+    /// until it ends, so it reads one stored state.
+    pub(super) fn run_export(
+        &mut self,
+        export: Export,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Ran {
+        let Some(vault) = self.vault.vault().cloned() else {
+            return Ran::Ended;
+        };
+        let Export {
+            project,
+            name,
+            into,
+        } = export;
+        for tab in self.open_members(&project, cx) {
+            if self.write_tab_now(tab, &vault, cx).is_err() {
+                // Its edit is in no file: the notice below names it.
+                self.unsaved.insert(tab);
+                continue;
+            }
+            let document = self.tab_document(tab, cx);
+            let notes_due =
+                (self.tab_view(tab)).is_some_and(|view| view.read(cx).notes.needs_write());
+            if let (Some(document), true) = (document, notes_due) {
+                self.run_notes_save(&document, window, cx);
+            }
+        }
+        let names_due = self.project_ui.is_unwritten(&project)
+            || self.document_writer.has(&Target::Project(project.clone()));
+        if names_due {
+            match self.write_now(&vault, &[Some(project.clone())]) {
+                Ok(()) => {
+                    self.project_ui.take_unwritten(&project);
+                }
+                Err(_) => self.project_ui.mark_unwritten(&project),
+            }
+        }
+        // A member whose write failed would export an older revision:
+        // nothing is exported, and the notice says which.
+        let unsaved = self.project_unsaved(&project, cx);
+        if !unsaved.is_empty() {
+            self.notices.post(unsaved_notice(&name, &unsaved));
+            cx.notify();
+            return Ran::Ended;
+        }
+        let task = cx.background_executor().spawn({
+            let (vault, project) = (vault.clone(), project.clone());
+            async move { vault.export_project(&project, &into) }
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let exported = task.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                #[cfg(test)]
+                if let Ok(exported) = &exported {
+                    this.saw_export(&vault, &project, exported.folder.clone());
+                }
+                this.notices.post(exported_notice(&name, exported));
+                cx.notify();
+                this.advance_writer(window, cx);
+            });
+        })
+        .detach();
+        Ran::Holds
+    }
+
+    /// The tabs of Project `project`'s documents: linked to it, or filed
+    /// there by the Vault.
+    fn open_members(&self, project: &str, cx: &gpui::App) -> Vec<u64> {
+        (self.tabs.iter())
             .filter(|tab| {
                 tab.view().is_some_and(|view| {
                     let view = view.read(cx);
-                    // Filed there by the Vault too: a move's reload lets
-                    // the link go until it loads again.
                     let filed = (view.session.document.vault.as_ref())
                         .is_some_and(|id| self.project_of(id.as_str()).as_deref() == Some(project));
-                    ((view.project.link()).is_some_and(|link| link.id == project) || filed)
-                        && (self.unsaved.contains(&tab.id())
-                            || view.unsaved(cx)
-                            || view.notes.unsaved()
-                            || view.saved_review() != view.session.document.review)
+                    (view.project.link()).is_some_and(|link| link.id == project) || filed
                 })
             })
-            .filter_map(|tab| {
-                Some(format!(
-                    "\u{201c}{}\u{201d}",
-                    tab.view()?.read(cx).display_name()
-                ))
+            .map(|tab| tab.id())
+            .collect()
+    }
+
+    /// What of Project `project` the window holds that the Vault doesn't:
+    /// its open members whose text, review or notes are not written, by
+    /// name, and "its names" when the Project's own write failed.
+    fn project_unsaved(&self, project: &str, cx: &gpui::App) -> Vec<String> {
+        let mut unsaved: Vec<String> = (self.open_members(project, cx).into_iter())
+            .filter_map(|id| {
+                let view = self.tabs.get(id)?.view()?.read(cx);
+                let behind = self.unsaved.contains(&id)
+                    || view.unsaved(cx)
+                    || view.notes.unsaved()
+                    || view.saved_review() != view.session.document.review;
+                behind.then(|| format!("\u{201c}{}\u{201d}", view.display_name()))
             })
             .collect();
         if self.project_ui.is_unwritten(project) {
             unsaved.push("its names".into());
         }
         unsaved
+    }
+
+    /// Tests only: keep what the export read, as the Vault stores it now,
+    /// while the job still holds the queue.
+    #[cfg(test)]
+    fn saw_export(&mut self, vault: &mdoc_vault::Vault, project: &str, folder: PathBuf) {
+        let names = (vault.project(project))
+            .map(|project| project.mapping.exported())
+            .unwrap_or_default();
+        let documents = (vault.documents_in(Some(project)).into_iter())
+            .filter_map(|summary| vault.document(&summary.id).ok())
+            .map(|d| (d.id, d.title, d.markdown, d.notes))
+            .collect();
+        self.exports_seen.push(ExportSeen {
+            folder,
+            names,
+            documents,
+        });
     }
 }
 

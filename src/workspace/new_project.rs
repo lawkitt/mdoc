@@ -105,9 +105,9 @@ impl Workspace {
     }
 
     /// At the head of the writer's queue: the name is numbered against the
-    /// Projects there are now, the empty Project is written, and only then
-    /// does the window take it and show its page.
-    pub(super) fn run_new_project(
+    /// Projects there are now, the empty Project is written once, with its
+    /// categories, and only then does the window take it and show its page.
+    pub(super) fn run_empty_project(
         &mut self,
         job: NewProjectJob,
         window: &mut Window,
@@ -132,10 +132,7 @@ impl Workspace {
             colour: None,
             pinned: false,
         };
-        let made = vault
-            .create_project(new)
-            .and_then(|project| vault.update_project(&project.id, |project| project.skip = skip));
-        match made {
+        match vault.create_project_with(new, |project| project.skip = skip) {
             Ok(project) => {
                 let id = project.id.clone();
                 self.projects.put(project);

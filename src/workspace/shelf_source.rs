@@ -209,11 +209,12 @@ impl Workspace {
     }
 
     /// Project `id`'s names in the window are not all in the Vault yet: its
-    /// write waits, runs or failed, or an open member's mapping change
-    /// waits to be folded into it.
-    fn project_unwritten(&self, id: &str, cx: &App) -> bool {
+    /// write waits, runs (on its own or with a member's save) or failed, or
+    /// an open member's mapping change waits to be folded into it.
+    pub(super) fn project_unwritten(&self, id: &str, cx: &App) -> bool {
         self.project_ui.is_unwritten(id)
             || self.document_writer.has(&Target::Project(id.to_string()))
+            || self.projects_saving.contains(id)
             || self.tabs.iter().filter_map(|tab| tab.view()).any(|view| {
                 let view = view.read(cx);
                 view.project_save_pending() && view.project.link().is_some_and(|l| l.id == id)

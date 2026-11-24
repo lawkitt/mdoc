@@ -48,6 +48,7 @@ mod menu_bar;
 mod navigation;
 mod new_project;
 mod notices;
+mod ordering;
 mod project_page;
 mod projects;
 mod quit_flow;

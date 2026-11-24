@@ -95,8 +95,9 @@ impl ReplyPage {
 
 impl Workspace {
     /// The reply in tab `tab`'s box settled, or Open reply asked for it:
-    /// save it after the document's own writes and its Project's, so its
-    /// aliases bind to the names the Vault holds, and show it when `open`.
+    /// save it, and show it when `open`. At the head of the queue its
+    /// document is written first, names and text, so its aliases bind to
+    /// the names the Vault holds (ADR 0130).
     pub(super) fn queue_box_save(
         &mut self,
         tab: u64,
@@ -117,16 +118,13 @@ impl Workspace {
             }
             return;
         }
-        self.project_changed(tab, cx);
-        self.autosave(tab, window, cx);
-        self.queue_project_writes(window, cx);
         // Only the box's latest save waits; it reads the box when it runs.
         let save = ReplySave::Box { tab, open };
         self.queue_write(Target::Reply(tab), Write::Reply(save), window, cx);
     }
 
-    /// Paste AI Reply in tab `tab`: save `markdown` after the document's
-    /// writes, then show it.
+    /// Paste AI Reply in tab `tab`: save `markdown`, its document written
+    /// first at the head of the queue, then show it.
     pub(super) fn queue_pasted_reply(
         &mut self,
         tab: u64,
@@ -158,9 +156,6 @@ impl Workspace {
             let name = view.read(cx).display_name();
             name.strip_suffix(".md").unwrap_or(&name).to_string()
         });
-        self.project_changed(tab, cx);
-        self.autosave(tab, window, cx);
-        self.queue_project_writes(window, cx);
         let save = ReplySave::Pasted {
             tab,
             document,
@@ -173,7 +168,7 @@ impl Workspace {
     }
 
     /// Queue the reply in tab `tab`'s box when it changed since it was last
-    /// saved: its document's writes are queued already.
+    /// saved; it is read when its save runs.
     pub(super) fn queue_box_reply(
         &mut self,
         tab: u64,
@@ -186,13 +181,11 @@ impl Workspace {
         if view.read(cx).reply.unsaved().is_none()
             // One waiting saves whatever the box holds when it runs.
             || self.document_writer.has(&Target::Reply(tab))
-            // A move's reload is due: it saves nothing until then.
-            || self.tab_document(tab, cx).is_none_or(|d| self.moving.contains(&d))
+            || self.tab_document(tab, cx).is_none()
             || self.vault.vault().is_none()
         {
             return;
         }
-        self.queue_project_writes(window, cx);
         let save = ReplySave::Box { tab, open: false };
         self.queue_write(Target::Reply(tab), Write::Reply(save), window, cx);
     }
@@ -211,7 +204,8 @@ impl Workspace {
             .then_some("its document's names are not saved yet")
     }
 
-    /// Save a reply at the head of the writer's queue.
+    /// Save a reply at the head of the writer's queue, after what its
+    /// document shows: its names, then its text.
     pub(super) fn run_reply_save(
         &mut self,
         save: ReplySave,
@@ -221,14 +215,36 @@ impl Workspace {
         let Some(vault) = self.vault.vault().cloned() else {
             return;
         };
+        let tab = match &save {
+            ReplySave::Box { tab, .. } | ReplySave::Pasted { tab, .. } => *tab,
+        };
+        let moving = (self.tab_document(tab, cx)).is_some_and(|d| self.moving.contains(&d));
+        if !moving && let Err(error) = self.write_tab_now(tab, &vault, cx) {
+            self.unsaved.insert(tab);
+            let open = match &save {
+                ReplySave::Box { open, .. } => *open,
+                ReplySave::Pasted { .. } => true,
+            };
+            let waits =
+                open || self.closing_after_write.contains(&tab) || self.quit_flow.quitting();
+            if waits {
+                self.reply_failed(
+                    Some(tab),
+                    format!("its document could not be saved first: {error}"),
+                    window,
+                    cx,
+                );
+            }
+            return;
+        }
         let (id, open) = match save {
             ReplySave::Box { tab, open } => {
                 let (Some(view), Some(document)) = (self.tab_view(tab), self.tab_document(tab, cx))
                 else {
                     return;
                 };
-                // It loads again with its new aliases, and its next autosave
-                // queues the box again.
+                // A move of it waits behind this save: it loads again with
+                // its new aliases, and its next autosave queues the box.
                 if self.moving.contains(&document) {
                     return;
                 }
@@ -522,7 +538,6 @@ impl Workspace {
             return;
         }
         let id = page.id.clone();
-        self.queue_project_writes(window, cx);
         self.next_op += 1;
         let target = Target::Op(self.next_op);
         self.queue_write(target, Write::Promote(id), window, cx);
@@ -534,22 +549,33 @@ impl Workspace {
         let Some(vault) = self.vault.vault().cloned() else {
             return;
         };
-        // The page restores with the window's Project; one whose names did
-        // not reach the Vault would restore otherwise there.
+        // The page restores with the window's Project: its names are
+        // written first, so the document restores the same way there.
         let project = vault.reply(id).ok().and_then(|reply| match reply.owner {
             ReplyOwner::Project(project) => Some(project),
             ReplyOwner::Document(document) => vault.document(&document).ok()?.project,
         });
-        if let Some(project) = project
-            && self.project_ui.is_unwritten(&project)
-        {
-            self.notices.post(
-                "Could not promote the AI reply: its Project's names are not saved yet. Try \
-                 again once they are."
-                    .to_string(),
-            );
-            cx.notify();
-            return;
+        if let Some(project) = project {
+            // Its open members' names waiting for their fold count too.
+            let folded = self.fold_members(&[Some(project.clone())], cx);
+            let due = self.project_ui.is_unwritten(&project)
+                || self.document_writer.has(&Target::Project(project.clone()));
+            let written = folded.and_then(|()| match due {
+                true => {
+                    (self.write_now(&vault, &[Some(project.clone())])).map_err(|e| e.to_string())
+                }
+                false => Ok(()),
+            });
+            if let Err(error) = written {
+                self.project_ui.mark_unwritten(&project);
+                self.notices.post(format!(
+                    "Could not promote the AI reply: its Project's names could not be saved. \
+                     {error}"
+                ));
+                cx.notify();
+                return;
+            }
+            self.project_ui.take_unwritten(&project);
         }
         let promoted = vault
             .promote_reply(id)
@@ -603,7 +629,23 @@ impl Workspace {
         .detach();
     }
 
+    /// Delete saved reply `id` once the jobs before it are done.
     pub(super) fn delete_saved_reply(
+        &mut self,
+        id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.vault.vault().is_none() {
+            return;
+        }
+        self.next_op += 1;
+        let target = Target::Op(self.next_op);
+        self.queue_write(target, Write::DeleteReply(id.to_string()), window, cx);
+    }
+
+    /// Delete saved reply `id` at the head of the writer's queue.
+    pub(super) fn run_delete_reply(
         &mut self,
         id: &str,
         window: &mut Window,
