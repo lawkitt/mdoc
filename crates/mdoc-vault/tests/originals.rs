@@ -785,3 +785,29 @@ fn an_open_removes_a_dead_imports_folder_after_a_day() {
     expected.sort();
     assert_eq!(folder.document_dirs(), expected);
 }
+
+/// Review of #1152 (P2): an import checked against the hash its caller
+/// asked about writes nothing when the source hashes otherwise, and the
+/// Document it writes holds the bytes that hash names.
+#[test]
+fn an_import_expecting_a_hash_writes_only_those_bytes() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let asked = bytes(70_000, 1);
+    let changed = bytes(70_000, 2);
+    let sha = mdoc_vault::source_sha256(&asked[..]).unwrap();
+    let refused = vault
+        .import_document_expecting(new_document("Brief"), &changed[..], info("brief.pdf"), &sha)
+        .unwrap();
+    assert!(refused.is_none());
+    assert!(vault.documents().is_empty());
+    let docs = folder.root.join("docs");
+    let left = std::fs::read_dir(&docs).map_or(0, |dir| dir.count());
+    assert_eq!(left, 0, "no folder is left behind");
+    let document = vault
+        .import_document_expecting(new_document("Brief"), &asked[..], info("brief.pdf"), &sha)
+        .unwrap()
+        .unwrap();
+    assert_eq!(document.original.as_ref().unwrap().sha256, sha);
+    assert_eq!(read_back(&vault, &document.id), asked);
+}

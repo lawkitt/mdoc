@@ -307,24 +307,27 @@ impl Workspace {
                             markdown: file.text.unwrap_or_default(),
                         };
                         let imported = if needs_conversion(&file.path) {
-                            std::fs::File::open(&file.path)
+                            // Only the bytes admission hashed: changed since,
+                            // it is not what was asked about, so nothing is
+                            // written and it is admitted again.
+                            let imported = std::fs::File::open(&file.path)
                                 .map_err(mdoc_vault::VaultError::from)
-                                .and_then(|source| vault.import_document(new, source, info))
+                                .and_then(|source| {
+                                    vault.import_document_expecting(new, source, info, &file.sha256)
+                                });
+                            match imported {
+                                Ok(None) => {
+                                    changed.push(file.path);
+                                    return None;
+                                }
+                                Ok(Some(document)) => Ok(document),
+                                Err(error) => Err(error),
+                            }
                         } else {
                             // The bytes admission read are the original.
                             let source = std::io::Cursor::new(new.markdown.clone().into_bytes());
                             vault.import_document(new, source, info)
                         };
-                        // Changed since it was hashed: not what was asked
-                        // about, so it goes and is admitted again.
-                        if let Ok(document) = &imported
-                            && (document.original.as_ref())
-                                .is_some_and(|original| original.sha256 != file.sha256)
-                            && vault.delete_document(&document.id).is_ok()
-                        {
-                            changed.push(file.path);
-                            return None;
-                        }
                         Some(
                             imported
                                 .map_err(|error| (name, error.to_string()))
