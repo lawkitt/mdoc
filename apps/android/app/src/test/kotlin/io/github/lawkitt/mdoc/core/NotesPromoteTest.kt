@@ -101,6 +101,18 @@ class NotesPromoteTest {
         assertEquals(notes, storedNotes(letter))
     }
 
+    /** Notes typed in the last pause are saved before a Project's delete moves the document to Unfiled. */
+    @Test
+    fun aProjectDeleteKeepsNotesNotSavedYet() {
+        val harbour = documents.createProject("Harbour").id
+        val lease = reviewed("Ann Lee signed the lease.", "Ann Lee", "Lease", harbour)
+        lease.setNotes(notes)
+        documents.deleteProject(harbour, ProjectDeletion.MoveToUnfiled)
+        assertNull("in Unfiled", lease.snapshot().projectId)
+        assertEquals("the session opened again with them", notes, lease.notes())
+        assertEquals(notes, storedNotes(lease))
+    }
+
     /**
      * A Project's reply promotes into the Project: its text restored, its
      * names proposed again, the reply kept, and the way back to it, which

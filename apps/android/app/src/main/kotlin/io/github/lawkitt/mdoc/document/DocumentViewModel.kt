@@ -287,12 +287,21 @@ class DocumentViewModel(
      * reply's place, which `onOpen` opens; the reply stays. After the notes
      * typed here are in, as Promote saves what is pending first.
      */
-    fun promote(reply: String, onOpen: (DocumentId) -> Unit) = viewModelScope.launch {
+    fun promote(reply: String, onOpen: (DocumentId) -> Unit) {
+        // A second tap while one runs makes no second document.
+        if (promoting) return
+        promoting = true
         mutable.update { it.copy(fromReply = null) }
-        withContext(notesCalls) { runCatching { documents.promoteReply(reply) } }
-            .onSuccess(onOpen)
-            .onFailure(::show)
+        viewModelScope.launch {
+            withContext(notesCalls) { runCatching { documents.promoteReply(reply) } }
+                .onSuccess(onOpen)
+                .onFailure(::show)
+            promoting = false
+        }
     }
+
+    /** A Promote to Document is running; on the main thread. */
+    private var promoting = false
 
     /** From AI reply: the reply this document was promoted from, restored as it restores now. */
     fun showFromReply() {

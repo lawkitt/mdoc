@@ -259,10 +259,14 @@ class Documents(
         return synchronized(this) { ids[promoted.id] ?: DocumentId(promoted.id) }
     }
 
-    /** Every open session's notes not saved yet are saved; a failure stops none of the others. */
+    /**
+     * Every open session's notes not saved yet are saved; a failure stops
+     * none of the others. A session with none is never waited for: its
+     * save may be the one a Project's delete races.
+     */
     fun saveNotes() {
-        val open = synchronized(this) { sessions.values.toList() }
-        open.forEach { runCatching { it.saveNotes() } }
+        val owing = synchronized(this) { sessions.values.filter { it.owesNotes } }
+        owing.forEach { runCatching { it.saveNotes() } }
     }
 
     /**
@@ -656,6 +660,9 @@ class Documents(
 
         /** Notes set and not saved yet: the next save writes them. */
         @Volatile private var notesUnsaved = false
+
+        /** Whether notes were set since its last save. */
+        internal val owesNotes: Boolean get() = notesUnsaved
 
         /** The document's notes as the core holds them; empty before it is read. */
         fun notes(): String = holdingSave {
