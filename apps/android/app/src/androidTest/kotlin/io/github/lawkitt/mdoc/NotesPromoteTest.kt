@@ -16,6 +16,8 @@ import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.JobObserver
 import io.github.lawkitt.mdoc.core.ProjectId
 import io.github.lawkitt.mdoc.core.SourceRange
+import io.github.lawkitt.mdoc.document.NotesPause
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -95,9 +97,19 @@ class NotesPromoteTest {
         compose.waitForShown(hasTestTag("notes-editor"))
     }
 
-    /** Notes typed and closed are in the Vault, and there when Notes opens again, under the line that says they stay. */
+    @After
+    fun pause() {
+        NotesPause.millis = 1000L
+    }
+
+    /**
+     * Notes typed and closed are in the Vault at once, not after the
+     * pause (an hour here), and there when Notes opens again, under the
+     * line that says they stay.
+     */
     @Test
     fun notesKeepWhatWasTyped() {
+        NotesPause.millis = 3_600_000L
         val letter = reviewed("Letter")
         val vaultId = checkNotNull(documents.session(letter).vaultId)
         reload()
@@ -111,6 +123,19 @@ class NotesPromoteTest {
 
         openNotes()
         compose.waitForShown(hasTestTag("notes-editor") and hasText("Ring the bank on Monday."))
+    }
+
+    /** Notes save once typing pauses, while the sheet stays open. */
+    @Test
+    fun notesSaveOnceTypingPauses() {
+        val letter = reviewed("Letter")
+        val vaultId = checkNotNull(documents.session(letter).vaultId)
+        reload()
+        compose.openDocument("Letter")
+        openNotes()
+        compose.shown(hasTestTag("notes-editor")).performTextInput("Ask about the deposit.")
+        compose.waitUntil(15_000) { storedNotes(vaultId) == "Ask about the deposit." }
+        compose.waitForShown(hasTestTag("notes-editor"))
     }
 
     /**

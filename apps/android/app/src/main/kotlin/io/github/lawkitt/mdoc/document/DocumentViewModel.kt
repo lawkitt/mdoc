@@ -250,9 +250,6 @@ class DocumentViewModel(
     private val notesScope = CoroutineScope(SupervisorJob() + notesCalls)
     private var notesSave: Job? = null
 
-    /** How long typing pauses before Notes saves, as iOS's typing pause; the tests shorten it. */
-    internal var notesPause: Long = NOTES_PAUSE_MS
-
     fun showNotes() = mutable.update { it.copy(showsNotes = true) }
 
     /** The document's notes as the core holds them, once what was typed before is in; null when they can't be read. */
@@ -264,7 +261,7 @@ class DocumentViewModel(
         notesSave?.cancel()
         notesSave = notesScope.launch {
             // timing: typing in Notes pauses this long before its save, as iOS's (ADR 0104, #1091)
-            delay(notesPause)
+            delay(NotesPause.millis)
             saveNotesNow()
         }
     }
@@ -358,9 +355,6 @@ class DocumentViewModel(
     }
 
     private companion object {
-        /** iOS's typing pause before a save. */
-        const val NOTES_PAUSE_MS = 1000L
-
         /** The next proposal after `current` in reading order, wrapping round. */
         fun nextProposal(candidates: List<Candidate>, current: CandidateId): CandidateId? {
             val proposals = candidates.filter { it.state == MentionState.Proposed }.sortedBy { it.range.start }
@@ -369,4 +363,9 @@ class DocumentViewModel(
             return (proposals.firstOrNull { it.range.start > at } ?: proposals.first()).id
         }
     }
+}
+
+/** How long typing in Notes pauses before its save: iOS's typing pause. The tests lengthen it. */
+internal object NotesPause {
+    @Volatile var millis: Long = 1000L
 }

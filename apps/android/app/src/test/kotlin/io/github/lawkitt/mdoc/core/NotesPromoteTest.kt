@@ -3,6 +3,7 @@ package io.github.lawkitt.mdoc.core
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import java.io.File
 import java.nio.file.Files
+import kotlin.concurrent.thread
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -101,7 +102,11 @@ class NotesPromoteTest {
         assertEquals(notes, storedNotes(letter))
     }
 
-    /** Notes typed in the last pause are saved before a Project's delete moves the document to Unfiled. */
+    /**
+     * Notes typed in the last pause stay with a document a Project's delete
+     * moves to Unfiled: the session opens again with them, and its next
+     * save writes them there.
+     */
     @Test
     fun aProjectDeleteKeepsNotesNotSavedYet() {
         val harbour = documents.createProject("Harbour").id
@@ -110,7 +115,33 @@ class NotesPromoteTest {
         documents.deleteProject(harbour, ProjectDeletion.MoveToUnfiled)
         assertNull("in Unfiled", lease.snapshot().projectId)
         assertEquals("the session opened again with them", notes, lease.notes())
+        assertTrue("still owed", lease.owesNotes)
+        lease.saveNotes()
         assertEquals(notes, storedNotes(lease))
+        assertNull(vault.document(lease.vaultId!!).projectId)
+    }
+
+    /**
+     * A promote asked for while a Project's delete runs waits for it, as a
+     * move does: Delete them never deletes a document it did not count, and
+     * the Project's own reply has gone with it by then.
+     */
+    @Test
+    fun aPromoteWaitsForAProjectsDelete() {
+        val harbour = documents.createProject("Harbour").id
+        reviewed("Ann Lee signed the lease.", "Ann Lee", "Lease", harbour)
+        val reply = vault.saveReply(SharedFrom.Project(harbour.raw), "Reply to Lease", null, "Call PERSON_1 back.")
+        var promoting: Thread? = null
+        var promoted: Result<DocumentId>? = null
+        documents.deleteInVault = { project, choice ->
+            promoting = thread { promoted = runCatching { documents.promoteReply(reply.id) } }.also { it.join(1_000) }
+            check(promoting!!.isAlive) { "the promote ran during the delete" }
+            vault.deleteProject(project, choice)
+        }
+        documents.deleteProject(harbour, ProjectDeletion.DeleteDocuments)
+        promoting!!.join(30_000)
+        assertTrue("the Project's reply went with it", promoted!!.isFailure)
+        assertTrue("nothing is left", vault.documents().isEmpty())
     }
 
     /**
