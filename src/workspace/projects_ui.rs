@@ -1184,6 +1184,34 @@ impl Workspace {
         let Some(vault) = self.vault.vault().cloned() else {
             return;
         };
+        // Moved to Unfiled, each open member loads again from the Vault:
+        // what it shows now is written first, edits made while the delete
+        // waited included. One that can't be written stops the delete
+        // before anything moves, so no stored revision replaces its edit.
+        if documents == ProjectDocuments::MoveToUnfiled {
+            for member in &members {
+                let Some(tab) = self.find_document(&DocumentId::Vault(member.clone()), None, cx)
+                else {
+                    continue;
+                };
+                if let Err(error) = self.write_tab_now(tab, &vault, cx) {
+                    for member in &members {
+                        self.moving.remove(member);
+                    }
+                    // Its edit is in no file: eviction keeps it.
+                    self.unsaved.insert(tab);
+                    let name = (self.tabs.get(tab).and_then(|tab| tab.view().cloned()))
+                        .map(|view| view.read(cx).display_name())
+                        .unwrap_or_default();
+                    self.notices.post(format!(
+                        "Could not delete the Project: \u{201c}{name}\u{201d} could not be \
+                         saved first, so nothing was moved. {error}"
+                    ));
+                    cx.notify();
+                    return;
+                }
+            }
+        }
         // Only what was confirmed is deleted: the Vault compares the
         // Project's documents with the ones asked about under its write
         // lock, so an import or a move since stops it.
