@@ -403,13 +403,6 @@ items 33–35 are polish and do not.
     [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3.* As item
     26. *Blocked by:* items 23, 25. *Done when:* the Android job passes with
     tests of notes and Promote.
-29. **[Core] Every way text leaves is checked.** *From
-    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* One suite lists each exit:
-    Copy for AI and Share on every platform, the menu bar shelf, Export, and
-    later the connector. Each is tested against the readiness check, because
-    the cut-over's editor Copy for AI skipped it. *Blocked by:* item 23.
-    *Done when:* the suite passes on desktop and the mobile core, and taking
-    the check out of any one exit fails it.
 30. **[Dev] A dev profile folder for debug builds.** *From
     [#1153](https://github.com/lawkitt/mdoc/issues/1153); replaces Engineering's
     profile override.* `MDOC_DEV_PROFILE=<dir>`, on macOS and Windows: the
