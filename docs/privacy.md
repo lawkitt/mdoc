@@ -1,7 +1,13 @@
 # Privacy and network
 
 Your documents never leave your computer. Opening, converting, recognizing and
-pseudonymizing all run locally. mdoc goes online only for:
+pseudonymizing all run locally. mdoc keeps what you import until you delete
+it: each document, its original file and its replacements, encrypted in the
+Vault under a key the macOS Keychain or Windows data protection holds.
+Settings › Vault › Show Recovery Key shows that key as a recovery key, with
+no Copy button, and mdoc never writes it to a plain file; keep it to open the
+Vault on a new computer. A document's notes stay on your computer: Copy for AI
+and Share never include them. mdoc goes online only for:
 
 - **Model downloads**, after you approve them: the text recognition runtime and
   models from GitHub, and the pseudonymization model from Hugging Face. Each file
@@ -39,10 +45,11 @@ Not Collected", and this section is its privacy policy.
   GitHub and the name detector from Hugging Face, each checked against a
   pinned SHA-256 digest. On cellular mdoc asks first. There is no update
   check; the App Store updates the app.
-- **On the phone:** documents, their Markdown, cases and models stay in
-  mdoc's own storage, excluded from iCloud and device backups. Documents
-  and cases are unreadable while the phone is locked, and the case key
-  never leaves this device. A new phone starts empty.
+- **On the phone:** mdoc keeps what you import until you delete it:
+  documents, their originals and Projects, encrypted in the Vault in mdoc's
+  own storage, which iCloud and device backups exclude, as they do models.
+  The Vault is unreadable while the phone is locked, and its key never
+  leaves this device. A new phone starts empty.
 - **Sharing:** text leaves mdoc only when you share or copy it, and then
   with aliases in place of the names you replaced.
 - **Crash reports** stay on the phone and show at the next launch. Beta
@@ -52,8 +59,6 @@ Not Collected", and this section is its privacy policy.
 ## Limitations
 
 - **Copy Markdown** copies the current text, including unsaved edits.
-- Aliases are not saved: the mapping from aliases back to the originals lasts
-  only while the document is open.
 - The pseudonymization detector misses some details, especially in Russian text
   and in hidden parts of a source document; see the
   [qualification results](../tests/fixtures/pseudonymization/README.md).

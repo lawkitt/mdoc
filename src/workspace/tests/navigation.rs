@@ -453,7 +453,7 @@ fn navigating_closes_the_document_and_project_menus(cx: &mut TestAppContext) {
         assert!(w.document_menu.is_none());
     });
     tabs.update_in(cx, |w, window, cx| {
-        w.project_ui.header_menu = Some(("case".into(), gpui::point(px(10.), px(10.))));
+        w.project_ui.header_menu = Some(("lease".into(), gpui::point(px(10.), px(10.))));
         w.navigate(false, window, cx);
         assert_eq!(w.tabs.active(), second);
         assert!(w.project_ui.header_menu.is_none());

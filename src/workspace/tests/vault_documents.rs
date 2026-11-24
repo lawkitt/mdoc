@@ -1,7 +1,7 @@
 //! Documents live in the Vault: it opens at launch, documents restore by id,
 //! and with no key store nothing can be added.
 use super::*;
-use mdoc_store::{cases::CaseError, document_id::DocumentId};
+use mdoc_store::{document_id::DocumentId, os_key::KeyError};
 use mdoc_vault::{DocumentOrigin, NewDocument, SourceKind, Vault};
 use std::path::Path;
 
@@ -79,7 +79,7 @@ fn a_locked_key_keeps_restored_documents_waiting_until_unlock(cx: &mut TestAppCo
         let tabs = tabs.read(cx);
         assert!(tabs.vault.vault().is_some());
         assert!(tabs.vault_banner().is_none());
-        // Opening documents read the key once, and asked about no case.
+        // Opening documents read the key once, and showed no notice.
         assert!(tabs.notices.message().is_none());
     });
 }
@@ -89,7 +89,7 @@ fn a_declined_dialog_offers_try_again_and_keeps_documents_waiting(cx: &mut TestA
     let dir = tempfile::tempdir().unwrap();
     let (session, markdown) = vault_with_lease(dir.path());
     let (tabs, cx) = boot_home_with(cx, session, |tabs, _, _| {
-        tabs.stage_vault_key(Err(CaseError::KeyDenied))
+        tabs.stage_vault_key(Err(KeyError::KeyDenied))
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.unlock_projects(window, cx));
     draw(cx);
@@ -119,7 +119,7 @@ fn no_key_store_leaves_documents_unavailable_and_adds_nothing(cx: &mut TestAppCo
     let (session, _) = vault_with_lease(dir.path());
     let (tabs, cx) = boot_home_with(cx, session, |tabs, window, cx| {
         tabs.vault_opened(
-            super::super::vault_state::Opening::Key(CaseError::NoKeyStore),
+            super::super::vault_state::Opening::Key(KeyError::NoKeyStore),
             window,
             cx,
         )

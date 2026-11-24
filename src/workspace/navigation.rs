@@ -282,19 +282,19 @@ mod tests {
 
     #[test]
     fn forgetting_drops_every_stop_of_a_place_and_keeps_the_cursor_on_its_stop() {
-        let case = || Stop::Project("raman".into());
+        let project = || Stop::Project("raman".into());
         let mut history = visited([
             Stop::Tab(1),
-            case(),
+            project(),
             Stop::Tab(1),
             Stop::Home,
-            case(),
+            project(),
             Stop::Tab(2),
         ]);
         travel(&mut history, true, |_| true);
         travel(&mut history, true, |_| true);
         assert_eq!(history.current(), Some(&Stop::Home));
-        history.forget(&case());
+        history.forget(&project());
         assert_eq!(history.stops, [Stop::Tab(1), Stop::Home, Stop::Tab(2)]);
         assert_eq!(history.current(), Some(&Stop::Home));
         // The cursor's own stop went: it rests on the one before.

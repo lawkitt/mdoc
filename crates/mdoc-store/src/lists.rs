@@ -1,8 +1,8 @@
 //! The user's lists: wordings scans always propose (Always) or
-//! never propose (Never). Each case keeps its own, from Keep and manual
-//! marks in its members; Settings › Detection keeps user-wide ones, edited
+//! never propose (Never). Each Project keeps its own, from Keep and manual
+//! marks in its documents; Settings › Detection keeps user-wide ones, edited
 //! by hand. Both can name clients, so they are stored only in the
-//! keychain-protected case store, never in `settings.json`.
+//! encrypted Vault, never in `settings.json`.
 use mdoc_pii::Category;
 use serde::{Deserialize, Serialize};
 
@@ -102,14 +102,15 @@ impl Lists {
         self.always.retain(|e| self::key(&e.wording) != key);
         self.always.len() != before
     }
-    /// What a scan uses: a case's lists over the user-wide ones, so a case's
-    /// Never hides a user-wide Always wording and the other way round. A
-    /// document outside a case passes no case and gets the user-wide lists.
-    pub fn effective(case: Option<&Lists>, user: &Lists) -> Lists {
-        let Some(case) = case else {
+    /// What a scan uses: a Project's lists over the user-wide ones, so a
+    /// Project's Never hides a user-wide Always wording and the other way
+    /// round. A document outside a Project passes none and gets the
+    /// user-wide lists.
+    pub fn effective(project: Option<&Lists>, user: &Lists) -> Lists {
+        let Some(project) = project else {
             return user.clone();
         };
-        let mut lists = case.clone();
+        let mut lists = project.clone();
         for wording in &user.never {
             if lists.always_for(wording).is_none() && !lists.never_has(wording) {
                 lists.never.push(wording.clone());
@@ -146,8 +147,8 @@ impl Lists {
     }
 }
 
-/// How one document's contribution to its case's lists changed since it
-/// was last saved into the case.
+/// How one document's contribution to its Project's lists changed since it
+/// was last saved into the Project.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ListChanges {
     pub never_added: Vec<String>,
@@ -229,26 +230,26 @@ mod tests {
     }
 
     #[test]
-    fn a_case_over_the_user_wide_lists() {
+    fn a_project_over_the_user_wide_lists() {
         let mut user = Lists::default();
         user.add_never("Supreme Court");
         user.add_always("Acme", Category::Organization);
         user.add_always("Riverside", Category::Address);
-        let mut case = Lists::default();
-        case.add_always("supreme court", Category::Organization);
-        case.add_never("ACME");
-        let lists = Lists::effective(Some(&case), &user);
+        let mut project = Lists::default();
+        project.add_always("supreme court", Category::Organization);
+        project.add_never("ACME");
+        let lists = Lists::effective(Some(&project), &user);
         assert!(!lists.never_has("Supreme Court"));
         assert!(lists.never_has("Acme"));
         assert!(lists.always_for("Acme").is_none());
         assert!(lists.always_for("Supreme Court").is_some());
         assert!(lists.always_for("Riverside").is_some());
-        // Outside a case: the user-wide lists alone.
+        // Outside a Project: the user-wide lists alone.
         assert_eq!(Lists::effective(None, &user), user);
     }
 
     #[test]
-    fn changes_between_contributions_apply_to_a_case() {
+    fn changes_between_contributions_apply_to_a_project() {
         let mut before = Lists::default();
         before.add_never("Acme");
         before.add_always("Maya Bennett", Category::Person);
@@ -259,11 +260,11 @@ mod tests {
         assert_eq!(changes.never_added, ["Riverside"]);
         assert_eq!(changes.never_removed, ["Acme"]);
         assert!(changes.always_added.is_empty() && changes.always_removed.is_empty());
-        let mut case = before.clone();
-        case.add_never("Other member's wording");
-        assert!(case.apply(&changes));
-        assert_eq!(case.never, ["Other member's wording", "Riverside"]);
-        assert!(!case.apply(&ListChanges::default()));
+        let mut project = before.clone();
+        project.add_never("Other document's wording");
+        assert!(project.apply(&changes));
+        assert_eq!(project.never, ["Other document's wording", "Riverside"]);
+        assert!(!project.apply(&ListChanges::default()));
         assert!(ListChanges::between(&after, &after).is_empty());
         // Another member still keeps Acme: only its own removal is spared.
         let mut other = Lists::default();

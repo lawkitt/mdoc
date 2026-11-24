@@ -64,7 +64,7 @@ impl Vault {
     /// closes and at launch. A damaged original writes nothing.
     pub fn copy_original(&self, id: String, folder: String) -> Result<String, CoreError> {
         let original = (self.store().document(&id)?.original)
-            .ok_or_else(|| CoreError::case("This document keeps no original."))?;
+            .ok_or_else(|| CoreError::project("This document keeps no original."))?;
         let name = file_name(&original.info.file_name);
         let path = (self.store()).copy_original_to(&id, Path::new(&folder), &name)?;
         Ok(path.display().to_string())
@@ -74,7 +74,7 @@ impl Vault {
     /// 16 MiB, which the app views without a copy on disk.
     pub fn original_bytes(&self, id: String) -> Result<Vec<u8>, CoreError> {
         let original = (self.store().document(&id)?.original)
-            .ok_or_else(|| CoreError::case("This document keeps no original."))?;
+            .ok_or_else(|| CoreError::project("This document keeps no original."))?;
         if original.len > IN_MEMORY {
             return Err(CoreError::invalid(
                 "This original is too large to hold in memory: copy it to a folder.",
@@ -114,7 +114,7 @@ fn file_name(name: &str) -> String {
 /// A read error, as the Vault's own when the original is damaged.
 fn damaged(error: std::io::Error) -> CoreError {
     match (error.get_ref()).and_then(|inner| inner.downcast_ref::<mdoc_vault::VaultError>()) {
-        Some(inner) => CoreError::case(inner.to_string()),
+        Some(inner) => CoreError::project(inner.to_string()),
         None => error.into(),
     }
 }

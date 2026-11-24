@@ -133,30 +133,31 @@ try {
             if ($app -and -not $app.HasExited) { $app.Kill($true); $app.WaitForExit() }
             $uninstaller = Join-Path $installDir 'uninstall.exe'
             if ($installAttempted -and (Test-Path -LiteralPath $uninstaller)) {
-                # NSIS must preserve the DPAPI case key across uninstall/reinstall.
+                # NSIS must preserve the DPAPI Vault key across uninstall/reinstall; it
+                # keeps the path an earlier build gave it for saved cases.
                 # Seed only after the app exits: dummy bytes are not a real key.
-                $caseKey = Join-Path $profilePath 'cases/key.dpapi'
-                $dummyCaseKeyCreated = $false
+                $vaultKey = Join-Path $profilePath 'cases/key.dpapi'
+                $dummyVaultKeyCreated = $false
                 try {
-                    if (-not (Test-Path -LiteralPath $caseKey)) {
-                        New-Item -ItemType Directory -Path (Split-Path $caseKey) -Force | Out-Null
-                        New-Item -ItemType File -Path $caseKey -Value 'mdoc CI uninstall sentinel (not a DPAPI key)' | Out-Null
-                        $dummyCaseKeyCreated = $true
+                    if (-not (Test-Path -LiteralPath $vaultKey)) {
+                        New-Item -ItemType Directory -Path (Split-Path $vaultKey) -Force | Out-Null
+                        New-Item -ItemType File -Path $vaultKey -Value 'mdoc CI uninstall sentinel (not a DPAPI key)' | Out-Null
+                        $dummyVaultKeyCreated = $true
                     }
                     # _?= runs in place, so WaitForExit observes the real uninstaller.
                     Run-Installer $uninstaller "/S _?=$installDir"
                     if (Test-Path -LiteralPath (Join-Path $installDir 'mdoc.exe')) {
                         throw 'Uninstall left mdoc.exe installed.'
                     }
-                    if (-not (Test-Path -LiteralPath $caseKey -PathType Leaf)) {
-                        throw 'Uninstall deleted the case key (cases/key.dpapi).'
+                    if (-not (Test-Path -LiteralPath $vaultKey -PathType Leaf)) {
+                        throw 'Uninstall deleted the Vault key (cases/key.dpapi).'
                     }
-                    'Uninstall preserved cases/key.dpapi.' | Tee-Object -FilePath (Join-Path $evidence.FullName 'case-key.txt')
+                    'Uninstall preserved cases/key.dpapi.' | Tee-Object -FilePath (Join-Path $evidence.FullName 'vault-key.txt')
                     Write-Host 'Uninstall completed.'
                 } finally {
                     # Never remove a key that was already present before seeding.
-                    if ($dummyCaseKeyCreated -and (Test-Path -LiteralPath $caseKey)) {
-                        Remove-Item -LiteralPath $caseKey
+                    if ($dummyVaultKeyCreated -and (Test-Path -LiteralPath $vaultKey)) {
+                        Remove-Item -LiteralPath $vaultKey
                     }
                 }
             }

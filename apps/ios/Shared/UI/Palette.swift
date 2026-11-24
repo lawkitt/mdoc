@@ -73,7 +73,7 @@ extension ProjectColour {
     }
 }
 
-/// The case's colour dot; it marks the case, never a state (ADR 0077).
+/// The Project's colour dot; it marks the Project, never a state (ADR 0077).
 struct ProjectDot: View {
     let colour: ProjectColour
 

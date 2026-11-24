@@ -955,8 +955,7 @@ fn not_found<R: Record>(id: &str) -> VaultError {
     }
 }
 
-/// Remove a sealed file as the case store deletes, overwriting it with
-/// zeros first. It is renamed to a temp name before that, so a reader
+/// Remove a sealed file, overwriting it with zeros first. It is renamed to a temp name before that, so a reader
 /// without the lock sees the whole file or none, and a crash leaves a temp
 /// file the next open sweeps.
 fn remove_sealed(path: &Path) -> io::Result<()> {

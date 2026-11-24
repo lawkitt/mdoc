@@ -349,8 +349,8 @@ impl Vault {
         self.forget_deleted::<Reply>(id)
     }
 
-    /// Delete the replies `owner` has, as the case store dropped a case's
-    /// replies with it and a member's with the member. Replies another
+    /// Delete the replies `owner` has: a Project's with it, a Document's
+    /// with the Document. Replies another
     /// handle saved are found first. A reply that cannot be read for now
     /// refuses the delete, as it may be `owner`'s; one that never will
     /// (another key, damaged) is passed over.

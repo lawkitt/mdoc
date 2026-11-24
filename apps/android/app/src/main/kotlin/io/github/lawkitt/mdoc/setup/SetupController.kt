@@ -58,7 +58,7 @@ class SetupController(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val prefs = context.getSharedPreferences("setup", Context.MODE_PRIVATE)
     // Empty until Home has opened the core in the background: opening it can
-    // fail (a damaged case key), and Home shows that, not setup.
+    // fail (a damaged Vault key), and Home shows that, not setup.
     private val mutable = MutableStateFlow(SetupState(EMPTY, dismissed = prefs.getBoolean(DISMISSED, false)))
     val state: StateFlow<SetupState> = mutable.asStateFlow()
 

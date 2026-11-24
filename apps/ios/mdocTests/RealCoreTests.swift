@@ -78,8 +78,8 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(String(decoding: bytes[replaced.range.start..<replaced.range.end], as: UTF8.self), email.alias)
     }
 
-    /// Below the floor a document added to a case can arrive with the
-    /// case's names proposed: Replace N comes before the hand-off, which the
+    /// Below the floor a document added to a Project can arrive with the
+    /// Project's names proposed: Replace N comes before the hand-off, which the
     /// core refuses while proposals wait (ADR 0088).
     @MainActor
     func testBelowTheFloorProjectProposalsComeBeforeShare() throws {
@@ -337,7 +337,7 @@ final class RealCoreTests: XCTestCase {
 
     /// ADR 0098 through the real core: a mark proposes in the guessed
     /// category, decisions and identity changes undo one step at a time,
-    /// and each saves into the case without taking an undone step back.
+    /// and each saves into the Project without taking an undone step back.
     func testReviewBarCallsUndoAndSaveThroughTheCore() throws {
         let core = try core()
         let session = try reviewed(core)

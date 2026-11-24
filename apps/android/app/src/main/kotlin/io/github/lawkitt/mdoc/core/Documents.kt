@@ -1070,7 +1070,7 @@ private fun CoreException.detailOrMessage(): String = when (this) {
     is CoreException.Ocr -> detail
     is CoreException.Detect -> detail
     is CoreException.Review -> detail
-    is CoreException.Case -> detail
+    is CoreException.Project -> detail
     is CoreException.Setup -> detail
     is CoreException.Invalid -> detail
     is CoreException.Io -> detail

@@ -10,14 +10,14 @@ repository = "https://github.com/lawkitt/mdoc"
 [features]
 # The dev renderer's profile sandbox (app_paths::isolate); see the app's feature.
 headless-renders = []
-# Test builds: asking the OS for the build's signature or the case key
+# Test builds: asking the OS for the build's signature or the Vault key
 # panics. The app's dev-dependencies turn it on, so every
 # `cargo test` of the workspace has it and no shipped build does.
 deny-os-services = []
 
 [dependencies]
-# App data lives under data_local_dir / cache_dir (settings, session, cases,
-# models, updates, crash report); a bump must keep those paths.
+# App data lives under data_local_dir / cache_dir (settings, session, the
+# Vault and its key, models, updates, crash report); a bump must keep those paths.
 dirs = "7"
 # canonicalize without Windows verbatim (`\\?\`) prefixes in user-visible paths.
 dunce = "1"
@@ -39,7 +39,7 @@ security-framework = { version = "3", features = ["OSX_10_15"] }
 secret-service = { version = "5", default-features = false, features = ["rt-async-io-crypto-rust"] }
 
 [target.'cfg(windows)'.dependencies]
-# Saved-case keys use Windows data protection (DPAPI).
+# The Vault key uses Windows data protection (DPAPI).
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security_Cryptography",

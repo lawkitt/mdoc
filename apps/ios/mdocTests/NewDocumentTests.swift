@@ -22,7 +22,7 @@ final class NewDocumentTests: XCTestCase {
         wait(for: [met], timeout: timeout)
     }
 
-    /// New document from the + menu: open, in edit mode, in a case of its
+    /// New document from the + menu: open, in edit mode, in a Project of its
     /// own.
     private func newDocument(_ app: AppModel) throws -> DocumentViewModel {
         app.newDocument()

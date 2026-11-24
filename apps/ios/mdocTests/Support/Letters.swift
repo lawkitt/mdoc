@@ -3,7 +3,7 @@ import UIKit
 @testable import mdoc
 
 /// The tests' fictional documents: a letter before claim and a quotation in
-/// one case, a tenancy scan in another. People, companies, addresses and
+/// one Project, a tenancy scan in another. People, companies, addresses and
 /// numbers are invented; the phone number is in Ofcom's drama range, the
 /// email uses the reserved example.com domain and the IBAN is the standard
 /// documentation example.

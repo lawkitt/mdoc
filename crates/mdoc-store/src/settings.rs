@@ -269,15 +269,15 @@ impl Default for UpdatesConfig {
         }
     }
 }
-/// Saved-case choices.
+/// The close question of the saved cases an earlier build had.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CasesConfig {
+pub struct RetiredCloseConfig {
     /// No longer read: documents keep their own mappings. Kept so settings
     /// files that have it still load.
     pub ask_before_closing: bool,
 }
-impl Default for CasesConfig {
+impl Default for RetiredCloseConfig {
     fn default() -> Self {
         Self {
             ask_before_closing: true,
@@ -341,11 +341,12 @@ impl GeneralConfig {
     }
 }
 /// Settings › Detection › Categories to detect: scans of
-/// documents without a case skip these, and a new case's list starts here.
+/// documents outside a Project skip these, and a new Project's list starts
+/// here.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CategoriesConfig {
-    /// Category tokens scans skip, as in a case's `skip`.
+    /// Category tokens scans skip, as in a Project's `skip`.
     pub skip: Vec<String>,
 }
 impl CategoriesConfig {
@@ -358,7 +359,7 @@ impl CategoriesConfig {
             .filter(|c| self.skip.iter().any(|s| s == c.token()))
             .collect()
     }
-    /// Whether scans of documents without a case detect `category`.
+    /// Whether scans of documents outside a Project detect `category`.
     pub fn detects(&self, category: mdoc_pii::Category) -> bool {
         !self.skip.iter().any(|s| s == category.token())
     }
@@ -384,9 +385,10 @@ pub struct Preferences {
     /// Absent in settings saved before the update check existed.
     #[serde(default)]
     pub updates: UpdatesConfig,
-    /// Absent in settings saved before saved cases existed.
-    #[serde(default)]
-    pub cases: CasesConfig,
+    /// Absent in settings saved before saved cases existed; still written
+    /// under their name, so the file keeps its shape.
+    #[serde(default, rename = "cases")]
+    pub retired_close: RetiredCloseConfig,
     /// Absent while every category is detected, so older files and the
     /// default file stay as they were.
     #[serde(default, skip_serializing_if = "CategoriesConfig::is_default")]
@@ -404,7 +406,7 @@ impl Default for Preferences {
             pseudonymization: PiiConfig::default(),
             spelling: SpellingConfig::default(),
             updates: UpdatesConfig::default(),
-            cases: CasesConfig::default(),
+            retired_close: RetiredCloseConfig::default(),
             categories: CategoriesConfig::default(),
             general: GeneralConfig::default(),
         }

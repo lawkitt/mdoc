@@ -92,7 +92,7 @@ pub(crate) type Outbound = Result<String, mdoc_vault::Readiness>;
 fn refused(readiness: mdoc_vault::Readiness) -> Readiness {
     match readiness {
         mdoc_vault::Readiness::NamesNotReplaced(n) => Readiness::NamesNotReplaced(n),
-        // Never saved while ready, or changed since: as a case member with
+        // Never saved while ready, or changed since: as a Project's document with
         // no or another fingerprint showed.
         mdoc_vault::Readiness::Ready
         | mdoc_vault::Readiness::NotReviewed

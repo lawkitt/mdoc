@@ -26,7 +26,7 @@ pub enum CoreError {
     /// Reading or writing the Vault, or one of its rules (one Project per
     /// document, a document saved elsewhere since it was read).
     #[error("{message}")]
-    Case { message: String },
+    Project { message: String },
     /// Verifying or installing a model file.
     #[error("{message}")]
     Setup { message: String },
@@ -76,8 +76,8 @@ impl CoreError {
             message: message.into(),
         }
     }
-    pub(crate) fn case(message: impl Into<String>) -> Self {
-        Self::Case {
+    pub(crate) fn project(message: impl Into<String>) -> Self {
+        Self::Project {
             message: message.into(),
         }
     }
@@ -128,7 +128,7 @@ impl From<mdoc_vault::VaultError> for CoreError {
         match error {
             VaultError::Io(error) => error.into(),
             VaultError::InvalidId => Self::invalid(error.to_string()),
-            error => Self::case(error.to_string()),
+            error => Self::project(error.to_string()),
         }
     }
 }
