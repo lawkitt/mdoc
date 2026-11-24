@@ -500,6 +500,9 @@ final class DocumentViewModel {
     /// Share Copy for AI's text, as text or as a `.md` file. Save to Files
     /// gets the file either way. The file stays until the next share or
     /// launch: an app such as Telegram reads it after the sheet closes.
+    /// As text, the sheet's subject and preview title are the file's
+    /// pseudonymized name without `.md`, as Android's are: never the
+    /// document's title, which holds its names as written (#1188).
     func share(asFile: Bool) {
         do {
             let handOff = try session.copyForAI()
@@ -508,7 +511,8 @@ final class DocumentViewModel {
             if asFile {
                 share = ShareItems(items: [url])
             } else {
-                share = ShareItems(items: [TitledText(text: handOff.text, title: snapshot.title, file: url)])
+                let title = url.deletingPathExtension().lastPathComponent
+                share = ShareItems(items: [TitledText(text: handOff.text, title: title, file: url)])
             }
             onChange()
         } catch {

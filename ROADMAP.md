@@ -395,18 +395,6 @@ GUI rows in [#1146](https://github.com/lawkitt/mdoc/issues/1146) and one day
 of real use by the maintainer on the landed build gate its next candidate;
 items 33–35 are polish and do not.
 
-27. **[Android] Document notes and Promote to Document.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3.* As item
-    26. *Blocked by:* items 23, 25. *Done when:* the Android job passes with
-    tests of notes and Promote.
-30. **[Dev] A dev profile folder for debug builds.** *From
-    [#1153](https://github.com/lawkitt/mdoc/issues/1153); replaces Engineering's
-    profile override.* `MDOC_DEV_PROFILE=<dir>`, on macOS and Windows: the
-    profile and a key file live in that folder, the Keychain and DPAPI are
-    never asked, and the window title says "dev profile". No cargo feature.
-    *Done when:* a test pins that release builds ignore it; an agent runs a
-    GUI row on each platform with no OS prompt; `docs/development.md` (Fleet)
-    and the fleet profile's rule name it.
 
 - **[Desktop] Later: a horizontal tab strip.** Only if the tree proves short
   for working sets; needs no schema change. It would take the existing title

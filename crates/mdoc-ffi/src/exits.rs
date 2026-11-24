@@ -3,23 +3,26 @@
 //! 29), with a switch that takes one gate's check out.
 //!
 //! iOS and Android compose their Copy for AI and Share (as text or as a
-//! `.md` file) from two calls. The session's refusal and file name come
-//! first: `DocumentSession::hand_off` on iOS (`RealCore.copyForAI`, after
-//! saving), or the app's own pending check and `share_file_name` on Android
-//! (`Documents.copyForAi`). The text, which is also the file's contents,
+//! `.md` file) from two calls. The refusal and file name come first:
+//! `DocumentSession::hand_off` on iOS (`RealCore.copyForAI`, after
+//! saving), or the app's own pending check and `Vault::share_file_name` on
+//! Android (`Documents.copyForAi`); `hand_off` names the file with
+//! `Vault::share_file_name` too, the title masked with every name the
+//! Project knows (#1192). The text, which is also the file's contents,
 //! always comes from `Vault::text_for_ai`. [`EXITS`] mirrors each app's
 //! composition, and the suite runs both against a document that is not
-//! Ready.
+//! Ready, and against a Ready one whose title holds a name only another
+//! document gave its Project.
 //!
 //! What each carries: the text (the clipboard, the share sheet's text, the
 //! `.md` file's contents), the file's name, and the share sheet's subject
-//! and preview title. Android takes its subject from the file's name.
-//! **iOS Share as text: its title** was found unchecked by item 29's
-//! review: `DocumentViewModel.share(asFile: false)` passes the raw document
-//! title (`snapshot.title`) to `TitledText`, the sheet's subject and
-//! preview title. The Mac hub fixes it with an XCTest (#1091), so that it
-//! takes the file's name without `.md` as Android does. The mirror below
-//! sends what that fix sends.
+//! and preview title. Both apps take the subject from the file's name
+//! without `.md`. **iOS Share as text: its title** was found unchecked by
+//! item 29's review: it was the raw document title. Since #1188,
+//! `DocumentViewModel.share(asFile: false)` sends the file's name, and the
+//! XCTest `testShareCarriesNoOriginalInItsSubjectPreviewTitleOrFileName`
+//! checks the subject, preview title and file name the sheet gets. The
+//! mirror below sends the same.
 //!
 //! **Not exits:** `DocumentSession::copy_for_ai`, `share_text` and
 //! `HandOff::text` are the session's unchecked text. The apps never send
@@ -45,6 +48,9 @@ pub(crate) enum Gate {
     TextForAi,
     /// `DocumentSession::hand_off`'s refusal while proposals are pending.
     HandOff,
+    /// `Vault::share_file_name`'s mask of the title with the Project's
+    /// names: the file's name, and the subject both apps take from it.
+    ShareFileName,
     // Milestone 2: the connector joins here, if it checks anywhere else.
 }
 
@@ -101,13 +107,13 @@ const EXITS: &[Exit] = &[
 
 /// `RealCore.copyForAI`: saved first, then the session's refusal and file
 /// name, then the Vault's text; Share as text's subject is the file's name
-/// without `.md` (#1091, the Mac hub's fix).
+/// without `.md` (#1188).
 fn ios(letter: &Letter) -> Option<Vec<String>> {
     letter
         .session
         .save_pending_into_vault(letter.vault.clone())
         .ok()?;
-    let hand_off = letter.session.hand_off().ok()?;
+    let hand_off = letter.session.hand_off(letter.vault.clone()).ok()?;
     let text = letter.vault.text_for_ai(letter.id.clone()).ok()?;
     let subject = subject(&hand_off.file_name);
     Some(vec![text, hand_off.file_name, subject])
@@ -128,7 +134,7 @@ fn android(letter: &Letter) -> Option<Vec<String>> {
     if letter.session.snapshot().ok()?.proposed > 0 {
         return None;
     }
-    let file_name = letter.session.share_file_name().ok()?;
+    let file_name = letter.vault.share_file_name(letter.id.clone()).ok()?;
     let text = letter.vault.text_for_ai(letter.id.clone()).ok()?;
     // `shareIntent`'s EXTRA_TITLE and chooser title.
     let subject = subject(&file_name);
@@ -150,7 +156,14 @@ enum Scenario {
     /// Another writer adds a sentence naming no one the Project knows to
     /// the saved text: only the review's fingerprint catches it.
     ChangedElsewhere,
+    /// Another document names Dmitri Orlov and is saved into the Project,
+    /// and the letter is renamed "Dmitri Orlov lease": its text never
+    /// mentions him, so it stays Ready, and its title must leave masked
+    /// (#1192).
+    ProjectNameInTheTitle,
 }
+
+const READY: [Scenario; 2] = [Scenario::Ready, Scenario::ProjectNameInTheTitle];
 
 const NOT_READY: [Scenario; 4] = [
     Scenario::NameFromAnotherDocument,
@@ -168,7 +181,12 @@ impl Scenario {
             Scenario::NameFromAnotherDocument | Scenario::NameOnlyTheVaultKnows => {
                 &["Anna Petrova", "Boris Ivanov"]
             }
+            Scenario::ProjectNameInTheTitle => &["Anna Petrova", "Dmitri Orlov"],
         }
+    }
+
+    fn is_ready(self) -> bool {
+        READY.contains(&self)
     }
 }
 
@@ -228,13 +246,19 @@ fn saved(
     (session, saved)
 }
 
-fn ready() -> Letter {
+/// An empty Vault in a scratch folder, which it lives as long as.
+fn vault() -> (Scratch, Arc<Vault>) {
     let scratch = Scratch::new();
     let vault = Vault::open(
         scratch.path().join("vault").display().to_string(),
         KEY.to_vec(),
     )
     .unwrap();
+    (scratch, vault)
+}
+
+fn ready() -> Letter {
+    let (scratch, vault) = vault();
     let project = vault.create_project("Case".into()).unwrap().id;
     let (session, letter) = saved(
         &vault,
@@ -301,8 +325,21 @@ impl Letter {
                     })
                     .unwrap();
             }
+            Scenario::ProjectNameInTheTitle => {
+                saved(
+                    &self.vault,
+                    &self.project,
+                    "Dmitri Orlov signed.",
+                    "Memo",
+                    &["Dmitri Orlov"],
+                );
+                self.session
+                    .rename_in_vault(self.vault.clone(), "Dmitri Orlov lease".into())
+                    .unwrap();
+                assert!(store.readiness(&self.id).unwrap().is_ready());
+            }
         }
-        if scenario != Scenario::Ready {
+        if !scenario.is_ready() {
             assert!(
                 !store.readiness(&self.id).unwrap().is_ready(),
                 "{scenario:?}"
@@ -315,9 +352,13 @@ impl Letter {
 fn faults(exit: &Exit, scenario: Scenario, sent: Option<&[String]>) -> Vec<String> {
     let mut faults = Vec::new();
     match (scenario, sent) {
-        (Scenario::Ready, Some(sent)) if sent.iter().any(|text| text.contains("PERSON_1")) => {}
-        (Scenario::Ready, _) => {
-            faults.push(format!("{}: sent nothing Ready: {sent:?}", exit.name));
+        (_, Some(sent))
+            if scenario.is_ready() && sent.iter().any(|text| text.contains("PERSON_1")) => {}
+        (_, _) if scenario.is_ready() => {
+            faults.push(format!(
+                "{}: sent nothing Ready ({scenario:?}): {sent:?}",
+                exit.name
+            ));
         }
         (_, Some(sent)) => faults.push(format!(
             "{}: sent a document not Ready ({scenario:?}): {sent:?}",
@@ -356,10 +397,11 @@ fn suite(scenarios: &[Scenario]) -> Vec<String> {
 }
 
 /// Done when: each app exit sends the Vault's checked text for a Ready
-/// document, with no original in it or in its file name.
+/// document, with no original in it or in its file name and subject, even
+/// one its title holds and only another document gave the Project.
 #[test]
 fn every_exit_sends_a_ready_document_pseudonymized() {
-    let faults = suite(&[Scenario::Ready]);
+    let faults = suite(&READY);
     assert!(faults.is_empty(), "{faults:#?}");
 }
 
@@ -376,9 +418,11 @@ fn no_exit_sends_a_document_that_is_not_ready() {
 /// it before the Vault's text; Android checks the same count itself.
 #[test]
 fn hand_off_refuses_while_proposals_are_pending() {
+    let (_scratch, vault) = vault();
     let session = proposed(TEXT, "Lease", &["Anna Petrova"]);
+    session.save_into_vault(vault.clone()).unwrap();
     assert!(matches!(
-        session.hand_off(),
+        session.hand_off(vault),
         Err(ReviewError::PendingProposals { count: 1 })
     ));
     assert_eq!(session.snapshot().unwrap().proposed, 1);
@@ -386,7 +430,9 @@ fn hand_off_refuses_while_proposals_are_pending() {
 
 /// Done when: taking the check out of any one gate fails the suite: with
 /// `Vault::text_for_ai`'s check out, every app exit sends a document that
-/// is not Ready; with `hand_off`'s out, it hands off pending proposals.
+/// is not Ready; with `Vault::share_file_name`'s mask out, every app exit
+/// sends a Project's name its title holds; with `hand_off`'s out, it
+/// hands off pending proposals.
 #[test]
 fn taking_a_gates_check_out_fails_the_suite() {
     {
@@ -401,9 +447,21 @@ fn taking_a_gates_check_out_fails_the_suite() {
             }
         }
     }
+    {
+        let _taken = take_out(Gate::ShareFileName);
+        for exit in EXITS {
+            assert!(
+                !run(exit, Scenario::ProjectNameInTheTitle).is_empty(),
+                "{} passed with the file name's mask taken out",
+                exit.name
+            );
+        }
+    }
     let _taken = take_out(Gate::HandOff);
+    let (_scratch, vault) = vault();
     let session = proposed(TEXT, "Lease", &["Anna Petrova"]);
-    let handed = session.hand_off();
+    session.save_into_vault(vault.clone()).unwrap();
+    let handed = session.hand_off(vault);
     assert!(
         handed.is_ok_and(|hand_off| hand_off.text.contains("Anna Petrova")),
         "hand_off refused with its check taken out"

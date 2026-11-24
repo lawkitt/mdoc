@@ -18,8 +18,12 @@ struct ActivityView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
-/// Text to share that the share sheet previews by a title (the document's)
-/// rather than by its first words, which are Copy for AI's placeholder note.
+/// Text to share that the share sheet previews by a title rather than by its
+/// first words, which are Copy for AI's placeholder note. The title leaves
+/// with the text, as Mail's subject and the preview's title, so it must
+/// hold no more than the text does: for Copy for AI's text, the file's
+/// pseudonymized name (#1188); for a restored reply, which holds the real
+/// names by design, its document's title or its own.
 /// The text itself is unchanged. Save to Files gets `file`, the same text as
 /// a `.md` file, rather than a `.txt` the system would make of it.
 final class TitledText: NSObject, UIActivityItemSource {

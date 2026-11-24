@@ -870,7 +870,8 @@ class Documents(
             val current = snapshot()
             if (current.pendingCount > 0) throw AppError.PendingReview(current.pendingCount)
             val vaultId = vaultId ?: throw AppError.NotFound()
-            val fileName = core { ffi.shareFileName() }
+            // The title masked with every name its Project knows (#1192).
+            val fileName = core { vault.shareFileName(vaultId) }
             val text = core { vault.textForAi(vaultId) }
             lastShared.set(projectId?.let { Place.Project(ProjectId(it)) } ?: Place.Unfiled(vaultId))
             HandOff(text, fileName)
