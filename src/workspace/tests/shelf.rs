@@ -292,6 +292,74 @@ fn a_name_another_document_adds_takes_a_row_off_ready(cx: &mut TestAppContext) {
     assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "before");
 }
 
+/// Review of #1145 (P1): the editor's Copy for AI is checked as the shelf
+/// is, against the names its Project holds now. A name another document
+/// adds takes it off ready: the Share tab, the menu and the shortcut copy
+/// nothing and say why; Copy Markdown is still the deliberate raw copy.
+#[gpui::test]
+fn copy_for_ai_in_the_editor_is_checked_against_the_projects_names(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let text = "Anna Petrova wrote to Boris Ivanov about the lease.";
+    let letter = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "letter.md",
+        text,
+        &[("Anna Petrova", Person)],
+    );
+    let project = new_project(&tabs, cx, letter);
+    written(cx);
+    let view = active(&tabs, cx);
+    let copy = |cx: &mut VisualTestContext| {
+        view.update_in(cx, |view, window, cx| {
+            view.error = None;
+            view.copy_for_ai(&crate::pii::ui::CopyForAi, window, cx)
+        });
+        cx.run_until_parked();
+    };
+    // Ready: the Vault's outbound text, the shelf's bytes.
+    copy(cx);
+    let copied = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
+    assert!(copied.ends_with("PERSON_1 wrote to Boris Ivanov about the lease."));
+    assert!(!copied.contains("Anna"));
+
+    // Another document names Boris Ivanov and joins the Project.
+    let memo = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "memo.md",
+        "Boris Ivanov signed.",
+        &[("Boris Ivanov", Person)],
+    );
+    move_tab(&tabs, cx, memo, Some(&project));
+    written(cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(letter, window, cx));
+    cx.run_until_parked();
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("before".into()));
+    copy(cx);
+    assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "before");
+    view.read_with(cx, |view, _| {
+        let why = view.error.as_deref().unwrap_or_default();
+        // Its review proposes the Project's new name, as the shelf's row
+        // says.
+        assert_eq!(why, "Not copied: 1 proposal is left to review.");
+    });
+    // The shortcut and the menu dispatch the same action.
+    cx.update(|window, cx| window.focus(&view.read(cx).editor.read(cx).focus_handle(cx), cx));
+    cx.dispatch_action(crate::pii::ui::CopyForAi);
+    cx.run_until_parked();
+    assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "before");
+    // Copy Markdown copies the text as it is, on purpose.
+    view.update_in(cx, |view, window, cx| {
+        view.copy_markdown(&crate::document_view::CopyMarkdown, window, cx)
+    });
+    let raw = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
+    assert_eq!(raw, "PERSON_1 wrote to Boris Ivanov about the lease.");
+}
+
 /// A stored document that is not ready opens in a tab at its first
 /// proposal: the name its Project added since.
 #[gpui::test]

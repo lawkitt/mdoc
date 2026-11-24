@@ -147,6 +147,61 @@ impl Workspace {
         })
     }
 
+    /// Copy for AI in tab `id`: its text leaves only as a shelf row's
+    /// would, once the Vault's outbound check of what it wrote passes
+    /// against the names its Project holds now (#1091 Decision 19). What
+    /// it shows is written first, and the copy waits for the writes.
+    pub(super) fn copy_tab_for_ai(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.copy_for_ai_waiting = None;
+        self.autosave(id, window, cx);
+        self.try_copy_for_ai(id, cx);
+    }
+
+    /// The writes a waiting Copy for AI waited for have landed: check it
+    /// again.
+    pub(super) fn copy_for_ai_after_write(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.copy_for_ai_waiting.take() {
+            self.try_copy_for_ai(id, cx);
+        }
+    }
+
+    /// Copy tab `id`'s checked text, say why it may not leave, or wait
+    /// while a write may still settle it.
+    fn try_copy_for_ai(&mut self, id: u64, cx: &mut Context<Self>) {
+        let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
+            return;
+        };
+        let outcome = match self.shelf_row(&ShelfKey::Tab(id), cx) {
+            Some(row) => match (row.text_for_ai(), row.readiness) {
+                (Some(text), _) => Ok(text.to_owned()),
+                (None, shelf::Readiness::Checking) if self.document_writer.busy() => {
+                    self.copy_for_ai_waiting = Some(id);
+                    return;
+                }
+                (None, readiness) => Err(not_copied(readiness, self.unsaved.contains(&id))),
+            },
+            None => Err(self.no_row_reason(&view, cx)),
+        };
+        view.update(cx, |view, cx| match outcome {
+            Ok(text) => view.copy_checked_for_ai(text, cx),
+            Err(why) => view.copy_for_ai_refused(why, cx),
+        });
+    }
+
+    /// Why a tab has no shelf row to copy.
+    fn no_row_reason(&self, view: &gpui::Entity<DocumentView>, cx: &App) -> String {
+        let excluded = match (self.vault.vault(), view.read(cx).session.document.id()) {
+            (Some(vault), Some(DocumentId::Vault(document))) => (vault.documents().iter())
+                .any(|summary| summary.id == document.as_str() && summary.exclude_from_ai),
+            _ => false,
+        };
+        if excluded {
+            "Not copied: this document is excluded from AI.".into()
+        } else {
+            "Not copied: pseudonymize the document first.".into()
+        }
+    }
+
     /// Project `id`'s names in the window are not all in the Vault yet: its
     /// write waits, runs or failed, or an open member's mapping change
     /// waits to be folded into it.
@@ -167,6 +222,26 @@ fn checked(outbound: Result<String, VaultError>) -> Outbound {
         Ok(text) => Ok(text),
         Err(VaultError::NotReady(readiness)) => Err(readiness),
         Err(_) => Err(mdoc_vault::Readiness::NotReviewed),
+    }
+}
+
+/// Why Copy for AI copied nothing, as the shelf's row would say it.
+/// `failed`: the tab's last write failed, so the check can't see its text.
+fn not_copied(readiness: shelf::Readiness, failed: bool) -> String {
+    use shelf::Readiness::*;
+    match readiness {
+        LeftToReview(1) => "Not copied: 1 proposal is left to review.".into(),
+        LeftToReview(n) => format!("Not copied: {n} proposals are left to review."),
+        NamesNotReplaced(1) => "Not copied: 1 known name is still written out in the text.                                 It may be a name another document added to the Project."
+            .into(),
+        NamesNotReplaced(n) => format!(
+            "Not copied: {n} known names are still written out in the text. They may be              names another document added to the Project."
+        ),
+        ChangedSinceReview => "Not copied: the text changed since its review.".into(),
+        Checking if failed => "Not copied: its last change could not be saved, so its names                                can't be checked."
+            .into(),
+        Checking => "Not copied: mdoc is still checking its names. Try again in a moment.".into(),
+        Ready => "Not copied.".into(),
     }
 }
 

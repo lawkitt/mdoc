@@ -433,6 +433,8 @@ impl Workspace {
         } else if self.quit_flow.finishing() {
             self.finish_quit(window, cx);
         }
+        // A Copy for AI waiting for what it shows to be written.
+        self.copy_for_ai_after_write(cx);
         // Closes that waited for their writes go now.
         let closing: Vec<u64> = self.closing_after_write.iter().copied().collect();
         for tab in closing {

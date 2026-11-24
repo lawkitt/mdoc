@@ -129,6 +129,9 @@ pub(super) enum TabEvent {
     Save(SaveEvent),
     Project(ProjectEvent),
     Reply(ReplyEvent),
+    /// Copy for AI, from the Share tab, the menu or its shortcut: the
+    /// window checks it as the shelf does before anything is copied.
+    CopyForAi,
     ToggleTheme,
     /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
     /// Source follows and Settings keeps it.
@@ -340,6 +343,9 @@ pub(super) struct Workspace {
     /// Views whose last write failed: their edit is in no file, so eviction
     /// keeps them.
     unsaved: std::collections::HashSet<u64>,
+    /// The tab whose Copy for AI waits for its writes to land before the
+    /// Vault's outbound check runs.
+    copy_for_ai_waiting: Option<u64>,
     /// One admission at a time, so a repeat waits for the import before it.
     admitting: bool,
     admit_queue: std::collections::VecDeque<(Vec<PathBuf>, Option<String>)>,
@@ -570,6 +576,7 @@ impl Workspace {
             closing_after_write: Default::default(),
             evicting: Default::default(),
             unsaved: Default::default(),
+            copy_for_ai_waiting: None,
             admitting: false,
             admit_queue: Default::default(),
             // Tests name their own; they never touch the real cache.
@@ -1648,6 +1655,7 @@ impl Workspace {
                 self.dismiss_project_hint(id, from, into, cx)
             }
             TabEvent::Project(ProjectEvent::MoveToNew) => self.move_to_new_project(id, window, cx),
+            TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
             TabEvent::SourceDisplay(display) => {
                 let display = *display;
