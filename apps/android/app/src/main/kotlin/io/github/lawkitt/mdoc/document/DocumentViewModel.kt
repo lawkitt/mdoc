@@ -98,6 +98,9 @@ class DocumentViewModel(
      */
     private val jobId get() = session.vaultId?.let(::DocumentId) ?: session.id
 
+    /** Saved in the Vault: it moves (an import not read yet does not). */
+    val saved: Boolean get() = session.vaultId != null
+
     /** Whether a job or interruption belongs to this document. */
     fun isMine(id: DocumentId?): Boolean = id != null && (id == session.id || id.raw == session.vaultId)
 

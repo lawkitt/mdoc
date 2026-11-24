@@ -109,6 +109,27 @@ enum class ProjectDeletion {
     DeleteDocuments,
 }
 
+/** Where a move takes a saved document (#1091 Decision 9): a Project, a new one named so, or Unfiled. */
+sealed interface MoveTarget {
+    data class Existing(val project: ProjectId) : MoveTarget
+
+    data class NewProject(val name: String) : MoveTarget
+
+    data object Unfiled : MoveTarget
+}
+
+/** Where a move took a document, for "Moved to <Project>" and its Undo (iOS `ProjectMove`). */
+data class ProjectMove(
+    /** The id this run lists it by. */
+    val document: DocumentId,
+    /** The Project it is in now; `null`: Unfiled. */
+    val to: ProjectSummary?,
+    /** The Project it left, which keeps its names; `null`: it was Unfiled. */
+    val from: ProjectId?,
+    /** The Vault's handle for Undo, good while this core runs. */
+    val undo: ULong,
+)
+
 data class LibrarySnapshot(
     val projects: List<ProjectSummary> = emptyList(),
     val documents: List<DocumentSummary> = emptyList(),

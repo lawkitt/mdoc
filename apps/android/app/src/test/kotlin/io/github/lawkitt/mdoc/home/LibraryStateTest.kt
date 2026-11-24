@@ -110,6 +110,31 @@ class LibraryStateTest {
         assertNull(Destination.Unfiled.project)
     }
 
+    /**
+     * A document's moves (#1091 Decision 9): Move to Project… while another
+     * Project exists, Move to New Project…, Move to Unfiled from a Project;
+     * none for an import not read yet.
+     */
+    @Test
+    fun aDocumentsMenuOffersTheMovesThatGoSomewhere() {
+        val both = listOf(ellison, harbour)
+        assertEquals(
+            listOf(MoveCommand.ToProject, MoveCommand.ToNewProject),
+            HomeViewModel.moveCommands(null, saved = true, both),
+        )
+        assertEquals(
+            listOf(MoveCommand.ToProject, MoveCommand.ToNewProject, MoveCommand.ToUnfiled),
+            HomeViewModel.moveCommands(ellison.id, saved = true, both),
+        )
+        assertEquals(
+            "its own Project is the only one",
+            listOf(MoveCommand.ToNewProject, MoveCommand.ToUnfiled),
+            HomeViewModel.moveCommands(ellison.id, saved = true, listOf(ellison)),
+        )
+        assertEquals(listOf(MoveCommand.ToNewProject), HomeViewModel.moveCommands(null, saved = true, emptyList()))
+        assertTrue(HomeViewModel.moveCommands(ellison.id, saved = false, both).isEmpty())
+    }
+
     @Test
     fun aDestinationIsKeptAsOneString() {
         (listOf(Destination.Home, Destination.AllProjects, Destination.Unfiled, Destination.AllDocuments, Destination.Project(ellison.id))).forEach {

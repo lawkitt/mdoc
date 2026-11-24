@@ -9,6 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import uniffi.mdoc_ffi.CoreException
 import uniffi.mdoc_ffi.DocumentInfo
+import uniffi.mdoc_ffi.DocumentMove
 import uniffi.mdoc_ffi.DocumentSession as FfiSession
 import uniffi.mdoc_ffi.DocumentSourceKind
 import uniffi.mdoc_ffi.FloorReason
@@ -71,6 +72,17 @@ class Documents(
     @Volatile internal var deleteInVault: (String, ProjectDocuments) -> Unit = { project, documents ->
         vault.deleteProject(project, documents)
     }
+
+    /** Runs the core's move or its Undo; the tests make it stop part way. */
+    @Volatile internal var moveInVault: (() -> DocumentMove) -> DocumentMove = { it() }
+
+    /**
+     * Held for the whole of a document's move and of a Project's delete,
+     * before any session's save lock: a move never lands in a Project
+     * after its delete read the documents it has, which the delete would
+     * then move or delete behind the moved session.
+     */
+    private val projectChanges = Any()
 
     /** Where text was shared from last: Restore with mdoc restores with it first. */
     val lastShared = LastShared(File(storage.intake, "last-shared.json"))
@@ -241,9 +253,9 @@ class Documents(
      * nothing saves it again. An import not read yet that was to join the
      * Project lands in Unfiled, or is deleted with the rest; one started
      * while the delete runs lands in Unfiled. The caller stops a job on a
-     * document it deletes first.
+     * document it deletes first. No move runs meanwhile.
      */
-    fun deleteProject(project: ProjectId, documents: ProjectDeletion) {
+    fun deleteProject(project: ProjectId, documents: ProjectDeletion): Unit = synchronized(projectChanges) {
         val raw = project.raw
         // The imports that would join it, first; the Documents' lock only to
         // read them: a save holds its session's save lock, then takes this one.
@@ -310,6 +322,80 @@ class Documents(
             synchronized(this) { deletingProjects -= raw }
             synchronized(projectNames) { projectNames.clear() }
         }
+    }
+
+    /**
+     * Move to Project, Move to New Project or Move to Unfiled (#1091
+     * Decision 9): the document's names take the aliases of the place it
+     * joins and its text is rewritten with them; the Project it left keeps
+     * its names. Refused for the place it is in already, and for an import
+     * not read yet. A new Project's name is the caller's, as typed.
+     */
+    fun moveDocument(id: DocumentId, target: MoveTarget): ProjectMove = move(id) { vaultId ->
+        when (target) {
+            is MoveTarget.Existing -> vault.moveDocument(vaultId, target.project.raw)
+            is MoveTarget.NewProject -> vault.moveDocumentToNewProject(vaultId, target.name)
+            MoveTarget.Unfiled -> vault.moveDocument(vaultId, null)
+        }
+    }
+
+    /**
+     * Undo of a move: the document moves back and its names take their old
+     * aliases there. The names the move added go again where nothing uses
+     * them, unless text was shared from there since.
+     */
+    fun undoMove(move: ProjectMove): ProjectMove = move(move.document) { vault.undoMove(move.undo) }
+
+    /**
+     * A saved document's move through the Vault, as iOS's: the move has
+     * happened once the core returns, so its session opens it again, as it
+     * is now. A move that stops part way may have moved it, or written it
+     * back as it was: its session opens it again too, and the error is
+     * raised once it has.
+     */
+    private fun move(id: DocumentId, call: (String) -> DocumentMove): ProjectMove {
+        synchronized(projectChanges) { return moveHeld(id, call) }
+    }
+
+    /** [move], under the Project changes' lock. */
+    private fun moveHeld(id: DocumentId, call: (String) -> DocumentMove): ProjectMove {
+        // Its session, read under this object's lock, where a first save
+        // shows its Vault id together with its mapping: an import is either
+        // saved and known by its Vault id, or refused as not read yet.
+        val held: Session
+        val vaultId: String
+        synchronized(this) {
+            // A listed document not opened this run: its id is the Vault's,
+            // and no session opens it while this lock is held.
+            held = sessions[id] ?: ids[id.raw]?.let { sessions[it] } ?: return moved(id, core { moveInVault { call(id.raw) } })
+            vaultId = held.vaultId ?: throw AppError.Failed(NOT_READ_YET)
+        }
+        // No save of it runs meanwhile, nor starts: a save after the move
+        // and before the session opens it again would be refused as stale.
+        return held.holdingSave {
+            val result = try {
+                core { moveInVault { call(vaultId) } }
+            } catch (error: Exception) {
+                runCatching { held.reopen(vaultId, vault.document(vaultId)) }.exceptionOrNull()?.let(error::addSuppressed)
+                synchronized(projectNames) { projectNames.clear() }
+                throw error
+            }
+            // Its text and Project changed in the Vault: the session opens it
+            // again. The move stands even if it can't; its saves then say so.
+            runCatching { held.reopen(vaultId, vault.document(vaultId)) }
+            moved(held.id, result)
+        }
+    }
+
+    /** What a move tells the app. */
+    private fun moved(id: DocumentId, moved: DocumentMove): ProjectMove {
+        synchronized(projectNames) { projectNames.clear() }
+        return ProjectMove(
+            document = id,
+            to = moved.project?.let { ProjectSummary(ProjectId(it.id), it.name, projectColour(it.hue)) },
+            from = moved.left?.let { ProjectId(it.id) },
+            undo = moved.undo,
+        )
     }
 
     /** Runs `body` while none of `held` saves. */
@@ -772,6 +858,9 @@ class Documents(
 
         /** A saved reply's title. */
         fun replyTitle(title: String) = "Reply to $title"
+
+        /** Why an import not read yet does not move, in iOS's words. */
+        const val NOT_READ_YET = "Move the document once it is read."
 
         /** As Home and the document show it: read, names searched for or marked, proposals left. */
         fun phase(scanned: Boolean, candidates: Int, proposed: Int) = when {
