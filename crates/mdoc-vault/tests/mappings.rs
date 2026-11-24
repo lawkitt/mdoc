@@ -1413,7 +1413,11 @@ fn an_unfiled_delete_stops_when_a_document_moved_into_a_project() {
     assert_eq!(ids_in(&vault, None), vec![first.clone()]);
     assert_eq!(ids_in(&vault, Some(&project.id)), vec![second.clone()]);
     // Asked again about the one still Unfiled: it goes.
-    assert!(vault.delete_unfiled_documents(&[first.clone()]).unwrap());
+    assert!(
+        vault
+            .delete_unfiled_documents(std::slice::from_ref(&first))
+            .unwrap()
+    );
     assert!(ids_in(&vault, None).is_empty());
     assert!(vault.document(&first).is_err());
     assert_eq!(text(&vault, &second), "Ben wrote.");
