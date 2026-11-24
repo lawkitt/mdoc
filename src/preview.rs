@@ -403,6 +403,18 @@ impl PreviewState {
         self.visible = true;
     }
 
+    /// The source can't be shown at all, its original not opening: the
+    /// pane shows `message` in its place, and the sidebar warns.
+    pub(super) fn unavailable(&mut self, message: String) {
+        self.invalidate();
+        self.source = None;
+        self.attachment = None;
+        self.loading = false;
+        self.visible = true;
+        self.failed = true;
+        self.message = Some(message);
+    }
+
     /// `path` has no preview: the pane says so.
     pub(super) fn no_preview(&mut self, path: PathBuf) {
         self.attachment = Some(path.clone());

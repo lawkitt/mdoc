@@ -190,6 +190,25 @@ impl Workspace {
         }
     }
 
+    /// Before the window closes: write any document edited since the
+    /// quit's own writes were queued, a keystroke while they ran. Returns
+    /// whether a write now runs or waits. Replies and Projects are not
+    /// asked again: their edits come only through a document's.
+    pub(super) fn autosave_late_edits(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let ids: Vec<_> = self.tabs.iter().map(|tab| tab.id()).collect();
+        for id in ids {
+            if let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) {
+                view.update(cx, |view, _| view.cancel_autosave());
+            }
+            self.autosave_document(id, window, cx);
+        }
+        self.document_writer.busy()
+    }
+
     pub(super) fn queue_write(
         &mut self,
         target: Target,
@@ -433,6 +452,8 @@ impl Workspace {
         } else if self.quit_flow.finishing() {
             self.finish_quit(window, cx);
         }
+        // A Copy for AI waiting for what it shows to be written.
+        self.copy_for_ai_after_write(cx);
         // Closes that waited for their writes go now.
         let closing: Vec<u64> = self.closing_after_write.iter().copied().collect();
         for tab in closing {
@@ -448,7 +469,8 @@ impl Workspace {
 
     /// Write tab `id`'s Vault document as it shows now, at once and on this
     /// thread: a move or delete at the head of the queue reads it next.
-    /// `Ok` when there is nothing to write.
+    /// `Ok` when there is nothing to write, its text and review unchanged
+    /// since the last write included.
     pub(super) fn write_tab_now(
         &mut self,
         id: u64,
@@ -466,8 +488,13 @@ impl Workspace {
             if view.lifecycle.loading() || view.lifecycle.source_only() {
                 return Ok(());
             }
-            let text = view.editor.read(cx).text().to_string();
             let review = view.saved_review();
+            // Unchanged since its last write: its text is the Vault's, and
+            // writing it again could only undo a newer revision.
+            if !view.unsaved(cx) && review == view.session.document.review {
+                return Ok(());
+            }
+            let text = view.editor.read(cx).text().to_string();
             (document, vault_write(view, text, review, cx))
         };
         let Write::Vault {

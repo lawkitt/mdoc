@@ -42,7 +42,8 @@ pub struct Exported {
 impl Vault {
     /// Write Project `id`'s documents into a new folder inside `into`,
     /// which must lie outside the Vault. A pasted or new document has no
-    /// original; one whose conversion never finished has no Markdown.
+    /// original; one whose conversion never finished has no Markdown, and
+    /// one whose text was cleared since has an empty one.
     pub fn export_project(&self, id: &str, into: &Path) -> Result<Exported, VaultError> {
         let project = self.project(id)?;
         // Checked before anything is created, whatever alias names it.
@@ -67,7 +68,10 @@ impl Vault {
                 if document.project.as_deref() != Some(id) {
                     return Ok(false);
                 }
-                if !document.markdown.is_empty() || document.original.is_none() {
+                // Only a conversion that never finished has no Markdown; a
+                // text its user cleared, or an empty text file, is written
+                // empty.
+                if !document.pending_conversion() || text_source(&document) {
                     let (_, mut file) =
                         names.create(&folder, &safe_stem(&document.title), ".md")?;
                     file.write_all(document.markdown.as_bytes())?;
@@ -98,6 +102,17 @@ impl Vault {
         }
         Ok(exported)
     }
+}
+
+/// A Markdown or plain text source is its own text, with no conversion to
+/// wait for.
+fn text_source(document: &crate::Document) -> bool {
+    (document.original.as_ref()).is_some_and(|original| {
+        let (_, extension) = split_name(&original.info.file_name);
+        [".md", ".markdown", ".mdown", ".txt"]
+            .iter()
+            .any(|text| extension.eq_ignore_ascii_case(text))
+    })
 }
 
 /// Names taken in one folder, compared ignoring case as Windows and macOS

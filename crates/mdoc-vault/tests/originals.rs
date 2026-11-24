@@ -452,6 +452,50 @@ fn a_save_or_update_keeps_the_stored_original() {
     assert_eq!(ids(vault.documents_with_source(hash)), vec![document.id]);
 }
 
+/// Review of #1145 (P2-5): a conversion's notes are kept with the
+/// original and come back on reopening; its source stays as imported.
+#[test]
+fn a_conversion_notes_its_warnings_but_never_changes_its_source() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let document = import(&vault, &bytes(100, 13));
+    let imported = document.original.clone().unwrap();
+    vault
+        .update_document(&document.id, |d| {
+            let original = d.original.as_mut().unwrap();
+            original.info.import_warning = Some("Some pages had no text.".into());
+            original.info.left_out = Some("Left out: 2 images.".into());
+            original.info.password_protected = true;
+            // Not the conversion's to change.
+            original.sha256 = "0".repeat(64);
+            original.len = 1;
+            original.info.file_name = "other.pdf".into();
+        })
+        .unwrap();
+    let reopened = folder.open().document(&document.id).unwrap();
+    let original = reopened.original.unwrap();
+    assert_eq!(original.sha256, imported.sha256);
+    assert_eq!(original.len, imported.len);
+    assert_eq!(original.info.file_name, "brief.pdf");
+    assert_eq!(
+        original.info.import_warning.as_deref(),
+        Some("Some pages had no text.")
+    );
+    assert_eq!(
+        original.info.left_out.as_deref(),
+        Some("Left out: 2 images.")
+    );
+    assert!(original.info.password_protected);
+    // A later save that does not know it took a password keeps that.
+    vault
+        .update_document(&document.id, |d| {
+            d.original.as_mut().unwrap().info.password_protected = false;
+        })
+        .unwrap();
+    let again = folder.open().document(&document.id).unwrap();
+    assert!(again.original.unwrap().info.password_protected);
+}
+
 /// An import with no text stays unconverted through moves and a Project
 /// delete; a save of its text clears it, and no later save sets it again.
 #[test]

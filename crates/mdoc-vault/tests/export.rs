@@ -143,6 +143,48 @@ fn an_exported_projects_files_match_its_documents() {
     }
 }
 
+/// Review of #1145 (P2-8): a converted document whose text its user
+/// cleared, or an empty text file, exports an empty `.md` beside its
+/// original, as counted; one whose conversion never finished exports its
+/// original alone.
+#[test]
+fn a_cleared_conversion_exports_an_empty_markdown_file() {
+    let f = Folder::new();
+    let project = f.project("Lease");
+    f.import(Some(&project), "Scan", "", "scan.pdf", b"%PDF-1");
+    f.import(Some(&project), "Cleared", "", "cleared.pdf", b"%PDF-2");
+    // An empty text file is its own, empty, Markdown.
+    f.import(Some(&project), "Empty", "", "empty.md", b"");
+    let cleared = (f.vault.documents_in(Some(&project)).into_iter())
+        .find(|summary| summary.title == "Cleared")
+        .unwrap()
+        .id;
+    // Converted, then emptied by its user.
+    for text in ["Converted text", ""] {
+        f.vault
+            .update_document(&cleared, |document| {
+                document.markdown = text.into();
+                document.unconverted = false;
+            })
+            .unwrap();
+    }
+    let exported = f.vault.export_project(&project, &f.picked()).unwrap();
+    assert_eq!(exported.documents, 3);
+    let written = files(&exported.folder);
+    assert_eq!(
+        written.keys().collect::<Vec<_>>(),
+        [
+            "Cleared.md",
+            "Empty.md",
+            &format!("{ORIGINALS}/cleared.pdf"),
+            &format!("{ORIGINALS}/empty.md"),
+            &format!("{ORIGINALS}/scan.pdf"),
+        ]
+    );
+    assert!(written["Cleared.md"].is_empty());
+    assert!(written["Empty.md"].is_empty());
+}
+
 #[test]
 fn a_second_export_never_overwrites_the_first() {
     let f = Folder::new();

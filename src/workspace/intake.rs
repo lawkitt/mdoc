@@ -138,15 +138,16 @@ impl Workspace {
             }
         }
         self.post_failures(&failed);
-        // Opened from the same path while this waited: it only comes to the
-        // front.
+        // Open in a tab from the same path, with the same bytes: it only
+        // comes to the front. A file replaced since is admitted again, as
+        // new bytes are (a repeat of another document asks).
         let mut shown = None;
         files.retain(|file| match self.open_tab_for(&file.path, cx) {
-            Some(id) => {
+            Some(id) if self.tab_shows_source(id, &file.sha256, &vault, cx) => {
                 shown.get_or_insert(id);
                 false
             }
-            None => true,
+            _ => true,
         });
         if files.is_empty() {
             if let Some(id) = shown {
@@ -213,6 +214,26 @@ impl Workspace {
             });
         })
         .detach();
+    }
+
+    /// Tab `id` shows the Vault document imported from the bytes whose
+    /// hash is `sha256`.
+    pub(super) fn tab_shows_source(
+        &self,
+        id: u64,
+        sha256: &str,
+        vault: &mdoc_vault::Vault,
+        cx: &gpui::App,
+    ) -> bool {
+        let Some(tab) = self.tabs.get(id) else {
+            return false;
+        };
+        let document = (tab.view())
+            .and_then(|view| view.read(cx).session.document.vault.clone())
+            .or_else(|| tab.record().document.clone());
+        document.is_some_and(|document| {
+            (vault.documents_with_source(sha256).iter()).any(|d| d.id == document.as_str())
+        })
     }
 
     fn post_failures(&mut self, failed: &[(String, String)]) {
@@ -324,6 +345,8 @@ impl Workspace {
                     record.name = Some(title);
                     let id = self.push(record);
                     crate::document_view::LastFolder::note(&path, cx);
+                    // The path now finds the newest import of it.
+                    self.admitted_from.retain(|_, from| *from != path);
                     self.admitted_from.insert(id, path);
                     created.push(id);
                     id

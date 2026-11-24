@@ -696,6 +696,112 @@ fn a_converted_text_emptied_by_its_user_stays_empty_after_a_restart(cx: &mut Tes
     });
 }
 
+/// Review of #1145 (P2-5): what a conversion warned about and left out
+/// is saved with its original and shows again after a restart.
+#[gpui::test]
+fn a_conversions_warning_comes_back_after_a_restart(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let docx = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/import/text.docx");
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![docx], cx);
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        assert!(!view.editor.read(cx).text().is_empty());
+        view.session.warning = Some("Some pages had no text.".into());
+        view.session.left_out = Some("Left out: 2 images.".into());
+        let edited = format!("{} Edited.", view.editor.read(cx).text());
+        view.editor
+            .update(cx, |editor, cx| editor.set_text(edited, cx));
+    });
+    wait(cx, 1000);
+    let session = cx.update(|_, cx| tabs.read(cx).snapshot(cx));
+    let (restored, cx) = boot_on(&mut cx.cx, dir.path(), session);
+    active(&restored, cx).read_with(cx, |view, cx| {
+        assert!(view.editor.read(cx).text().ends_with(" Edited."));
+        assert_eq!(
+            view.session.warning.as_deref(),
+            Some("Some pages had no text.")
+        );
+        assert_eq!(
+            view.session.left_out.as_deref(),
+            Some("Left out: 2 images.")
+        );
+    });
+}
+
+/// Review of #1145 (P2-6): a converted document whose original is gone
+/// still opens its saved Markdown and review; the Source pane says why it
+/// has nothing to show.
+#[gpui::test]
+fn a_missing_original_leaves_the_saved_markdown_open(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let docx = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/import/text.docx");
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![docx], cx);
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        let edited = format!("{} Edited.", view.editor.read(cx).text());
+        view.editor
+            .update(cx, |editor, cx| editor.set_text(edited, cx));
+    });
+    wait(cx, 1000);
+    let id = cx.update(|_, cx| tabs.read(cx).tab_document(tabs.read(cx).tabs.active(), cx));
+    let root = vault(&tabs, cx).root().to_path_buf();
+    let session = cx.update(|_, cx| tabs.read(cx).snapshot(cx));
+    let original = root
+        .join("docs")
+        .join(id.unwrap().as_str())
+        .join("original.enc");
+    std::fs::remove_file(&original).unwrap();
+    let (restored, cx) = boot_on(&mut cx.cx, dir.path(), session);
+    active(&restored, cx).read_with(cx, |view, cx| {
+        assert!(!view.lifecycle.unavailable(), "{:?}", view.error);
+        assert!(view.editor.read(cx).text().ends_with(" Edited."));
+        assert!(view.preview.failed());
+        assert!(view.preview.visible());
+        let message = view.preview.message().unwrap();
+        assert!(
+            message.starts_with("The original file is missing"),
+            "{message}"
+        );
+    });
+}
+
+/// Review of #1145 (P2-7): a file open in a tab comes to the front again
+/// only while its bytes are unchanged; replaced at the same path, it is
+/// imported as a new document, never shown as the old import.
+#[gpui::test]
+fn reopening_a_replaced_file_imports_its_new_bytes(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lease.md");
+    std::fs::write(&path, "First version.").unwrap();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![path.clone()], cx);
+    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    assert_eq!(text_of(&tabs, cx), "First version.");
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    // Unchanged: its tab comes to the front, nothing is imported.
+    open(&tabs, vec![path.clone()], cx);
+    assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), first);
+    let vault = vault(&tabs, cx);
+    assert_eq!(vault.documents().len(), 1);
+    // Replaced in another app: a new document with the new text.
+    std::fs::write(&path, "Second version.").unwrap();
+    open(&tabs, vec![path.clone()], cx);
+    assert!(!cx.has_pending_prompt(), "new bytes are no repeat");
+    let second = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    assert_ne!(second, first);
+    assert_eq!(text_of(&tabs, cx), "Second version.");
+    assert_eq!(vault.documents().len(), 2);
+    // The path now finds the new import.
+    open(&tabs, vec![path], cx);
+    assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), second);
+    assert_eq!(vault.documents().len(), 2);
+}
+
 #[gpui::test]
 fn a_second_open_of_a_file_still_importing_asks_as_a_repeat(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();

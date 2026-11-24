@@ -244,7 +244,10 @@ impl DocumentView {
     ) -> gpui::AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let has_preview = self.preview.pdf().is_some() || self.preview.source().is_some();
+        // A source that didn't open still has its pane, which says why.
+        let has_preview = self.preview.pdf().is_some()
+            || self.preview.source().is_some()
+            || self.preview.failed();
         let reviewable = self.can_show_replacements();
         let name = self.display_name();
         let crumb = div()

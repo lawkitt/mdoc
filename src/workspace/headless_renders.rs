@@ -415,6 +415,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     home::scenes(d)?;
     narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;
     vault::repeated_import(d, path.parent().ok_or("fixture folder")?)?;
+    vault::original_missing(d)?;
     vault::unavailable_home(d)?;
     vault::recovery_key(d)?;
     // Last: it leaves the Vault locked.

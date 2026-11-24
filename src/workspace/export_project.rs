@@ -26,8 +26,10 @@ impl Workspace {
                 return;
             }
         };
-        // Edits not written yet go first, so the export has them.
+        // Edits not written yet go first, so the export has them, and a
+        // Project save that failed is tried again.
         self.autosave_all(window, cx);
+        self.queue_project_writes(window, cx);
         let folder = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,
@@ -53,7 +55,12 @@ impl Workspace {
             let Some(into) = into else {
                 return;
             };
-            // Wait for the autosaves queued above, and any still running.
+            // Edits made while the chooser was up go too; then wait for
+            // every write queued, and any still running.
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.autosave_all(window, cx);
+                this.queue_project_writes(window, cx);
+            });
             while this
                 .update(cx, |this, _| this.document_writer.busy())
                 .unwrap_or(false)
@@ -61,6 +68,18 @@ impl Workspace {
                 cx.background_executor()
                     .timer(std::time::Duration::from_millis(50))
                     .await;
+            }
+            // A member whose write failed would export an older revision:
+            // nothing is exported, and the notice says which.
+            let unsaved = this
+                .update(cx, |this, cx| this.project_unsaved(&project, cx))
+                .unwrap_or_default();
+            if !unsaved.is_empty() {
+                let _ = this.update(cx, |this, cx| {
+                    this.notices.post(unsaved_notice(&name, &unsaved));
+                    cx.notify();
+                });
+                return;
             }
             let exported = cx
                 .background_executor()
@@ -73,6 +92,43 @@ impl Workspace {
         })
         .detach();
     }
+}
+
+impl Workspace {
+    /// What of Project `project` the window holds that the Vault doesn't:
+    /// its open members whose text or review is not written, by name, and
+    /// "its names" when the Project's own write failed.
+    fn project_unsaved(&self, project: &str, cx: &gpui::App) -> Vec<String> {
+        let mut unsaved: Vec<String> = (self.tabs.iter())
+            .filter(|tab| {
+                tab.view().is_some_and(|view| {
+                    let view = view.read(cx);
+                    (view.project.link()).is_some_and(|link| link.id == project)
+                        && (self.unsaved.contains(&tab.id())
+                            || view.unsaved(cx)
+                            || view.saved_review() != view.session.document.review)
+                })
+            })
+            .filter_map(|tab| {
+                Some(format!(
+                    "\u{201c}{}\u{201d}",
+                    tab.view()?.read(cx).display_name()
+                ))
+            })
+            .collect();
+        if self.project_ui.is_unwritten(project) {
+            unsaved.push("its names".into());
+        }
+        unsaved
+    }
+}
+
+fn unsaved_notice(name: &str, unsaved: &[String]) -> String {
+    format!(
+        "Could not export \u{201c}{name}\u{201d}: {} could not be saved, so the export \
+         would miss the latest changes. Nothing was exported.",
+        unsaved.join(", ")
+    )
 }
 
 fn exported_notice(

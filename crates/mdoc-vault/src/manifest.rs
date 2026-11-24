@@ -205,11 +205,19 @@ impl Record for Document {
     }
     /// A Document's Project changes only by a move, so a stale copy saved
     /// after a move cannot undo it; in a Project it keeps no mapping of its
-    /// own; its original never changes; once converted it stays so.
+    /// own; its original's source (hash, length, file name) never changes,
+    /// while a conversion may note its warning, what it left out and that
+    /// it took a password; once converted it stays so.
     fn settle(&mut self, stored: &Self, revision: u64, now: u64) {
         self.id.clone_from(&stored.id);
         self.project.clone_from(&stored.project);
+        let noted = self.original.take().map(|original| original.info);
         self.original.clone_from(&stored.original);
+        if let (Some(original), Some(noted)) = (self.original.as_mut(), noted) {
+            original.info.import_warning = noted.import_warning;
+            original.info.left_out = noted.left_out;
+            original.info.password_protected |= noted.password_protected;
+        }
         self.unconverted &= stored.pending_conversion() && self.markdown.is_empty();
         if self.project.is_some() {
             self.mapping = crate::mapping::Mapping::default();
