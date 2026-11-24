@@ -98,16 +98,20 @@ impl Vault {
     /// [`VaultError::ExcludedFromAi`], or [`VaultError::NotReady`] unless
     /// [`Self::readiness`] finds it Ready. The Document and the names it is
     /// checked against are read under the write lock, so they are one
-    /// moment's: no write lands between the two reads (#1198).
+    /// moment's: no write lands between the two reads (#1198). The lock is
+    /// held for the two reads only, not for the check.
     pub fn text_for_ai(&self, id: &str) -> Result<String, VaultError> {
-        let _lock = self.held_lock()?;
-        let document = self.document(id)?;
-        if document.exclude_from_ai {
-            return Err(VaultError::ExcludedFromAi);
-        }
-        #[cfg(test)]
-        tests::between_reads();
-        let mapping = self.mapping_of(&document)?;
+        let (document, mapping) = {
+            let _lock = self.held_lock()?;
+            let document = self.document(id)?;
+            if document.exclude_from_ai {
+                return Err(VaultError::ExcludedFromAi);
+            }
+            #[cfg(test)]
+            tests::between_reads();
+            let mapping = self.mapping_of(&document)?;
+            (document, mapping)
+        };
         match document.readiness(&mapping) {
             Readiness::Ready => {}
             not => return Err(VaultError::NotReady(not)),
@@ -136,7 +140,7 @@ mod tests {
         records::{DocumentOrigin, SourceKind},
     };
     use mdoc_pii::{Category, restore::ExportedIdentity};
-    use std::{cell::RefCell, sync::Arc, sync::mpsc, time::Duration};
+    use std::{cell::RefCell, fs::TryLockError, sync::Arc, sync::mpsc};
 
     type Meanwhile = Box<dyn FnOnce()>;
 
@@ -202,9 +206,12 @@ mod tests {
             Readiness::NamesNotReplaced(1)
         );
 
-        // The other handle opens now: opening takes the lock too.
+        // The other handle opens now: opening takes the lock too. Between
+        // the reads it tries the lock without waiting: free, it writes at
+        // once, as any writer would without the lock; held, it writes once
+        // the check lets go. Either way the hook returns only once it knows.
         let (go, start) = mpsc::channel::<()>();
-        let (finished, done) = mpsc::channel::<()>();
+        let (tried, outcome) = mpsc::channel::<bool>();
         let (opened, ready) = mpsc::channel::<()>();
         let writer = {
             let (root, letter, project) = (root.clone(), letter.clone(), project.clone());
@@ -212,21 +219,34 @@ mod tests {
                 let other = Vault::open(&root, &[7; 32]).unwrap();
                 opened.send(()).unwrap();
                 start.recv().unwrap();
+                let free = {
+                    let file = other.lock_file.lock().unwrap();
+                    match file.try_lock() {
+                        Ok(()) => {
+                            file.unlock().unwrap();
+                            true
+                        }
+                        Err(TryLockError::WouldBlock) => false,
+                        Err(TryLockError::Error(error)) => panic!("{error}"),
+                    }
+                };
+                if !free {
+                    tried.send(false).unwrap();
+                }
                 (other.update_document(&letter, |d| d.markdown = "PERSON_1 met PERSON_2.".into()))
                     .unwrap();
                 (other.update_project(&project, |p| assert!(p.forget_identity("PERSON_2"))))
                     .unwrap();
-                // The check may have stopped waiting for it.
-                let _ = finished.send(());
+                if free {
+                    tried.send(true).unwrap();
+                }
             })
         };
         ready.recv().unwrap();
         BETWEEN.with(|slot| {
             *slot.borrow_mut() = Some(Box::new(move || {
                 go.send(()).unwrap();
-                // Without the lock the two writes land within this wait;
-                // with it they wait for the check, and this times out.
-                let _ = done.recv_timeout(Duration::from_millis(500));
+                outcome.recv().unwrap();
             }))
         });
         let sent = vault.text_for_ai(&letter);
