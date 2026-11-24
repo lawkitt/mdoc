@@ -384,7 +384,7 @@ replies before updating.
 
 Items are in priority order: core, then mobile, then desktop; the mobile
 and desktop tracks can run side by side once the core items they need are
-done. Desktop items 16–22 share one integration branch, because the app is
+done. Desktop items 16–22 and 25 share one integration branch, because the app is
 not coherent between them and `main` stays releasable; item 23 lands them.
 
 16. **[Desktop] Documents live in the Vault and save themselves.** *From
@@ -443,7 +443,7 @@ not coherent between them and `main` stays releasable; item 23 lands them.
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Items 16–22 merge
     from their integration branch; the case store, recents and plain-file
     persistence go; the old cases folder and key are never touched. *Blocked
-    by:* items 18, 19, 20, 21, 22. *Done when:* a test pins the old cases
+    by:* items 18, 19, 20, 21, 22, 25. *Done when:* a test pins the old cases
     folder untouched; headless renders of every screen pass on macOS and
     Windows; native checks of drag-to-move, the recovery screens and autosave
     across a quit pass on both.
@@ -455,6 +455,23 @@ not coherent between them and `main` stays releasable; item 23 lands them.
     docs. *Blocked by:* items 14, 23. *Done when:* docs lint passes, and a
     search for the old container term finds only the `CASE_1` category and
     letter case.
+25. **[Desktop] Document notes and Promote to Document.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3, as decided
+    on 2026-11-24.* A Document keeps private freeform notes, sealed in its
+    record, never in Copy for AI or Share, exported beside it as
+    `<Title>.notes.md`, not searched. A saved Reply's restored text can become
+    a new Document in the Reply's place; it goes through review, and the
+    Reply stays. The core part lands with it on the integration branch.
+    *Done when:* core tests pin old records loading and notes never reaching
+    AI text; workspace tests and headless renders of the notes and Promote.
+26. **[iOS] Document notes and Promote to Document.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3.* As item
+    25, over the core API it adds. *Blocked by:* items 23, 25. *Done when:*
+    the iOS job passes with tests of notes and Promote.
+27. **[Android] Document notes and Promote to Document.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3.* As item
+    26. *Blocked by:* items 23, 25. *Done when:* the Android job passes with
+    tests of notes and Promote.
 
 - **[Desktop] Later: a horizontal tab strip.** Only if the tree proves short
   for working sets; needs no schema change. It would take the existing title
