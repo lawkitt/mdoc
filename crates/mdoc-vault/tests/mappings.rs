@@ -1367,6 +1367,29 @@ fn a_project_delete_goes_only_with_the_documents_it_asked_about() {
     assert!(ids_in(&vault, None).is_empty());
 }
 
+/// Review of #1145, round 2 (P1): an Unfiled delete goes only while every
+/// document it asked about is still Unfiled; one moved into a Project
+/// meanwhile stops it, and nothing is deleted.
+#[test]
+fn an_unfiled_delete_stops_when_a_document_moved_into_a_project() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let first = new_document(&vault, None, "First", "Ann wrote.");
+    let second = new_document(&vault, None, "Second", "Ben wrote.");
+    let project = new_project(&vault, "Case", &[]);
+    let asked = vec![first.clone(), second.clone()];
+    // Moved in while the question was up, as a folder sheet finishing would.
+    vault.move_document(&second, Some(&project.id)).unwrap();
+    assert!(!vault.delete_unfiled_documents(&asked).unwrap());
+    assert_eq!(ids_in(&vault, None), vec![first.clone()]);
+    assert_eq!(ids_in(&vault, Some(&project.id)), vec![second.clone()]);
+    // Asked again about the one still Unfiled: it goes.
+    assert!(vault.delete_unfiled_documents(&[first.clone()]).unwrap());
+    assert!(ids_in(&vault, None).is_empty());
+    assert!(vault.document(&first).is_err());
+    assert_eq!(text(&vault, &second), "Ben wrote.");
+}
+
 #[test]
 fn a_crash_deleting_a_project_is_finished_by_deleting_again() {
     let folder = Folder::new();

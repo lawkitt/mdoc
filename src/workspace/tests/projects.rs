@@ -1496,3 +1496,59 @@ fn a_name_applied_while_a_move_waits_moves_with_its_document(cx: &mut TestAppCon
         "{names:?}"
     );
 }
+
+/// Review of #1145, round 2 (P1): a document moved into a Project while
+/// Delete's question for Unfiled documents is up is never deleted: nothing
+/// goes, and the question comes again for the ones still Unfiled.
+#[gpui::test]
+fn an_unfiled_delete_never_takes_a_document_moved_into_a_project_while_it_asked(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let first = open_applied(&tabs, cx, dir.path(), "a.md", "Ann wrote.", &[]);
+    let second = open_applied(&tabs, cx, dir.path(), "b.md", "Ben wrote.", &[]);
+    let ids: Vec<String> = cx.update(|_, cx| {
+        [first, second]
+            .iter()
+            .map(|tab| {
+                tabs.read(cx)
+                    .tab_document(*tab, cx)
+                    .unwrap()
+                    .as_str()
+                    .to_string()
+            })
+            .collect()
+    });
+    let vault = vault(&tabs, cx);
+    let project = vault
+        .create_project(mdoc_vault::NewProject {
+            name: "Case".into(),
+            colour: None,
+            pinned: false,
+        })
+        .unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.delete_documents(ids.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    // A folder sheet's Add to a Project ends while the question shows.
+    vault.move_document(&ids[1], Some(&project.id)).unwrap();
+    cx.simulate_prompt_answer("Delete");
+    cx.run_until_parked();
+    assert!(vault.document(&ids[0]).is_ok(), "nothing was deleted");
+    assert!(vault.document(&ids[1]).is_ok(), "the moved document stays");
+    cx.update(|_, cx| {
+        let notice = tabs.read(cx).notices.message().unwrap();
+        assert!(notice.contains("Choose again"), "{notice}");
+    });
+    // Asked again, about the one still Unfiled: it goes.
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Delete");
+    cx.run_until_parked();
+    assert!(vault.document(&ids[0]).is_err());
+    assert_eq!(
+        vault.document(&ids[1]).unwrap().project.as_deref(),
+        Some(project.id.as_str())
+    );
+}

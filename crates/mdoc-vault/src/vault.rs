@@ -537,6 +537,31 @@ impl Vault {
         self.delete_document_locked(&lock, id)
     }
 
+    /// [`Self::delete_document`] of each of `ids`, only while every one
+    /// that still exists is Unfiled: checked under the write lock, so a
+    /// Document moved into a Project since the user was asked is never
+    /// deleted. `Ok(false)` when one was moved, and nothing is deleted.
+    /// One that can't be read (another key, damaged) was never moved by
+    /// this Vault and is deleted.
+    pub fn delete_unfiled_documents(&self, ids: &[String]) -> Result<bool, VaultError> {
+        if !ids.iter().all(|id| is_id(id)) {
+            return Err(VaultError::InvalidId);
+        }
+        let lock = self.write_lock()?;
+        self.refresh()?;
+        for id in ids {
+            match self.load_record::<Document>(id) {
+                Ok(document) if document.project.is_some() => return Ok(false),
+                Err(VaultError::Io(error)) => return Err(VaultError::Io(error)),
+                _ => {}
+            }
+        }
+        for id in ids {
+            self.delete_document_locked(&lock, id)?;
+        }
+        Ok(true)
+    }
+
     fn delete_document_locked(&self, lock: &WriteLock<'_>, id: &str) -> Result<(), VaultError> {
         self.check_alive()?;
         // Replies first: a delete stopped part way is finished by deleting
