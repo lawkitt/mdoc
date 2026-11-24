@@ -13,13 +13,13 @@
 //!
 //! What each carries: the text (the clipboard, the share sheet's text, the
 //! `.md` file's contents), the file's name, and the share sheet's subject
-//! and preview title. Android takes its subject from the file's name.
-//! **iOS Share as text: its title** was found unchecked by item 29's
-//! review: `DocumentViewModel.share(asFile: false)` passes the raw document
-//! title (`snapshot.title`) to `TitledText`, the sheet's subject and
-//! preview title. The Mac hub fixes it with an XCTest (#1091), so that it
-//! takes the file's name without `.md` as Android does. The mirror below
-//! sends what that fix sends.
+//! and preview title. Both apps take the subject from the file's name
+//! without `.md`. **iOS Share as text: its title** was found unchecked by
+//! item 29's review: it was the raw document title. Since #1188,
+//! `DocumentViewModel.share(asFile: false)` sends the file's name, and the
+//! XCTest `testShareCarriesNoOriginalInItsSubjectPreviewTitleOrFileName`
+//! checks the subject, preview title and file name the sheet gets. The
+//! mirror below sends the same.
 //!
 //! **Not exits:** `DocumentSession::copy_for_ai`, `share_text` and
 //! `HandOff::text` are the session's unchecked text. The apps never send
@@ -101,7 +101,7 @@ const EXITS: &[Exit] = &[
 
 /// `RealCore.copyForAI`: saved first, then the session's refusal and file
 /// name, then the Vault's text; Share as text's subject is the file's name
-/// without `.md` (#1091, the Mac hub's fix).
+/// without `.md` (#1188).
 fn ios(letter: &Letter) -> Option<Vec<String>> {
     letter
         .session
