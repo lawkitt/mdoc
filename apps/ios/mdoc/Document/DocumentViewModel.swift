@@ -134,14 +134,9 @@ final class DocumentViewModel {
     /// The rules marked this document after Not now on the name finder's
     /// download (#1153).
     private(set) var proposedRules = false
-    /// Where Find names is, once the rules alone marked the document: names
-    /// need the name finder (#1153).
-    var rulesOnlyNote: String? {
-        guard proposedRules, findsNames, primaryAction == .findNames else { return nil }
-        return snapshot.candidates.isEmpty
-            ? String(localized: "No email addresses, links or ID numbers found. Names need the name finder: Find names downloads it.")
-            : String(localized: "Email addresses, links and ID numbers are marked. Names need the name finder: Find names downloads it.")
-    }
+    /// Above Find names, once the rules alone marked the document and while
+    /// the name finder is still to download: names need it (#1153).
+    var showsRulesOnlyNote: Bool { proposedRules && findsNames && primaryAction == .findNames }
     /// Minutes a scan takes on this phone, under Find names when it is
     /// expected to take more than about a minute (ADR 0120).
     var scanEstimate: Int? {

@@ -223,6 +223,14 @@ struct ActionNote: View {
     }
 }
 
+/// What a document the rules alone marked says above Find names, after Not
+/// now on the name finder's download (#1153). It names what the rules mark,
+/// whether or not they found any.
+enum RulesOnly {
+    static let note = String(
+        localized: "Only email addresses, links and ID numbers are marked. Names need the name finder: Find names downloads it.")
+}
+
 /// Below the detector floor, where Find names would be (ADR 0088).
 struct BelowFloorNote: View {
     let reason: FloorReason?

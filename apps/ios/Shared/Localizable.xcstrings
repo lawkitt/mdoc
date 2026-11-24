@@ -436,9 +436,6 @@
     "Each document you add lands in Unfiled, or in the Project whose page you add it from." : {
 
     },
-    "Email addresses, links and ID numbers are marked. Names need the name finder: Find names downloads it." : {
-
-    },
     "Home" : {
 
     },
@@ -469,9 +466,6 @@
     "No documents yet" : {
 
     },
-    "No email addresses, links or ID numbers found. Names need the name finder: Find names downloads it." : {
-
-    },
     "No replies yet" : {
 
     },
@@ -479,6 +473,9 @@
 
     },
     "Nothing in Unfiled" : {
+
+    },
+    "Only email addresses, links and ID numbers are marked. Names need the name finder: Find names downloads it." : {
 
     },
     "Open Existing" : {

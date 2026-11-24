@@ -1327,11 +1327,11 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     }
 
     func proposeRules() throws -> DocumentSnapshot {
-        _ = try core { try ffi.proposeRules() }
-        // Saved as a scan's result is, but unscanned: Ready only below the
-        // floor (`findsNoNames`), as for names marked by hand.
-        try saveAfterJob { [self] in try save() }
-        return snapshot()
+        reopenIfPending()
+        // Saved as a tap is. It stays unscanned: Ready only below the floor
+        // (`findsNoNames`), as for names marked by hand.
+        defer { scheduleSave() }
+        return snapshot(of: try core { try ffi.proposeRules() })
     }
 
     func hideTarget(_ range: SourceRange) throws -> WordsTarget {

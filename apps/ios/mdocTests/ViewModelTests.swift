@@ -206,7 +206,7 @@ final class DocumentViewModelTests: XCTestCase {
         await model.findNames()
         XCTAssertEqual(model.setupNeeds, .detector)
         XCTAssertTrue(model.snapshot.candidates.isEmpty)
-        XCTAssertNil(model.rulesOnlyNote)
+        XCTAssertFalse(model.showsRulesOnlyNote)
 
         model.skipSetup()
         XCTAssertFalse(model.needsSetup)
@@ -215,7 +215,7 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertEqual(marked.first?.category, .email)
         XCTAssertEqual(model.snapshot.phase, .unscanned)
         XCTAssertEqual(model.primaryAction, .findNames)
-        XCTAssertTrue(try XCTUnwrap(model.rulesOnlyNote).contains("Find names downloads it"))
+        XCTAssertTrue(model.showsRulesOnlyNote)
         XCTAssertNil(model.errorMessage)
 
         // Once: Find names asks again, and a second Not now adds nothing.
@@ -228,8 +228,10 @@ final class DocumentViewModelTests: XCTestCase {
         model.replaceAllPending()
         XCTAssertEqual(model.primaryAction, .findNames)
         XCTAssertThrowsError(try session.copyForAI())
+        let real = try XCTUnwrap(session as? RealSession)
+        try real.saveChanges()
         let library = try XCTUnwrap(core.library as? RealLibrary)
-        let id = try XCTUnwrap((session as? RealSession)?.vaultID)
+        let id = try XCTUnwrap(real.vaultID)
         XCTAssertNotEqual(try library.vault.readiness(id: id), .ready)
     }
 
