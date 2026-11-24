@@ -342,7 +342,7 @@ fn a_large_or_damaged_original() {
     std::fs::write(&sealed, bytes).unwrap();
     assert!(matches!(
         vault.original_bytes(id.clone()),
-        Err(crate::CoreError::Case { .. })
+        Err(crate::CoreError::Project { .. })
     ));
     let damaged_view = scratch.path().join("damaged");
     assert!(

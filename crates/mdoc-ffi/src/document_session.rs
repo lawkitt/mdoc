@@ -613,8 +613,7 @@ impl Document {
         format!("{}.md", title.trim())
     }
 
-    /// Its Project in the Vault: what snapshots and `info` call its case
-    /// until Case reads Project there too.
+    /// Its Project in the Vault: the `project_id` of snapshots and `info`.
     fn project(&self) -> Option<&str> {
         (self.vault.as_ref()).and_then(|place| place.project.as_deref())
     }
@@ -1137,7 +1136,7 @@ mod tests {
         let snapshot = reopened
             .open_from_vault(vault.clone(), saved.id.clone())
             .unwrap();
-        assert_eq!(snapshot.case_id, None, "Unfiled");
+        assert_eq!(snapshot.project_id, None, "Unfiled");
         assert_eq!(snapshot.replaced, 1);
         assert_eq!(reopened.copy_for_ai().unwrap(), copied);
         assert_eq!(

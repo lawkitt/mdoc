@@ -91,7 +91,7 @@ final class CoreWiringTests: XCTestCase {
         // What it says is the core's.
         let info = try XCTUnwrap(session.info)
         XCTAssertEqual(info.title, "Letter")
-        XCTAssertEqual(info.caseId, session.snapshot().projectID?.rawValue)
+        XCTAssertEqual(info.projectId, session.snapshot().projectID?.rawValue)
         XCTAssertNotNil(session.vaultID)
         try core.library.renameDocument(session.id, to: "Reply")
         XCTAssertEqual(session.info?.title, "Reply")
@@ -219,7 +219,7 @@ final class CoreWiringTests: XCTestCase {
             (.detect("x"), .findNamesFailed("x")),
             (.cancelled, .cancelled),
             (.review("x"), .reviewChanged("x")),
-            (.caseFailed("x"), .projectRefused("x")),
+            (.project("x"), .projectRefused("x")),
             (.setup("x"), .setupFailed("x")),
             (.invalid("x"), .invalid("x")),
             (.io("x"), .fileFailed("x")),
