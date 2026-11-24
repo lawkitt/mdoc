@@ -72,9 +72,10 @@ final class ProjectPageTests: XCTestCase {
         let riverside = try XCTUnwrap(app.navigator.project)
         XCTAssertEqual(app.library.project(riverside)?.name, "Riverside")
         XCTAssertEqual(app.intakeProject, riverside)
-        app.addText("Ann Lee signed the lease.", title: "Lease", into: app.intakeProject)
+        app.paste("Ann Lee signed the lease.")
         let lease = try XCTUnwrap(app.openModel)
         XCTAssertEqual(lease.snapshot.projectID, riverside)
+        XCTAssertEqual(lease.snapshot.title, "Ann Lee signed the lease.", "a paste asks nothing: its first line titles it")
         app.openProject(riverside)
         XCTAssertEqual(app.library.documents(in: riverside).map(\.id), [lease.id])
 

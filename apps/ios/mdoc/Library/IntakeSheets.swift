@@ -3,16 +3,13 @@ import VisionKit
 
 /// Where something new goes: Unfiled, or a Project, with what a Project is
 /// for. It starts on the Project the intake was started from, else Unfiled;
-/// no import makes a Project (#1091 Decision 35). `leading` rows (Paste's
-/// title) sit above the picker in the same section.
-struct ProjectChoiceSection<Leading: View>: View {
+/// no import makes a Project (#1091 Decision 35).
+struct ProjectChoiceSection: View {
     let projects: [ProjectSummary]
     @Binding var existingProject: ProjectID?
-    @ViewBuilder var leading: () -> Leading
 
     var body: some View {
         Section {
-            leading()
             Picker("Project", selection: $existingProject) {
                 Text("Unfiled").tag(ProjectID?.none)
                 ForEach(projects) { item in
@@ -22,12 +19,6 @@ struct ProjectChoiceSection<Leading: View>: View {
         } footer: {
             Text("A Project keeps the names and their aliases together, so an AI reply about any of its documents can be restored. An Unfiled document keeps its own.")
         }
-    }
-}
-
-extension ProjectChoiceSection where Leading == EmptyView {
-    init(projects: [ProjectSummary], existingProject: Binding<ProjectID?>) {
-        self.init(projects: projects, existingProject: existingProject) { EmptyView() }
     }
 }
 
@@ -76,75 +67,6 @@ struct ImportSheet: View {
             }
         }
         .reviewSheetDetents()
-    }
-}
-
-/// Paste: text from the clipboard, its title and its Project in one sheet
-/// (ADR 0087); Unfiled, or the Project it was started from.
-struct PasteTextSheet: View {
-    let projects: [ProjectSummary]
-    let onAdd: (String, String, ProjectID?) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var text = ""
-    @State private var title = ""
-    @State private var existingProject: ProjectID?
-
-    init(projects: [ProjectSummary], startingProject: ProjectID? = nil, onAdd: @escaping (String, String, ProjectID?) -> Void) {
-        self.projects = projects
-        self.onAdd = onAdd
-        _existingProject = State(initialValue: startingProject)
-    }
-
-    private var suggestedTitle: String { Importer.suggestedTitle(for: text) }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    PasteButton(payloadType: String.self) { strings in
-                        if let first = strings.first {
-                            text = first
-                        }
-                    }
-                    .labelStyle(.titleAndIcon)
-                    // A long paste scrolls inside the editor, so the title
-                    // and the case stay on the sheet.
-                    TextEditor(text: $text)
-                        .frame(minHeight: 180, maxHeight: 260)
-                        .overlay(alignment: .topLeading) {
-                            if text.isEmpty {
-                                Text("Paste or type the text to check")
-                                    .foregroundStyle(.tertiary)
-                                    .padding(.top, 8)
-                                    .padding(.leading, 5)
-                                    .allowsHitTesting(false)
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                        .accessibilityLabel(Text("Text"))
-                }
-                ProjectChoiceSection(projects: projects, existingProject: $existingProject) {
-                    TextField("Title", text: $title, prompt: Text(suggestedTitle))
-                        .accessibilityIdentifier("import-title")
-                }
-            }
-            .navigationTitle("Paste text")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let chosen = name.isEmpty ? suggestedTitle : name
-                        onAdd(text, chosen, existingProject)
-                    }
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .accessibilityIdentifier("import-add")
-                }
-            }
-        }
     }
 }
 

@@ -73,24 +73,4 @@ final class PastedReplyTests: XCTestCase {
         let empty = await PastedReply.sharedText(in: [])
         XCTAssertNil(empty)
     }
-
-    /// The box's own Paste, as the edit menu or ⌘V calls it.
-    func testTheBoxsPasteReadsTheHTML() throws {
-        let pasteboard = UIPasteboard.general
-        let saved = pasteboard.items
-        defer { pasteboard.items = saved }
-        pasteboard.items = [[UTType.html.identifier: html, UTType.utf8PlainText.identifier: flat]]
-        let view = ReplyTextView()
-        let delegate = Recorder()
-        view.delegate = delegate
-        view.selectedTextRange = view.textRange(from: view.beginningOfDocument, to: view.beginningOfDocument)
-        view.paste(nil)
-        XCTAssertEqual(view.text, markdown)
-        XCTAssertEqual(delegate.seen, markdown, "the sheet's text follows")
-    }
-
-    private final class Recorder: NSObject, UITextViewDelegate {
-        var seen: String?
-        func textViewDidChange(_ view: UITextView) { seen = view.text }
-    }
 }

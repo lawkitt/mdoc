@@ -1,42 +1,40 @@
 import SwiftUI
 import UIKit
 
-/// Paste reply: the AI's answer, restored with this document's case.
-struct ReplySheet: View {
+/// Type a reply: an AI reply written or edited by hand, restored with this
+/// document's case. A copied reply needs none of it: the bar's Paste
+/// restores it in one tap, HTML tables included.
+struct TypeReplySheet: View {
     let projectName: String?
     let onRestore: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var reply = ""
+    @FocusState private var focused: Bool
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Space.s) {
                 Text(projectName.map { String(localized: "mdoc puts back the names from the Project “\($0)”.") }
                     ?? String(localized: "mdoc puts back the names from this document."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    // Its full height up to six lines (a case is named after a
-                    // title, which can be long), so the editor keeps its room.
+                    // Its full height up to six lines (a Project is named
+                    // after a title, which can be long), so the box keeps
+                    // its room.
                     .lineLimit(6)
                     .fixedSize(horizontal: false, vertical: true)
-                PasteButton(supportedContentTypes: [.html, .plainText]) { providers in
-                    Task { @MainActor in
-                        if let text = await PastedReply.text(from: providers) {
-                            reply = text
-                        }
-                    }
-                }
-                .labelStyle(.titleAndIcon)
-                ReplyEditor(text: $reply)
+                TextEditor(text: $reply)
+                    .focused($focused)
+                    .scrollContentBackground(.hidden)
                     .frame(minHeight: 120)
-                    .padding(8)
-                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                    .padding(Space.xs)
+                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: Radius.control))
                     .overlay(alignment: .topLeading) {
                         if reply.isEmpty {
-                            Text("Paste the AI's reply here")
+                            Text("Type or paste the AI's reply")
                                 .foregroundStyle(.tertiary)
-                                .padding(.top, 16)
-                                .padding(.leading, 13)
+                                .padding(.top, Space.xs + 8)
+                                .padding(.leading, Space.xs + 5)
                                 .allowsHitTesting(false)
                                 .accessibilityHidden(true)
                         }
@@ -45,7 +43,7 @@ struct ReplySheet: View {
                     .accessibilityIdentifier("reply-editor")
             }
             .padding()
-            .navigationTitle("Paste AI reply")
+            .navigationTitle("Type a reply")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -59,53 +57,8 @@ struct ReplySheet: View {
                     .accessibilityIdentifier("reply-restore")
                 }
             }
+            .onAppear { focused = true }
         }
-    }
-}
-
-/// The reply's text box. Its Paste, from the menu or ⌘V, reads a copy as the
-/// Paste button does, so a table copied from the ChatGPT app stays one (ADR
-/// 0105).
-private struct ReplyEditor: UIViewRepresentable {
-    @Binding var text: String
-
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
-
-    func makeUIView(context: Context) -> ReplyTextView {
-        let view = ReplyTextView()
-        view.font = .preferredFont(forTextStyle: .body)
-        view.adjustsFontForContentSizeCategory = true
-        view.backgroundColor = .clear
-        view.textContainerInset = .zero
-        view.textContainer.lineFragmentPadding = 5
-        view.delegate = context.coordinator
-        return view
-    }
-
-    func updateUIView(_ view: ReplyTextView, context: Context) {
-        context.coordinator.text = $text
-        if view.text != text { view.text = text }
-    }
-
-    final class Coordinator: NSObject, UITextViewDelegate {
-        var text: Binding<String>
-
-        init(text: Binding<String>) { self.text = text }
-
-        func textViewDidChange(_ view: UITextView) {
-            text.wrappedValue = view.text
-        }
-    }
-}
-
-final class ReplyTextView: UITextView {
-    override func paste(_ sender: Any?) {
-        guard let pasted = PastedReply.text(from: .general), let range = selectedTextRange else {
-            super.paste(sender)
-            return
-        }
-        replace(range, withText: pasted)
-        delegate?.textViewDidChange?(self)
     }
 }
 

@@ -1204,25 +1204,10 @@
     "Password" : {
 
     },
-    "Paste" : {
-
-    },
-    "Paste AI reply" : {
-
-    },
     "Paste another reply" : {
 
     },
-    "Paste or type the text to check" : {
-
-    },
     "Paste reply" : {
-
-    },
-    "Paste text" : {
-
-    },
-    "Paste the AI's reply here" : {
 
     },
     "Pasted text" : {
@@ -1693,6 +1678,12 @@
 
     },
     "Turn into" : {
+
+    },
+    "Type a reply" : {
+
+    },
+    "Type or paste the AI's reply" : {
 
     },
     "Typing" : {

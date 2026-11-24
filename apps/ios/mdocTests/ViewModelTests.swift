@@ -174,7 +174,7 @@ final class DocumentViewModelTests: XCTestCase {
         let reply = "\(maya) should hear from \(joinery) by Friday."
         model.showsReplySheet = true
         model.restore(reply: reply)
-        XCTAssertFalse(model.showsReplySheet)
+        XCTAssertFalse(model.showsReplySheet, "Type a reply's sheet closes")
         XCTAssertEqual(model.pane, .reply)
         XCTAssertEqual(model.snapshot.reply?.restored.text, "Maya Ellison should hear from Brightwater Joinery Ltd by Friday.")
         XCTAssertEqual(model.snapshot.reply?.aliasText, reply)

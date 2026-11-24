@@ -121,6 +121,7 @@ final class DocumentViewModel {
     /// document first showed in a regular window.
     private var settledPlacement: IdentitiesPlacement?
     private(set) var pane: Pane = .text
+    /// Type a reply: the sheet for a reply written by hand.
     var showsReplySheet = false
     var share: ShareItems?
     var errorMessage: String?
@@ -545,7 +546,8 @@ final class DocumentViewModel {
 
     // MARK: Restore
 
-    /// Paste reply: restores it with this document's case and opens it.
+    /// Paste or Type a reply: restores it with this document's case and
+    /// opens it.
     func restore(reply: String) {
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
