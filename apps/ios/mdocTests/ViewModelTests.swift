@@ -172,7 +172,9 @@ final class DocumentViewModelTests: XCTestCase {
         let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" }?.alias)
         let joinery = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Brightwater Joinery Ltd" }?.alias)
         let reply = "\(maya) should hear from \(joinery) by Friday."
+        model.showsReplySheet = true
         model.restore(reply: reply)
+        XCTAssertFalse(model.showsReplySheet, "Type a reply's sheet closes")
         XCTAssertEqual(model.pane, .reply)
         XCTAssertEqual(model.snapshot.reply?.restored.text, "Maya Ellison should hear from Brightwater Joinery Ltd by Friday.")
         XCTAssertEqual(model.snapshot.reply?.aliasText, reply)

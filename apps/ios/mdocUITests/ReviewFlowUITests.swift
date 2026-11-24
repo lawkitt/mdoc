@@ -78,6 +78,34 @@ final class ReviewFlowUITests: XCTestCase {
         XCTAssertTrue(summary.label.contains("1 value restored"))
         XCTAssertTrue(summary.label.contains("1 unrecognized"))
     }
+
+    /// Type a reply, beside Paste: a reply written by hand is restored too.
+    @MainActor
+    func testATypedReplyIsRestored() throws {
+        let app = MdocUITest.launch()
+        let document = MdocUITest.documentRow(app)
+        XCTAssertTrue(document.waitForExistence(timeout: 60))
+        document.tap()
+        let primary = app.buttons["primary-action"]
+        XCTAssertTrue(primary.waitForExistence(timeout: 30))
+        if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
+        if primary.label.hasPrefix("Replace") { primary.tap() }
+
+        let typeReply = app.buttons["type-reply"]
+        XCTAssertTrue(typeReply.waitForExistence(timeout: MdocUITest.timeout))
+        typeReply.tap()
+        let editor = app.textViews["reply-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: MdocUITest.timeout))
+        if !editor.wait(until: NSPredicate(format: "hasKeyboardFocus == true"), timeout: 5) { editor.tap() }
+        editor.typeText("Call EMAIL_1 back.")
+        app.buttons["reply-restore"].tap()
+
+        let restored = app.textViews["restored-text"]
+        XCTAssertTrue(restored.waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            restored.wait(until: NSPredicate(format: "value CONTAINS %@", "Call \(MdocUITest.email) back."), timeout: 10),
+            "the typed reply, restored")
+    }
 }
 
 /// What the UI tests share: the launch with a fixture import, and lookups.

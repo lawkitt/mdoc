@@ -77,8 +77,13 @@ struct ActionBar: View {
             }
         case .handOff:
             VStack(spacing: Space.xs) {
-                if !model.snapshot.candidates.isEmpty {
-                    AllReviewedLine(candidates: model.snapshot.candidates)
+                HStack(alignment: .center, spacing: Space.xs) {
+                    if !model.snapshot.candidates.isEmpty {
+                        AllReviewedLine(candidates: model.snapshot.candidates)
+                    } else {
+                        Spacer(minLength: 0)
+                    }
+                    typeReply
                 }
                 handOffButtons
             }
@@ -90,6 +95,13 @@ struct ActionBar: View {
     /// (ADR 0111). Short labels keep three buttons in one row on a phone;
     /// VoiceOver says what each acts on.
     private var replyButtons: some View {
+        VStack(alignment: .trailing, spacing: Space.xs) {
+            typeReply
+            replyButtonRow
+        }
+    }
+
+    private var replyButtonRow: some View {
         layout {
             Button {
                 model.shareReply()
@@ -146,6 +158,19 @@ struct ActionBar: View {
                 .accessibilityIdentifier("copy-for-ai")
                 pasteReply(accessibilityLabel: "Paste reply")
             }
+    }
+
+    /// Type a reply: small, above Paste, for a reply that is not on the
+    /// clipboard or needs editing first; Paste stays the way in.
+    private var typeReply: some View {
+        Button("Type a reply") {
+            model.showsReplySheet = true
+        }
+        .font(Typography.caption)
+        .textAction()
+        .frame(minHeight: Size.target)
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        .accessibilityIdentifier("type-reply")
     }
 
     /// Paste: one tap restores the reply on the clipboard. HTML first, so

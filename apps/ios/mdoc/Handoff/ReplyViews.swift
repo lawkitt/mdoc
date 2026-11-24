@@ -1,6 +1,67 @@
 import SwiftUI
 import UIKit
 
+/// Type a reply: an AI reply written or edited by hand, restored with this
+/// document's case. A copied reply needs none of it: the bar's Paste
+/// restores it in one tap, HTML tables included.
+struct TypeReplySheet: View {
+    let projectName: String?
+    let onRestore: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var reply = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: Space.s) {
+                Text(projectName.map { String(localized: "mdoc puts back the names from the Project “\($0)”.") }
+                    ?? String(localized: "mdoc puts back the names from this document."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    // Its full height up to six lines (a Project is named
+                    // after a title, which can be long), so the box keeps
+                    // its room.
+                    .lineLimit(6)
+                    .fixedSize(horizontal: false, vertical: true)
+                TextEditor(text: $reply)
+                    .focused($focused)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 120)
+                    .padding(Space.xs)
+                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: Radius.control))
+                    .overlay(alignment: .topLeading) {
+                        if reply.isEmpty {
+                            Text("Type or paste the AI's reply")
+                                .foregroundStyle(.tertiary)
+                                .padding(.top, Space.xs + 8)
+                                .padding(.leading, Space.xs + 5)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .accessibilityLabel(Text("AI reply"))
+                    .accessibilityIdentifier("reply-editor")
+            }
+            .padding()
+            .navigationTitle("Type a reply")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Restore") {
+                        onRestore(reply)
+                    }
+                    .disabled(reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("reply-restore")
+                }
+            }
+            .onAppear { focused = true }
+        }
+    }
+}
+
 /// The document's restored reply; the hand-off bar below shares and copies
 /// it (ADR 0087), so here is only its summary and Remove. With more than
 /// one saved reply (its Project's, or its own while Unfiled), a menu picks

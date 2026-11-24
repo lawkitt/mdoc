@@ -313,6 +313,9 @@
     "AI replies you save with Restore with mdoc or Paste reply show here, restored." : {
 
     },
+    "AI reply" : {
+
+    },
     "Alias" : {
 
     },
@@ -1011,6 +1014,12 @@
     "mdoc opens PDF, DOCX and image files." : {
 
     },
+    "mdoc puts back the names from the Project “%@”." : {
+
+    },
+    "mdoc puts back the names from this document." : {
+
+    },
     "mdoc reads the text when recognition runs." : {
 
     },
@@ -1666,6 +1675,12 @@
 
     },
     "Turn into" : {
+
+    },
+    "Type a reply" : {
+
+    },
+    "Type or paste the AI's reply" : {
 
     },
     "Typing" : {

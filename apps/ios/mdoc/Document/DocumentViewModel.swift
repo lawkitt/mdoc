@@ -121,6 +121,8 @@ final class DocumentViewModel {
     /// document first showed in a regular window.
     private var settledPlacement: IdentitiesPlacement?
     private(set) var pane: Pane = .text
+    /// Type a reply: the sheet for a reply written by hand.
+    var showsReplySheet = false
     var share: ShareItems?
     var errorMessage: String?
     /// A short confirmation such as "Copied for AI".
@@ -533,12 +535,14 @@ final class DocumentViewModel {
 
     // MARK: Restore
 
-    /// Paste reply: restores it with this document's case and opens it.
+    /// Paste or Type a reply: restores it with this document's case and
+    /// opens it.
     func restore(reply: String) {
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         perform { try session.restoreReply(reply) }
         if snapshot.reply != nil {
+            showsReplySheet = false
             show(.reply)
         }
     }
