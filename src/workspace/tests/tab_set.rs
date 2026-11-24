@@ -1,4 +1,4 @@
-//! Tabs: opening, switching, reordering and closing them, placeholders and Recents (`LiveViews`).
+//! Tabs: opening, switching, reordering and closing them, and placeholders (`LiveViews`).
 use super::*;
 
 #[gpui::test]
@@ -360,7 +360,7 @@ fn home_opens_several_files_and_new_tab_is_a_plain_editor(cx: &mut TestAppContex
 }
 
 #[gpui::test]
-fn cancelled_pseudonymization_setup_does_not_tag_recents(cx: &mut TestAppContext) {
+fn cancelled_pseudonymization_setup_does_not_count_as_pseudonymized(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("never-scanned.md");
     std::fs::write(&path, "Alice needs review").unwrap();
@@ -374,19 +374,16 @@ fn cancelled_pseudonymization_setup_does_not_tag_recents(cx: &mut TestAppContext
         let view = view.read(cx);
         assert!(view.pii.setup());
         assert!(view.pii.reviewing());
-        assert!(!view.pseudonymized());
-        assert!(!tabs.read(cx).shell.recents.files[0].pseudonymized);
+        assert!(!view.pseudonymized() && !view.has_applied_aliases());
     });
     click_toolbar(cx, "pii-setup-cancel");
     click_toolbar(cx, "sidebar-home");
     cx.update(|_, cx| {
         assert!(!view.read(cx).pii.setup());
         assert!(!view.read(cx).pseudonymized());
-        // Both the visible tag and the row's accessibility name use this flag.
-        assert!(!tabs.read(cx).shell.recents.files[0].pseudonymized);
     });
 
-    // A completed scan with nothing applied doesn't count (#306).
+    // A completed scan with nothing applied applies no alias (#306).
     view.update(cx, |view, cx| {
         view.pii.add_scan(settings::PiiConfig::default());
         view.pii.set_reviewing(false);
@@ -395,7 +392,7 @@ fn cancelled_pseudonymization_setup_does_not_tag_recents(cx: &mut TestAppContext
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert!(view.read(cx).pseudonymized());
-        assert!(!tabs.read(cx).shell.recents.files[0].pseudonymized);
+        assert!(!view.read(cx).has_applied_aliases());
     });
 
     // Applying a replacement does, and survives closing review.
@@ -410,42 +407,7 @@ fn cancelled_pseudonymization_setup_does_not_tag_recents(cx: &mut TestAppContext
         cx.notify();
     });
     cx.run_until_parked();
-    cx.update(|_, cx| assert!(tabs.read(cx).shell.recents.files[0].pseudonymized));
-}
-
-#[gpui::test]
-fn recents_stay_capped_and_cleared_when_open_documents_notify(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx) = boot_home(cx, Session::default());
-    let mut views = Vec::new();
-    for i in 0..13 {
-        let path = dir.path().join(format!("{i}.md"));
-        std::fs::write(&path, path.display().to_string()).unwrap();
-        tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
-        cx.run_until_parked();
-        views.push(active(&tabs, cx));
-    }
-    let before = cx.update(|_, cx| tabs.read(cx).shell.recents.clone());
-    assert_eq!(before.files.len(), 12);
-    for _ in 0..2 {
-        for view in &views {
-            view.update(cx, |_, cx| cx.notify());
-        }
-        cx.run_until_parked();
-        draw(cx);
-        cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.recents, before));
-    }
-    tabs.update_in(cx, |tabs, window, cx| tabs.show_settings(window, cx));
-    tabs.update(cx, |tabs, cx| {
-        tabs.settings
-            .update(cx, |_, cx| cx.emit(settings_ui::Event::ClearRecents));
-    });
-    for view in &views {
-        view.update(cx, |_, cx| cx.notify());
-    }
-    cx.run_until_parked();
-    draw(cx);
-    cx.update(|_, cx| assert!(tabs.read(cx).shell.recents.files.is_empty()));
+    cx.update(|_, cx| assert!(view.read(cx).has_applied_aliases()));
 }
 
 #[gpui::test]

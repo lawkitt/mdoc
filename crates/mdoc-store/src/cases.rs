@@ -727,26 +727,6 @@ impl Store {
     pub fn default_dir() -> Option<PathBuf> {
         crate::app_paths::data_local_dir().map(|p| p.join("mdoc").join(key::folder()))
     }
-    /// Open the store without any OS dialog: `None` when the key can only be
-    /// read after the macOS password dialog.
-    pub fn open_quietly(dir: PathBuf) -> Result<Option<Self>, CaseError> {
-        if crate::app_paths::isolated() {
-            return Err(CaseError::KeysDisabled);
-        }
-        #[cfg(feature = "deny-os-services")]
-        deny_os_service("the case key");
-        Ok(key::load_quietly(&dir)?.map(|key| Self::with_key(dir, &key)))
-    }
-    /// Open the store, creating the OS-held key on first use.
-    pub fn open(dir: PathBuf) -> Result<Self, CaseError> {
-        if crate::app_paths::isolated() {
-            return Err(CaseError::KeysDisabled);
-        }
-        #[cfg(feature = "deny-os-services")]
-        deny_os_service("the case key");
-        let key = key::load_or_create(&dir)?;
-        Ok(Self::with_key(dir, &key))
-    }
     pub fn with_key(dir: PathBuf, key: &[u8; 32]) -> Self {
         Self {
             dir,
@@ -863,24 +843,6 @@ impl Store {
         )?;
         written.insert(LISTS_FILE.into(), lists.revision);
         Ok(())
-    }
-    /// How many case files `dir` holds, from their names alone: the count of
-    /// locked cases, read without the key. `None` when `dir` can't be read.
-    pub fn count(dir: &Path) -> Option<usize> {
-        let entries = std::fs::read_dir(dir).ok()?;
-        Some(
-            entries
-                .flatten()
-                .filter(|entry| {
-                    let path = entry.path();
-                    path.extension().is_some_and(|e| e == "case")
-                        && path
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .is_some_and(Self::valid_id)
-                })
-                .count(),
-        )
     }
     /// Every readable case, and the ids of files that could not be read.
     pub fn list(&self) -> (Vec<Case>, Vec<String>) {
@@ -1647,21 +1609,6 @@ mod tests {
     }
 
     #[test]
-    fn count_reads_case_file_names_without_the_key() {
-        let dir = tempfile::tempdir().unwrap();
-        assert_eq!(Store::count(&dir.path().join("missing")), None);
-        assert_eq!(Store::count(dir.path()), Some(0));
-        let store = store(dir.path());
-        for name in ["One", "Two"] {
-            store.save(&Case::new(name.into(), &[], None)).unwrap();
-        }
-        // Other files and badly named case files are not cases.
-        std::fs::write(dir.path().join("notes.txt"), "x").unwrap();
-        std::fs::write(dir.path().join("short.case"), "x").unwrap();
-        assert_eq!(Store::count(dir.path()), Some(2));
-    }
-
-    #[test]
     fn cases_round_trip_encrypted_and_never_in_plaintext() {
         let dir = tempfile::tempdir().unwrap();
         let store = store(dir.path());
@@ -2170,8 +2117,7 @@ mod tests {
         assert_eq!(store(dir.path()).load_lists().unwrap(), saved);
         let bytes = std::fs::read(dir.path().join(LISTS_FILE)).unwrap();
         assert!(!String::from_utf8_lossy(&bytes).contains("Acme"));
-        // The file is no case: listing and counting skip it.
-        assert_eq!(Store::count(dir.path()), Some(0));
+        // The file is no case: listing skips it.
         assert_eq!(store(dir.path()).list(), (Vec::new(), Vec::new()));
         assert!(matches!(
             Store::with_key(dir.path().to_path_buf(), &[8; 32]).load_lists(),

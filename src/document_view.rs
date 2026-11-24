@@ -72,19 +72,6 @@ pub(crate) enum Next {
     Import(Box<import::Imported>),
 }
 
-/// The window's Recents folders, most recent first, for Export Markdown to start in
-/// when a document has no folder of its own (#180). The window shares them
-/// whenever its Recents change.
-pub(crate) struct RecentFolders(Vec<PathBuf>);
-
-impl gpui::Global for RecentFolders {}
-
-impl RecentFolders {
-    pub(crate) fn share(folders: Vec<PathBuf>, cx: &mut App) {
-        cx.set_global(Self(folders));
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) enum OcrState {
     Checking,
@@ -1741,19 +1728,15 @@ impl DocumentView {
         self.session.directory()
     }
 
-    /// Where Export Markdown starts: the document's folder, else a Recents
-    /// folder, else Documents (#180).
-    fn export_directory(&self, cx: &App) -> PathBuf {
-        let folders = cx
-            .try_global::<RecentFolders>()
-            .map_or(&[][..], |folders| &folders.0);
+    /// Where Export Markdown starts: the document's folder, else Documents
+    /// (#180).
+    fn export_directory(&self) -> PathBuf {
         // A Vault document's Source is a viewing copy in the app cache,
         // removed with its tab: never a place to export to.
         if self.session.document.vault.is_some() {
-            return mdoc_store::document_session::DocumentSession::default()
-                .export_directory(folders);
+            return mdoc_store::document_session::DocumentSession::default().export_directory();
         }
-        self.session.export_directory(folders)
+        self.session.export_directory()
     }
 
     pub(crate) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -1847,7 +1830,7 @@ impl DocumentView {
         if !document::is_markdown(std::path::Path::new(&name)) {
             name.push_str(".md");
         }
-        let directory = self.export_directory(cx);
+        let directory = self.export_directory();
         let path = cx.prompt_for_new_path(&directory, Some(&name));
         cx.spawn_in(window, async move |this, cx| {
             let result = path.await;

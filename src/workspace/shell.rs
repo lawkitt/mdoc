@@ -4,9 +4,7 @@
 use super::home;
 use super::{Tab, Workspace};
 use crate::{
-    document_view::{
-        CopyMarkdown, DocumentView, ExportMarkdown, RecentFolders, Save, ToggleCompare,
-    },
+    document_view::{CopyMarkdown, DocumentView, ExportMarkdown, Save, ToggleCompare},
     markdown_search::{SearchInput, SearchInputEvent},
     pii::ui::{CopyForAi, Pseudonymize},
     shortcuts,
@@ -23,7 +21,6 @@ use gpui::{
 };
 use mdoc_import::import;
 use mdoc_store::document_id::VaultId;
-use mdoc_store::recents::Recents;
 use mdoc_store::session_store::ThemeChoice;
 use mdoc_vault::{DocumentSummary, ProjectSummary, ReplyOwner};
 use std::{collections::HashMap, time::Duration};
@@ -61,7 +58,6 @@ pub(crate) fn bind_keys(cx: &mut App) {
 }
 
 pub(super) struct ShellState {
-    pub recents: Recents,
     pub palette: Option<Palette>,
     /// The keyboard shortcuts sheet, while open.
     pub shortcuts: Option<super::shortcuts_ui::ShortcutsSheet>,
@@ -77,15 +73,8 @@ pub(super) struct ShellState {
 }
 
 impl ShellState {
-    pub fn new(cx: &mut App) -> Self {
-        let recents = Recents::load(if cfg!(test) {
-            None
-        } else {
-            Recents::default_path()
-        });
-        share_recents(&recents, cx);
+    pub fn new() -> Self {
         Self {
-            recents,
             palette: None,
             shortcuts: None,
             drop: None,
@@ -95,13 +84,6 @@ impl ShellState {
             local_note_hover: false,
         }
     }
-}
-
-/// Recents changed: Save As's folders (#180) and File › Open Recent follow.
-fn share_recents(recents: &Recents, cx: &mut App) {
-    RecentFolders::share(recents.folders(), cx);
-    let files = recents.files.iter().map(|recent| recent.path.clone());
-    crate::menus::set_recent_files(files.collect(), cx);
 }
 
 pub(super) struct Palette {
@@ -277,7 +259,6 @@ impl Workspace {
             && tab.view().is_none_or(|view| {
                 let view = view.read(cx);
                 view.lifecycle.blank_disposable()
-                    && view.session.document.path.is_none()
                     && view.preview.source().is_none()
                     && view.editor.read(cx).text().is_empty()
             })
@@ -318,57 +299,6 @@ impl Workspace {
         self.note_destination(arrival, cx);
         self.drop_if_empty_new(self.tabs.active(), window, cx);
         window.focus(&self.focus, cx);
-        cx.notify();
-    }
-
-    /// Remember files as they open or save (paths only).
-    pub(super) fn remember_recent(&mut self, id: u64, cx: &mut App) {
-        let Some(view) = self
-            .tabs
-            .get(id)
-            .and_then(|tab| tab.view())
-            .map(|view| view.read(cx))
-        else {
-            return;
-        };
-        if view.lifecycle.loading() || view.lifecycle.unavailable() {
-            return;
-        }
-        // Saved Markdown first: a conversion saved as .md reopens as that
-        // file, not as a fresh conversion of its source (#76).
-        let saved = view.session.document.path.as_ref();
-        let source = view.preview.attachment().or(view.preview.source());
-        // A Vault document is listed by the file it was opened from, never
-        // by its viewing copy.
-        let path = if view.session.document.vault.is_some() {
-            self.admitted_from.get(&id)
-        } else {
-            saved.or(source)
-        };
-        let opened = self.tabs.note_recent(id, path);
-        if let Some(path) = path {
-            // The badge means replacements were applied, not just a scan (#306).
-            let pseudonymized = view.has_applied_aliases();
-            let new_badge = pseudonymized
-                && self
-                    .shell
-                    .recents
-                    .files
-                    .iter()
-                    .any(|recent| &recent.path == path && !recent.pseudonymized);
-            // A saved conversion's source folds into the .md's row (#306).
-            let folded = saved.and(source).map(std::path::PathBuf::as_path);
-            // Cleared or evicted entries return only on a new file event.
-            if (opened || new_badge) && self.shell.recents.touch(path, pseudonymized, folded) {
-                share_recents(&self.shell.recents, cx);
-            }
-        }
-    }
-
-    /// Settings › Clear and File › Open Recent › Clear Menu.
-    pub(super) fn clear_recents(&mut self, cx: &mut Context<Self>) {
-        self.shell.recents.clear();
-        share_recents(&self.shell.recents, cx);
         cx.notify();
     }
 

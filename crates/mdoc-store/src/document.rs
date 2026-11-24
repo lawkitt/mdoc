@@ -1,5 +1,5 @@
-//! What a view holds of its document: a Vault document's id, or a Markdown
-//! file's path, and the text last saved. Never opens the old journal
+//! What a view holds of its document: a Vault document's id, or in the old
+//! mobile library a Markdown file's path, and the text last saved. Never opens the old journal
 //! database.
 use crate::document_id::{DocumentId, VaultId};
 use std::{
@@ -28,20 +28,14 @@ impl Document {
         }
     }
 
-    /// The document this is, once it was opened, saved or created.
+    /// The Vault document this is, once it was created.
     pub fn id(&self) -> Option<DocumentId> {
-        match &self.vault {
-            Some(id) => Some(DocumentId::Vault(id.clone())),
-            None => self.path.clone().map(DocumentId::File),
-        }
+        self.vault.clone().map(DocumentId::Vault)
     }
 
     /// Whether this is `document`, without building an id.
     pub fn is(&self, document: &DocumentId) -> bool {
-        match document {
-            DocumentId::Vault(id) => self.vault.as_ref() == Some(id),
-            DocumentId::File(file) => self.vault.is_none() && self.path.as_deref() == Some(file),
-        }
+        self.vault.as_ref() == Some(document.vault())
     }
 
     pub fn open(path: PathBuf) -> io::Result<Self> {

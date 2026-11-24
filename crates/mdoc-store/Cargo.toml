@@ -2,7 +2,7 @@
 name = "mdoc-store"
 version = "0.1.0"
 edition = "2024"
-description = "GUI-free app storage: paths, documents, session, recents, settings, saved cases and crash-report masking."
+description = "GUI-free app storage: paths, documents, session, settings, saved cases and crash-report masking."
 license = "GPL-3.0-or-later"
 publish = false
 repository = "https://github.com/lawkitt/mdoc"

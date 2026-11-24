@@ -467,11 +467,9 @@ fn a_locked_vault_explains_the_keychain_and_not_now_returns_to_the_sheet(cx: &mu
 
 /// No tab holds a document: Home's placeholder at most.
 fn no_documents(tabs: &Workspace) -> bool {
-    tabs.tabs.iter().all(|t| {
-        t.record().markdown.as_os_str().is_empty()
-            && t.record().attachment.is_none()
-            && t.record().document.is_none()
-    })
+    tabs.tabs
+        .iter()
+        .all(|t| t.record().attachment.is_none() && t.record().document.is_none())
 }
 
 #[gpui::test]

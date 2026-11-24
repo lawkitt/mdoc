@@ -75,7 +75,8 @@ impl Workspace {
         cx.notify();
     }
 
-    /// The tab a file already has: its Markdown, or the source it converts.
+    /// The tab a file already has: the Vault document imported from it, or
+    /// the tab converting it.
     pub(super) fn open_tab_for(&self, path: &Path, cx: &gpui::App) -> Option<u64> {
         // A Vault document opened from `path` this session.
         let admitted = || {
@@ -84,27 +85,25 @@ impl Workspace {
                 .find(|(_, from)| from.as_path() == path)
                 .map(|(id, _)| *id)
         };
-        self.find_path(path, None, cx)
-            .or_else(admitted)
-            .or_else(|| {
-                self.tabs
-                    .iter()
-                    .find(|tab| {
-                        let source = tab
-                            .view()
-                            .and_then(|view| {
-                                let view = view.read(cx);
-                                view.session
-                                    .source
-                                    .as_ref()
-                                    .or(view.preview.attachment())
-                                    .or(view.preview.source())
-                            })
-                            .or(tab.record().attachment.as_ref());
-                        source.map(PathBuf::as_path) == Some(path)
-                    })
-                    .map(|tab| tab.id())
-            })
+        admitted().or_else(|| {
+            self.tabs
+                .iter()
+                .find(|tab| {
+                    let source = tab
+                        .view()
+                        .and_then(|view| {
+                            let view = view.read(cx);
+                            view.session
+                                .source
+                                .as_ref()
+                                .or(view.preview.attachment())
+                                .or(view.preview.source())
+                        })
+                        .or(tab.record().attachment.as_ref());
+                    source.map(PathBuf::as_path) == Some(path)
+                })
+                .map(|tab| tab.id())
+        })
     }
 
     fn folder_file_status(&self, path: &Path, cx: &gpui::App) -> Status {
@@ -301,7 +300,7 @@ impl Workspace {
             };
             let document = (self.tabs.get(tab))
                 .filter(|tab| self.sidebar_project_link(tab, cx).is_none())
-                .and_then(|tab| tab.document().and_then(|d| d.vault().cloned()));
+                .and_then(|tab| tab.document().map(|d| d.vault().clone()));
             if let Some(document) = document {
                 self.move_document(document, Some(project.clone()), window, cx);
             }
@@ -536,7 +535,6 @@ impl Workspace {
                             .on_action(|_: &PasteAiResponse, _, _| {})
                             .on_action(|_: &PseudonymizeClipboard, _, _| {})
                             .on_action(|_: &super::RestoreClipboard, _, _| {})
-                            .on_action(|_: &super::OpenRecent, _, _| {})
                             .on_action(|_: &super::CheckForUpdates, _, _| {})
                             .on_action(|_: &crate::pii::ui::PiiApplyAll, _, _| {})
                             .key_context("FolderSheet UiPanel")

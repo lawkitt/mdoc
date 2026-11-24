@@ -394,7 +394,6 @@ impl Workspace {
                             .on_action(|_: &Settings, _, _| {})
                             .on_action(|_: &crate::menus::About, _, _| {})
                             .on_action(|_: &super::CheckForUpdates, _, _| {})
-                            .on_action(|_: &super::OpenRecent, _, _| {})
                             .on_action(|_: &SwitchDocument, _, _| {})
                             .on_action(|_: &SwitchDocumentBack, _, _| {})
                             .on_action(|_: &ToggleSidebar, _, _| {})

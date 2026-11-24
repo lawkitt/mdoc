@@ -110,7 +110,6 @@ actions!(
         PseudonymizeClipboard,
         RestoreClipboard,
         CheckForUpdates,
-        ClearRecentFiles,
         AddDocumentToProject,
         RenameProject,
         ChangeProjectColour,
@@ -119,11 +118,6 @@ actions!(
         DeleteProject,
     ]
 );
-
-/// File › Open Recent: open this file again.
-#[derive(Clone, Debug, PartialEq, gpui::Action)]
-#[action(namespace = mdoc, no_json)]
-pub(crate) struct OpenRecent(pub PathBuf);
 
 /// How a document reaches the window: one channel, grouped by the owner
 /// that handles it. The window commands a document through its
@@ -207,7 +201,6 @@ impl EventEmitter<TabEvent> for DocumentView {}
 // completions. Only sidebar-visible metadata invalidates the parent view.
 #[derive(PartialEq)]
 struct SidebarStatus {
-    path: Option<PathBuf>,
     source: Option<PathBuf>,
     loading: bool,
     queued: bool,
@@ -219,7 +212,6 @@ struct SidebarStatus {
 impl SidebarStatus {
     fn of(view: &DocumentView) -> Self {
         Self {
-            path: view.session.document.path.clone(),
             source: view.preview.source().cloned(),
             loading: view.lifecycle.loading() || view.preview.loading(),
             queued: view.preview.queued() || view.import.auto_pending(),
@@ -334,7 +326,8 @@ pub(super) struct Workspace {
     recovery: recovery_key::Recovery,
     /// Documents' autosaves, one write at a time.
     document_writer: autosave::Writer,
-    /// Where each imported tab's file was opened from: what Recents lists.
+    /// Where each imported tab's file was opened from, so opening it again
+    /// finds the tab.
     admitted_from: std::collections::HashMap<u64, PathBuf>,
     /// Viewing copies of originals: an app-private cache folder, one
     /// subfolder per tab, removed when the tab closes and cleared at launch.
@@ -593,7 +586,7 @@ impl Workspace {
             theme_tip: Rc::default(),
             window_title: String::new(),
             title: style::TitleBar::default(),
-            shell: shell::ShellState::new(cx),
+            shell: shell::ShellState::new(),
             settings_focus: cx.focus_handle().tab_stop(true),
             _appearance: None,
             _checkpoint: None,
@@ -648,7 +641,6 @@ impl Workspace {
                         this.open_comparison(*model, window, cx);
                     }
                     settings_ui::Event::RestartToUpdate => this.restart_to_update(window, cx),
-                    settings_ui::Event::ClearRecents => this.clear_recents(cx),
                     settings_ui::Event::Shortcuts => this.toggle_shortcuts(window, cx),
                     settings_ui::Event::UserListsChanged(lists) => {
                         this.save_user_lists(lists.clone(), cx)
@@ -905,7 +897,6 @@ impl Workspace {
             }
         };
         let mut protected: Vec<_> = [
-            view.read(cx).session.document.path.clone(),
             view.read(cx).session.source.clone(),
             view.read(cx).preview.attachment().cloned(),
         ]
@@ -1020,14 +1011,6 @@ impl Workspace {
         // Session paths were normalized when opened/saved. Do not stat every file
         // during startup; missing files are diagnosed when activated.
         for record in session.tabs {
-            // A Markdown file's tab (an earlier build's case member) names
-            // no document now; its file stays on disk.
-            if record.document.is_none()
-                && !record.source_only
-                && !record.markdown.as_os_str().is_empty()
-            {
-                continue;
-            }
             if self.tabs.iter().any(|tab| {
                 if record.source_only {
                     tab.record().attachment == record.attachment
@@ -1105,14 +1088,7 @@ impl Workspace {
                 cx,
             );
             view.active = id == self.tabs.active();
-            // Keep a file's title while loading, including a failed load,
-            // without accepting its path as a successfully opened document.
-            view.session.name = document
-                .as_ref()
-                .and_then(DocumentId::file)
-                .and_then(std::path::Path::file_name)
-                .map(|name| name.to_string_lossy().into_owned())
-                .or_else(|| record.blank.then(|| record.name.clone()).flatten());
+            view.session.name = record.blank.then(|| record.name.clone()).flatten();
             view.lifecycle.restore(
                 document.is_some(),
                 record.source_only,
@@ -1140,8 +1116,7 @@ impl Workspace {
             this.event(id, event, window, cx);
         });
         let mut status = SidebarStatus::of(view.read(cx));
-        let changes = cx.observe(&view, move |this, view, cx| {
-            this.remember_recent(id, cx);
+        let changes = cx.observe(&view, move |_, view, cx| {
             let next = SidebarStatus::of(view.read(cx));
             if next != status {
                 status = next;
@@ -1181,10 +1156,8 @@ impl Workspace {
             generation
         });
         let weak = view.downgrade();
-        let loading = document.vault().cloned();
+        let loading = document.vault().clone();
         let task: gpui::Task<Result<Loaded, String>> = match document {
-            // Files open only as Vault documents.
-            DocumentId::File(_) => return,
             DocumentId::Vault(document) => match self.vault.vault().cloned() {
                 Some(vault) => {
                     let viewing = self.viewing_dir(id);
@@ -1214,10 +1187,8 @@ impl Workspace {
             let _ = this.update_in(cx, |this, window, cx| {
                 // A move's reload ends, done or with its tab gone: autosaves
                 // resume with the moved text.
-                if let Some(document) = &loading
-                    && this.reloading.remove(document)
-                {
-                    this.moving.remove(document);
+                if this.reloading.remove(&loading) {
+                    this.moving.remove(&loading);
                 }
                 if !this.tabs.contains(id) {
                     // Its viewing copy may have been made after the tab went.
@@ -1419,16 +1390,6 @@ impl Workspace {
         id
     }
 
-    /// The live view of the file at `identity`, other than `except`.
-    pub fn find_path(
-        &self,
-        identity: &std::path::Path,
-        except: Option<u64>,
-        cx: &App,
-    ) -> Option<u64> {
-        self.find_document(&DocumentId::File(identity.to_path_buf()), except, cx)
-    }
-
     /// The live view of `document`, other than `except`: the one named for
     /// it, or one whose view holds it now.
     pub(crate) fn find_document(
@@ -1619,7 +1580,6 @@ impl Workspace {
                             let view = view.read(cx);
                             view.lifecycle.blank_disposable()
                                 && view.editor.read(cx).text().is_empty()
-                                && view.session.document.path.is_none()
                                 && view.preview.source().is_none()
                         })
                 })
@@ -2029,7 +1989,6 @@ impl Workspace {
                     view.lifecycle.source_only() || view.lifecycle.generated_unedited();
                 record.blank = !record.source_only
                     && !record.names_document()
-                    && view.session.document.path.is_none()
                     && view.preview.source().is_none()
                     && view.editor.read(cx).text().is_empty();
                 record.blank_disposable = record.blank && view.lifecycle.blank_disposable();
@@ -2934,36 +2893,21 @@ fn tab_label(tab: &Tab, cx: &App) -> TabLabel {
         {
             return name.clone();
         }
-        let path = if tab.record().source_only {
-            tab.record()
-                .attachment
-                .as_ref()
-                .map_or_else(|| tab.record().markdown.clone(), |p| p.with_extension("md"))
-        } else {
-            tab.record().markdown.clone()
-        };
-        path.file_name()
-            .map(|n| n.to_string_lossy().into_owned())
+        // A source tab is named as its conversion will be.
+        let path = tab
+            .record()
+            .source_only
+            .then(|| (tab.record().attachment.as_ref()).map(|path| path.with_extension("md")));
+        path.flatten()
+            .and_then(|path| Some(path.file_name()?.to_string_lossy().into_owned()))
             .or_else(|| tab.record().name.clone())
             .unwrap_or_else(|| "Untitled.md".into())
     });
-    let saved = view.map(|v| v.session.document.path.as_ref());
-    let path = saved.flatten().unwrap_or(&tab.record().markdown);
-    let saved = saved.map_or(
-        !tab.record().source_only && !tab.record().markdown.as_os_str().is_empty(),
-        |path| path.is_some(),
-    );
     let source = view
         .and_then(|v| v.preview.attachment().or(v.preview.source()))
-        .or(tab.record().attachment.as_ref())
-        .cloned();
-    let identity = if saved {
-        path.clone()
-    } else {
-        source.clone().unwrap_or_else(|| path.clone())
-    };
-    let format = identity
-        .extension()
+        .or(tab.record().attachment.as_ref());
+    let format = source
+        .and_then(|source| source.extension())
         .and_then(|e| e.to_str())
         .unwrap_or("md")
         .to_uppercase();
@@ -3176,10 +3120,6 @@ impl Render for Workspace {
                     view.update(cx, |view, cx| view.restore_clipboard(action, window, cx));
                 }
             }))
-            .on_action(cx.listener(|this, action: &OpenRecent, window, cx| {
-                this.open_paths(vec![action.0.clone()], window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ClearRecentFiles, _, cx| this.clear_recents(cx)))
             .on_drag_move(cx.listener(
                 |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
                     this.home_drag(event, cx)

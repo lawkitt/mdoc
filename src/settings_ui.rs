@@ -60,8 +60,6 @@ pub enum Event {
     Finished(Model, Result<Option<ocr::Installed>, String>),
     /// Restart now: quit through the workspace, then relaunch.
     RestartToUpdate,
-    /// Forget the recent files Home lists.
-    ClearRecents,
     Shortcuts,
     /// Saved: Settings › Detection stopped detecting these.
     CategoriesUnticked(std::collections::HashSet<mdoc_pii::Category>),

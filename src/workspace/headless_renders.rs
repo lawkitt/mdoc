@@ -48,6 +48,7 @@
 mod comments;
 mod comparison;
 mod confirm;
+mod cut_over;
 mod decisions;
 mod docx_source;
 mod encoder;
@@ -56,6 +57,7 @@ mod home;
 mod import;
 mod narrow;
 mod navigation;
+mod old_cases;
 mod pdf_source;
 mod projects;
 mod restore;
@@ -431,10 +433,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     }
     // Exercise both OS-key entry points before building app state. Both must
     // refuse without touching the OS key store or any profile file.
-    let cases = data_directory.join("mdoc/cases");
     for result in [
-        mdoc_store::cases::Store::open(cases.clone()).map(|_| ()),
-        mdoc_store::cases::Store::open_quietly(cases).map(|_| ()),
         mdoc_store::cases::vault_key(true).map(|_| ()),
         mdoc_store::cases::vault_key(false).map(|_| ()),
     ] {
@@ -442,6 +441,11 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             return Err("OS case-key guard is not active".into());
         }
     }
+    // An earlier build's cases folder, its key and its recents: no path
+    // below may touch them (#1091 Decision 2).
+    let mdoc = data_directory.join("mdoc");
+    old_cases::fill(&mdoc)?;
+    let old = old_cases::Snapshot::take(&mdoc)?;
     let network_probe = mdoc_import::model_download::fetch(
         "https://invalid.invalid/headless-network-probe",
         1,
@@ -532,6 +536,12 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             window.focus(w.focus_regions.home(), cx);
         })?;
         scenarios(&mut d, &path, &detections)?;
+        cut_over::run(
+            &mut d,
+            &profile.path().join(tag).join("vault"),
+            profile.path(),
+        )?;
+        old.check(&mdoc)?;
         for mut record in d.records.drain(..) {
             record["theme"] = json!(tag);
             screens.push(record);
@@ -546,6 +556,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     // DOCX fixture previews remove their backing directories off-thread.
     // Both TestWindow contexts have dropped before this cleanup barrier.
     mdoc_import::docx_preview::shutdown_workers();
+    old.check(&mdoc)?;
     let renderer = if cfg!(target_os = "windows") {
         "headless-directx-warp"
     } else {
