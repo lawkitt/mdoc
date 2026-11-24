@@ -238,6 +238,31 @@ final class ProjectPageTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(cancelled.pending.sourceFile).path))
     }
 
+    /// Open in mdoc comes from another app, not from a Project's page: its
+    /// import sheet starts in Unfiled even while a Project's page shows. A
+    /// file picked from that page's + menu starts in its Project (#1091
+    /// Decision 35).
+    func testOpenInMdocStartsInUnfiled() async throws {
+        let app = try app()
+        app.openProject(seeded.ellison)
+        func received(_ receive: (URL) -> Task<Void, Never>) async throws -> PendingImport? {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
+            try FileManager.default.copyItem(at: Fixture.repository.appendingPathComponent("tests/fixtures/import/text.pdf"), to: file)
+            await receive(file).value
+            guard case .importing(let pending) = app.navigator.presentation else {
+                XCTFail("no import sheet: \(String(describing: app.navigator.presentation))")
+                return nil
+            }
+            app.navigator.dismiss()
+            return pending
+        }
+        let opened = try await received(app.openInMdoc)
+        XCTAssertNotNil(opened)
+        XCTAssertNil(opened?.project, "Open in mdoc starts in Unfiled")
+        let picked = try await received(app.receiveFile)
+        XCTAssertEqual(picked?.project, seeded.ellison, "a file picked on the page starts in its Project")
+    }
+
     /// A new file asks nothing; neither do a paste or camera pages, which
     /// keep no source of their own to compare.
     func testANewFileAsksNothing() async throws {

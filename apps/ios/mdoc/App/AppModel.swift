@@ -392,15 +392,29 @@ final class AppModel {
         }
     }
 
-    /// A file from Files or "Open in mdoc", waiting for its title and case.
-    /// It is copied (an image read, stripped and encoded) off the main
-    /// actor; the task ends once it waits.
+    /// A file from Files, waiting for its title and Project: picked from
+    /// the + menu, it starts in the Project it was started from.
     @discardableResult
     func receiveFile(_ url: URL) -> Task<Void, Never> {
+        receiveFile(url, from: intakeProject)
+    }
+
+    /// "Open in mdoc" from another app: started from no Project, it starts
+    /// in Unfiled whatever page shows (#1091 Decision 35).
+    @discardableResult
+    func openInMdoc(_ url: URL) -> Task<Void, Never> {
+        receiveFile(url, from: nil)
+    }
+
+    /// A file waiting for its title and Project. It is copied (an image
+    /// read, stripped and encoded) off the main actor; the task ends once
+    /// it waits.
+    private func receiveFile(_ url: URL, from project: ProjectID?) -> Task<Void, Never> {
         let importer = importer
         return Task {
             do {
-                if let pending = try await Task.detached(priority: .userInitiated, operation: { try importer.file(url) }).value {
+                if var pending = try await Task.detached(priority: .userInitiated, operation: { try importer.file(url) }).value {
+                    pending.project = project
                     offer(pending)
                 }
             } catch {
@@ -410,16 +424,19 @@ final class AppModel {
     }
 
     /// Pages from the document camera or Photos, each read, stripped and
-    /// encoded off the main actor; the task ends once they wait.
+    /// encoded off the main actor; the task ends once they wait, in the
+    /// Project they were started from.
     @discardableResult
     func receiveImages(_ images: [Data?], scanned: Bool) -> Task<Void, Never> {
         let importer = importer
+        let project = intakeProject
         return Task {
             do {
                 let pending = try await Task.detached(priority: .userInitiated) {
                     try importer.images(images, scanned: scanned)
                 }.value
-                if let pending {
+                if var pending {
+                    pending.project = project
                     offer(pending)
                     // Never silent: the pages left out are counted.
                     if pending.unreadPages > 0 {
