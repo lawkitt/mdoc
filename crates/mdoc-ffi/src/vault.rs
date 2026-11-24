@@ -439,8 +439,18 @@ impl Vault {
     }
 
     /// Copy for AI's text of document `id` as saved, refused unless it is
-    /// Ready now and not excluded from AI; nothing of it is stored.
+    /// Ready now and not excluded from AI; nothing of it is stored. What
+    /// the apps' Copy for AI and Share send, as text and as a file.
     pub fn text_for_ai(&self, id: String) -> Result<String, CoreError> {
+        #[cfg(test)]
+        let text = if crate::exits::taken_out(crate::exits::Gate::TextForAi) {
+            // A test of the exits suite took the check out: the saved text.
+            let document = self.store.document(&id)?;
+            mdoc_pii::handoff::for_ai(&document.markdown, std::iter::empty())
+        } else {
+            self.store.text_for_ai(&id)?
+        };
+        #[cfg(not(test))]
         let text = self.store.text_for_ai(&id)?;
         let place = self.store.document(&id)?.project;
         let mut undo = self.lock_undo();

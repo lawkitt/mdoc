@@ -101,10 +101,13 @@ pub struct ProposedName {
     pub category: Category,
 }
 
-/// What Copy for AI and Share send.
+/// What Copy for AI and Share need from the session: its refusal while
+/// proposals are pending, and the shared file's name. The text the apps
+/// send is the Vault's checked text (`Vault::text_for_ai`), never `text`.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct HandOff {
-    /// The alias-only note, then the text (`copy_for_ai`).
+    /// The alias-only note, then the session's text (`copy_for_ai`),
+    /// unchecked against the Project's names: not what leaves.
     pub text: String,
     /// The shared `.md` file's name (`share_file_name`).
     pub file_name: String,
@@ -171,11 +174,18 @@ impl DocumentSession {
         Ok(document.snapshot())
     }
 
-    /// Copy for AI and Share: refused while proposals are pending.
+    /// Copy for AI and Share: refused while proposals are pending. The
+    /// apps then send `Vault::text_for_ai`, not `HandOff::text`.
     pub fn hand_off(&self) -> Result<HandOff, ReviewError> {
         let guard = self.lock_document();
         let document = guard.as_ref().ok_or_else(no_document)?;
         let count = document.proposed();
+        #[cfg(test)]
+        let count = if crate::exits::taken_out(crate::exits::Gate::HandOff) {
+            0
+        } else {
+            count
+        };
         if count > 0 {
             return Err(ReviewError::PendingProposals { count });
         }

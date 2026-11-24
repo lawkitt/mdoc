@@ -177,6 +177,13 @@ impl Workspace {
         let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
             return;
         };
+        #[cfg(test)]
+        if crate::exits::taken_out(crate::exits::Gate::EditorCopyForAi) {
+            // As the cut-over's Copy for AI did: the editor's text, unchecked.
+            let text = view.read(cx).text_for_ai(cx);
+            view.update(cx, |view, cx| view.copy_checked_for_ai(text, cx));
+            return;
+        }
         let outcome = match self.shelf_row(&ShelfKey::Tab(id), cx) {
             Some(row) => match (row.text_for_ai(), row.readiness) {
                 (Some(text), _) => Ok(text.to_owned()),

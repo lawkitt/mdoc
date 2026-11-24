@@ -9,6 +9,8 @@ mod comparison_ui;
 mod confirm_dialog;
 mod crash;
 mod document_view;
+#[cfg(test)]
+mod exits;
 mod images;
 mod markdown_search;
 mod menu_bar;
