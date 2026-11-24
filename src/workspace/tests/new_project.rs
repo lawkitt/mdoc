@@ -60,8 +60,12 @@ fn new_project_from_the_project_menu_makes_an_empty_project_and_opens_its_page(
     cx: &mut TestAppContext,
 ) {
     let (tabs, cx) = home(cx);
-    // The menu item dispatches its action.
-    cx.dispatch_action(NewProject);
+    // The menu bar's own item, as a click on it dispatches it.
+    let (_, action) = (crate::menus::items().into_iter())
+        .find(|(name, _)| name.as_ref() == "New Project…")
+        .expect("Project › New Project…");
+    cx.update(|window, cx| window.dispatch_action(action, cx));
+    cx.run_until_parked();
     // Trimmed, as on the phones.
     name_it(cx, "  Smith v Jones  ");
     shows_empty_project(&tabs, cx, "Smith v Jones");
@@ -152,4 +156,47 @@ fn two_new_projects_of_one_name_queued_together_are_numbered_at_the_head(cx: &mu
     });
     cx.run_until_parked();
     assert_eq!(stored_names(&tabs, cx), ["Smith", "Smith 2"]);
+}
+
+/// ⌘⇧N / Ctrl+Shift+N from the palette: the palette gives way to the sheet,
+/// which takes the keyboard.
+#[gpui::test]
+fn the_shortcut_opens_new_project_in_place_of_the_palette(cx: &mut TestAppContext) {
+    let (tabs, cx) = home(cx);
+    cx.simulate_keystrokes("secondary-k");
+    draw(cx);
+    assert!(cx.debug_bounds("command-palette").is_some());
+    key(cx, "secondary-shift-n");
+    assert!(cx.debug_bounds("command-palette").is_none());
+    name_it(cx, "Shortcut matter");
+    shows_empty_project(&tabs, cx, "Shortcut matter");
+}
+
+/// Undo from the sheet's buttons never reaches the document behind it.
+#[gpui::test]
+fn undo_on_the_sheets_buttons_leaves_the_document_alone(cx: &mut TestAppContext) {
+    let (tabs, cx) = home(cx);
+    let dir = tempfile::tempdir().unwrap();
+    open_notes(&tabs, cx, dir.path(), &["Lease"]);
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        window.focus(&view.editor.read(cx).focus_handle(cx), cx)
+    });
+    cx.simulate_input(" edited");
+    let text = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| view.read(cx).editor.read(cx).text().to_string())
+    };
+    let before = text(cx);
+    assert!(before.contains(" edited"), "{before}");
+    cx.dispatch_action(NewProject);
+    assert!(sheet_shows(cx));
+    // Off the field, onto Cancel.
+    key(cx, "tab");
+    let on_field = cx.update(|window, _| {
+        (window.context_stack().iter()).any(|context| context.contains("TextInput"))
+    });
+    assert!(!on_field, "focus left the field");
+    key(cx, "secondary-z");
+    assert_eq!(text(cx), before);
+    assert!(sheet_shows(cx));
 }

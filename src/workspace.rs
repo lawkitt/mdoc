@@ -1497,10 +1497,13 @@ impl Workspace {
         .detach();
     }
 
-    /// A confirm dialog, the Keychain explainer or a folder sheet keeps
-    /// focus until answered.
+    /// A confirm dialog, the Keychain explainer, a folder sheet or New
+    /// Project's sheet keeps focus until answered.
     fn dialog_up(&self, window: &Window) -> bool {
-        window.has_active_prompt() || self.project_ui.explainer || self.folder_sheets.open()
+        window.has_active_prompt()
+            || self.project_ui.explainer
+            || self.folder_sheets.open()
+            || self.new_project.is_some()
     }
 
     /// Open paths. Plain files open at once; each folder among them shows
@@ -3617,6 +3620,7 @@ impl Workspace {
             || self.project_ui.list_open
             || self.project_ui.explainer
             || self.folder_sheets.open()
+            || self.new_project.is_some()
             || self.shell.palette.is_some()
             || self.shell.shortcuts.is_some()
             || window
@@ -3637,6 +3641,7 @@ impl Workspace {
             || self.project_ui.list_open
             || self.project_ui.explainer
             || self.folder_sheets.open()
+            || self.new_project.is_some()
             || self.shell.palette.is_some()
             || self.shell.shortcuts.is_some()
         {

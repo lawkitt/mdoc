@@ -51,7 +51,14 @@ impl Workspace {
         if self.vault.vault().is_none() {
             return;
         }
-        self.close_project_list(window, cx);
+        // Over the palette or the Open Project list, the sheet takes their
+        // place, and focus goes back where they would have sent it.
+        if self.shell.palette.is_some() {
+            self.close_palette(window, cx);
+        }
+        if self.project_ui.list_open {
+            self.close_project_list(window, cx);
+        }
         let return_focus = window.focused(cx);
         let input = cx.new(|cx| {
             SearchInput::new(cx)
@@ -138,9 +145,13 @@ impl Workspace {
                 self.projects.put(project);
                 self.show_project_page(&id, Place::Header, window, cx);
             }
+            // The sheet has gone: the bell opens with the reason, even if
+            // it was closed over an earlier notice.
             Err(error) => {
-                self.notices
-                    .post(format!("Could not create “{name}”: {error}"));
+                let effect = self
+                    .notices
+                    .post_now(format!("Could not create “{name}”: {error}"));
+                self.carry_out_notices(effect);
             }
         }
         cx.notify();
