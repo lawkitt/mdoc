@@ -69,8 +69,9 @@ impl Vault {
                     return Ok(false);
                 }
                 // Only a conversion that never finished has no Markdown; a
-                // text its user cleared is written, empty.
-                if !document.pending_conversion() {
+                // text its user cleared, or an empty text file, is written
+                // empty.
+                if !document.pending_conversion() || text_source(&document) {
                     let (_, mut file) =
                         names.create(&folder, &safe_stem(&document.title), ".md")?;
                     file.write_all(document.markdown.as_bytes())?;
@@ -101,6 +102,17 @@ impl Vault {
         }
         Ok(exported)
     }
+}
+
+/// A Markdown or plain text source is its own text, with no conversion to
+/// wait for.
+fn text_source(document: &crate::Document) -> bool {
+    (document.original.as_ref()).is_some_and(|original| {
+        let (_, extension) = split_name(&original.info.file_name);
+        [".md", ".markdown", ".mdown", ".txt"]
+            .iter()
+            .any(|text| extension.eq_ignore_ascii_case(text))
+    })
 }
 
 /// Names taken in one folder, compared ignoring case as Windows and macOS

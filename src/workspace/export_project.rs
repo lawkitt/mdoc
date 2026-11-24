@@ -26,8 +26,10 @@ impl Workspace {
                 return;
             }
         };
-        // Edits not written yet go first, so the export has them.
+        // Edits not written yet go first, so the export has them, and a
+        // Project save that failed is tried again.
         self.autosave_all(window, cx);
+        self.queue_project_writes(window, cx);
         let folder = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,
@@ -55,7 +57,10 @@ impl Workspace {
             };
             // Edits made while the chooser was up go too; then wait for
             // every write queued, and any still running.
-            let _ = this.update_in(cx, |this, window, cx| this.autosave_all(window, cx));
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.autosave_all(window, cx);
+                this.queue_project_writes(window, cx);
+            });
             while this
                 .update(cx, |this, _| this.document_writer.busy())
                 .unwrap_or(false)

@@ -469,7 +469,8 @@ impl Workspace {
 
     /// Write tab `id`'s Vault document as it shows now, at once and on this
     /// thread: a move or delete at the head of the queue reads it next.
-    /// `Ok` when there is nothing to write.
+    /// `Ok` when there is nothing to write, its text and review unchanged
+    /// since the last write included.
     pub(super) fn write_tab_now(
         &mut self,
         id: u64,
@@ -487,8 +488,13 @@ impl Workspace {
             if view.lifecycle.loading() || view.lifecycle.source_only() {
                 return Ok(());
             }
-            let text = view.editor.read(cx).text().to_string();
             let review = view.saved_review();
+            // Unchanged since its last write: its text is the Vault's, and
+            // writing it again could only undo a newer revision.
+            if !view.unsaved(cx) && review == view.session.document.review {
+                return Ok(());
+            }
+            let text = view.editor.read(cx).text().to_string();
             (document, vault_write(view, text, review, cx))
         };
         let Write::Vault {

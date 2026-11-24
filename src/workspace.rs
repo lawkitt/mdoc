@@ -344,8 +344,9 @@ pub(super) struct Workspace {
     /// keeps them.
     unsaved: std::collections::HashSet<u64>,
     /// The tab whose Copy for AI waits for its writes to land before the
-    /// Vault's outbound check runs.
-    copy_for_ai_waiting: Option<u64>,
+    /// Vault's outbound check runs, with the clipboard's text when it was
+    /// asked.
+    copy_for_ai_waiting: Option<(u64, Option<String>)>,
     /// One admission at a time, so a repeat waits for the import before it.
     admitting: bool,
     admit_queue: std::collections::VecDeque<(Vec<PathBuf>, Option<String>)>,
@@ -2862,13 +2863,24 @@ fn load_from_vault(
         (Some(original), Some(dir)) => {
             match vault.copy_original_to(id.as_str(), &dir, &original.info.file_name) {
                 Ok(copy) => (Some(copy), None),
-                Err(error) => {
-                    let error = format!("Could not open the document's source. {error}");
-                    if stored.pending_conversion() {
-                        return Err(error);
-                    }
-                    (None, Some(error))
+                Err(error) if stored.pending_conversion() => {
+                    return Err(format!("Could not open the document's source. {error}"));
                 }
+                Err(mdoc_vault::VaultError::NotFound { .. }) => (
+                    None,
+                    Some(
+                        "The original file is missing from the Vault, so it can't be shown. \
+                         The Markdown is not affected."
+                            .to_string(),
+                    ),
+                ),
+                Err(error) => (
+                    None,
+                    Some(format!(
+                        "The original file could not be opened, so it can't be shown. The \
+                         Markdown is not affected. {error}"
+                    )),
+                ),
             }
         }
         _ => (None, None),

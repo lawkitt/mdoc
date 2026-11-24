@@ -1203,6 +1203,106 @@ fn a_project_delete_stops_when_a_member_cannot_be_written(cx: &mut TestAppContex
     });
 }
 
+/// Review of #1150 (P1): a name applied while Delete Project › Move to
+/// Unfiled waits joins the Project's names before anything moves, so the
+/// member takes it to Unfiled and restores it.
+#[gpui::test]
+fn a_name_applied_while_a_project_delete_waits_moves_with_its_member(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let text = "Anna Petrova met Boris Ivanov.";
+    let tab = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        text,
+        &[("Anna Petrova", Person)],
+    );
+    let project = new_project(&tabs, cx, tab);
+    cx.run_until_parked();
+    let view = view_of(&tabs, cx, tab);
+    view.update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            let later = format!("{} Later.", editor.text());
+            editor.set_text(later, cx);
+        })
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        let members = tabs.project_members(&project);
+        let unfiled = mdoc_vault::ProjectDocuments::MoveToUnfiled;
+        // A write runs first, so the delete waits behind it.
+        tabs.autosave_all(window, cx);
+        tabs.forget_project(&project, unfiled, members, window, cx);
+    });
+    view.update_in(cx, |view, window, cx| {
+        let shown = view.editor.read(cx).text().to_string();
+        let start = shown.find("Boris Ivanov").unwrap();
+        view.pii
+            .review_mut()
+            .add_manual(&shown, start..start + "Boris Ivanov".len(), Person)
+            .unwrap();
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+    });
+    cx.run_until_parked();
+    let vault = vault(&tabs, cx);
+    assert!(vault.project(&project).is_err());
+    let document = stored(&tabs, cx, tab);
+    assert_eq!(document.project, None);
+    assert!(
+        document.markdown.contains("PERSON_2"),
+        "{}",
+        document.markdown
+    );
+    let names = document.mapping.exported();
+    assert!(
+        names
+            .iter()
+            .any(|n| n.alias == "PERSON_2" && n.originals.iter().any(|o| &**o == "Boris Ivanov")),
+        "{names:?}"
+    );
+}
+
+/// Review of #1150 (P1): an open member with no edit of its own is not
+/// written again at the head of Delete Project, so a newer revision the
+/// Vault holds is what moves to Unfiled.
+#[gpui::test]
+fn a_project_delete_never_writes_an_unchanged_member_over_a_newer_revision(
+    cx: &mut TestAppContext,
+) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let tab = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova signed.",
+        &[("Anna Petrova", Person)],
+    );
+    let project = new_project(&tabs, cx, tab);
+    wait(cx, 1000);
+    // Another writer saves a newer revision; the tab shows the older one.
+    let id = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
+    let vault = vault(&tabs, cx);
+    vault
+        .update_document(id.as_str(), |document| {
+            document.markdown = "PERSON_1 signed, newer.".into()
+        })
+        .unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        let members = tabs.project_members(&project);
+        let unfiled = mdoc_vault::ProjectDocuments::MoveToUnfiled;
+        tabs.forget_project(&project, unfiled, members, window, cx);
+    });
+    cx.run_until_parked();
+    let document = stored(&tabs, cx, tab);
+    assert_eq!(document.project, None);
+    assert_eq!(document.markdown, "PERSON_1 signed, newer.");
+}
+
 #[gpui::test]
 fn a_delete_stops_when_a_move_changed_the_projects_documents(cx: &mut TestAppContext) {
     use mdoc_pii::Category::Person;

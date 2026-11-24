@@ -1210,6 +1210,23 @@ impl Workspace {
                     cx.notify();
                     return;
                 }
+                // A name applied while the delete waited joins the
+                // Project's names, which each member takes to Unfiled.
+                self.project_changed(tab, cx);
+            }
+            // The Project's names as the window holds them, written before
+            // anything moves; if they can't be, nothing moves.
+            if let Err(error) = self.write_now(&vault, &[Some(project_id.clone())]) {
+                for member in &members {
+                    self.moving.remove(member);
+                }
+                self.project_ui.mark_unwritten(&project_id);
+                self.notices.post(format!(
+                    "Could not delete the Project: its names could not be saved first, so \
+                     nothing was moved. {error}"
+                ));
+                cx.notify();
+                return;
             }
         }
         // Only what was confirmed is deleted: the Vault compares the

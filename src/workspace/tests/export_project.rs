@@ -131,3 +131,35 @@ fn export_project_waits_for_its_members_saves_to_succeed(cx: &mut TestAppContext
     assert!(notice.ends_with("Nothing was exported."), "{notice}");
     assert!(!picked.path().join("Lease").exists());
 }
+
+/// Review of #1150: a Project save that failed is tried again by Export
+/// Project, which then exports.
+#[gpui::test]
+fn export_project_retries_a_failed_project_save(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home_with(cx, Session::default(), |tabs, _, _| tabs.use_temp_vault());
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault()).unwrap();
+    let project = vault
+        .create_project(NewProject {
+            name: "Lease".into(),
+            ..NewProject::default()
+        })
+        .unwrap();
+    tabs.update_in(cx, |tabs, _, cx| {
+        tabs.load_projects(cx);
+        // As a save of its names that failed leaves it.
+        tabs.project_ui.mark_unwritten(&project.id);
+    });
+    let picked = tempfile::tempdir().unwrap();
+    let id = project.id.clone();
+    tabs.update_in(cx, |tabs, window, cx| tabs.export_project(id, window, cx));
+    let into = picked.path().to_path_buf();
+    cx.simulate_path_prompt_response(move |_| Some(vec![into]));
+    for _ in 0..10 {
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(100));
+        cx.run_until_parked();
+    }
+    let notice = cx.update(|_, cx| tabs.read(cx).notice_text()).unwrap();
+    assert!(notice.starts_with("Exported 0 documents"), "{notice}");
+    assert!(picked.path().join("Lease").exists());
+}

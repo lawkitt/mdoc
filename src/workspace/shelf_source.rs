@@ -154,20 +154,26 @@ impl Workspace {
     pub(super) fn copy_tab_for_ai(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         self.copy_for_ai_waiting = None;
         self.autosave(id, window, cx);
-        self.try_copy_for_ai(id, cx);
+        let clipboard = clipboard_text(cx);
+        self.try_copy_for_ai(id, clipboard, cx);
     }
 
     /// The writes a waiting Copy for AI waited for have landed: check it
     /// again.
     pub(super) fn copy_for_ai_after_write(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = self.copy_for_ai_waiting.take() {
-            self.try_copy_for_ai(id, cx);
+        if let Some((id, clipboard)) = self.copy_for_ai_waiting.take() {
+            self.try_copy_for_ai(id, clipboard, cx);
         }
     }
 
     /// Copy tab `id`'s checked text, say why it may not leave, or wait
-    /// while a write may still settle it.
-    fn try_copy_for_ai(&mut self, id: u64, cx: &mut Context<Self>) {
+    /// while a write may still settle it. `clipboard`: the clipboard's text
+    /// when it was asked; a copy since, here or in another app, is newer
+    /// and stays.
+    fn try_copy_for_ai(&mut self, id: u64, clipboard: Option<String>, cx: &mut Context<Self>) {
+        if clipboard_text(cx) != clipboard {
+            return;
+        }
         let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
             return;
         };
@@ -175,7 +181,7 @@ impl Workspace {
             Some(row) => match (row.text_for_ai(), row.readiness) {
                 (Some(text), _) => Ok(text.to_owned()),
                 (None, shelf::Readiness::Checking) if self.document_writer.busy() => {
-                    self.copy_for_ai_waiting = Some(id);
+                    self.copy_for_ai_waiting = Some((id, clipboard));
                     return;
                 }
                 (None, readiness) => Err(not_copied(readiness, self.unsaved.contains(&id))),
@@ -223,6 +229,11 @@ fn checked(outbound: Result<String, VaultError>) -> Outbound {
         Err(VaultError::NotReady(readiness)) => Err(readiness),
         Err(_) => Err(mdoc_vault::Readiness::NotReviewed),
     }
+}
+
+/// The clipboard's text now, if it holds any.
+fn clipboard_text(cx: &App) -> Option<String> {
+    cx.read_from_clipboard().and_then(|item| item.text())
 }
 
 /// Why Copy for AI copied nothing, as the shelf's row would say it.

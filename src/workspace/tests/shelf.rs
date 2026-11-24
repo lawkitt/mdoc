@@ -360,6 +360,39 @@ fn copy_for_ai_in_the_editor_is_checked_against_the_projects_names(cx: &mut Test
     assert_eq!(raw, "PERSON_1 wrote to Boris Ivanov about the lease.");
 }
 
+/// Review of #1150: a Copy for AI waiting for its write never replaces a
+/// copy made since.
+#[gpui::test]
+fn a_waiting_copy_for_ai_never_replaces_a_newer_copy(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "letter.md",
+        "Anna Petrova wrote.",
+        &[("Anna Petrova", Person)],
+    );
+    let view = active(&tabs, cx);
+    // Unsaved: the copy waits for its write.
+    view.update_in(cx, |view, window, cx| {
+        view.copy_for_ai(&crate::pii::ui::CopyForAi, window, cx)
+    });
+    let waiting = cx.update(|_, cx| tabs.read(cx).copy_for_ai_waiting.is_some());
+    assert!(waiting, "the copy waits for its write");
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("newer".into()));
+    cx.run_until_parked();
+    assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "newer");
+    // Asked again with nothing newer, it copies.
+    view.update_in(cx, |view, window, cx| {
+        view.copy_for_ai(&crate::pii::ui::CopyForAi, window, cx)
+    });
+    cx.run_until_parked();
+    let copied = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
+    assert!(copied.ends_with("PERSON_1 wrote."), "{copied}");
+}
+
 /// A stored document that is not ready opens in a tab at its first
 /// proposal: the name its Project added since.
 #[gpui::test]

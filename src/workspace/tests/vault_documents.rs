@@ -763,7 +763,7 @@ fn a_missing_original_leaves_the_saved_markdown_open(cx: &mut TestAppContext) {
         assert!(view.preview.visible());
         let message = view.preview.message().unwrap();
         assert!(
-            message.starts_with("Could not open the document's source."),
+            message.starts_with("The original file is missing"),
             "{message}"
         );
     });

@@ -293,22 +293,39 @@ impl Workspace {
                 }
             }
         };
-        // Open Unfiled files move in; the others are imported into it.
-        for path in sheet.ticked() {
-            let Some(tab) = self.open_tab_for(&path, cx) else {
-                continue;
-            };
-            let document = (self.tabs.get(tab))
-                .filter(|tab| self.sidebar_project_link(tab, cx).is_none())
-                .and_then(|tab| tab.document().map(|d| d.vault().clone()));
-            if let Some(document) = document {
-                self.move_document(document, Some(project.clone()), window, cx);
-            }
-        }
-        self.open_ticked(&sheet, Some(project), window, cx);
-        self.checkpoint(window, cx);
-        cx.notify();
-        self.show_next_folder(window, cx);
+        // Open Unfiled files move in, once hashed: a file replaced since its
+        // tab imported it is new bytes, imported into it with the others.
+        let open: Vec<(u64, PathBuf)> = (sheet.ticked().into_iter())
+            .filter_map(|path| Some((self.open_tab_for(&path, cx)?, path)))
+            .collect();
+        let hashed = cx.background_executor().spawn(async move {
+            (open.into_iter())
+                .map(|(tab, path)| {
+                    let sha256 = std::fs::File::open(&path).and_then(mdoc_vault::source_sha256);
+                    (tab, sha256.ok())
+                })
+                .collect::<Vec<_>>()
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let hashed = hashed.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                for (tab, sha256) in hashed {
+                    let unchanged = sha256
+                        .is_some_and(|sha256| this.tab_shows_source(tab, &sha256, &vault, cx));
+                    let document = (this.tabs.get(tab))
+                        .filter(|tab| unchanged && this.sidebar_project_link(tab, cx).is_none())
+                        .and_then(|tab| tab.document().map(|d| d.vault().clone()));
+                    if let Some(document) = document {
+                        this.move_document(document, Some(project.clone()), window, cx);
+                    }
+                }
+                this.open_ticked(&sheet, Some(project), window, cx);
+                this.checkpoint(window, cx);
+                cx.notify();
+                this.show_next_folder(window, cx);
+            });
+        })
+        .detach();
     }
 
     /// The explainer's Not now: back to the sheet.

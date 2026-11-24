@@ -218,7 +218,7 @@ impl Workspace {
 
     /// Tab `id` shows the Vault document imported from the bytes whose
     /// hash is `sha256`.
-    fn tab_shows_source(
+    pub(super) fn tab_shows_source(
         &self,
         id: u64,
         sha256: &str,
