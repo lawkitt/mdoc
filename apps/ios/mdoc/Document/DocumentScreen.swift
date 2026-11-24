@@ -116,9 +116,9 @@ struct DocumentScreen: View {
             }
             // Ask AI: its end starts the wait for the AI app's answer.
             .sheet(item: $model.askAIShare, onDismiss: { app?.takeInChanges() }) { items in
-                ActivityView(items: items.items, excluded: DocumentViewModel.askAIExcludedActivities) {
-                    model.askAIFinished(completed: $0)
-                }
+                ActivityView(
+                    items: items.items, excluded: DocumentViewModel.askAIExcludedActivities,
+                    onActivity: { model.askAIFinished(activity: $0) })
             }
             // Back from the AI app, "Paste reply?" shows (`+AskAI`).
             .onChange(of: scenePhase) { _, phase in

@@ -7,6 +7,9 @@ import XCTest
 /// the banner shows and what it restores.
 @MainActor
 final class AskAITests: XCTestCase {
+    /// An AI app's share extension.
+    private static let aiApp = UIActivity.ActivityType("com.example.ai-app.share")
+
     /// The letter with every proposal replaced: Ready.
     private func readyLetter() throws -> (DocumentViewModel, Seeded) {
         let seeded = try Fixture.seeded()
@@ -80,7 +83,7 @@ final class AskAITests: XCTestCase {
     func testTheBannerShowsOnReturnFromTheAIApp() throws {
         let (model, _) = try readyLetter()
         model.askAI()
-        model.askAIFinished(completed: true)
+        model.askAIFinished(activity: Self.aiApp)
         XCTAssertNil(model.askAIShare)
         XCTAssertEqual(model.replyOffer, .awaitingReturn)
         XCTAssertFalse(model.showsReplyBanner, "not before mdoc is left")
@@ -101,7 +104,7 @@ final class AskAITests: XCTestCase {
         model.appLeft()
         model.appReturned()
         XCTAssertFalse(model.showsReplyBanner, "the sheet is still up")
-        model.askAIFinished(completed: true)
+        model.askAIFinished(activity: Self.aiApp)
         XCTAssertTrue(model.showsReplyBanner)
     }
 
@@ -109,7 +112,7 @@ final class AskAITests: XCTestCase {
     func testNoBannerWithoutAnAskAIThatWentThrough() throws {
         let (model, _) = try readyLetter()
         model.askAI()
-        model.askAIFinished(completed: false)
+        model.askAIFinished(activity: nil)
         XCTAssertNil(model.replyOffer)
         model.appLeft()
         model.appReturned()
@@ -128,7 +131,7 @@ final class AskAITests: XCTestCase {
         let (model, _) = try readyLetter()
         let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" }?.alias)
         model.askAI()
-        model.askAIFinished(completed: true)
+        model.askAIFinished(activity: Self.aiApp)
         model.appLeft()
         model.appReturned()
         XCTAssertTrue(model.showsReplyBanner)
@@ -142,12 +145,75 @@ final class AskAITests: XCTestCase {
         XCTAssertFalse(model.showsReplyBanner)
 
         model.askAI()
-        model.askAIFinished(completed: true)
+        model.askAIFinished(activity: Self.aiApp)
         model.appLeft()
         model.appReturned()
         model.dismissReplyBanner()
         XCTAssertFalse(model.showsReplyBanner)
         XCTAssertEqual(model.snapshot.replies.count, 1)
+    }
+
+    /// Copy opens no app: a trip away while the sheet was up was not to
+    /// the AI app, so the banner waits for the next return.
+    func testAfterCopyTheBannerWaitsForTheNextReturn() throws {
+        let (model, _) = try readyLetter()
+        model.askAI()
+        model.appLeft()
+        model.appReturned()
+        model.askAIFinished(activity: .copyToPasteboard)
+        XCTAssertFalse(model.showsReplyBanner, "the clipboard still holds the shared text")
+        model.appLeft()
+        model.appReturned()
+        XCTAssertTrue(model.showsReplyBanner)
+    }
+
+    /// The banner sits over the bar: on return the review bar closes, and
+    /// on a phone the Text pane takes the Original's place.
+    func testTheBannerShowsOverTheReviewAndTheOriginal() throws {
+        let (model, _) = try readyLetter()
+        let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" })
+        model.askAI()
+        model.askAIFinished(activity: Self.aiApp)
+        model.select(maya.id)
+        XCTAssertTrue(model.isReviewing)
+        model.appLeft()
+        model.appReturned()
+        XCTAssertTrue(model.showsReplyBanner)
+        XCTAssertFalse(model.isReviewing)
+
+        model.dismissReplyBanner()
+        model.askAI()
+        model.askAIFinished(activity: Self.aiApp)
+        model.show(.original)
+        XCTAssertTrue(model.originalCoversText)
+        model.appLeft()
+        model.appReturned()
+        XCTAssertTrue(model.showsReplyBanner)
+        XCTAssertEqual(model.pane, .text)
+    }
+
+    /// A restore that fails keeps the banner and the typed reply's sheet,
+    /// even with an earlier reply to show.
+    func testAFailedRestoreKeepsTheBanner() throws {
+        let (model, seeded) = try readyLetter()
+        let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" }?.alias)
+        model.restore(reply: "\(maya) wrote.")
+        XCTAssertNotNil(model.snapshot.reply)
+        model.show(.text)
+        model.askAI()
+        model.askAIFinished(activity: Self.aiApp)
+        model.appLeft()
+        model.appReturned()
+        model.showsReplySheet = true
+
+        try Fixture.setVault(seeded.storage, writable: false)
+        defer { try? Fixture.setVault(seeded.storage, writable: true) }
+        model.restore(reply: "\(maya) wrote again.")
+
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertTrue(model.showsReplyBanner)
+        XCTAssertTrue(model.showsReplySheet)
+        XCTAssertEqual(model.pane, .text)
     }
 
     /// Settings › AI connector (preview) is off until turned on, and kept.

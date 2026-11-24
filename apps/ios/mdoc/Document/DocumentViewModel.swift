@@ -562,13 +562,13 @@ final class DocumentViewModel {
     func restore(reply: String) {
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        perform { try session.restoreReply(reply) }
-        if snapshot.reply != nil {
-            showsReplySheet = false
-            // The answer Ask AI waited for is in, however it came.
-            replyOffer = nil
-            show(.reply)
-        }
+        // A restore that fails keeps the sheet's text and the banner, even
+        // with an earlier reply to show.
+        guard perform({ try session.restoreReply(reply) }), snapshot.reply != nil else { return }
+        showsReplySheet = false
+        // The answer Ask AI waited for is in, however it came.
+        replyOffer = nil
+        show(.reply)
     }
 
     /// The restored reply, as the hand-off bar copies it on the Reply tab.

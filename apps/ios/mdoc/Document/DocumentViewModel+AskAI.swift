@@ -41,16 +41,23 @@ extension DocumentViewModel {
         }
     }
 
-    /// Ask AI's sheet closed: an app took the text, or the user cancelled.
-    /// An app that opened in front of mdoc may close the sheet only once
-    /// mdoc is back, and then the banner shows at once.
-    func askAIFinished(completed: Bool) {
+    /// Ask AI's sheet closed: `activity` took the text, or the user
+    /// cancelled (nil). An app that opened in front of mdoc may close the
+    /// sheet only once mdoc is back, and then the banner shows at once. Copy
+    /// opens no app: a trip away before it was not to the AI app, so the
+    /// banner waits for the next one.
+    func askAIFinished(activity: UIActivity.ActivityType?) {
         askAIShare = nil
         guard replyOffer == .sharing else { return }
-        if !completed {
+        guard let activity else {
             replyOffer = nil
+            return
+        }
+        if activity == .copyToPasteboard { leftSinceAsk = false }
+        if leftSinceAsk {
+            offerReply()
         } else {
-            replyOffer = leftSinceAsk ? .offered : .awaitingReturn
+            replyOffer = .awaitingReturn
         }
     }
 
@@ -63,8 +70,17 @@ extension DocumentViewModel {
     /// mdoc is in front again: back from the AI app, the banner shows.
     func appReturned() {
         if replyOffer == .awaitingReturn && leftSinceAsk {
-            replyOffer = .offered
+            offerReply()
         }
+    }
+
+    /// The banner shows over the bar, so the review bar and, in a compact
+    /// window, the Original give way to it: the user is back for the reply.
+    private func offerReply() {
+        replyOffer = .offered
+        if wordsFix != nil { cancelFixWords() }
+        if isReviewing { endReview() }
+        if originalCoversText { show(.text) }
     }
 
     /// The banner shows.
