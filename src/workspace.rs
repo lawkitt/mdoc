@@ -2981,6 +2981,16 @@ impl Workspace {
     }
 }
 
+/// The window's title: a dev profile says so, so its window is never taken
+/// for the user's own mdoc.
+fn window_title(title: String, dev_profile: bool) -> String {
+    if dev_profile {
+        format!("{title} — dev profile")
+    } else {
+        title
+    }
+}
+
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Collapsed by a narrowing window, the list's focus moves to the
@@ -3010,6 +3020,7 @@ impl Render for Workspace {
             .filter(|_| !home)
             .map(|view| view.read(cx).window_title())
             .unwrap_or_else(|| "mdoc".into());
+        let title = window_title(title, mdoc_store::app_paths::dev_profile().is_some());
         if title != self.window_title {
             window.set_window_title(&title);
             self.window_title = title;

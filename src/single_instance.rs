@@ -69,7 +69,13 @@ mod windows {
             .chars()
             .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
             .collect();
-        format!(r"\\.\pipe\io.github.lawkitt.mdoc-{user}-{session}")
+        // A dev profile's mdoc never hands its paths to the user's own.
+        let dev = if mdoc_store::app_paths::dev_profile().is_some() {
+            "-dev-profile"
+        } else {
+            ""
+        };
+        format!(r"\\.\pipe\io.github.lawkitt.mdoc-{user}-{session}{dev}")
     }
 
     pub fn claim(name: &str, paths: &[PathBuf]) -> Launch {

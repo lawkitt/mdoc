@@ -159,8 +159,11 @@ Bash 3.2 compatible for macOS's `/bin/bash`.
 - `wsl` builds only the platform-neutral crates. A lane stops and reports
   before adding a dependency, vendoring code, patching `vendor/` or a GPUI
   platform crate, or editing outside its item.
-- A dev build uses the real profile: copy `~/Library/Application Support/mdoc`
-  aside before a GUI check and restore it after.
+- A GUI check runs a debug build with `MDOC_DEV_PROFILE=<new folder>`
+  (macOS and Windows): the profile and a plain Vault key file live there,
+  the Keychain and DPAPI are never asked, and the title says "dev profile".
+  Release builds ignore it. Without it, a debug build uses the real profile
+  and the one a test run leaves in `target/debug` panics.
 
 **Profile.** The fleet tools in the maintainer's config repository read
 this block; change it with the rules above.
@@ -180,7 +183,7 @@ gate = ["just lint", "cargo nextest run -p <each changed crate>"]
 merge_queue = true
 checks = ["lint (ubuntu)", "merge-gate"]
 rules = [
-  "Never run the app against the real profile (`~/Library/Application Support/mdoc`, `%LOCALAPPDATA%\\mdoc`) or touch the real Keychain key; tests use injected stores.",
+  "Never run the app against the real profile (`~/Library/Application Support/mdoc`, `%LOCALAPPDATA%\\mdoc`) or touch the real Keychain key; tests use injected stores, and a GUI row runs a debug build with `MDOC_DEV_PROFILE=<new scratch folder>`.",
   "Stop and report to the hub before adding a dependency, vendoring code, patching `vendor/` or a GPUI platform crate, or editing outside the item's area.",
 ]
 

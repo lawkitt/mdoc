@@ -135,6 +135,9 @@ fn main() {
         }
         return;
     }
+    if let Some(profile) = mdoc_store::app_paths::dev_profile() {
+        eprintln!("mdoc: dev profile in {}", profile.display());
+    }
     let initial: Vec<_> = args.into_iter().skip(1).map(PathBuf::from).collect();
     // Windows: a second launch hands its paths to the running mdoc.
     let single_instance::Launch::Primary(later_launches) = single_instance::claim(&initial) else {
