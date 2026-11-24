@@ -22,6 +22,13 @@ pub fn ai_notice(examples: &[&str]) -> String {
 /// Copy for AI's text: `text` after the note naming its first two distinct
 /// `aliases` (in source order), or `text` alone when it has none.
 pub fn for_ai<'a>(text: &str, aliases: impl IntoIterator<Item = &'a str>) -> String {
+    note_for(aliases) + text
+}
+
+/// The note [`for_ai`] puts before a text with these `aliases`; empty when
+/// there are none. The AI connector hands it out apart from the text, so
+/// its labels and parts read the text alone.
+pub fn note_for<'a>(aliases: impl IntoIterator<Item = &'a str>) -> String {
     let mut examples = Vec::new();
     for alias in aliases {
         if !examples.contains(&alias) {
@@ -32,38 +39,15 @@ pub fn for_ai<'a>(text: &str, aliases: impl IntoIterator<Item = &'a str>) -> Str
         }
     }
     if examples.is_empty() {
-        text.to_owned()
+        String::new()
     } else {
-        ai_notice(&examples) + text
-    }
-}
-
-/// The note [`for_ai`] put before a text, and the text after it: `("",
-/// text)` when it has none. The AI connector's labels and parts read the
-/// text alone.
-pub fn split_note(for_ai: &str) -> (&str, &str) {
-    const OPENING: &str = "Note: names and other identifying details in this document";
-    const END: &str = "\n\n---\n\n";
-    match for_ai.find(END) {
-        Some(at) if for_ai.starts_with(OPENING) => for_ai.split_at(at + END.len()),
-        _ => ("", for_ai),
+        ai_notice(&examples)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn split_note_gives_back_the_note_and_the_text() {
-        let text = "# Lease\n\nPERSON_1 signed.\n\n---\n\nMore.";
-        let copied = for_ai(text, ["PERSON_1"]);
-        assert_eq!(
-            split_note(&copied),
-            (ai_notice(&["PERSON_1"]).as_str(), text)
-        );
-        assert_eq!(split_note(text), ("", text), "no note");
-    }
 
     #[test]
     fn the_note_names_the_first_two_distinct_aliases() {

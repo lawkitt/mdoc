@@ -4,7 +4,7 @@
 //! read, labels never from a stored title, the outline for long
 //! documents, and nothing shared or started by default.
 use mdoc_connector::{Connector, ConnectorError, LONG, PART_MAX, Read, Readiness, State};
-use mdoc_pii::{Category, handoff, restore::ExportedIdentity};
+use mdoc_pii::{Category, restore::ExportedIdentity};
 use mdoc_store::settings::AiConnectorConfig;
 use mdoc_vault::{DocumentOrigin, NewDocument, NewProject, SourceKind, Vault};
 use std::sync::Arc;
@@ -271,8 +271,8 @@ fn a_long_document_is_read_as_an_outline_and_parts() {
     let short = f.ready(Some(&project), "Letter", "PERSON_1 signed.");
     f.connector.share(&project).unwrap();
     let whole = f.vault.text_for_ai(&long).unwrap();
-    let (note, _) = handoff::split_note(&whole);
-    assert!(!note.is_empty());
+    let note = whole.strip_suffix(body.as_str()).unwrap();
+    assert!(note.starts_with("Note: "), "{note}");
 
     let Read::Outline {
         label,
@@ -401,4 +401,25 @@ fn sizes_count_the_markdown() {
         (row.size.chars, row.size.words)
     };
     assert_eq!((size(&letter), size(&draft)), ((19, 3), (9, 2)));
+}
+
+/// A document whose own text begins like the note keeps all of it: the
+/// note comes from the Vault apart from the text, never parsed out of it.
+#[test]
+fn a_document_that_begins_like_the_note_keeps_its_text() {
+    let f = fixture();
+    let project = f.project("Case");
+    let text = "Note: names and other identifying details in this document are                 listed below.
+
+---
+
+# Schedule
+
+No one is named.";
+    let id = f.ready(Some(&project), "Schedule", text);
+    f.connector.share(&project).unwrap();
+    assert_eq!(f.text(&id), text);
+    let listed = f.connector.list_documents().unwrap();
+    assert_eq!(listed[0].size.chars, text.chars().count());
+    assert_eq!(listed[0].label, "Schedule");
 }

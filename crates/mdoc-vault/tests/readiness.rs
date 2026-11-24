@@ -401,10 +401,17 @@ fn text_for_ai_in_refuses_a_document_of_another_project_or_unfiled() {
         save_ready(&vault, id);
     }
 
+    let read = vault.text_for_ai_in(&shared, &letter).unwrap();
+    let checked = read.checked.unwrap();
     assert_eq!(
-        vault.text_for_ai_in(&shared, &letter).unwrap(),
+        checked.note.clone() + &checked.markdown,
         vault.text_for_ai(&letter).unwrap()
     );
+    assert_eq!((read.chars, read.words), (16, 2));
+    let draft_here = document(&vault, Some(&shared), "Not reviewed yet.");
+    let read = vault.text_for_ai_in(&shared, &draft_here).unwrap();
+    assert_eq!(read.checked, Err(Readiness::NotReviewed));
+    assert_eq!((read.chars, read.words), (17, 3));
     for id in [&elsewhere, &unfiled, &draft] {
         assert!(vault.text_for_ai(id).is_ok() || id == &draft);
         assert!(

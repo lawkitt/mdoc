@@ -16,6 +16,9 @@ pub const LONG: usize = 60_000;
 pub const PART_MAX: usize = 60_000;
 /// The most headings an outline lists, across its parts.
 pub const MAX_OUTLINE_HEADINGS: usize = 500;
+/// The most headings a part's read lists beside its text, so a part of
+/// short headings stays within a host's limit for one result.
+pub const MAX_PART_HEADINGS: usize = 100;
 
 /// A heading of the text: its level (1-6) and its text, markers trimmed,
 /// at most 80 characters.
@@ -48,16 +51,19 @@ pub(crate) fn headings(text: &str) -> impl Iterator<Item = (usize, Heading)> + '
     let mut fence: Option<(u8, usize)> = None;
     lines(text).filter_map(move |(at, line)| {
         let line = line.trim_end_matches(['\n', '\r']);
-        if let Some(run) = fence_run(line) {
-            match fence {
-                None => fence = Some(run),
-                Some((mark, len)) if run.0 == mark && run.1 >= len => fence = None,
-                Some(_) => {}
+        let run = fence_run(line);
+        match (fence, run) {
+            // A closing fence: the same mark, at least as long, nothing after.
+            (Some((mark, len)), Some((close, run, true))) if close == mark && run >= len => {
+                fence = None;
+                return None;
             }
-            return None;
-        }
-        if fence.is_some() {
-            return None;
+            (Some(_), _) => return None,
+            (None, Some((mark, len, _))) => {
+                fence = Some((mark, len));
+                return None;
+            }
+            (None, None) => {}
         }
         let level = mdoc_markdown::lines::heading_level(line)?;
         let text = line[level as usize..].trim();
@@ -78,8 +84,9 @@ pub(crate) fn headings(text: &str) -> impl Iterator<Item = (usize, Heading)> + '
     })
 }
 
-/// A code fence's mark and length, if `line` opens or closes one.
-fn fence_run(line: &str) -> Option<(u8, usize)> {
+/// A code fence's mark and length, if `line` opens one, and whether
+/// nothing follows them, as a closing fence needs.
+fn fence_run(line: &str) -> Option<(u8, usize, bool)> {
     let trimmed = line.trim_start_matches(' ');
     if line.len() - trimmed.len() > 3 {
         return None;
@@ -89,7 +96,8 @@ fn fence_run(line: &str) -> Option<(u8, usize)> {
         return None;
     }
     let len = trimmed.bytes().take_while(|&b| b == mark).count();
-    (len >= 3).then_some((mark, len))
+    let bare = trimmed[len..].trim().is_empty();
+    (len >= 3).then_some((mark, len, bare))
 }
 
 /// Each line of `text` with its end of line, and where it starts.
@@ -248,6 +256,10 @@ mod tests {
         let text = "Intro\n```\n# code\n```\n# Real\n";
         let found: Vec<_> = headings(text).map(|(at, h)| (at, h.text)).collect();
         assert_eq!(found, [(text.find("# Real").unwrap(), "Real".to_string())]);
+        // Inside a fence, a fence line with text after it closes nothing.
+        let text = "```md\n``` text\n# Example\n````\n# After\n";
+        let found: Vec<_> = headings(text).map(|(_, h)| h.text).collect();
+        assert_eq!(found, ["After"]);
     }
 
     #[test]

@@ -30,16 +30,16 @@ mod label;
 mod parts;
 
 pub use mdoc_vault::Readiness;
-pub use parts::{Heading, LONG, MAX_OUTLINE_HEADINGS, PART_MAX, PartInfo};
+pub use parts::{Heading, LONG, MAX_OUTLINE_HEADINGS, MAX_PART_HEADINGS, PART_MAX, PartInfo};
 
 use mdoc_store::settings::AiConnectorConfig;
-use mdoc_vault::{DocumentSummary, Vault, VaultError};
+use mdoc_vault::{AiRead, AiText, DocumentSummary, Vault, VaultError};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// The service: the Vault and the AI project.
 pub struct Connector {
     vault: Arc<Vault>,
-    ai_project: Mutex<Option<String>>,
+    share: Mutex<Share>,
 }
 
 /// A document of the AI project, as `list_documents` lists it.
@@ -96,7 +96,7 @@ pub enum Read {
         parts: Vec<PartInfo>,
     },
     /// Part `part` of `of` of a long Ready document: the note, then the
-    /// part's text.
+    /// part's text, with at most [`MAX_PART_HEADINGS`] of its headings.
     Part {
         doc_id: String,
         label: String,
@@ -126,17 +126,33 @@ pub enum ConnectorError {
     /// There is no such part: the document has `of`.
     #[error("The document has {of} parts.")]
     NoSuchPart { of: usize },
+    /// The shared Project kept changing while the read ran; nothing read
+    /// is handed out.
+    #[error("The shared Project changed; ask again.")]
+    ShareChanged,
     #[error(transparent)]
     Vault(#[from] VaultError),
 }
 
-/// A listed document as read now: its summary, its checked text or why
-/// not, and its label.
+/// A listed document as read now: its summary, what the check found, and
+/// its label.
 struct Entry {
     summary: DocumentSummary,
-    read: Result<String, VaultError>,
+    read: Result<AiRead, VaultError>,
     label: String,
 }
+
+/// The AI project, and a count of every change to it.
+#[derive(Default)]
+struct Share {
+    project: Option<String>,
+    /// Bumped by every share and stop: a read whose share changed while it
+    /// ran is read again, so nothing read after a stop is handed out.
+    generation: u64,
+}
+
+/// How many times a read starts when the share keeps changing under it.
+const ATTEMPTS: usize = 3;
 
 impl Connector {
     /// The service, while "AI connector (preview)" is on; `None` while it
@@ -144,52 +160,55 @@ impl Connector {
     pub fn start(vault: Arc<Vault>, setting: &AiConnectorConfig) -> Option<Self> {
         setting.preview.then(|| Self {
             vault,
-            ai_project: Mutex::new(None),
+            share: Mutex::default(),
         })
     }
 
     /// The AI project's id; `None`: nothing is shared.
     pub fn ai_project(&self) -> Option<String> {
-        self.project_slot().clone()
+        self.share_slot().project.clone()
     }
 
     /// Share Project `project` with AI apps, in place of any other. It must
     /// open in the Vault.
     pub fn share(&self, project: &str) -> Result<(), ConnectorError> {
         let project = self.vault.project(project)?;
-        *self.project_slot() = Some(project.id);
+        let mut share = self.share_slot();
+        share.project = Some(project.id);
+        share.generation += 1;
         Ok(())
     }
 
     /// Share nothing.
     pub fn stop_sharing(&self) {
-        *self.project_slot() = None;
+        let mut share = self.share_slot();
+        share.project = None;
+        share.generation += 1;
     }
 
     /// `list_documents`: the AI project's documents not excluded from AI,
     /// oldest first, each checked now.
     pub fn list_documents(&self) -> Result<Vec<Listed>, ConnectorError> {
-        let project = self.shared()?;
-        let mut listed = Vec::new();
-        for entry in self.entries(&project, None)? {
-            let state = match &entry.read {
-                Ok(_) => State::Ready,
-                Err(VaultError::NotReady(readiness)) => State::NeedsReview(*readiness),
+        self.while_shared(|project| {
+            let mut listed = Vec::new();
+            for entry in self.entries(project, None)? {
                 // Moved out, excluded or damaged since the manifest said.
-                Err(_) => continue,
-            };
-            let size = match &entry.read {
-                Ok(text) => Size::of(mdoc_pii::handoff::split_note(text).1),
-                Err(_) => self.stored_size(&entry.summary.id),
-            };
-            listed.push(Listed {
-                doc_id: entry.summary.id,
-                label: entry.label,
-                size,
-                state,
-            });
-        }
-        Ok(listed)
+                let Ok(read) = entry.read else { continue };
+                listed.push(Listed {
+                    doc_id: entry.summary.id,
+                    label: entry.label,
+                    size: Size {
+                        chars: read.chars,
+                        words: read.words,
+                    },
+                    state: match read.checked {
+                        Ok(_) => State::Ready,
+                        Err(readiness) => State::NeedsReview(readiness),
+                    },
+                });
+            }
+            Ok(listed)
+        })
     }
 
     /// `get_document`: document `doc_id` of the AI project, checked now.
@@ -197,79 +216,112 @@ impl Connector {
     /// characters; `Some(n)` for part n, from 1. A short document has one
     /// part, its text.
     pub fn get_document(&self, doc_id: &str, part: Option<usize>) -> Result<Read, ConnectorError> {
-        let project = self.shared()?;
-        let entry = (self.entries(&project, Some(doc_id))?.pop())
+        self.while_shared(|project| self.read(project, doc_id, part))
+    }
+
+    fn read(
+        &self,
+        project: &str,
+        doc_id: &str,
+        part: Option<usize>,
+    ) -> Result<Read, ConnectorError> {
+        let entry = (self.entries(project, Some(doc_id))?.pop())
             .filter(|entry| entry.summary.id == doc_id)
             .ok_or(ConnectorError::NotShared)?;
         let doc_id = entry.summary.id;
         let label = entry.label;
-        let text = match entry.read {
+        let checked = match entry.read {
+            Ok(read) => read.checked,
+            Err(VaultError::NotFound { .. } | VaultError::ExcludedFromAi) => {
+                return Err(ConnectorError::NotShared);
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let AiText { note, markdown } = match checked {
             Ok(text) => text,
-            Err(VaultError::NotReady(readiness)) => {
+            Err(readiness) => {
                 return Ok(Read::NeedsReview {
                     doc_id,
                     label,
                     readiness,
                 });
             }
-            Err(VaultError::NotFound { .. } | VaultError::ExcludedFromAi) => {
-                return Err(ConnectorError::NotShared);
-            }
-            Err(error) => return Err(error.into()),
         };
-        let (note, body) = mdoc_pii::handoff::split_note(&text);
-        if body.chars().count() <= LONG {
+        if markdown.chars().count() <= LONG {
             return match part {
                 None | Some(1) => Ok(Read::Text {
                     doc_id,
                     label,
-                    text,
+                    text: note + &markdown,
                 }),
                 Some(_) => Err(ConnectorError::NoSuchPart { of: 1 }),
             };
         }
-        let parts = parts::parts(body);
+        let parts = parts::parts(&markdown);
         let of = parts.len();
         match part {
             None => Ok(Read::Outline {
                 doc_id,
                 label,
-                note: note.to_owned(),
-                size: Size::of(body),
+                size: Size::of(&markdown),
                 parts: parts::outline(&parts),
+                note,
             }),
             Some(n) if (1..=of).contains(&n) => {
                 let chosen = &parts[n - 1];
+                let headings = chosen.headings.iter().take(MAX_PART_HEADINGS);
                 Ok(Read::Part {
                     doc_id,
                     label,
                     part: n,
                     of,
-                    headings: chosen.headings.clone(),
-                    text: format!("{note}{}", chosen.text),
+                    headings: headings.cloned().collect(),
+                    text: note + chosen.text,
                 })
             }
             Some(_) => Err(ConnectorError::NoSuchPart { of }),
         }
     }
 
-    fn project_slot(&self) -> MutexGuard<'_, Option<String>> {
-        self.ai_project.lock().unwrap_or_else(|e| e.into_inner())
+    fn share_slot(&self) -> MutexGuard<'_, Share> {
+        self.share.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// The AI project, if it still opens; a deleted one is shared no more.
-    fn shared(&self) -> Result<String, ConnectorError> {
-        let Some(project) = self.ai_project() else {
-            return Err(ConnectorError::NothingShared);
-        };
-        match self.vault.project(&project) {
-            Ok(_) => Ok(project),
-            Err(VaultError::NotFound { .. }) => {
-                self.stop_sharing();
-                Err(ConnectorError::NothingShared)
+    /// `read` of the AI project, if it still opens, handed back only if the
+    /// share did not change while it ran, and read again if it did. A
+    /// deleted Project is shared no more, unless the share changed since.
+    fn while_shared<T>(
+        &self,
+        read: impl Fn(&str) -> Result<T, ConnectorError>,
+    ) -> Result<T, ConnectorError> {
+        for _ in 0..ATTEMPTS {
+            let (project, generation) = {
+                let share = self.share_slot();
+                (share.project.clone(), share.generation)
+            };
+            let Some(project) = project else {
+                return Err(ConnectorError::NothingShared);
+            };
+            let result = match self.vault.project(&project) {
+                Ok(_) => read(&project),
+                Err(VaultError::NotFound { .. }) => {
+                    let mut share = self.share_slot();
+                    if share.generation == generation {
+                        share.project = None;
+                        share.generation += 1;
+                        return Err(ConnectorError::NothingShared);
+                    }
+                    continue;
+                }
+                Err(error) => Err(error.into()),
+            };
+            #[cfg(test)]
+            tests::after_read(self);
+            if self.share_slot().generation == generation {
+                return result;
             }
-            Err(error) => Err(error.into()),
         }
+        Err(ConnectorError::ShareChanged)
     }
 
     /// The AI project's listed documents in label order, each read through
@@ -291,7 +343,8 @@ impl Connector {
             .map(|(index, summary)| {
                 let read = self.checked(project, &summary.id);
                 let heading = (read.as_ref().ok())
-                    .and_then(|text| label::heading(mdoc_pii::handoff::split_note(text).1));
+                    .and_then(|read| read.checked.as_ref().ok())
+                    .and_then(|text| label::heading(&text.markdown));
                 let label = labels.next(index + 1, heading);
                 Entry {
                     summary,
@@ -304,24 +357,104 @@ impl Connector {
 
     /// The one check every read goes through: the Vault's text for AI of
     /// a document of `project`, as it is now.
-    fn checked(&self, project: &str, id: &str) -> Result<String, VaultError> {
+    fn checked(&self, project: &str, id: &str) -> Result<AiRead, VaultError> {
         #[cfg(any(test, feature = "exits-suite"))]
         if exits::taken_out() {
             // The exits suite took the check out: the stored text, unchecked.
             let document = self.vault.document(id)?;
-            return Ok(mdoc_pii::handoff::for_ai(
-                &document.markdown,
-                std::iter::empty(),
-            ));
+            let size = Size::of(&document.markdown);
+            return Ok(AiRead {
+                checked: Ok(AiText {
+                    note: String::new(),
+                    markdown: document.markdown,
+                }),
+                chars: size.chars,
+                words: size.words,
+            });
         }
         self.vault.text_for_ai_in(project, id)
     }
+}
 
-    /// The size of a document that is not Ready, from its stored Markdown;
-    /// nothing of it leaves but the counts.
-    fn stored_size(&self, id: &str) -> Size {
-        (self.vault.document(id))
-            .map(|document| Size::of(&document.markdown))
-            .unwrap_or_default()
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mdoc_vault::{DocumentOrigin, NewDocument, NewProject, SourceKind};
+    use std::cell::RefCell;
+
+    /// What the user does while a read is under way.
+    type Meanwhile = Box<dyn FnOnce(&Connector)>;
+
+    thread_local! {
+        /// Run once after a read, before the share is checked again: what
+        /// the user does while a read is under way.
+        static MEANWHILE: RefCell<Option<Meanwhile>> = RefCell::new(None);
+    }
+
+    pub(super) fn after_read(connector: &Connector) {
+        if let Some(meanwhile) = MEANWHILE.with(|slot| slot.borrow_mut().take()) {
+            meanwhile(connector);
+        }
+    }
+
+    fn meanwhile(then: impl FnOnce(&Connector) + 'static) {
+        MEANWHILE.with(|slot| *slot.borrow_mut() = Some(Box::new(then)));
+    }
+
+    /// A connector sharing a Project with one Ready document, another
+    /// Project's id, and the document's id.
+    fn shared() -> (tempfile::TempDir, Connector, String, String) {
+        let temp = tempfile::tempdir().unwrap();
+        let vault = Arc::new(Vault::open(temp.path().join("vault"), &[7; 32]).unwrap());
+        let project = |name: &str| {
+            let new = NewProject {
+                name: name.into(),
+                ..NewProject::default()
+            };
+            vault.create_project(new).unwrap().id
+        };
+        let (case, other) = (project("Case"), project("Other"));
+        let new = NewDocument {
+            project: Some(case.clone()),
+            title: "Letter".into(),
+            source_kind: SourceKind::Text,
+            origin: DocumentOrigin::Ordinary,
+            markdown: "Signed.".into(),
+        };
+        let letter = vault.create_document(new).unwrap().id;
+        (vault.update_document(&letter, |d| d.set_ready(true))).unwrap();
+        let connector = Connector::start(vault, &AiConnectorConfig { preview: true }).unwrap();
+        connector.share(&case).unwrap();
+        (temp, connector, other, letter)
+    }
+
+    /// Stop sharing while a read is under way: what it read is not handed
+    /// out.
+    #[test]
+    fn a_read_under_way_when_sharing_stops_hands_out_nothing() {
+        let (_temp, connector, _, letter) = shared();
+        assert!(connector.get_document(&letter, None).is_ok());
+        meanwhile(Connector::stop_sharing);
+        assert!(matches!(
+            connector.get_document(&letter, None),
+            Err(ConnectorError::NothingShared)
+        ));
+    }
+
+    /// Share another Project while a read is under way: the read starts
+    /// again against the new share.
+    #[test]
+    fn a_read_under_way_when_the_share_changes_reads_the_new_share() {
+        let (_temp, connector, other, letter) = shared();
+        meanwhile(move |connector| connector.share(&other).unwrap());
+        assert!(matches!(
+            connector.get_document(&letter, None),
+            Err(ConnectorError::NotShared)
+        ));
+        meanwhile(Connector::stop_sharing);
+        assert!(matches!(
+            connector.list_documents(),
+            Err(ConnectorError::NothingShared)
+        ));
     }
 }

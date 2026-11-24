@@ -34,6 +34,25 @@ impl Readiness {
     }
 }
 
+/// What [`Vault::text_for_ai_in`] read of a Document.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AiRead {
+    /// Its text for AI when Ready now, else why not.
+    pub checked: Result<AiText, Readiness>,
+    /// Its Markdown's length in characters, and its words.
+    pub chars: usize,
+    pub words: usize,
+}
+
+/// A Ready Document's text for AI, the note apart:
+/// [`Vault::text_for_ai`] is `note` then `markdown`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AiText {
+    /// The note naming its first aliases; empty when it names none.
+    pub note: String,
+    pub markdown: String,
+}
+
 /// The fingerprint of a text saved while Ready: SHA-256, hex.
 fn fingerprint(text: &str) -> String {
     sha2::Sha256::digest(text.as_bytes())
@@ -98,14 +117,21 @@ impl Vault {
     /// [`VaultError::ExcludedFromAi`], or [`VaultError::NotReady`] unless
     /// [`Self::readiness`] finds it Ready.
     pub fn text_for_ai(&self, id: &str) -> Result<String, VaultError> {
-        self.checked_for_ai(self.document(id)?)
+        match self.checked_for_ai(self.document(id)?)? {
+            Ok(checked) => Ok(checked.note + &checked.markdown),
+            Err(not) => Err(VaultError::NotReady(not)),
+        }
     }
 
-    /// [`Self::text_for_ai`] of a Document of `project` only, from the
-    /// same read of its record: the AI connector's reads (ADR 0126). A
+    /// The AI connector's read (ADR 0126): [`Self::text_for_ai`] of a
+    /// Document of `project` only, with the note and the text apart. A
     /// Document elsewhere, in another Project or Unfiled, is
-    /// [`VaultError::NotFound`] before anything of its readiness is told.
-    pub fn text_for_ai_in(&self, project: &str, id: &str) -> Result<String, VaultError> {
+    /// [`VaultError::NotFound`] before anything of it is told; one excluded
+    /// from AI is [`VaultError::ExcludedFromAi`]. The Document and the
+    /// names it is checked against are read under the write lock, so they
+    /// are one moment's, and its counts come from the record checked.
+    pub fn text_for_ai_in(&self, project: &str, id: &str) -> Result<AiRead, VaultError> {
+        let _lock = self.write_lock()?;
         let document = self.document(id)?;
         if document.project.as_deref() != Some(project) {
             return Err(VaultError::NotFound {
@@ -113,25 +139,34 @@ impl Vault {
                 id: id.to_owned(),
             });
         }
-        self.checked_for_ai(document)
+        let chars = document.markdown.chars().count();
+        let words = document.markdown.split_whitespace().count();
+        Ok(AiRead {
+            checked: self.checked_for_ai(document)?,
+            chars,
+            words,
+        })
     }
 
     /// The one outbound check: exclusion, then readiness against the names
     /// `document`'s Project holds now.
-    fn checked_for_ai(&self, document: Document) -> Result<String, VaultError> {
+    fn checked_for_ai(&self, document: Document) -> Result<Result<AiText, Readiness>, VaultError> {
         if document.exclude_from_ai {
             return Err(VaultError::ExcludedFromAi);
         }
         let mapping = self.mapping_of(&document)?;
         match document.readiness(&mapping) {
             Readiness::Ready => {}
-            not => return Err(VaultError::NotReady(not)),
+            not => return Ok(Err(not)),
         }
-        let text = document.markdown.as_str();
         // The aliases a reopened document relinks as applied, as the
         // editor's Copy for AI names them.
         let names = RestoreMap::new(mapping.exported());
-        Ok(mdoc_pii::handoff::for_ai(text, names.exact_aliases(text)))
+        let note = mdoc_pii::handoff::note_for(names.exact_aliases(&document.markdown));
+        Ok(Ok(AiText {
+            note,
+            markdown: document.markdown,
+        }))
     }
 
     /// The mapping `document`'s names live in: its Project's as stored now,

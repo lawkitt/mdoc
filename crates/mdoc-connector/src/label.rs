@@ -10,8 +10,9 @@
 //!   reviewed, so nothing of it names it.
 //! - N is its place among the AI project's listed documents, oldest first,
 //!   from 1.
-//! - A label equal to an earlier one gets " (2)", " (3)" in the same order.
-use std::collections::HashMap;
+//! - A label equal to one issued before it gets " (2)", " (3)" and on,
+//!   until no two labels are the same.
+use std::collections::HashSet;
 
 /// The longest label heading, in characters.
 pub(crate) const MAX_CHARS: usize = 80;
@@ -38,23 +39,25 @@ pub(crate) fn cut(text: &str, max: usize) -> String {
     format!("{kept}…")
 }
 
-/// Labels handed out so far, for numbering their repeats.
+/// Labels handed out so far, so that no two are the same.
 #[derive(Default)]
 pub(crate) struct Labels {
-    seen: HashMap<String, usize>,
+    issued: HashSet<String>,
 }
 
 impl Labels {
     /// The label of the `n`th listed document, with `heading` if it is Ready
-    /// and has one.
+    /// and has one: " (2)", " (3)" and on until it is one not issued yet.
     pub(crate) fn next(&mut self, n: usize, heading: Option<String>) -> String {
-        let label = heading.unwrap_or_else(|| format!("Document {n}"));
-        let seen = self.seen.entry(label.clone()).or_default();
-        *seen += 1;
-        match *seen {
-            1 => label,
-            repeat => format!("{label} ({repeat})"),
+        let base = heading.unwrap_or_else(|| format!("Document {n}"));
+        let mut label = base.clone();
+        let mut repeat = 1;
+        while self.issued.contains(&label) {
+            repeat += 1;
+            label = format!("{base} ({repeat})");
         }
+        self.issued.insert(label.clone());
+        label
     }
 }
 
@@ -91,5 +94,8 @@ mod tests {
         assert_eq!(labels.next(2, None), "Document 2");
         assert_eq!(labels.next(3, Some("Lease".into())), "Lease (2)");
         assert_eq!(labels.next(4, Some("Lease".into())), "Lease (3)");
+        // A heading that reads like a numbered repeat is numbered past it.
+        assert_eq!(labels.next(5, Some("Lease (2)".into())), "Lease (2) (2)");
+        assert_eq!(labels.next(6, Some("Document 2".into())), "Document 2 (2)");
     }
 }
