@@ -161,7 +161,10 @@ final class PanesRowUITests: XCTestCase {
 
     @MainActor
     private func dismissMenu(_ app: XCUIApplication) {
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)).tap()
+        // Beside the menu, which opens under the title and reaches the
+        // bottom of the screen as an empty list below its last item: a tap
+        // there keeps it open.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.6)).tap()
         XCTAssertTrue(app.buttons["Find in document"].firstMatch.waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Rename…"].firstMatch.waitForNonExistence(timeout: 5))
     }
