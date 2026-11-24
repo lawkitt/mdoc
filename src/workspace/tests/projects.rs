@@ -1114,9 +1114,15 @@ fn a_delete_stops_when_a_move_changed_the_projects_documents(cx: &mut TestAppCon
     let id = cx.update(|_, cx| tabs.read(cx).tab_document(second, cx).unwrap());
     // Confirmed with one document; a move queued first brings a second.
     tabs.update_in(cx, |tabs, window, cx| {
+        let asked = tabs.project_members(&project);
         tabs.move_tab(second, Some(project.clone()), window, cx);
-        tabs.forget_project(&project, mdoc_vault::ProjectDocuments::Delete, window, cx);
+        let delete = mdoc_vault::ProjectDocuments::Delete;
+        tabs.forget_project(&project, delete, asked, window, cx);
     });
+    cx.run_until_parked();
+    // Asked again, about both.
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
     let vault = vault(&tabs, cx);
     assert!(vault.project(&project).is_ok(), "nothing was deleted");
@@ -1129,6 +1135,55 @@ fn a_delete_stops_when_a_move_changed_the_projects_documents(cx: &mut TestAppCon
             "{notice}"
         );
     });
+}
+
+/// Review of #1145 (P1-2): a document imported into the Project while
+/// Delete Project's question is up is never deleted unasked: nothing
+/// goes, and the question comes again for the documents it holds now.
+#[gpui::test]
+fn delete_documents_never_takes_a_document_imported_while_it_asked(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova signed.",
+        &[("Anna Petrova", Person)],
+    );
+    let project = new_project(&tabs, cx, first);
+    let vault = vault(&tabs, cx);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.delete_project(project.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    // A background import into the Project ends while the question shows.
+    let late = vault
+        .create_document(mdoc_vault::NewDocument {
+            project: Some(project.clone()),
+            title: "Late".into(),
+            source_kind: mdoc_vault::SourceKind::Text,
+            origin: mdoc_vault::DocumentOrigin::Ordinary,
+            markdown: "Imported meanwhile.".into(),
+        })
+        .unwrap();
+    cx.simulate_prompt_answer("Delete Documents");
+    cx.run_until_parked();
+    assert!(vault.project(&project).is_ok(), "nothing was deleted");
+    assert!(vault.document(&late.id).is_ok(), "the late import stays");
+    cx.update(|_, cx| {
+        assert!(tabs.read(cx).tabs.contains(first));
+        let notice = tabs.read(cx).notices.message().unwrap();
+        assert!(notice.contains("Choose again"), "{notice}");
+    });
+    // Asked again, now about both: they go.
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Delete Documents");
+    cx.run_until_parked();
+    assert!(vault.project(&project).is_err());
+    assert!(vault.document(&late.id).is_err());
 }
 
 #[gpui::test]

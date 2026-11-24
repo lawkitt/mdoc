@@ -1076,8 +1076,9 @@ impl Workspace {
         let Some(name) = self.projects.project(&project_id).map(|p| p.name.clone()) else {
             return;
         };
-        let count =
-            (self.vault.vault()).map_or(0, |vault| vault.documents_in(Some(&project_id)).len());
+        // What the question asks about: only these may go with it.
+        let members = self.project_members(&project_id);
+        let count = members.len();
         let answer = if count == 0 {
             window.prompt(
                 PromptLevel::Warning,
@@ -1119,27 +1120,36 @@ impl Workspace {
                 _ => return,
             };
             let _ = this.update_in(cx, |this, window, cx| {
-                this.forget_project(&project_id, documents, window, cx)
+                this.forget_project(&project_id, documents, members, window, cx)
             });
         })
         .detach();
     }
 
+    /// Project `project_id`'s documents as the Vault lists them now.
+    pub(super) fn project_members(&self, project_id: &str) -> Vec<VaultId> {
+        let Some(vault) = self.vault.vault() else {
+            return Vec::new();
+        };
+        (vault.documents_in(Some(project_id)).into_iter())
+            .filter_map(|summary| VaultId::parse(&summary.id))
+            .collect()
+    }
+
     /// Delete Project `project_id` now, its documents going as `documents`
-    /// says. Its open members load again as Unfiled, or close unwritten.
+    /// says, while they are still `members`, the ones the user was asked
+    /// about. Its open members load again as Unfiled, or close unwritten.
     pub(super) fn forget_project(
         &mut self,
         project_id: &str,
         documents: ProjectDocuments,
+        members: Vec<VaultId>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(vault) = self.vault.vault().cloned() else {
+        if self.vault.vault().is_none() {
             return;
-        };
-        let members: Vec<VaultId> = (vault.documents_in(Some(project_id)).into_iter())
-            .filter_map(|summary| VaultId::parse(&summary.id))
-            .collect();
+        }
         // Their last text is written first; then nothing writes them.
         for member in &members {
             if let Some(tab) = self.find_document(&DocumentId::Vault(member.clone()), None, cx) {
@@ -1174,26 +1184,25 @@ impl Workspace {
         let Some(vault) = self.vault.vault().cloned() else {
             return;
         };
-        // Only what was confirmed is deleted: a move since that changed the
-        // Project's documents stops it.
-        let mut now: Vec<String> = (vault.documents_in(Some(&project_id)).into_iter())
-            .map(|summary| summary.id)
-            .collect();
-        let mut confirmed: Vec<String> = members.iter().map(|m| m.as_str().to_string()).collect();
-        now.sort();
-        confirmed.sort();
-        if now != confirmed {
+        // Only what was confirmed is deleted: the Vault compares the
+        // Project's documents with the ones asked about under its write
+        // lock, so an import or a move since stops it.
+        let confirmed: Vec<String> = members.iter().map(|m| m.as_str().to_string()).collect();
+        let result = vault.delete_project_with(&project_id, documents, &confirmed);
+        if let Ok(false) = result {
             for member in &members {
                 self.moving.remove(member);
             }
             self.notices.post(
                 "The Project's documents changed before it was deleted, so nothing was \
-                 deleted. Delete it again to choose for them as they are now.",
+                 deleted. Choose again for them as they are now.",
             );
+            // Asked again, about the documents it holds now.
+            self.delete_project(project_id, window, cx);
             cx.notify();
             return;
         }
-        let result = vault.delete_project(&project_id, documents);
+        let result = result.map(|_| ());
         let tabs: Vec<(u64, VaultId)> = (members.iter())
             .filter_map(|member| {
                 let tab = self.find_document(&DocumentId::Vault(member.clone()), None, cx)?;
