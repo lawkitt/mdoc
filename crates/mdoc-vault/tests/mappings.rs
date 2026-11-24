@@ -1405,7 +1405,7 @@ fn an_unfiled_delete_stops_when_a_document_moved_into_a_project() {
     let vault = folder.open();
     let first = new_document(&vault, None, "First", "Ann wrote.");
     let second = new_document(&vault, None, "Second", "Ben wrote.");
-    let project = new_project(&vault, "Case", &[]);
+    let project = new_project(&vault, "Lease", &[]);
     let asked = vec![first.clone(), second.clone()];
     // Moved in while the question was up, as a folder sheet finishing would.
     vault.move_document(&second, Some(&project.id)).unwrap();

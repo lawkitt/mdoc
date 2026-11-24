@@ -1523,7 +1523,7 @@ fn an_unfiled_delete_never_takes_a_document_moved_into_a_project_while_it_asked(
     let vault = vault(&tabs, cx);
     let project = vault
         .create_project(mdoc_vault::NewProject {
-            name: "Case".into(),
+            name: "Lease".into(),
             colour: None,
             pinned: false,
         })
