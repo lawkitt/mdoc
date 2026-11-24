@@ -1,5 +1,6 @@
 package io.github.lawkitt.mdoc.document
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.lawkitt.mdoc.core.AppError
@@ -99,8 +100,12 @@ class DocumentViewModel(
     private val jobs: Jobs,
     /** Above the detector floor; below it there is no Find names. */
     val findsNames: Boolean,
+    /** Keeps Ask AI's wait when Android ends mdoc while the AI app is in front. */
+    private val savedState: SavedStateHandle = SavedStateHandle(),
 ) : ViewModel() {
-    private val mutable = MutableStateFlow(DocumentState(session.snapshot()))
+    private val mutable = MutableStateFlow(
+        DocumentState(session.snapshot(), replyOffer = savedState.get<String>(REPLY_OFFER)?.let(ReplyOffer::valueOf)),
+    )
     val state: StateFlow<DocumentState> = mutable.asStateFlow()
 
     val running: StateFlow<RunningJob?> = jobs.current
@@ -239,7 +244,8 @@ class DocumentViewModel(
         val restored = session.restoreReply(reply)
         // The answer Ask AI waited for is in, however it came; a restore
         // that fails keeps the banner.
-        mutable.update { it.copy(snapshot = restored, showsReplySheet = false, showsReply = true, replyOffer = null) }
+        mutable.update { it.copy(snapshot = restored, showsReplySheet = false, showsReply = true) }
+        viewModelScope.launch { offer { null } }
     }
 
     // Ask AI (#1164 decision 11, Milestone 2 item 20)
@@ -249,31 +255,30 @@ class DocumentViewModel(
      * wait for the answer armed; null, with why shown, until Ready, and
      * then nothing waits.
      */
-    suspend fun askAi(): HandOff? = handOff()?.also { mutable.update { it.copy(replyOffer = AskAiWait.asked()) } }
+    suspend fun askAi(): HandOff? = handOff()?.also { offer { AskAiWait.asked() } }
 
     /** Ask AI's chooser started an app; `inFront`: mdoc is resumed. */
-    fun askAiChosen(inFront: Boolean) {
-        mutable.update { it.copy(replyOffer = AskAiWait.chosen(it.replyOffer, inFront)) }
-        if (inFront) offeredReply()
-    }
+    fun askAiChosen(inFront: Boolean) = offer { AskAiWait.chosen(it, inFront) }
 
     /** mdoc is in front again: back from the AI app, the banner shows. */
-    fun askAiReturned() {
-        mutable.update { it.copy(replyOffer = AskAiWait.resumed(it.replyOffer)) }
-        offeredReply()
-    }
+    fun askAiReturned() = offer(AskAiWait::resumed)
 
     /**
-     * The banner shows over the bar, so an open candidate's sheet or
-     * Replace… gives way to it: the user is back for the reply.
+     * Ask AI's wait moves on, and is kept for a restart. When the banner
+     * comes up, an open candidate's sheet or Replace… gives way to it: the
+     * user is back for the reply.
      */
-    private fun offeredReply() {
-        if (!mutable.value.showsReplyBanner) return
-        mutable.update { it.copy(reviewing = null, manual = null) }
+    private fun offer(next: (ReplyOffer?) -> ReplyOffer?) {
+        mutable.update { state ->
+            val offer = next(state.replyOffer)
+            val shown = offer == ReplyOffer.Offered && state.replyOffer != ReplyOffer.Offered
+            if (shown) state.copy(replyOffer = offer, reviewing = null, manual = null) else state.copy(replyOffer = offer)
+        }
+        savedState[REPLY_OFFER] = mutable.value.replyOffer?.name
     }
 
-    /** × on the banner: Paste in the bar stays. */
-    fun dismissReplyBanner() = mutable.update { it.copy(replyOffer = null) }
+    /** × on the banner, or the preview turned off: nothing waits; Paste in the bar stays. */
+    fun dismissReplyBanner() = offer { null }
 
     fun showReply(show: Boolean) = mutable.update { it.copy(showsReply = show) }
 
@@ -395,6 +400,9 @@ class DocumentViewModel(
     }
 
     private companion object {
+        /** Ask AI's wait in the saved state: a [ReplyOffer]'s name. */
+        const val REPLY_OFFER = "replyOffer"
+
         /** The next proposal after `current` in reading order, wrapping round. */
         fun nextProposal(candidates: List<Candidate>, current: CandidateId): CandidateId? {
             val proposals = candidates.filter { it.state == MentionState.Proposed }.sortedBy { it.range.start }

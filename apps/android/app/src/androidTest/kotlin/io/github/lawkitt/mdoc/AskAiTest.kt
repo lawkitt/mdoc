@@ -76,9 +76,13 @@ class AskAiTest {
 
     private val choosers = Choosers()
 
+    /** The install's own choice, put back afterwards. */
+    private var preview = false
+
     @Before
     fun setUp() {
         instrumentation.uiAutomation.grantRuntimePermission(app.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
+        preview = app.preferences.aiConnectorPreview.value
         app.preferences.setAiConnectorPreview(false)
         instrumentation.addMonitor(choosers)
     }
@@ -86,7 +90,17 @@ class AskAiTest {
     @After
     fun tearDown() {
         instrumentation.removeMonitor(choosers)
-        app.preferences.setAiConnectorPreview(false)
+        app.preferences.setAiConnectorPreview(preview)
+    }
+
+    /** mdoc behind another app and back, as a trip to the AI app; `meanwhile` runs while it is away. */
+    private fun awayAndBack(meanwhile: () -> Unit = {}) {
+        val scenario = compose.activityRule.scenario
+        scenario.moveToState(Lifecycle.State.CREATED)
+        meanwhile()
+        Thread.sleep(1_000)
+        scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.waitForShown(hasText("Copy") and hasClickAction())
     }
 
     /** A letter titled by its client's name, Maya Bennett replaced: Ready. */
@@ -181,27 +195,49 @@ class AskAiTest {
         val chooser = askAi()
         assertFalse("not while the chooser is up", compose.exists(hasTestTag("reply-banner")))
 
-        // The AI app in front: mdoc stops, and the chooser says which app it started.
-        val scenario = compose.activityRule.scenario
-        scenario.moveToState(Lifecycle.State.CREATED)
+        // The AI app in front: mdoc stops, the chooser says which app it
+        // started, and the answer is copied there, before mdoc is back.
         val sender = checkNotNull(IntentCompat.getParcelableExtra(chooser, Intent.EXTRA_CHOSEN_COMPONENT_INTENT_SENDER, IntentSender::class.java))
-        sender.sendIntent(app, 0, Intent().putExtra(Intent.EXTRA_CHOSEN_COMPONENT, ComponentName("com.example.ai", "com.example.ai.Share") as Parcelable), null, null)
-        Thread.sleep(1_000)
-        scenario.moveToState(Lifecycle.State.RESUMED)
+        awayAndBack {
+            sender.sendIntent(app, 0, Intent().putExtra(Intent.EXTRA_CHOSEN_COMPONENT, ComponentName("com.example.ai", "com.example.ai.Share") as Parcelable), null, null)
+            instrumentation.runOnMainSync {
+                app.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("AI", "Dear PERSON_1, the claim is filed."))
+            }
+        }
 
         compose.waitForShown(hasTestTag("reply-banner"))
         assertTrue(shows("Paste reply?", substring = true))
         awaitWindowFocus()
-        instrumentation.runOnMainSync {
-            app.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("AI", "Dear PERSON_1, the claim is filed."))
-        }
-        // Paste turns on once the clipboard holds text.
+        // Paste is on for the answer copied while mdoc was away.
         val paste = hasText("Paste") and isEnabled() and hasAnyAncestor(hasTestTag("reply-banner-paste"))
         compose.waitForShown(paste)
         compose.shown(paste).performClick()
         compose.waitForText("Dear Maya Bennett, the claim is filed.", substring = true)
         compose.waitUntil(5_000) { !compose.exists(hasTestTag("reply-banner")) }
         assertEquals("Dear Maya Bennett, the claim is filed.", letter.snapshot().reply?.restored?.text)
+    }
+
+    /**
+     * Done when: no banner after Ask AI's chooser closed without a choice,
+     * nor after Share from ⋯, whose chooser reports nothing to Ask AI.
+     */
+    @Test
+    fun noBannerAfterACancelOrAPlainShare() {
+        app.preferences.setAiConnectorPreview(true)
+        val letter = letter()
+        open(letter)
+        askAi()
+        awayAndBack()
+        assertFalse("cancelled: nothing offered", compose.exists(hasTestTag("reply-banner")))
+
+        compose.shown(hasContentDescription("More options")).performClick()
+        compose.waitForShown(hasTestTag("menu-share"))
+        compose.shown(hasTestTag("menu-share")).performClick()
+        compose.waitUntil(10_000) { choosers.started.size == 2 }
+        val share = choosers.started.last()
+        assertEquals(null, IntentCompat.getParcelableExtra(share, Intent.EXTRA_CHOSEN_COMPONENT_INTENT_SENDER, IntentSender::class.java))
+        awayAndBack()
+        assertFalse("a plain Share offers nothing", compose.exists(hasTestTag("reply-banner")))
     }
 
     private fun shows(text: String, substring: Boolean) = compose.exists(hasText(text, substring) and onScreen)

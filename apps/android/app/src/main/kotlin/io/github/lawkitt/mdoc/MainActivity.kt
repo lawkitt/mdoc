@@ -48,6 +48,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.lawkitt.mdoc.core.DocumentId
@@ -332,7 +333,9 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                 val model: DocumentViewModel = viewModel(
                     key = current,
                     factory = viewModelFactory {
-                        initializer { DocumentViewModel(documents, session, app.jobs, app.core.models.snapshot().detector != null) }
+                        initializer {
+                            DocumentViewModel(documents, session, app.jobs, app.core.models.snapshot().detector != null, createSavedStateHandle())
+                        }
                     },
                 )
                 LaunchedEffect(current, readAfterOpen) {

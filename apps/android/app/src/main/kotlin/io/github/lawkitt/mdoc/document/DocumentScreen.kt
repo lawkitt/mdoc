@@ -191,6 +191,8 @@ fun DocumentScreen(
         val receiver = registerAskAiChosen(app) { model.askAiChosen(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
         onDispose { app.unregisterReceiver(receiver) }
     }
+    // The preview turned off: nothing of Ask AI waits on.
+    LaunchedEffect(aiConnector) { if (!aiConnector && state.replyOffer != null) model.dismissReplyBanner() }
     // The banner shows over the text: on a phone the Original gives way.
     LaunchedEffect(state.showsReplyBanner) { if (state.showsReplyBanner) showsOriginal = false }
 
