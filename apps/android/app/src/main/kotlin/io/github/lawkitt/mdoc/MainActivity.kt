@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -350,6 +351,12 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                     projects = state.projects,
                     onMove = { move(DocumentId(current), it) },
                     moves = state.moves,
+                    // Promote to Document's new document opens in this one's
+                    // place, unless another screen took it meanwhile.
+                    onOpenDocument = {
+                        home.refresh()
+                        if (open == current && !settings) openDocument(it)
+                    },
                 )
             }
         }
@@ -521,6 +528,8 @@ private fun Page(
             if (project == null) {
                 Box(Modifier.fillMaxSize())
             } else {
+                // Cancelled when the page goes: a Promote that ends after it opens nothing.
+                val scope = key(project.id) { rememberCoroutineScope() }
                 ProjectPage(
                     state = state,
                     project = project,
@@ -533,6 +542,7 @@ private fun Page(
                     onRemoveListed = { wording, always -> home.removeListed(project.id, wording, always) },
                     onShowReply = home::showSavedReply,
                     onHideReply = home::hideSavedReply,
+                    onPromote = { reply -> scope.launch(Dispatchers.Main) { home.promote(reply)?.let(onOpen) } },
                     onMenu = onMenu,
                     snackbar = snackbar,
                     onMove = onMove,

@@ -298,6 +298,16 @@ data class ReplySnapshot(
 
 data class HandOff(val text: String, val fileName: String)
 
+/**
+ * The saved AI reply a promoted document came from (#1091 Decision 3):
+ * still saved, for the way back to it, or deleted since.
+ */
+sealed interface PromotedFrom {
+    data class Reply(val reply: SavedReplyRow) : PromotedFrom
+
+    data object DeletedReply : PromotedFrom
+}
+
 data class DocumentSnapshot(
     val id: DocumentId,
     val title: String,
@@ -321,6 +331,8 @@ data class DocumentSnapshot(
      * before is refused, as its ranges were of the old text.
      */
     val opened: Int = 0,
+    /** Promoted from a saved AI reply: the way back to it. */
+    val promotedFrom: PromotedFrom? = null,
 ) {
     val pendingCount: Int get() = candidates.count { it.state == MentionState.Proposed }
     val replacedCount: Int get() = candidates.count { it.state == MentionState.Replaced }

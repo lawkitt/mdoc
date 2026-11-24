@@ -43,6 +43,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -435,6 +436,25 @@ class HomeViewModel(
     }
 
     fun hideSavedReply() = mutable.update { it.copy(shownReply = null) }
+
+    /**
+     * Promote to Document from a Project's Replies (#1091 Decision 3): the
+     * sheet closes, and the new document, in the reply's place, is
+     * returned for the caller to open; the reply stays. Null when it failed,
+     * which the failure's dialog says. It is made and listed even when the
+     * caller's screen goes meanwhile; that caller is then cancelled, and
+     * opens nothing.
+     */
+    suspend fun promote(reply: SavedReplyRow): DocumentId? {
+        hideSavedReply()
+        return withContext(NonCancellable) {
+            val promoted = withContext(Dispatchers.IO) { runCatching { core().documents.promoteReply(reply.id) } }
+                .onFailure { error -> mutable.update { it.copy(failed = error.message ?: error.toString()) } }
+                .getOrNull()
+            refreshNow()
+            promoted
+        }
+    }
 
     // Repeated imports (#1091 Decision 7)
 

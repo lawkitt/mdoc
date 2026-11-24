@@ -241,6 +241,38 @@ class Documents(
     /** A saved reply restored with the people it named when saved, as they are now. */
     fun restoreSavedReply(reply: String): RestoreResult = restoreResult(core { vault.restoreReply(reply) })
 
+    /** Saved reply `reply` as lists show it; `null` once it is deleted. */
+    fun replyInfo(reply: String): SavedReplyRow? =
+        runCatching { vault.replyInfo(reply) }.getOrNull()?.let { SavedReplyRow(it.id, it.title, it.created.toLong() * 1000) }
+
+    /**
+     * Promote to Document (#1091 Decision 3): a new document in saved reply
+     * `reply`'s place (its Project, or Unfiled), whose text is the reply
+     * restored as it restores now, real names back; not reviewed, so its
+     * names are proposed again. The reply stays. The reply restores with
+     * the names as the taps left them: changes not saved yet go first.
+     * Returns the id this run lists the new document by. Under the Project
+     * changes' lock, as a move is: a Project's delete either counts the new
+     * document or ends before it is made.
+     */
+    fun promoteReply(reply: String): DocumentId = synchronized(projectChanges) {
+        // Notes that fail to save stay pending, and nothing the reply
+        // restores with depends on them: the promote goes on.
+        saveNotes()
+        val promoted = core { vault.promoteReply(reply) }
+        synchronized(this) { ids[promoted.id] ?: DocumentId(promoted.id) }
+    }
+
+    /**
+     * Every open session's notes not saved yet are saved; a failure stops
+     * none of the others, and leaves its notes pending. A session with none
+     * is never waited for.
+     */
+    fun saveNotes() {
+        val owing = synchronized(this) { sessions.values.filter { it.owesNotes } }
+        owing.forEach { runCatching { it.saveNotes() } }
+    }
+
     /**
      * The saved documents imported from a file of the same bytes, most
      * recently updated first (#1091 Decision 7); none when it can't be read.
@@ -266,6 +298,8 @@ class Documents(
         documents: ProjectDeletion,
         confirmed: Set<DocumentId>? = null,
     ): Unit = synchronized(projectChanges) {
+        // A moved document's notes not saved yet stay with it as it opens
+        // again ([Session.reopen]): no save of a member is waited for here.
         val raw = project.raw
         // The imports that would join it, first; the Documents' lock only to
         // read them: a save holds its session's save lock, then takes this one.
@@ -383,6 +417,9 @@ class Documents(
         // No save of it runs meanwhile, nor starts: a save after the move
         // and before the session opens it again would be refused as stale.
         return held.holdingSave {
+            // Notes typed in the last pause go first: the move opens the
+            // document again from the Vault.
+            runCatching { held.saveNotes() }
             val result = try {
                 core { moveInVault { call(vaultId) } }
             } catch (error: Exception) {
@@ -520,9 +557,16 @@ class Documents(
             ffi.cancel()
         }
 
-        /** Opens a saved document from the Vault: its review as saved, its names lined up with its Project's as they are now. */
+        /**
+         * Opens a saved document from the Vault: its review as saved, its
+         * names lined up with its Project's as they are now. Notes typed and
+         * not saved yet (a move or a Project's delete opens it again, or
+         * their save failed) stay with it, and its next save writes them.
+         */
         internal fun reopen(vaultId: String, info: DocumentInfo) {
+            val typed = if (notesUnsaved) ffi.notes() else null
             val opened = core { ffi.openFromVault(vault, vaultId) }
+            typed?.let { core { ffi.setNotes(it) } }
             val stored = storedOriginal(vaultId)
             synchronized(this) {
                 this.vaultId = vaultId
@@ -609,7 +653,47 @@ class Documents(
                 warning = review.warning,
                 original = original,
                 opened = opened,
+                promotedFrom = promotedFrom(),
             )
+        }
+
+        /**
+         * The saved reply this document was promoted from, from the Vault's
+         * manifest: deleted once it is not listed there.
+         */
+        private fun promotedFrom(): PromotedFrom? {
+            val reply = ffi.fromReply() ?: return null
+            return replyInfo(reply)?.let(PromotedFrom::Reply) ?: PromotedFrom.DeletedReply
+        }
+
+        // Notes (#1091 Decision 3)
+
+        /** Notes set and not saved yet: the next save writes them. */
+        @Volatile private var notesUnsaved = false
+
+        /** Whether notes were set since its last save. */
+        internal val owesNotes: Boolean get() = notesUnsaved
+
+        /** The document's notes as the core holds them; empty before it is read. */
+        fun notes(): String = holdingSave {
+            reopenHeldIfStale()
+            ffi.notes()
+        }
+
+        /**
+         * Typed in Notes: the core holds them with the document, and
+         * [saveNotes] (or any save before it) writes them. Refused before
+         * the document is read: nothing typed could be kept.
+         */
+        fun setNotes(notes: String) = holdingSave {
+            reopenHeldIfStale()
+            core { ffi.setNotes(notes) }
+            notesUnsaved = true
+        }
+
+        /** Saves notes set since the last save; nothing when there are none. */
+        fun saveNotes() = holdingSave {
+            if (notesUnsaved) saveHeld()
         }
 
         /**
@@ -777,7 +861,8 @@ class Documents(
          * are pending; the text comes from the Vault, which checks the
          * document is Ready against its Project's names as they are now, and
          * notes the share, so a move's Undo keeps the names a reply may use.
-         * Its place is kept for Restore with mdoc.
+         * Its place is kept for Restore with mdoc. The document's notes
+         * never go: the Vault's text is the document's alone.
          */
         fun copyForAi(): HandOff = synchronized(projectChanges) {
             // No move or Project delete meanwhile: the place kept is the one
@@ -862,6 +947,8 @@ class Documents(
             if (discarded) throw AppError.Cancelled()
             ffi.setNoNameFinder(findsNoNames())
             val saved = core { ffi.saveIntoVault(vault) }
+            // The save wrote the notes the core holds, whatever asked for it.
+            notesUnsaved = false
             // Its Vault id is mapped to this session in the same step that
             // shows it: a Project's delete finds an import either not saved
             // yet (it waits on this save) or saved and known by its Vault id,
