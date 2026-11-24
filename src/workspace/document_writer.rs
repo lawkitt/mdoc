@@ -19,6 +19,8 @@ pub(super) enum Target {
     Op(u64),
     /// The AI reply in tab `u64`'s reply box: only its latest text waits.
     Reply(u64),
+    /// A Vault document's private notes: only their latest text waits.
+    Notes(mdoc_store::document_id::VaultId),
 }
 
 pub(super) struct DocumentWriter<W> {

@@ -50,6 +50,7 @@ pub(super) struct ReplyPage {
     scroll: gpui::ScrollHandle,
     copy_focus: FocusHandle,
     next_focus: FocusHandle,
+    promote_focus: FocusHandle,
     delete_focus: FocusHandle,
 }
 
@@ -68,6 +69,7 @@ impl ReplyPage {
     pub(super) fn test_controls(&self) -> Vec<(&'static str, FocusHandle)> {
         let mut controls = vec![
             ("reply-page-copy", self.copy_focus.clone()),
+            ("reply-page-promote", self.promote_focus.clone()),
             ("reply-page-delete", self.delete_focus.clone()),
         ];
         if !self.restored.unresolved.is_empty() {
@@ -368,7 +370,8 @@ impl Workspace {
             editor
         });
         let focus = || cx.focus_handle().tab_index(0).tab_stop(true);
-        let (copy_focus, next_focus, delete_focus) = (focus(), focus(), focus());
+        let (copy_focus, next_focus, promote_focus, delete_focus) =
+            (focus(), focus(), focus(), focus());
         self.reply_page = Some(ReplyPage {
             id: id.to_string(),
             loaded: vault.reply(id).map_err(|error| error.to_string()),
@@ -380,6 +383,7 @@ impl Workspace {
             scroll,
             copy_focus: copy_focus.clone(),
             next_focus,
+            promote_focus,
             delete_focus,
         });
         self.refresh_reply_page(cx);
@@ -488,6 +492,67 @@ impl Workspace {
         page.restored.unresolved.get(at).cloned()
     }
 
+    /// Promote to Document: the shown reply, restored, becomes a new
+    /// document in its place once the window's Project names are written,
+    /// so it restores with the names the page shows; it then opens.
+    pub(super) fn promote_saved_reply(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(page) = self.reply_page.as_ref() else {
+            return;
+        };
+        if page.loaded.is_err() || self.vault.vault().is_none() {
+            return;
+        }
+        let id = page.id.clone();
+        self.queue_project_writes(window, cx);
+        self.next_op += 1;
+        let target = Target::Op(self.next_op);
+        self.queue_write(target, Write::Promote(id), window, cx);
+    }
+
+    /// Promote reply `id` at the head of the writer's queue and open the
+    /// document it made; the reply stays.
+    pub(super) fn run_promote(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(vault) = self.vault.vault().cloned() else {
+            return;
+        };
+        // The page restores with the window's Project; one whose names did
+        // not reach the Vault would restore otherwise there.
+        let project = vault.reply(id).ok().and_then(|reply| match reply.owner {
+            ReplyOwner::Project(project) => Some(project),
+            ReplyOwner::Document(document) => vault.document(&document).ok()?.project,
+        });
+        if let Some(project) = project
+            && self.project_ui.is_unwritten(&project)
+        {
+            self.notices.post(
+                "Could not promote the AI reply: its Project's names are not saved yet. Try \
+                 again once they are."
+                    .to_string(),
+            );
+            cx.notify();
+            return;
+        }
+        let promoted = vault
+            .promote_reply(id)
+            .map_err(|error| error.to_string())
+            .and_then(|document| {
+                VaultId::parse(&document.id).ok_or_else(|| "Invalid id.".to_string())
+            });
+        match promoted {
+            Ok(document) => {
+                // A quit waiting on the writer opens nothing more.
+                if self.quit_flow.may_quit() {
+                    self.open_vault_document(document, window, cx);
+                }
+            }
+            Err(error) => {
+                self.notices
+                    .post(format!("Could not promote the AI reply: {error}."));
+            }
+        }
+        cx.notify();
+    }
+
     /// Delete…: ask, then delete saved reply `id`.
     pub(super) fn confirm_delete_reply(
         &mut self,
@@ -562,7 +627,20 @@ impl Workspace {
         let tabs: Vec<_> = (self.tabs.iter())
             .filter_map(|tab| Some((tab.id(), tab.view()?.clone())))
             .collect();
+        let saved: std::collections::HashSet<String> = (vault.replies().into_iter())
+            .map(|reply| reply.id)
+            .collect();
         for (tab, view) in tabs {
+            // A promoted document's reply may have been deleted since.
+            view.update(cx, |view, cx| {
+                if let Some(from) = view.from_reply.as_mut() {
+                    let gone = !saved.contains(&from.id);
+                    if from.gone != gone {
+                        from.gone = gone;
+                        cx.notify();
+                    }
+                }
+            });
             let Some(document) = self.tab_document(tab, cx) else {
                 continue;
             };
@@ -780,6 +858,16 @@ impl Workspace {
                     })
                     .child(
                         control(
+                            "reply-page-promote",
+                            "Promote to Document".into(),
+                            &page.promote_focus,
+                        )
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.promote_saved_reply(window, cx)),
+                        ),
+                    )
+                    .child(
+                        control(
                             "reply-page-delete",
                             "Delete reply…".into(),
                             &page.delete_focus,
@@ -815,6 +903,18 @@ impl Workspace {
     pub(super) fn fix_reply_date(&mut self, seconds: u64) {
         if let Some(Ok(reply)) = self.reply_page.as_mut().map(|page| page.loaded.as_mut()) {
             reply.created = seconds;
+        }
+    }
+
+    /// Focus the shown reply's Promote to Document (renders).
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(super) fn focus_reply_promote(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(page) = self.reply_page.as_ref() {
+            window.focus(&page.promote_focus, cx);
         }
     }
 

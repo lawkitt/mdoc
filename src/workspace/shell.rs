@@ -4,7 +4,9 @@
 use super::home;
 use super::{Tab, Workspace};
 use crate::{
-    document_view::{CopyMarkdown, DocumentView, ExportMarkdown, Save, ToggleCompare},
+    document_view::{
+        CopyMarkdown, DocumentView, ExportMarkdown, OpenSourceReply, Save, ShowNotes, ToggleCompare,
+    },
     markdown_search::{SearchInput, SearchInputEvent},
     pii::ui::{CopyForAi, Pseudonymize},
     shortcuts,
@@ -112,6 +114,10 @@ enum Command {
     BeforeAfter,
     /// The active document's What you did; no key of its own.
     DecisionHistory,
+    /// The active document's Notes tab.
+    Notes,
+    /// The AI reply the active document was promoted from.
+    SourceReply,
     ExpandIdentities,
     CollapseIdentities,
     /// Stop the active tab's running conversion (#950); no key of its own.
@@ -141,6 +147,7 @@ pub(super) enum PageAction {
     ExportProject,
     DeleteProject,
     CopyReply,
+    PromoteReply,
     DeleteReply,
 }
 
@@ -165,6 +172,8 @@ impl Command {
             Command::Home => Box::new(ShowHome),
             Command::Settings => Box::new(Settings),
             Command::Shortcuts => Box::new(ShowShortcuts),
+            Command::Notes => Box::new(ShowNotes),
+            Command::SourceReply => Box::new(OpenSourceReply),
             Command::PasteText
             | Command::DecisionHistory
             | Command::ExpandIdentities
@@ -1528,6 +1537,30 @@ impl Workspace {
                     command: Command::DecisionHistory,
                 },
             ]);
+            // Notes, and the reply a promoted document came from.
+            let (notes, source) = self.active_view().map_or((false, false), |view| {
+                let view = view.read(cx);
+                (
+                    view.can_copy_markdown() && view.notes_available(),
+                    view.from_reply.as_ref().is_some_and(|from| !from.gone),
+                )
+            });
+            if notes {
+                rows.push(Row {
+                    section: "Actions",
+                    label: "Notes".into(),
+                    detail: None,
+                    command: Command::Notes,
+                });
+            }
+            if source {
+                rows.push(Row {
+                    section: "Actions",
+                    label: "Open source AI reply".into(),
+                    detail: None,
+                    command: Command::SourceReply,
+                });
+            }
             let panel = self.active_view().is_some_and(|view| {
                 let view = view.read(cx);
                 view.replacements_open() && view.can_copy_markdown()
@@ -1795,6 +1828,16 @@ impl Workspace {
                     view.update(cx, |view, cx| view.open_decision_history(window, cx));
                 }
             }
+            Command::Notes => {
+                if let Some(view) = self.active_view() {
+                    view.update(cx, |view, cx| view.show_notes(window, cx));
+                }
+            }
+            Command::SourceReply => {
+                if let Some(view) = self.active_view() {
+                    view.update(cx, |view, cx| view.open_source_reply(cx));
+                }
+            }
             Command::CancelConversion => {
                 if let Some(view) = self.active_view() {
                     view.update(cx, |view, cx| {
@@ -1888,6 +1931,8 @@ impl Workspace {
                 Command::Close | Command::CancelConversion => ui::Icon::Close,
                 Command::BeforeAfter => ui::Icon::PanelRight,
                 Command::DecisionHistory => ui::Icon::Clock,
+                Command::Notes => ui::Icon::PanelRight,
+                Command::SourceReply => ui::Icon::Reply,
                 Command::ExpandIdentities => ui::Icon::ExpandAll,
                 Command::CollapseIdentities => ui::Icon::CollapseAll,
                 Command::ToggleSidebar => ui::Icon::Sidebar,
@@ -2096,6 +2141,7 @@ impl Workspace {
         if self.reply_page.is_some() {
             return vec![
                 row("Copy reply", PageAction::CopyReply),
+                row("Promote to Document", PageAction::PromoteReply),
                 row("Delete reply…", PageAction::DeleteReply),
             ];
         }
@@ -2132,6 +2178,7 @@ impl Workspace {
             });
         match (action, reply, project) {
             (PageAction::CopyReply, Some(_), _) => self.copy_saved_reply(cx),
+            (PageAction::PromoteReply, Some(_), _) => self.promote_saved_reply(window, cx),
             (PageAction::DeleteReply, Some(id), _) => self.confirm_delete_reply(&id, window, cx),
             (PageAction::AddDocument, _, Some(id)) => self.add_document_to_project(id, window, cx),
             (PageAction::RenameProject, _, Some(id)) => {

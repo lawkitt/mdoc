@@ -6,8 +6,9 @@
 
 use crate::{
     document_view::{
-        CopyMarkdown, ExportMarkdown, Save, ShowEditView, ShowOriginalView, ShowPseudonymizedView,
-        ShowReplacements, ToggleCompare, ZoomIn, ZoomOut, ZoomReset,
+        CopyMarkdown, ExportMarkdown, OpenSourceReply, Save, ShowEditView, ShowNotes,
+        ShowOriginalView, ShowPseudonymizedView, ShowReplacements, ToggleCompare, ZoomIn, ZoomOut,
+        ZoomReset,
     },
     pii::ui::{CopyForAi, Pseudonymize},
     search_session::{FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown},
@@ -162,6 +163,8 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Side by Side", ToggleCompare),
             MenuItem::separator(),
             MenuItem::action("Show Replacements", ShowReplacements),
+            MenuItem::action("Notes", ShowNotes),
+            MenuItem::action("Open Source AI Reply", OpenSourceReply),
             MenuItem::separator(),
             MenuItem::action("Zoom In", ZoomIn),
             MenuItem::action("Zoom Out", ZoomOut),

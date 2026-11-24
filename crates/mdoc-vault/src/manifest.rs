@@ -218,6 +218,7 @@ impl Record for Document {
             original.info.left_out = noted.left_out;
             original.info.password_protected |= noted.password_protected;
         }
+        self.from_reply.clone_from(&stored.from_reply);
         self.unconverted &= stored.pending_conversion() && self.markdown.is_empty();
         if self.project.is_some() {
             self.mapping = crate::mapping::Mapping::default();

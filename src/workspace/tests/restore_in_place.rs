@@ -10,7 +10,7 @@ fn open_share(view: &Entity<DocumentView>, cx: &mut VisualTestContext) {
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }
-        view.inspector_share = true;
+        view.inspector = crate::document_view::Inspector::Share;
         cx.notify();
     });
     draw(cx);

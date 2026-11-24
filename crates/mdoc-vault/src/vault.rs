@@ -515,6 +515,12 @@ impl Vault {
         self.update(id, change)
     }
 
+    /// Replace Document `id`'s private notes (#1091 Decision 3) under the
+    /// write lock; its text, review and place stay as stored.
+    pub fn set_notes(&self, id: &str, notes: String) -> Result<Document, VaultError> {
+        self.update(id, |document: &mut Document| document.notes = notes)
+    }
+
     /// Save `document` unless this handle wrote, or its file holds, a newer
     /// revision. Its Project stays as stored.
     pub fn save_document(&self, document: &Document) -> Result<Saved, VaultError> {
@@ -867,6 +873,8 @@ fn new_document(id: String, new: NewDocument, original: Option<Original>) -> Doc
         review: None,
         original,
         counts: None,
+        notes: String::new(),
+        from_reply: None,
     }
 }
 

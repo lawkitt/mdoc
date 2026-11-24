@@ -217,7 +217,7 @@ fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpu
                 );
                 app.pii.mapping.open = false;
                 // Inspector: the Review tab.
-                app.inspector_share = false;
+                app.inspector = crate::document_view::Inspector::Review;
                 app.toggle_replacements_panel(window, cx);
             });
             cx.run_until_parked();
@@ -2089,7 +2089,7 @@ fn panel_keyboard_ticks_jumps_expands_and_applies(cx: &mut gpui::TestAppContext)
         assert_eq!(app.pii.review.remaining(), 0);
         assert_eq!(app.pii.review.identity_count(initials), 2);
         // Inspector: applying everything turns to Share.
-        assert!(app.inspector_share);
+        assert_eq!(app.inspector, crate::document_view::Inspector::Share);
     });
     click_tab(cx, "inspector-review");
     // ↑ to the top, then ↑ again returns to search; Esc there closes.
@@ -3018,7 +3018,7 @@ fn apply_all_from_review_search_keeps_history_on_share(cx: &mut gpui::TestAppCon
     });
     press("secondary-enter", cx);
     app.update_in(cx, |app, window, _| {
-        assert!(app.inspector_share);
+        assert_eq!(app.inspector, crate::document_view::Inspector::Share);
         assert!(app.pii.mapping.focus.is_focused(window));
     });
     press(

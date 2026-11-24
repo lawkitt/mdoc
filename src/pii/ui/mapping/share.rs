@@ -3,19 +3,19 @@
 //! with Copy reply and Open as tab.
 use super::Selection;
 use crate::{
-    document_view::{CopyMarkdown, DocumentView, ExportMarkdown},
+    document_view::{CopyMarkdown, DocumentView, ExportMarkdown, Inspector},
     pii::ui::{APPLIED_ID, CopyForAi, KEPT_ID},
     style, ui,
 };
 use gpui::{AnyElement, App, Context, Focusable, Window, div, prelude::*, px};
 
 impl DocumentView {
-    /// Review | Share, the Inspector's two tabs.
-    pub(super) fn inspector_tabs(&self, entities: usize, cx: &mut Context<Self>) -> AnyElement {
+    /// Review | Share | Notes, the Inspector's tabs.
+    pub(crate) fn inspector_tabs(&self, entities: usize, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let tab = |id: &'static str, label: String, share: bool| {
-            let on = self.inspector_share == share;
+        let tab = |id: &'static str, label: String, which: Inspector| {
+            let on = self.inspector == which;
             ui::focus_ring(id, theme)
                 .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
                 .role(gpui::Role::Tab)
@@ -38,7 +38,7 @@ impl DocumentView {
                 .when(!on, |v| v.text_color(p.header_muted))
                 .child(label)
                 .on_click(cx.listener(move |this, _, window, cx| {
-                    this.inspector_share = share;
+                    this.inspector = which;
                     window.focus(&this.pii.mapping.focus, cx);
                     cx.notify();
                 }))
@@ -58,9 +58,10 @@ impl DocumentView {
                     .child(tab(
                         "inspector-review",
                         format!("Review · {entities}"),
-                        false,
+                        Inspector::Review,
                     ))
-                    .child(tab("inspector-share", "Share".into(), true)),
+                    .child(tab("inspector-share", "Share".into(), Inspector::Share))
+                    .child(tab("inspector-notes", "Notes".into(), Inspector::Notes)),
             )
             .into_any_element()
     }

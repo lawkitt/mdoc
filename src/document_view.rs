@@ -31,6 +31,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
+pub(crate) mod notes;
 mod project;
 mod project_link;
 use project_link::ProjectEffect;
@@ -59,6 +60,8 @@ actions!(
         ShowOriginalView,
         ShowPseudonymizedView,
         ShowReplacements,
+        ShowNotes,
+        OpenSourceReply,
         ZoomIn,
         ZoomOut,
         ZoomReset,
@@ -66,6 +69,16 @@ actions!(
         TogglePreview,
     ]
 );
+
+/// The Inspector's tabs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Inspector {
+    #[default]
+    Review,
+    Share,
+    /// The document's private notes.
+    Notes,
+}
 
 #[derive(Clone)]
 pub(crate) enum Next {
@@ -160,8 +173,12 @@ pub(crate) struct DocumentView {
     pub(crate) history: decision_history::HistoryPopover,
     /// Text zoom of this document's Markdown, not saved.
     pub(crate) zoom: f32,
-    /// Inspector: the Share tab is showing.
-    pub(crate) inspector_share: bool,
+    /// The Inspector's tab showing.
+    pub(crate) inspector: Inspector,
+    /// The document's private notes and their autosave.
+    pub(crate) notes: notes::NotesState,
+    /// The AI Reply it was promoted from, when it was.
+    pub(crate) from_reply: Option<notes::FromReply>,
     /// The running copy feedback belongs to Copy for AI, not Copy Markdown.
     pub(crate) copied_for_ai: bool,
     /// The running copy feedback belongs to Copy reply.
@@ -409,7 +426,9 @@ impl DocumentView {
             more_open: false,
             history: decision_history::HistoryPopover::new(cx),
             zoom: 1.,
-            inspector_share: false,
+            inspector: Inspector::Review,
+            notes: Default::default(),
+            from_reply: None,
             copied_for_ai: false,
             copied_reply: false,
             reply: Default::default(),
@@ -2067,9 +2086,12 @@ impl Render for DocumentView {
         // The before/after view follows the applied replacements.
         self.refresh_compare(window, cx);
         // The Share panel's reply box restores against the live mapping.
-        if self.inspector_share && self.replacements_open() {
+        if self.inspector == Inspector::Share && self.replacements_open() {
             self.ensure_reply_box(window, cx);
             self.refresh_reply();
+        }
+        if self.inspector == Inspector::Notes && self.replacements_open() {
+            self.ensure_notes_editor(window, cx);
         }
         self.release_closed_popup_focus(window, cx);
         // Derived display state; set_outlines only notifies on change.
@@ -2565,6 +2587,12 @@ impl Render for DocumentView {
             .on_action(cx.listener(|this, _: &ShowReplacements, window, cx| {
                 this.show_replacements(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &ShowNotes, window, cx| {
+                if this.can_copy_markdown() && this.notes_available() {
+                    this.show_notes(window, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, _: &OpenSourceReply, _, cx| this.open_source_reply(cx)))
             .on_action(cx.listener(Self::pseudonymize_clipboard))
             .on_action(cx.listener(Self::restore_clipboard))
             .on_action(cx.listener(Self::pseudonymize))

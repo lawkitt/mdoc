@@ -7,6 +7,7 @@
 //! ```text
 //! <picked>/<Project name>/
 //!   <Title>.md
+//!   <Title>.notes.md            only when its notes are not empty
 //!   Originals/<original file name>
 //! ```
 //!
@@ -23,6 +24,8 @@ use std::{
 
 /// The Originals subfolder's name.
 pub const ORIGINALS: &str = "Originals";
+/// What a Document's notes file adds to its Markdown file's stem.
+const NOTES: &str = ".notes.md";
 /// Longest name stem written, in bytes, leaving room for " 99" and an
 /// extension under the 255-byte limit of common file systems.
 const MAX_STEM: usize = 120;
@@ -68,13 +71,22 @@ impl Vault {
                 if document.project.as_deref() != Some(id) {
                     return Ok(false);
                 }
-                // Only a conversion that never finished has no Markdown; a
-                // text its user cleared, or an empty text file, is written
-                // empty.
+                // Its Markdown and its notes take one stem together, " 2"
+                // and all, so neither pairs with another document's. Only a
+                // conversion that never finished has no Markdown; a text its
+                // user cleared, or an empty text file, is written empty.
+                let mut texts: Vec<(&str, &str)> = Vec::new();
                 if !document.pending_conversion() || text_source(&document) {
-                    let (_, mut file) =
-                        names.create(&folder, &safe_stem(&document.title), ".md")?;
-                    file.write_all(document.markdown.as_bytes())?;
+                    texts.push((".md", &document.markdown));
+                }
+                if !document.notes.trim().is_empty() {
+                    texts.push((NOTES, &document.notes));
+                }
+                let extensions: Vec<&str> = texts.iter().map(|(extension, _)| *extension).collect();
+                let files =
+                    names.create_together(&folder, &safe_stem(&document.title), &extensions)?;
+                for ((_, mut file), (_, text)) in files.into_iter().zip(&texts) {
+                    file.write_all(text.as_bytes())?;
                     file.sync_all()?;
                 }
                 if let Some(kept) = &document.original {
@@ -126,15 +138,55 @@ impl Names {
     fn take(&mut self, stem: &str, extension: &str) -> String {
         let mut n = 1;
         loop {
-            let name = if n == 1 {
-                format!("{stem}{extension}")
-            } else {
-                format!("{stem} {n}{extension}")
-            };
+            let name = numbered(stem, n, extension);
             if self.0.insert(name.to_lowercase()) {
                 return name;
             }
             n += 1;
+        }
+    }
+
+    /// New files in `dir`, one per extension, all under the first stem
+    /// (`stem`, `stem 2`…) free for every one of them, here and on disk.
+    fn create_together(
+        &mut self,
+        dir: &Path,
+        stem: &str,
+        extensions: &[&str],
+    ) -> io::Result<Vec<(PathBuf, File)>> {
+        let mut n = 1;
+        'next: loop {
+            let names: Vec<String> = (extensions.iter())
+                .map(|extension| numbered(stem, n, extension))
+                .collect();
+            n += 1;
+            if names
+                .iter()
+                .any(|name| self.0.contains(&name.to_lowercase()))
+            {
+                continue;
+            }
+            for name in &names {
+                self.0.insert(name.to_lowercase());
+            }
+            let mut files = Vec::new();
+            for name in names {
+                let path = dir.join(name);
+                match create_new(&path) {
+                    Ok(file) => files.push((path, file)),
+                    Err(error) => {
+                        for (made, file) in files {
+                            drop(file);
+                            let _ = std::fs::remove_file(made);
+                        }
+                        if error.kind() == io::ErrorKind::AlreadyExists {
+                            continue 'next;
+                        }
+                        return Err(error);
+                    }
+                }
+            }
+            return Ok(files);
         }
     }
 
@@ -150,6 +202,15 @@ impl Names {
                 Err(error) => return Err(error),
             }
         }
+    }
+}
+
+/// `stem` + `extension` for `n` 1, else with ` n` before the extension.
+fn numbered(stem: &str, n: usize, extension: &str) -> String {
+    if n == 1 {
+        format!("{stem}{extension}")
+    } else {
+        format!("{stem} {n}{extension}")
     }
 }
 
@@ -287,6 +348,39 @@ mod tests {
         assert_eq!(names.take("brief", ".md"), "brief 2.md");
         assert_eq!(names.take("Brief", ".md"), "Brief 3.md");
         assert_eq!(names.take("Brief", ".pdf"), "Brief.pdf");
+    }
+
+    #[test]
+    fn a_documents_markdown_and_notes_take_one_stem_together() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut names = Names::default();
+        // An earlier "Lease.notes" took the notes name "Lease" would want.
+        names.create(dir.path(), "Lease.notes", ".md").unwrap();
+        let both = [".md", NOTES];
+        let made = names.create_together(dir.path(), "Lease", &both).unwrap();
+        let file = |i: usize| {
+            made[i]
+                .0
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert_eq!(
+            (file(0), file(1)),
+            ("Lease 2.md".into(), "Lease 2.notes.md".into())
+        );
+        // A later "Lease 2" never pairs with them.
+        let (later, _) = names.create(dir.path(), "Lease 2", ".md").unwrap();
+        assert_eq!(later.file_name().unwrap(), "Lease 2 2.md");
+        // A name the disk holds already moves both on.
+        std::fs::write(dir.path().join("Brief.notes.md"), "").unwrap();
+        let made = names.create_together(dir.path(), "Brief", &both).unwrap();
+        assert_eq!(made[0].0.file_name().unwrap(), "Brief 2.md");
+        assert!(
+            !dir.path().join("Brief.md").exists(),
+            "the half-made pair is removed"
+        );
     }
 
     #[test]

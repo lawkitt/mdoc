@@ -1157,11 +1157,12 @@ impl Workspace {
         let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
             return;
         };
-        let generation = view.update(cx, |view, cx| {
+        let (generation, notes_writes) = view.update(cx, |view, cx| {
             let generation = view.lifecycle.begin_load();
             view.error = None;
             cx.notify();
-            generation
+            // Notes written after this read are newer than what it reads.
+            (generation, view.notes.writes())
         });
         let weak = view.downgrade();
         let loading = document.vault().clone();
@@ -1225,6 +1226,10 @@ impl Workspace {
                             if let Some(vault) = vault {
                                 source_error = vault.source_error;
                                 names = vault.names;
+                                view.load_notes(loading.as_str(), vault.notes, notes_writes, cx);
+                                view.from_reply = (vault.from_reply).map(|id| {
+                                    crate::document_view::notes::FromReply { id, gone: false }
+                                });
                                 view.session.name = Some(vault.title);
                                 view.session.follows_first_line = vault.follows;
                                 view.session.warning = vault.warning;
@@ -1765,6 +1770,12 @@ impl Workspace {
         self.autosave(id, window, cx);
         if self.write_pending_for(id, cx) {
             self.closing_after_write.insert(id);
+            return;
+        }
+        // Notes whose write just failed keep the tab, as its text would.
+        if (self.tabs.get(id).and_then(|tab| tab.view()))
+            .is_some_and(|view| view.read(cx).notes.unsaved())
+        {
             return;
         }
         self.remove(id, window, cx);
@@ -2834,6 +2845,10 @@ struct VaultLoaded {
     left_out: Option<String>,
     /// An Unfiled document's own names, for a load without its review.
     names: Option<LocalNames>,
+    /// Its private notes.
+    notes: String,
+    /// The AI Reply it was promoted from.
+    from_reply: Option<String>,
 }
 
 /// An Unfiled document's names, as its mapping keeps them.
@@ -2912,6 +2927,8 @@ fn load_from_vault(
             warning,
             left_out,
             names,
+            notes: stored.notes,
+            from_reply: stored.from_reply,
         }),
     })
 }

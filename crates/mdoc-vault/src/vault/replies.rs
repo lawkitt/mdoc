@@ -8,8 +8,8 @@ use crate::{
     mapping::{Identity, Mapping},
     new_id,
     records::{
-        Document, DocumentSummary, NewReply, Project, ProjectSummary, Reply, ReplyOwner,
-        ReplySummary, SharedFrom, now,
+        Document, DocumentOrigin, DocumentSummary, NewDocument, NewReply, Project, ProjectSummary,
+        Reply, ReplyOwner, ReplySummary, SharedFrom, SourceKind, now,
     },
 };
 use mdoc_pii::restore::{RestoreMap, RestoredText};
@@ -223,6 +223,53 @@ impl Vault {
         Ok(self.reply_map(&reply)?.restore_in_place(&reply.markdown))
     }
 
+    /// Promote to Document (#1091 Decision 3): a new Document in the AI
+    /// Reply `id`'s place, its Project's or Unfiled, whose Markdown is the
+    /// reply restored as [`Self::restore_reply`] restores it now, real
+    /// names back. It has no original, is not reviewed, and names the
+    /// reply in [`Document::from_reply`]; its kind is Markdown. Promoted
+    /// into Unfiled, its own mapping starts with the identities the reply
+    /// is bound to, so a review marks those names again under the same
+    /// aliases. Everything is read and the one record written under the
+    /// write lock; the reply stays as it is. Nothing is written when the
+    /// reply, its Project or its Document is gone.
+    pub fn promote_reply(&self, id: &str) -> Result<Document, VaultError> {
+        let lock = self.write_lock()?;
+        let reply: Reply = self.load_record(id)?;
+        let place = |project: String| -> Result<_, VaultError> {
+            let mapping = self.load_record::<Project>(&project)?.mapping;
+            Ok((Some(project), mapping, Mapping::default()))
+        };
+        let (project, mapping, own) = match &reply.owner {
+            ReplyOwner::Project(project) => place(project.clone())?,
+            ReplyOwner::Document(document) => {
+                let document: Document = self.load_record(document)?;
+                match document.project {
+                    Some(project) => place(project)?,
+                    None => {
+                        let own = bound_identities(&document.mapping, &reply);
+                        (None, document.mapping, own)
+                    }
+                }
+            }
+        };
+        let markdown = (mapping.reply_map(&reply.bindings))
+            .restore_in_place(&reply.markdown)
+            .text;
+        let new = NewDocument {
+            project,
+            title: reply.title.clone(),
+            source_kind: SourceKind::Markdown,
+            origin: DocumentOrigin::Ordinary,
+            markdown,
+        };
+        let mut document = super::new_document(new_id()?, new, None);
+        document.mapping = own;
+        document.from_reply = Some(reply.id);
+        self.write_record(&lock, &document)?;
+        Ok(document)
+    }
+
     /// Every AI Reply, newest first.
     pub fn replies(&self) -> Vec<ReplySummary> {
         let mut replies: Vec<_> = (self.state().manifest.replies.ok.values())
@@ -369,6 +416,26 @@ impl Vault {
         table.ok.insert(reply.id.clone(), Entry { summary, stamp });
         Ok(())
     }
+}
+
+/// The live identities in `mapping` that `reply`'s bindings restore with,
+/// each once, as a promoted Unfiled Document's own mapping starts: their
+/// ids, aliases and wordings, without another Document's Not a name.
+fn bound_identities(mapping: &Mapping, reply: &Reply) -> Mapping {
+    let mut own = Mapping::default();
+    for binding in &reply.bindings {
+        let Some(identity) = mapping.bound(&binding.identity) else {
+            continue;
+        };
+        if identity.exported().is_none() || own.identity(&identity.id).is_some() {
+            continue;
+        }
+        own.identities.push(Identity {
+            not_a_name_by: None,
+            ..identity.clone()
+        });
+    }
+    own
 }
 
 fn sort_newest_first(replies: &mut [ReplySummary]) {

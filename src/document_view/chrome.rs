@@ -206,6 +206,10 @@ impl DocumentView {
                         if fresh {
                             this.start_pii_scan(cx);
                         }
+                        // A scan is reviewed in Review, not beside Notes.
+                        if this.inspector == super::Inspector::Notes {
+                            this.inspector = super::Inspector::Review;
+                        }
                         if !this.replacements_open() {
                             this.toggle_replacements_panel(window, cx);
                         }
@@ -225,7 +229,7 @@ impl DocumentView {
                 .when(cfg!(test), |v| v.debug_selector(|| "primary-share".into()))
                 .h(px(28.))
                 .on_click(cx.listener(|this, _, window, cx| {
-                    this.inspector_share = true;
+                    this.inspector = crate::document_view::Inspector::Share;
                     if !this.replacements_open() {
                         this.toggle_replacements_panel(window, cx);
                     }
@@ -310,7 +314,12 @@ impl DocumentView {
                         .child(div().min_w_0().truncate().child(line.clone()))
                         .tooltip(crate::style::tooltip(line, theme)),
                 )
-            });
+            })
+            // A control in the drag row takes its own clicks.
+            .children(
+                (self.reply_origin_line(cx))
+                    .map(|line| ui::no_drag(div().flex_shrink_0().child(line))),
+            );
         let controls = div()
             .flex()
             .items_center()
@@ -457,6 +466,8 @@ impl DocumentView {
         let has_text = copy && !self.editor.read(cx).text().is_empty();
         let alias_reason = self.alias_actions_reason();
         let aliases = copy && alias_reason.is_none();
+        // Notes live in the Inspector, beside the text.
+        let notes = copy && self.notes_available();
         let spelling_on = !self.spelling_control_off() && !self.spelling.off_here();
         let misspelled = self.editor.read(cx).diagnostics().len();
         // A menu choice hands focus back to the document first, so the action
@@ -596,6 +607,16 @@ impl DocumentView {
                                 v.debug_selector(|| "more-paste-reply".into())
                             })
                             .on_click(cx.listener(guard(aliases, || Box::new(PasteAiResponse)))),
+                        )
+                        .child(
+                            row("more-notes", "Notes".into(), None, None, notes).on_click(
+                                cx.listener(move |this, _, window, cx| {
+                                    if notes {
+                                        this.more_open = false;
+                                        this.show_notes(window, cx);
+                                    }
+                                }),
+                            ),
                         )
                         .child(ui::menu_divider(theme))
                         .child(
