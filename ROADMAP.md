@@ -29,6 +29,9 @@ counted in the import note. Full desktop acceptance runs on the last RC.
 #925's phase 2 (white text, repeated headers and footers, table and scan
 fixes) merges after rc.3 is tagged.
 
+The Vault & Projects milestone ships in 0.4.0 as well ([#1153](https://github.com/lawkitt/mdoc/issues/1153)); its
+section lists what gates the next candidate.
+
 Three tracks run in parallel and each releases when ready: desktop 0.4.0,
 iOS (the first to ship) and Android.
 
@@ -387,6 +390,11 @@ and desktop tracks can run side by side once the core items they need are
 done. Desktop items 16–22 and 25 share one integration branch, because the app is
 not coherent between them and `main` stays releasable; item 23 lands them.
 
+The Vault ships as 0.4.0 ([#1153](https://github.com/lawkitt/mdoc/issues/1153)). Items 28–32, the
+GUI rows in [#1146](https://github.com/lawkitt/mdoc/issues/1146) and one day
+of real use by the maintainer on the landed build gate its next candidate;
+items 33–35 are polish and do not.
+
 16. **[Desktop] Documents live in the Vault and save themselves.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The Vault opens at
     launch through the existing key flow. Every import, paste, new document
@@ -472,15 +480,75 @@ not coherent between them and `main` stays releasable; item 23 lands them.
     [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3.* As item
     26. *Blocked by:* items 23, 25. *Done when:* the Android job passes with
     tests of notes and Promote.
+28. **[Desktop] One ordering rule for Vault operations.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* Three review rounds of the
+    cut-over kept finding orderings between the write queue and live edits
+    (quit, move, delete, export, reload), one of them twice. Every
+    Vault-changing desktop operation follows one ordering rule, recorded in an
+    ADR. *Blocked by:* item 23. *Done when:* a randomized test interleaves
+    save, move, delete, export and quit and finds no lost edit and no alias
+    restored to another identity, and it fails on a deliberately broken order.
+29. **[Core] Every way text leaves is checked.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* One suite lists each exit:
+    Copy for AI and Share on every platform, the menu bar shelf, Export, and
+    later the connector. Each is tested against the readiness check, because
+    the cut-over's editor Copy for AI skipped it. *Blocked by:* item 23.
+    *Done when:* the suite passes on desktop and the mobile core, and taking
+    the check out of any one exit fails it.
+30. **[Dev] A dev profile folder for debug builds.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153); replaces Engineering's
+    profile override.* `MDOC_DEV_PROFILE=<dir>`, on macOS and Windows: the
+    profile and a key file live in that folder, the Keychain and DPAPI are
+    never asked, and the window title says "dev profile". No cargo feature.
+    *Done when:* a test pins that release builds ignore it; an agent runs a
+    GUI row on each platform with no OS prompt; `docs/development.md` (Fleet)
+    and the fleet profile's rule name it.
+31. **[Desktop] New Project.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* A Project appears only
+    through Move to New Project or an opened folder. A New Project command in
+    the Project menu, the palette and the tree's Projects header creates an
+    empty Project and opens its page, as both phones do. *Blocked by:* item
+    23. *Done when:* workspace tests; headless renders of the header and the
+    empty Project page.
+32. **[Android] Move a document to a Project.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153) and #1091 decision 9.* The
+    app never calls the core's move, so an Unfiled document cannot join a
+    Project. A document's menu and Unfiled rows offer Move to Project, Move
+    to New Project and Move to Unfiled, with Undo, as iOS does. *Done when:*
+    the Android job passes with a move and its Undo.
+33. **[iOS] Rules before the detector.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* After "Not now" on the
+    download card, Find names marks nothing. It runs the rules-only pass once
+    and marks what that finds (an email address, a phone number), with one
+    line saying names need the detector. *Done when:* the iOS job passes with
+    a test of a pasted document's email address marked before any download.
+34. **[iOS] One tap to paste.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* Paste text and Paste AI
+    reply open a sheet with a second Paste button. *Done when:* pasting a
+    document or a reply takes one Paste tap, or the PR shows why iOS does not
+    allow it.
+35. **[Desktop] An updated runtime says it is an update.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* A profile that has the
+    detector's files but an older runtime is asked for 185 MB under "Set up
+    pseudonymization". The card says an update is needed and its size. *Done
+    when:* a headless render of the card in that state.
 
 - **[Desktop] Later: a horizontal tab strip.** Only if the tree proves short
   for working sets; needs no schema change. It would take the existing title
   row, with a 36-pt document header and no breadcrumb.
+- **[Desktop, Mobile] Later: pin a Project.** The record's `pinned` field and
+  the pinned-first order exist on every platform; nothing sets it. *From
+  [#1153](https://github.com/lawkitt/mdoc/issues/1153).*
+- **[Mobile] Later: user-wide Always and Never lists on phones.** Phones keep
+  a Project's lists ([#1125](https://github.com/lawkitt/mdoc/issues/1125)) and
+  no user-wide ones. *From [#1153](https://github.com/lawkitt/mdoc/issues/1153).*
 
 ## Desktop AI Connector — MCP (Milestone 2)
 
 Local MCP connector for Claude Desktop and ChatGPT's desktop app
 ([ADR 0126](docs/adr/0126-local-mcp-ai-connector.md)). *Blocked by:* Milestone 1.
+Its items are rewritten after the connector grill and the maintainer's day
+of use on the landed Vault build ([#1153](https://github.com/lawkitt/mdoc/issues/1153)).
 
 1. **[Desktop] Local IPC and `mdoc-mcp` shim.** *From the 2026-11-22 grills
    (ADR 0126); promotes Later's Agent access item.* Desktop `mdoc` listens
@@ -967,9 +1035,11 @@ Android takes what applies. Its clipboard finding is
   stay live. *Done when:* an experiment shows covered captures update and
   whether background keys reach GPUI, and `docs/development.md` (Fleet) says
   which GUI rows still need focus. *From the 0.3.0 away hub.*
-- **Dev-build profile override:** debug builds read `MDOC_PROFILE_DIR`, so GUI
-  checks run on a scratch profile instead of moving the user's
-  `session.json` and `recents.json` aside. *From the 0.3.0 away hub.*
+- **GUI rows by agents:** once Vault & Projects item 30 exists, one agent
+  run works the rows in #1146 and triages the older "GUI rows pending"
+  issues (#254, #353, #774, #786, #960, #968, #1016, #1063, #1090), dropping
+  rows whose screens are gone. The maintainer keeps the native rows:
+  Keychain, installers, drags between apps. *From [#1153](https://github.com/lawkitt/mdoc/issues/1153).*
 - **`build.rs` declares what it reads:** it prints no `rerun-if-changed`, so
   cargo reruns it, and rebuilds the `mdoc` crate, whenever any file under the
   repository root changes (a log, a render, a scratch file). One `just perf`
