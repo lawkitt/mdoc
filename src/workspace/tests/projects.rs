@@ -1073,8 +1073,11 @@ fn text_typed_while_a_move_waits_moves_with_it(cx: &mut TestAppContext) {
     view.update_in(cx, |view, window, cx| {
         window.focus(&view.editor.read(cx).focus_handle(cx), cx)
     });
-    // The move queues behind the tab's own write; typing goes on meanwhile.
+    // The move queues behind the tab's own write, running off the main
+    // thread; typing goes on meanwhile, and the move reads it at its head.
+    cx.simulate_input(" Sooner.");
     tabs.update_in(cx, |tabs, window, cx| {
+        tabs.autosave(tab, window, cx);
         tabs.move_to_new_project(tab, window, cx)
     });
     cx.simulate_input(" Later.");
@@ -1114,6 +1117,7 @@ fn text_typed_while_a_project_delete_waits_moves_to_unfiled(cx: &mut TestAppCont
     cx.simulate_input(" Now.");
     // The delete queues behind the member's write; typing goes on.
     tabs.update_in(cx, |tabs, window, cx| {
+        tabs.autosave(tab, window, cx);
         let members = tabs.project_members(&project);
         let unfiled = mdoc_vault::ProjectDocuments::MoveToUnfiled;
         tabs.forget_project(&project, unfiled, members, window, cx);

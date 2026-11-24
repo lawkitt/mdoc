@@ -811,3 +811,113 @@ fn an_import_expecting_a_hash_writes_only_those_bytes() {
     assert_eq!(document.original.as_ref().unwrap().sha256, sha);
     assert_eq!(read_back(&vault, &document.id), asked);
 }
+
+/// The files waiting in `staging/`.
+fn staged(folder: &Folder) -> usize {
+    fs::read_dir(folder.root.join("staging")).map_or(0, |dir| dir.count())
+}
+
+/// ADR 0130: an import seals outside the write lock into `staging/`,
+/// which no reader lists, and becomes a Document only once published,
+/// with the bytes it sealed.
+#[test]
+fn a_staged_import_is_no_document_until_it_is_published() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let source = bytes(3 * MIB + 5, 11);
+    let stage = vault.stage_import(&source[..]).unwrap();
+    let sha256 = stage.sha256().to_string();
+    assert_eq!(sha256, source_sha256(&source[..]).unwrap());
+    assert!(vault.documents().is_empty());
+    assert!(vault.documents_with_source(&sha256).is_empty());
+    // Another handle opening meanwhile lists nothing and removes nothing.
+    let other = folder.open();
+    assert!(other.documents().is_empty() && other.damaged().is_empty());
+    drop(other);
+    assert_eq!(staged(&folder), 1, "held while staged");
+    let document = vault
+        .publish_import(
+            stage,
+            new_document("Brief"),
+            info("brief.pdf"),
+            Some(&sha256),
+        )
+        .unwrap()
+        .expect("the bytes it was asked about");
+    assert_eq!(staged(&folder), 0);
+    assert_eq!(
+        ids(vault.documents_with_source(&sha256)),
+        std::slice::from_ref(&document.id)
+    );
+    assert_eq!(read_back(&vault, &document.id), source);
+    drop(vault);
+    let vault = folder.open();
+    let stored = vault.document(&document.id).unwrap();
+    assert_eq!(stored.original.unwrap().sha256, sha256);
+    assert_eq!(read_back(&vault, &document.id), source);
+}
+
+/// A stage dropped unpublished, or refused when published (other bytes
+/// than asked about, a Project gone since), leaves nothing.
+#[test]
+fn a_stage_that_is_not_published_leaves_nothing() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    drop(vault.stage_import(&b"%PDF-1.4"[..]).unwrap());
+    assert_eq!(staged(&folder), 0, "dropped");
+    let stage = vault.stage_import(&b"%PDF-1.4"[..]).unwrap();
+    let other = "0".repeat(64);
+    let refused = vault
+        .publish_import(
+            stage,
+            new_document("Brief"),
+            info("brief.pdf"),
+            Some(&other),
+        )
+        .unwrap();
+    assert!(refused.is_none(), "other bytes");
+    assert_eq!(staged(&folder), 0);
+    let stage = vault.stage_import(&b"%PDF-1.4"[..]).unwrap();
+    let project = vault.create_project(NewProject::default()).unwrap();
+    vault
+        .delete_project(&project.id, mdoc_vault::ProjectDocuments::Delete)
+        .unwrap();
+    let new = NewDocument {
+        project: Some(project.id),
+        ..new_document("Brief")
+    };
+    let error = vault
+        .publish_import(stage, new, info("brief.pdf"), None)
+        .unwrap_err();
+    assert!(matches!(error, VaultError::NotFound { .. }), "{error:?}");
+    assert_eq!(staged(&folder), 0);
+    assert!(
+        !folder.root.join("docs").exists() || folder.document_dirs().is_empty(),
+        "{:?}",
+        folder.document_dirs()
+    );
+    assert!(vault.documents().is_empty());
+}
+
+/// A stage a crash left behind (unlocked: its process is gone) goes at the
+/// next open, whatever its age, and was never a Document.
+#[test]
+fn a_stage_a_crash_left_goes_at_the_next_open() {
+    let folder = Folder::new();
+    let hook: FaultHook = Arc::new(|step: &WriteStep<'_>| {
+        if step.kind == ObjectKind::Original && step.stage == Stage::BeforeRename {
+            Fault::Crash
+        } else {
+            Fault::Continue
+        }
+    });
+    let vault = Vault::open_with_hook(&folder.root, &KEY, hook).unwrap();
+    let stage = vault.stage_import(&b"%PDF-1.4"[..]).unwrap();
+    let crashed = vault.publish_import(stage, new_document("Brief"), info("brief.pdf"), None);
+    assert!(matches!(crashed, Err(VaultError::Crashed)), "{crashed:?}");
+    drop(vault);
+    assert_eq!(staged(&folder), 1, "the crash left it");
+    let vault = folder.open();
+    assert_eq!(staged(&folder), 0);
+    assert!(vault.documents().is_empty() && vault.damaged().is_empty());
+}

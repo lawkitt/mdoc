@@ -130,14 +130,24 @@ fn a_failed_late_notes_write_cancels_the_quit(cx: &mut TestAppContext) {
     });
 }
 
-/// Review of #1152 (P2): a reply typed in the box while a move's reload is
-/// due is saved before a quit closes the window: the quit waits for the
-/// reload, which the reply's save waits for.
+/// Review of #1152 (P2), under ADR 0130: a reply filled in the box while a
+/// move waits is saved before the window closes, with the aliases the move
+/// gave its document: the quit is the last job, after the move and its
+/// reload.
 #[gpui::test]
-fn a_quit_waits_for_a_moves_reload_to_save_the_box_reply(cx: &mut TestAppContext) {
+fn a_quit_after_a_waiting_move_saves_the_box_reply_in_the_moved_names(cx: &mut TestAppContext) {
     use mdoc_pii::Category::Person;
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
+    let other = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Boris Ivanov signed.",
+        &[("Boris Ivanov", Person)],
+    );
+    let to = new_project(&tabs, cx, other);
     let tab = open_applied(
         &tabs,
         cx,
@@ -148,31 +158,30 @@ fn a_quit_waits_for_a_moves_reload_to_save_the_box_reply(cx: &mut TestAppContext
     );
     wait(cx, 1000);
     let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
-    let document = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
     tabs.update_in(cx, |tabs, window, cx| {
-        // As a move leaves it: written and moved, its tab loading again.
-        tabs.moving.insert(document.clone());
-        tabs.reloading.insert(document.clone());
         let view = tabs.tabs.get(tab).unwrap().view().unwrap().clone();
+        // Its own write runs off the main thread; the move waits behind it.
+        view.update(cx, |view, cx| {
+            view.editor.update(cx, |editor, cx| {
+                let later = format!("{} Later.", editor.text());
+                editor.set_text(later, cx);
+            })
+        });
+        tabs.autosave(tab, window, cx);
+        tabs.move_tab(tab, Some(to.clone()), window, cx);
+        // In its Unfiled aliases: PERSON_1 is Anna.
         view.update(cx, |view, cx| {
             view.fill_reply("PERSON_1 replied.", window, cx)
         });
         tabs.quit(window, cx);
     });
     cx.run_until_parked();
-    assert!(!cx.cx.read(|cx| cx.windows().is_empty()), "the quit waits");
-    assert!(vault.replies().is_empty());
-    // The reload ends: the reply saves, then the window closes.
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.move_reload_ended(&document, window, cx)
-    });
-    cx.run_until_parked();
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
     let replies = vault.replies();
     assert_eq!(replies.len(), 1, "the box's reply is saved");
     assert_eq!(
-        vault.reply(&replies[0].id).unwrap().markdown,
-        "PERSON_1 replied."
+        vault.restore_reply(&replies[0].id).unwrap().text,
+        "Anna Petrova replied."
     );
 }
 

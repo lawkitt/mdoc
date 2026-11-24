@@ -164,10 +164,16 @@ fn export_project_retries_a_failed_project_save(cx: &mut TestAppContext) {
     assert!(picked.path().join("Lease").exists());
 }
 
-/// Review of #1145, round 2 (P2): notes typed while Export Project waits
-/// for another save are written and exported, not the notes before them.
-#[gpui::test]
-fn export_project_exports_notes_typed_while_it_waited(cx: &mut TestAppContext) {
+/// A Project with one document, "Letter", whose notes are "Old notes.",
+/// open in a tab.
+fn open_letter(
+    cx: &mut TestAppContext,
+) -> (
+    Entity<Workspace>,
+    &mut VisualTestContext,
+    String,
+    Entity<DocumentView>,
+) {
     let (tabs, cx) = boot_home_with(cx, Session::default(), |tabs, _, _| tabs.use_temp_vault());
     let vault = cx.update(|_, cx| tabs.read(cx).opened_vault()).unwrap();
     let project = vault
@@ -192,106 +198,61 @@ fn export_project_exports_notes_typed_while_it_waited(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
-    let picked = tempfile::tempdir().unwrap();
-    let project_id = project.id.clone();
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.export_project(project_id, window, cx)
-    });
-    let into = picked.path().to_path_buf();
-    cx.simulate_path_prompt_response(move |_| Some(vec![into]));
-    // A text edit while the chooser was up, so Export waits for its write.
+    (tabs, cx, project.id, view)
+}
+
+/// Review of #1145, round 2 (P2), under ADR 0130: text and notes typed
+/// while Export Project waits behind another save are what it exports,
+/// read when the export reaches the head of the writer's queue.
+#[gpui::test]
+fn export_project_exports_notes_typed_while_it_waited(cx: &mut TestAppContext) {
+    let (tabs, cx, project, view) = open_letter(cx);
+    // A save runs off the main thread; the export waits behind it.
     view.update(cx, |view, cx| {
         view.editor
             .update(cx, |editor, cx| editor.set_text("Dear landlord, again", cx));
         view.cancel_autosave();
     });
-    cx.run_until_parked();
-    // The text is written; the export waits for its next look. Notes typed
-    // now are still in their pause when it looks.
-    view.update_in(cx, |view, window, cx| {
-        view.type_notes("New notes.", window, cx)
-    });
-    for _ in 0..3 {
-        cx.executor()
-            .advance_clock(std::time::Duration::from_millis(60));
-        cx.run_until_parked();
-    }
-    let folder = picked.path().join("Lease");
-    let read = |name: &str| std::fs::read_to_string(folder.join(name)).unwrap();
-    assert_eq!(read("Letter.md"), "Dear landlord, again");
-    assert_eq!(read("Letter.notes.md"), "New notes.");
-}
-
-/// Review of #1152 (P2): a member whose tab is loading again after a move
-/// (its Project link let go meanwhile) still counts: notes typed in it
-/// during Export's last wait stop the export instead of being missed.
-#[gpui::test]
-fn export_project_counts_a_reloading_members_unsaved_notes(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot_home_with(cx, Session::default(), |tabs, _, _| tabs.use_temp_vault());
-    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault()).unwrap();
-    let project = vault
-        .create_project(NewProject {
-            name: "Lease".into(),
-            ..NewProject::default()
-        })
-        .unwrap();
-    let letter = vault
-        .create_document(NewDocument {
-            project: Some(project.id.clone()),
-            title: "Letter".into(),
-            source_kind: SourceKind::Text,
-            origin: DocumentOrigin::Ordinary,
-            markdown: "Dear landlord".into(),
-        })
-        .unwrap();
-    vault.set_notes(&letter.id, "Old notes.".into()).unwrap();
-    let id = mdoc_store::document_id::VaultId::parse(&letter.id).unwrap();
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_vault_document(id, window, cx)
-    });
-    cx.run_until_parked();
-    let view = active(&tabs, cx);
-    let edit = |view: &Entity<DocumentView>, text: &str, cx: &mut VisualTestContext| {
-        view.update(cx, |view, cx| {
-            view.editor
-                .update(cx, |editor, cx| editor.set_text(text.to_string(), cx));
-            view.cancel_autosave();
-        });
-    };
     let picked = tempfile::tempdir().unwrap();
-    let project_id = project.id.clone();
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.export_project(project_id, window, cx)
+        let tab = tabs.tabs.active();
+        tabs.autosave(tab, window, cx);
+        tabs.export_project(project, window, cx)
     });
     let into = picked.path().to_path_buf();
     cx.simulate_path_prompt_response(move |_| Some(vec![into]));
-    // Export's first pass waits for a text write.
-    edit(&view, "Dear landlord, one", cx);
-    cx.run_until_parked();
-    // Its second waits for another; meanwhile a move's reload lets the
-    // Project link go.
-    edit(&view, "Dear landlord, two", cx);
-    view.update(cx, |view, _| {
-        let _ = view.project.leave();
-    });
-    cx.executor()
-        .advance_clock(std::time::Duration::from_millis(60));
-    cx.run_until_parked();
-    // Notes typed now are still in their pause when it looks.
+    // Typed while it waits, still in their pause.
     view.update_in(cx, |view, window, cx| {
+        view.editor.update(cx, |editor, cx| {
+            editor.set_text("Dear landlord, at last", cx)
+        });
+        view.cancel_autosave();
         view.type_notes("New notes.", window, cx)
     });
-    for _ in 0..3 {
-        cx.executor()
-            .advance_clock(std::time::Duration::from_millis(60));
-        cx.run_until_parked();
-    }
+    cx.run_until_parked();
+    let folder = picked.path().join("Lease");
+    let read = |name: &str| std::fs::read_to_string(folder.join(name)).unwrap();
+    assert_eq!(read("Letter.md"), "Dear landlord, at last");
+    assert_eq!(read("Letter.notes.md"), "New notes.");
+}
+
+/// Review of #1152 (P2), under ADR 0130: a member whose tab let its
+/// Project link go (as a move's reload does) is still one of the
+/// Project's: its notes are written and exported, not missed.
+#[gpui::test]
+fn export_project_writes_a_member_whose_link_a_reload_let_go(cx: &mut TestAppContext) {
+    let (tabs, cx, project, view) = open_letter(cx);
+    view.update_in(cx, |view, window, cx| {
+        let _ = view.project.leave();
+        view.type_notes("New notes.", window, cx)
+    });
+    let picked = tempfile::tempdir().unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.export_project(project, window, cx)
+    });
+    let into = picked.path().to_path_buf();
+    cx.simulate_path_prompt_response(move |_| Some(vec![into]));
+    cx.run_until_parked();
     let notes = picked.path().join("Lease").join("Letter.notes.md");
-    assert!(
-        !notes.exists(),
-        "exported {:?}",
-        std::fs::read_to_string(&notes).ok()
-    );
-    let notice = cx.update(|_, cx| tabs.read(cx).notice_text()).unwrap();
-    assert!(notice.ends_with("Nothing was exported."), "{notice}");
+    assert_eq!(std::fs::read_to_string(notes).unwrap(), "New notes.");
 }

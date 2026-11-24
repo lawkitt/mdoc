@@ -392,6 +392,14 @@ fn a_reply_pasted_during_a_move_is_refused(cx: &mut TestAppContext) {
     let view = active(&tabs, cx);
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 replied.".into()));
     tabs.update_in(cx, |tabs, window, cx| {
+        // The move waits behind the tab's own write, off the main thread.
+        view.update(cx, |view, cx| {
+            view.editor.update(cx, |editor, cx| {
+                let later = format!("{} Later.", editor.text());
+                editor.set_text(later, cx);
+            })
+        });
+        tabs.autosave(tab, window, cx);
         tabs.move_to_new_project(tab, window, cx);
         view.update(cx, |view, cx| {
             view.paste_ai_response(&PasteAiResponse, window, cx)

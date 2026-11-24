@@ -318,9 +318,20 @@ pub(super) struct Workspace {
     moving: std::collections::HashSet<mdoc_store::document_id::VaultId>,
     /// Of those, the ones whose tab loads them again now.
     reloading: std::collections::HashSet<mdoc_store::document_id::VaultId>,
-    /// A quit's last pass is queueing writes: one that runs and ends at
-    /// once does not finish the quit from inside it.
-    late_pass: bool,
+    /// The running job started reloads and ends once they have (ADR 0130).
+    reloads_hold_writer: bool,
+    /// The quit at the head of the queue waits for a tab list write.
+    quit_waits_for_session: bool,
+    /// Tests only: moves run in the order ADR 0130 forbids.
+    #[cfg(test)]
+    broken_order: bool,
+    /// Tests only: the documents each delete question asked about, in the
+    /// order the questions show.
+    #[cfg(test)]
+    asked_to_delete: VecDeque<Vec<mdoc_store::document_id::VaultId>>,
+    /// Tests only: what each export read, as stored then.
+    #[cfg(test)]
+    exports_seen: Vec<export_project::ExportSeen>,
     /// Moves and deletes in the writer's queue are numbered.
     next_op: u64,
     /// The window, for writes that end after the call that queued them.
@@ -571,7 +582,14 @@ impl Workspace {
             projects: Default::default(),
             moving: Default::default(),
             reloading: Default::default(),
-            late_pass: false,
+            reloads_hold_writer: false,
+            quit_waits_for_session: false,
+            #[cfg(test)]
+            broken_order: false,
+            #[cfg(test)]
+            asked_to_delete: VecDeque::new(),
+            #[cfg(test)]
+            exports_seen: Vec::new(),
             next_op: 0,
             window_handle: window.window_handle(),
             vault: Default::default(),
@@ -655,7 +673,7 @@ impl Workspace {
                     settings_ui::Event::RestartToUpdate => this.restart_to_update(window, cx),
                     settings_ui::Event::Shortcuts => this.toggle_shortcuts(window, cx),
                     settings_ui::Event::UserListsChanged(lists) => {
-                        this.save_user_lists(lists.clone(), cx)
+                        this.save_user_lists(lists.clone(), window, cx)
                     }
                     settings_ui::Event::UnlockLists => this.unlock_projects(window, cx),
                     settings_ui::Event::ShowRecoveryKey => this.show_recovery_key(cx),
@@ -1932,25 +1950,27 @@ impl Workspace {
                 if let Some(active) = restore {
                     self.activate_as(active, Arrival::Unrecorded, window, cx);
                 }
-                self.quit_flow.settle();
-                // Every document's last text is written before the window
-                // closes.
-                for view in self.tabs.iter().filter_map(|tab| tab.view().cloned()) {
-                    view.update(cx, |view, _| view.cancel_autosave());
-                }
-                self.autosave_all(window, cx);
-                self.queue_project_writes(window, cx);
-                self.checkpoint(window, cx);
-                self.finish_quit(window, cx);
+                self.queue_quit(window, cx);
             }
         }
     }
 
-    /// The quit's last step, once documents, Projects and the session are
-    /// written: the Vault's summaries, then the window.
-    /// A move's reload of `document` ends, done or with its tab gone:
-    /// autosaves resume with the moved text, and a quit waiting for it goes
-    /// on once the view holds that text.
+    /// The questions are over: the quit is the writer's last job (ADR
+    /// 0130). Editing goes on while the jobs before it run; it reads
+    /// everything when it reaches the head.
+    fn queue_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.quit_flow.settle();
+        self.queue_write(
+            document_writer::Target::Quit,
+            autosave::Write::Quit,
+            window,
+            cx,
+        );
+    }
+
+    /// A move's reload of `document` ends, done or with its tab gone. Once
+    /// the last of its job's reloads has, and the view holds the moved
+    /// text, the next job may read it.
     fn move_reload_ended(
         &mut self,
         document: &mdoc_store::document_id::VaultId,
@@ -1961,39 +1981,85 @@ impl Workspace {
             return;
         }
         self.moving.remove(document);
-        cx.defer_in(window, |this, window, cx| {
-            if this.quit_flow.finishing() && !this.late_pass {
-                this.finish_quit(window, cx);
-            }
-        });
+        if self.reloading.is_empty() && std::mem::take(&mut self.reloads_hold_writer) {
+            cx.defer_in(window, |this, window, cx| this.advance_writer(window, cx));
+        }
     }
 
-    fn finish_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // A move's reload waits too: a reply in its box saves only after.
-        if !self.quit_flow.finishing()
-            || self.session_writer.writing()
-            || self.document_writer.busy()
-            || !self.reloading.is_empty()
-        {
-            return;
+    /// The quit at the head of the writer's queue, all in this one turn:
+    /// what every tab shows (its names, its text, its notes, its reply
+    /// box), every Project whose names wait, the tab list and the Vault's
+    /// summaries are written, and the window closes, so no keystroke can
+    /// land between what is written and the close. Anything that can't be
+    /// written cancels the quit, its edit still in its tab.
+    fn run_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) -> autosave::Ran {
+        // Cancelled while it waited: a job before it failed.
+        if !self.quit_flow.finishing() {
+            return autosave::Ran::Ended;
         }
-        // Editing stays open while the last writes run: a keystroke since
-        // they were queued is written before the window closes, and this
-        // runs again once that write ends (a failed one cancels the quit).
-        // Notes and replies write at once: one that failed has cancelled
-        // the quit by now.
-        self.late_pass = true;
-        let busy = self.autosave_late_edits(window, cx);
-        self.late_pass = false;
-        if busy || !self.quit_flow.finishing() {
-            return;
+        // A tab list write still running would land after this one.
+        if self.session_writer.writing() {
+            self.quit_waits_for_session = true;
+            return autosave::Ran::Holds;
+        }
+        let ids: Vec<u64> = self.tabs.iter().map(|tab| tab.id()).collect();
+        for view in self.tabs.iter().filter_map(|tab| tab.view().cloned()) {
+            view.update(cx, |view, _| view.cancel_autosave());
+        }
+        if let Some(vault) = self.vault.vault().cloned() {
+            for id in ids {
+                if let Err(error) = self.quit_writes(id, &vault, window, cx) {
+                    self.unsaved.insert(id);
+                    let name = (self.tab_view(id)).map(|view| view.read(cx).display_name());
+                    self.notices.post(format!(
+                        "Could not save \u{201c}{}\u{201d}: {error}",
+                        name.unwrap_or_default()
+                    ));
+                    self.quit_failed(window, cx);
+                    return autosave::Ran::Ended;
+                }
+                // Its notes or its reply failed, and said so.
+                if !self.quit_flow.finishing() {
+                    return autosave::Ran::Ended;
+                }
+            }
+            let projects: Vec<String> = (self.projects.summaries().into_iter())
+                .map(|summary| summary.id)
+                .filter(|id| {
+                    self.project_ui.is_unwritten(id)
+                        || self
+                            .document_writer
+                            .has(&document_writer::Target::Project(id.clone()))
+                })
+                .collect();
+            for id in projects {
+                if let Err(error) = self.write_now(&vault, &[Some(id.clone())]) {
+                    self.project_ui.mark_unwritten(&id);
+                    let name =
+                        (self.projects.project(&id)).map_or_else(String::new, |p| p.name.clone());
+                    self.notices.post(format!(
+                        "Could not save the Project \u{201c}{name}\u{201d}: {error}"
+                    ));
+                    self.quit_failed(window, cx);
+                    return autosave::Ran::Ended;
+                }
+                self.project_ui.take_unwritten(&id);
+            }
         }
         // The tab list as it stands now that every document has its id.
-        if self.session_writer.enabled() {
-            let effect = self.session_writer.checkpoint(self.snapshot(cx));
-            if effect.is_some() {
-                self.carry_out_session(effect, window, cx);
-                return;
+        if self.session_writer.enabled()
+            && let Some(SessionEffect::Write { path, snapshot }) =
+                self.session_writer.checkpoint(self.snapshot(cx))
+        {
+            match session_store::save(&path, &snapshot) {
+                Ok(()) => {
+                    let _ = self.session_writer.saved(snapshot);
+                }
+                Err(error) => {
+                    self.session_writer.failed();
+                    self.session_failed(error.to_string(), window, cx);
+                    return autosave::Ran::Ended;
+                }
             }
         }
         if let Some(vault) = self.vault.vault()
@@ -2003,6 +2069,51 @@ impl Workspace {
                 .post(format!("Could not save the document list: {error}"));
         }
         self.close_window(window, cx);
+        // The window is gone: nothing after the last job runs.
+        autosave::Ran::Holds
+    }
+
+    /// The quit's writes of tab `id`: its document (made now if new), its
+    /// notes and the reply in its box.
+    fn quit_writes(
+        &mut self,
+        id: u64,
+        vault: &mdoc_vault::Vault,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        if self.tab_document(id, cx).is_none() {
+            self.create_tab_now(id, vault, cx)?;
+        } else {
+            self.write_tab_now(id, vault, cx)
+                .map_err(|error| error.to_string())?;
+        }
+        let Some(document) = self.tab_document(id, cx) else {
+            return Ok(());
+        };
+        let Some(view) = self.tab_view(id) else {
+            return Ok(());
+        };
+        if view.read(cx).notes.needs_write() {
+            self.run_notes_save(&document, window, cx);
+        }
+        if self.quit_flow.finishing() && view.read(cx).reply.unsaved().is_some() {
+            let save = saved_replies::ReplySave::Box {
+                tab: id,
+                open: false,
+            };
+            self.run_reply_save(save, window, cx);
+        }
+        Ok(())
+    }
+
+    /// A write the quit needed failed: the window stays, with the edit.
+    fn quit_failed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.quit_flow.abandon() {
+            Self::quit_cancelled(cx);
+            crate::menu_bar::reveal_if_hidden(window, cx);
+        }
+        cx.notify();
     }
 
     fn close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2133,38 +2244,53 @@ impl Workspace {
                     }
                     Err(error) => {
                         this.session_writer.failed();
-                        this.notices.post(format!("Could not save session: {error}"));
-                        let was_quitting = this.quit_flow.abandon();
-                        if was_quitting {
-                            // A window hidden in the menu bar shows to ask.
-                            crate::menu_bar::reveal_if_hidden(window, cx);
-                            let answer = window.prompt(PromptLevel::Warning,
-                                "Could not save the tab list",
-                                Some("Your documents are saved. Cancel to retry, or quit using the previous session list."),
-                                &["Cancel", "Quit without updating session"], cx);
-                            cx.spawn_in(window, async move |this, cx| {
-                                if answer.await.ok() == Some(1) {
-                                    let _ = this.update_in(cx, |this, window, cx| {
-                                        // The previous tab list stays.
-                                        this.session_writer.set_path(None);
-                                        this.quit_flow.settle();
-                                        this.finish_quit(window, cx);
-                                    });
-                                } else {
-                                    let _ = this.update(cx, |_, cx| Self::quit_cancelled(cx));
-                                }
-                            }).detach();
-                        }
-                        cx.notify();
-                        return;
+                        this.session_failed(error.to_string(), window, cx);
                     }
                 }
-                if this.quit_flow.finishing() && !this.session_writer.writing() {
-                    this.finish_quit(window, cx);
+                // A quit waiting at the head for this write goes on.
+                if !this.session_writer.writing()
+                    && std::mem::take(&mut this.quit_waits_for_session)
+                    && this.run_quit(window, cx) == autosave::Ran::Ended
+                {
+                    this.advance_writer(window, cx);
                 }
             });
         })
         .detach();
+    }
+
+    /// The tab list could not be saved; during a quit, ask whether to quit
+    /// with the previous one.
+    fn session_failed(&mut self, error: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.notices
+            .post(format!("Could not save session: {error}"));
+        if self.quit_flow.abandon() {
+            // A window hidden in the menu bar shows to ask.
+            crate::menu_bar::reveal_if_hidden(window, cx);
+            let answer = window.prompt(
+                PromptLevel::Warning,
+                "Could not save the tab list",
+                Some(
+                    "Your documents are saved. Cancel to retry, or quit using the previous \
+                     session list.",
+                ),
+                &["Cancel", "Quit without updating session"],
+                cx,
+            );
+            cx.spawn_in(window, async move |this, cx| {
+                if answer.await.ok() == Some(1) {
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        // The previous tab list stays.
+                        this.session_writer.set_path(None);
+                        this.queue_quit(window, cx);
+                    });
+                } else {
+                    let _ = this.update(cx, |_, cx| Self::quit_cancelled(cx));
+                }
+            })
+            .detach();
+        }
+        cx.notify();
     }
 
     /// Focus the active document without changing which document is active.

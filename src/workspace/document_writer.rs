@@ -1,9 +1,9 @@
-//! The window's writes into the Vault: documents' autosaves, Projects, and
-//! moves and deletes, one at a time, with the latest write of each target
-//! waiting behind it, so nothing is ever written older than it was last
-//! written. Generic over the write, so the queue rules run without a window
-//! or a Vault; the workspace view snapshots documents, runs the writes and
-//! reports when each ends. A quit waits until it is idle.
+//! The window's writes into the Vault, one job at a time (ADR 0130): every
+//! save, move, delete, export, import and reply, and the quit last. At most
+//! one job per target waits, so a later request of a target replaces the
+//! one waiting. Generic over the job, so the queue rules run without a
+//! window or a Vault; the workspace view runs each job when it reaches the
+//! head, reading what it writes then, and reports when it ends.
 use mdoc_store::document_id::DocumentId;
 use std::collections::VecDeque;
 
@@ -15,12 +15,17 @@ pub(super) enum Target {
     Document(DocumentId),
     /// A Project, as the window holds it when its write starts.
     Project(String),
-    /// A move or a delete; each is its own.
+    /// A move, a delete, an export, an import, a reply's save or delete:
+    /// each is its own.
     Op(u64),
     /// The AI reply in tab `u64`'s reply box: only its latest text waits.
     Reply(u64),
     /// A Vault document's private notes: only their latest text waits.
     Notes(mdoc_store::document_id::VaultId),
+    /// The user-wide lists: only their latest change waits.
+    UserLists,
+    /// The quit: the last job.
+    Quit,
 }
 
 pub(super) struct DocumentWriter<W> {

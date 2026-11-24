@@ -84,6 +84,23 @@ fn admit_one(path: PathBuf) -> Result<Admitted, (String, String)> {
     })
 }
 
+/// An import's files as sealed beside the writer, in the order opened,
+/// waiting to be published by a job on it.
+pub(super) struct Staged {
+    steps: Vec<Step>,
+    project: Option<String>,
+}
+
+/// One file of an import.
+enum Step {
+    /// A repeat that opens the document imported before.
+    Existing(VaultId, PathBuf),
+    /// Sealed, with what admission read of it.
+    Staged(Box<(Admitted, mdoc_vault::StagedImport)>),
+    /// Its name, and why it could not be sealed.
+    Failed(String, String),
+}
+
 /// What the repeated-import question decided for the repeats.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Repeats {
@@ -256,7 +273,9 @@ impl Workspace {
     }
 
     /// Import `files` into the Vault, each as `repeats` says when it is a
-    /// repeat of `existing`, then show them.
+    /// repeat of `existing`, then show them. Their originals are sealed
+    /// off the main thread and beside the writer, then published as one
+    /// job on it (ADR 0130).
     #[allow(clippy::too_many_arguments)]
     fn import(
         &mut self,
@@ -280,78 +299,106 @@ impl Workspace {
                 _ => plan.push(Ok(file)),
             }
         }
-        let again = project.clone();
         let task = cx.background_executor().spawn(async move {
-            // Converted files whose bytes changed since admission: admitted
-            // again, as they are now.
-            let mut changed = Vec::new();
-            let steps = (plan.into_iter())
-                .filter_map(|step| match step {
-                    Err(existing) => Some(Ok(Err(existing))),
+            (plan.into_iter())
+                .map(|step| match step {
+                    Err((id, path)) => Step::Existing(id, path),
                     Ok(file) => {
-                        let name = file_name(&file.path);
-                        let title = file
-                            .path
-                            .file_stem()
-                            .map(|stem| stem.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| name.clone());
-                        let info = OriginalInfo {
-                            file_name: name.clone(),
-                            ..OriginalInfo::default()
-                        };
-                        let new = NewDocument {
-                            project: project.clone(),
-                            title: title.clone(),
-                            source_kind: file.kind,
-                            origin: DocumentOrigin::Ordinary,
-                            markdown: file.text.unwrap_or_default(),
-                        };
-                        let imported = if needs_conversion(&file.path) {
-                            // Only the bytes admission hashed: changed since,
-                            // it is not what was asked about, so nothing is
-                            // written and it is admitted again.
-                            let imported = std::fs::File::open(&file.path)
+                        // Markdown and plain text: the bytes admission read.
+                        // A converted file: read again, and published only
+                        // while it hashes as admission hashed it.
+                        let staged = match &file.text {
+                            Some(text) => vault.stage_import(text.as_bytes()),
+                            None => std::fs::File::open(&file.path)
                                 .map_err(mdoc_vault::VaultError::from)
-                                .and_then(|source| {
-                                    vault.import_document_expecting(new, source, info, &file.sha256)
-                                });
-                            match imported {
-                                Ok(None) => {
-                                    changed.push(file.path);
-                                    return None;
-                                }
-                                Ok(Some(document)) => Ok(document),
-                                Err(error) => Err(error),
-                            }
-                        } else {
-                            // The bytes admission read are the original.
-                            let source = std::io::Cursor::new(new.markdown.clone().into_bytes());
-                            vault.import_document(new, source, info)
+                                .and_then(|source| vault.stage_import(source)),
                         };
-                        Some(
-                            imported
-                                .map_err(|error| (name, error.to_string()))
-                                .and_then(|document| {
-                                    VaultId::parse(&document.id)
-                                        .map(|id| Ok((id, title, file.path)))
-                                        .ok_or_else(|| (document.title, "Invalid id.".into()))
-                                }),
-                        )
+                        match staged {
+                            Ok(staged) => Step::Staged(Box::new((file, staged))),
+                            Err(error) => Step::Failed(file_name(&file.path), error.to_string()),
+                        }
                     }
                 })
-                .collect::<Vec<_>>();
-            (steps, changed)
+                .collect::<Vec<_>>()
         });
         cx.spawn_in(window, async move |this, cx| {
-            let (imported, changed) = task.await;
+            let steps = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if !changed.is_empty() {
-                    this.admit_queue.push_front((changed, again));
+                // A quit is the last job: what was sealed goes with it.
+                if this.quit_flow.quitting() {
+                    this.admitted_all(window, cx);
+                    return;
                 }
-                this.show_imported(imported, window, cx)
+                this.next_op += 1;
+                let target = super::document_writer::Target::Op(this.next_op);
+                let staged = Staged { steps, project };
+                this.queue_write(target, super::autosave::Write::Import(staged), window, cx);
             });
         })
         .detach();
+    }
+
+    /// Publish what an import sealed, at the head of the writer's queue:
+    /// each file only while its bytes are the ones admission read and its
+    /// Project still exists, both checked under the Vault's write lock.
+    /// A file changed since is admitted again; the rest open.
+    pub(super) fn run_import(
+        &mut self,
+        staged: Staged,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(vault) = self.vault.vault().cloned() else {
+            self.admitted_all(window, cx);
+            return;
+        };
+        let Staged { steps, project } = staged;
+        // Converted files whose bytes changed since admission: admitted
+        // again, as they are now.
+        let mut changed = Vec::new();
+        let imported = (steps.into_iter())
+            .filter_map(|step| match step {
+                Step::Existing(id, path) => Some(Ok(Err((id, path)))),
+                Step::Failed(name, error) => Some(Err((name, error))),
+                Step::Staged(staged) => {
+                    let (file, staged) = *staged;
+                    let name = file_name(&file.path);
+                    let title = file
+                        .path
+                        .file_stem()
+                        .map(|stem| stem.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| name.clone());
+                    let info = OriginalInfo {
+                        file_name: name.clone(),
+                        ..OriginalInfo::default()
+                    };
+                    let expect = file.text.is_none().then_some(file.sha256.as_str());
+                    let new = NewDocument {
+                        project: project.clone(),
+                        title: title.clone(),
+                        source_kind: file.kind,
+                        origin: DocumentOrigin::Ordinary,
+                        markdown: file.text.clone().unwrap_or_default(),
+                    };
+                    match vault.publish_import(staged, new, info, expect) {
+                        Ok(None) => {
+                            changed.push(file.path);
+                            None
+                        }
+                        Ok(Some(document)) => Some(
+                            VaultId::parse(&document.id)
+                                .map(|id| Ok((id, title, file.path)))
+                                .ok_or_else(|| (document.title, "Invalid id.".into())),
+                        ),
+                        Err(error) => Some(Err((name, error.to_string()))),
+                    }
+                }
+            })
+            .collect();
+        if !changed.is_empty() {
+            self.admit_queue.push_front((changed, project));
+        }
+        self.show_imported(imported, window, cx);
     }
 
     #[allow(clippy::type_complexity)]
