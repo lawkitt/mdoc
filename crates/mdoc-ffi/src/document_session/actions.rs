@@ -10,7 +10,9 @@ use crate::{
     CoreError, ReviewError,
     document_session::{Category, DocumentPhase, ReviewSnapshot},
     text::TextRange,
+    vault::Vault,
 };
+use std::sync::Arc;
 
 /// One review action. Mentions are named by `Mention::id`, identities by
 /// `IdentityRow::id`.
@@ -109,7 +111,8 @@ pub struct HandOff {
     /// The alias-only note, then the session's text (`copy_for_ai`),
     /// unchecked against the Project's names: not what leaves.
     pub text: String,
-    /// The shared `.md` file's name (`share_file_name`).
+    /// The shared `.md` file's name (`Vault::share_file_name`): the title
+    /// masked with every name its Project knows.
     pub file_name: String,
 }
 
@@ -174,26 +177,34 @@ impl DocumentSession {
         Ok(document.snapshot())
     }
 
-    /// Copy for AI and Share: refused while proposals are pending. The
-    /// apps then send `Vault::text_for_ai`, not `HandOff::text`.
-    pub fn hand_off(&self) -> Result<HandOff, ReviewError> {
-        let guard = self.lock_document();
-        let document = guard.as_ref().ok_or_else(no_document)?;
-        let count = document.proposed();
-        #[cfg(test)]
-        let count = if crate::exits::taken_out(crate::exits::Gate::HandOff) {
-            0
-        } else {
-            count
+    /// Copy for AI and Share: refused while proposals are pending, and
+    /// until the document is saved into `vault`, which names the file
+    /// (`Vault::share_file_name`). The apps then send `Vault::text_for_ai`,
+    /// not `HandOff::text`.
+    pub fn hand_off(&self, vault: Arc<Vault>) -> Result<HandOff, ReviewError> {
+        let (text, id) = {
+            let guard = self.lock_document();
+            let document = guard.as_ref().ok_or_else(no_document)?;
+            let count = document.proposed();
+            #[cfg(test)]
+            let count = if crate::exits::taken_out(crate::exits::Gate::HandOff) {
+                0
+            } else {
+                count
+            };
+            if count > 0 {
+                return Err(ReviewError::PendingProposals { count });
+            }
+            let id = (document.vault.as_ref()).and_then(|place| place.id.clone());
+            (document.review.copy_for_ai(), id)
         };
-        if count > 0 {
-            return Err(ReviewError::PendingProposals { count });
-        }
-        let hand_off = HandOff {
-            text: document.review.copy_for_ai(),
-            file_name: document.share_file_name(),
-        };
-        Ok(hand_off)
+        let id = id.ok_or_else(|| ReviewError::Refused {
+            message: "Save the document into the Vault first.".into(),
+        })?;
+        Ok(HandOff {
+            text,
+            file_name: vault.share_file_name(id)?,
+        })
     }
 
     /// Hide name's callout for a selection outside any name: what it
@@ -411,8 +422,7 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{document_session::MentionState, test_support::Scratch, vault::Vault};
-    use std::sync::Arc;
+    use crate::{document_session::MentionState, test_support::Scratch};
 
     fn names(names: &[(&str, Category)]) -> ReviewAction {
         ReviewAction::ProposeNames {
@@ -659,19 +669,28 @@ mod tests {
         assert_eq!(undone.text, replaced.text);
     }
 
-    /// Copy for AI refuses while proposals are pending; then it is the
-    /// text and file name the separate calls give.
+    /// Copy for AI refuses while proposals are pending, and until the
+    /// document is saved; then it is the text and file name the separate
+    /// calls give.
     #[test]
     fn hand_off_waits_for_every_proposal() {
+        let scratch = Scratch::new();
+        let vault = Vault::open(scratch.path().display().to_string(), vec![3; 32]).unwrap();
         let (session, _) = session("Ann Lee met Bob Hart.", &["Ann Lee", "Bob Hart"]);
         assert!(matches!(
-            session.hand_off(),
+            session.hand_off(vault.clone()),
             Err(ReviewError::PendingProposals { count: 2 })
         ));
         session.review(ReviewAction::ReplaceAll).unwrap();
-        let hand_off = session.hand_off().unwrap();
+        assert!(matches!(
+            session.hand_off(vault.clone()),
+            Err(ReviewError::Refused { .. })
+        ));
+        let saved = session.save_into_vault(vault.clone()).unwrap();
+        let hand_off = session.hand_off(vault.clone()).unwrap();
         assert_eq!(hand_off.text, session.copy_for_ai().unwrap());
         assert_eq!(hand_off.file_name, "Letter.md");
+        assert_eq!(hand_off.file_name, vault.share_file_name(saved.id).unwrap());
     }
 
     /// What a review tap costs on a long document (async calls
