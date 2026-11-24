@@ -559,7 +559,7 @@ impl Workspace {
     fn advance_writer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(next) = self.document_writer.finished() {
             self.run_write(next, window, cx);
-        } else if self.quit_flow.finishing() {
+        } else if self.quit_flow.finishing() && !self.late_pass {
             self.finish_quit(window, cx);
         }
         // A Copy for AI waiting for what it shows to be written.

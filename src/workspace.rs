@@ -318,6 +318,9 @@ pub(super) struct Workspace {
     moving: std::collections::HashSet<mdoc_store::document_id::VaultId>,
     /// Of those, the ones whose tab loads them again now.
     reloading: std::collections::HashSet<mdoc_store::document_id::VaultId>,
+    /// A quit's last pass is queueing writes: one that runs and ends at
+    /// once does not finish the quit from inside it.
+    late_pass: bool,
     /// Moves and deletes in the writer's queue are numbered.
     next_op: u64,
     /// The window, for writes that end after the call that queued them.
@@ -568,6 +571,7 @@ impl Workspace {
             projects: Default::default(),
             moving: Default::default(),
             reloading: Default::default(),
+            late_pass: false,
             next_op: 0,
             window_handle: window.window_handle(),
             vault: Default::default(),
@@ -1958,7 +1962,12 @@ impl Workspace {
         // Editing stays open while the last writes run: a keystroke since
         // they were queued is written before the window closes, and this
         // runs again once that write ends (a failed one cancels the quit).
-        if self.autosave_late_edits(window, cx) {
+        // Notes and replies write at once: one that failed has cancelled
+        // the quit by now.
+        self.late_pass = true;
+        let busy = self.autosave_late_edits(window, cx);
+        self.late_pass = false;
+        if busy || !self.quit_flow.finishing() {
             return;
         }
         // The tab list as it stands now that every document has its id.

@@ -75,6 +75,61 @@ fn a_keystroke_during_the_quits_last_write_is_written(cx: &mut TestAppContext) {
     );
 }
 
+/// Review of #1152 (P1): notes typed while a quit's last write runs, whose
+/// own write then fails, cancel the quit: the window stays with them.
+#[gpui::test]
+fn a_failed_late_notes_write_cancels_the_quit(cx: &mut TestAppContext) {
+    use std::sync::atomic::AtomicUsize;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("vault");
+    // Armed, the Vault takes one Document write and fails the next.
+    let armed = Arc::new(AtomicBool::new(false));
+    let writes = Arc::new(AtomicUsize::new(0));
+    let hook: mdoc_vault::FaultHook = {
+        let (armed, writes) = (armed.clone(), writes.clone());
+        Arc::new(move |step| {
+            let document = step.kind == mdoc_vault::ObjectKind::Document
+                && step.stage == mdoc_vault::Stage::BeforeRename;
+            if armed.load(Ordering::SeqCst)
+                && document
+                && writes.fetch_add(1, Ordering::SeqCst) >= 1
+            {
+                mdoc_vault::Fault::Crash
+            } else {
+                mdoc_vault::Fault::Continue
+            }
+        })
+    };
+    let (tabs, cx) = boot_home_with(cx, Session::default(), move |tabs, _, _| {
+        tabs.use_vault(mdoc_vault::Vault::open_with_hook(root, &[3; 32], hook).unwrap())
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    cx.simulate_input("first");
+    wait(cx, 1000);
+    cx.simulate_input(" second");
+    armed.store(true, Ordering::SeqCst);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.quit(window, cx);
+        // Only the notes change while the quit writes the text.
+        let view = tabs.active_view().unwrap();
+        view.update(cx, |view, cx| view.type_notes("Call back.", window, cx));
+    });
+    cx.run_until_parked();
+    assert!(
+        !cx.cx.read(|cx| cx.windows().is_empty()),
+        "the window stays"
+    );
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(!tabs.quit_flow.finishing());
+        let view = tabs.active_view().unwrap();
+        assert_eq!(view.read(cx).notes.text(), "Call back.");
+        let notice = tabs.notices.message().unwrap();
+        assert!(notice.contains("notes"), "{notice}");
+    });
+}
+
 #[gpui::test]
 fn production_shell_queues_startup_opens_and_a_quit_writes_the_edit(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
