@@ -768,7 +768,7 @@ impl ReviewText {
         project: &[ExportedIdentity],
         reserved: &[String],
     ) -> Result<(), CoreError> {
-        let step = Step::new(StepKind::JoinCase, String::new(), Focus::default());
+        let step = Step::new(StepKind::JoinProject, String::new(), Focus::default());
         self.step(step, |document, _| document.join_now(project, reserved))
     }
 

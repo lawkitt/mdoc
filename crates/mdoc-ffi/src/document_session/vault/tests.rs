@@ -98,7 +98,7 @@ fn an_import_lands_in_unfiled_and_lists_its_counts() {
         .unwrap();
     let saved = session.save_into_vault(vault.clone()).unwrap();
     assert_eq!(saved.project, None);
-    assert_eq!(saved.review.case_id, None);
+    assert_eq!(saved.review.project_id, None);
     assert!(vault.projects().is_empty(), "no import makes a Project");
 
     let unfiled = vault.unfiled();
@@ -201,7 +201,10 @@ fn intake_from_a_project_page_joins_it() {
         "Brief",
     );
     assert_eq!(brief.project.as_ref().unwrap().id, project.id);
-    assert_eq!(brief.review.case_id.as_deref(), Some(project.id.as_str()));
+    assert_eq!(
+        brief.review.project_id.as_deref(),
+        Some(project.id.as_str())
+    );
 
     let memo = session("Bob Hart met Ann Lee.", "Memo");
     let joined = memo
@@ -374,7 +377,7 @@ fn a_document_moves_into_a_project_and_back() {
     // Opened again, it is the moved document in the Project.
     let (_, reopened) = reopened(&vault, &memo.id);
     assert_eq!(reopened.text, "PERSON_3 met PERSON_1.");
-    assert_eq!(reopened.case_id.as_deref(), Some(project.id.as_str()));
+    assert_eq!(reopened.project_id.as_deref(), Some(project.id.as_str()));
     assert_eq!((reopened.replaced, reopened.proposed), (2, 0));
 
     let back = vault.undo_move(moved.undo).unwrap();
@@ -583,7 +586,7 @@ fn a_save_never_overwrites_a_change_made_elsewhere() {
     session.keep(at(&text, "PERSON_1", 0), Scope::This).unwrap();
     assert!(matches!(
         session.save_into_vault(vault.clone()),
-        Err(CoreError::Case { .. })
+        Err(CoreError::Project { .. })
     ));
     let stored = vault.store().document(&saved.id).unwrap();
     assert_eq!(stored.title, "Renamed elsewhere");

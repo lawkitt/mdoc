@@ -80,7 +80,7 @@ extension CoreError {
         case .detect(let message): .findNamesFailed(message)
         case .cancelled: .cancelled
         case .review(let message): .reviewChanged(message)
-        case .caseFailed(let message): .projectRefused(message)
+        case .project(let message): .projectRefused(message)
         case .setup(let message): .setupFailed(message)
         case .invalid(let message): .invalid(message)
         case .io(let message): .fileFailed(message)
@@ -928,7 +928,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// review without the reply or the styling; nil before it is read.
     fileprivate func loadedSummary(updated: Date) -> LibraryDocument? {
         guard let review = try? ffi.snapshot() else { return nil }
-        let projectID = review.caseId ?? chosen.projectID
+        let projectID = review.projectId ?? chosen.projectID
         return LibraryDocument(
             id: id, title: review.title, projectID: projectID.map(ProjectID.init), kind: lock.withLock { kind },
             phase: review.phase, pendingCount: Int(review.proposed), updated: updated,
@@ -988,7 +988,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// counts, the kept names, the phase and the ids are the core's.
     private func snapshot(of review: ReviewSnapshot) -> DocumentSnapshot {
         // Before it joins its Project the core has none: the one chosen.
-        let projectID = review.caseId ?? chosen.projectID
+        let projectID = review.projectId ?? chosen.projectID
         let (kind, original) = lock.withLock { (self.kind, self.original) }
         let candidates = review.mentions.map { mention in
             Candidate(

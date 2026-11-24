@@ -97,12 +97,11 @@ these.
 | D7 | Russian typed into the editor and the find field appears correctly, and a misspelled Russian word gets the spelling underline |
 | D8 | Dropping files from Finder or Explorer onto Home and the sidebar opens them, and "Open with" from the OS opens a file in mdoc |
 | D9 | *macOS:* the menu bar shelf shows its documents; Copy for AI and dragging a ready document into a browser composer both deliver the aliased text |
-| D10 | *macOS:* quitting with unsaved work asks first, from ⌘Q, the Dock and logout |
+| D10 | *macOS:* quitting from ⌘Q, the Dock or logout asks nothing and keeps the last edit |
 
 - Start from a clean profile: quit mdoc and rename its app-data folder,
   then restore it. Never delete the Vault key (`io.github.lawkitt.mdoc` /
-  `case-key`, or `cases/key.dpapi`, names from before the Vault): the Vault
-  becomes unreadable. D4 needs a
+  `case-key`, or `cases/key.dpapi`): the Vault becomes unreadable. D4 needs a
   macOS user that never ran mdoc.
 - Show only public fixtures (`docs/product-media/`, `tests/fixtures/`);
   copy one into `Документы/Папка с пробелами/` for the path rows.
