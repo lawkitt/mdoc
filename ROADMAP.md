@@ -516,12 +516,6 @@ items 33–35 are polish and do not.
     Project. A document's menu and Unfiled rows offer Move to Project, Move
     to New Project and Move to Unfiled, with Undo, as iOS does. *Done when:*
     the Android job passes with a move and its Undo.
-33. **[iOS] Rules before the detector.** *From
-    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* After "Not now" on the
-    download card, Find names marks nothing. It runs the rules-only pass once
-    and marks what that finds (an email address, a phone number), with one
-    line saying names need the detector. *Done when:* the iOS job passes with
-    a test of a pasted document's email address marked before any download.
 34. **[iOS] One tap to paste.** *From
     [#1153](https://github.com/lawkitt/mdoc/issues/1153).* Paste text and Paste AI
     reply open a sheet with a second Paste button. *Done when:* pasting a
