@@ -1943,6 +1943,12 @@ impl Workspace {
         {
             return;
         }
+        // Editing stays open while the last writes run: a keystroke since
+        // they were queued is written before the window closes, and this
+        // runs again once that write ends (a failed one cancels the quit).
+        if self.autosave_late_edits(window, cx) {
+            return;
+        }
         // The tab list as it stands now that every document has its id.
         if self.session_writer.enabled() {
             let effect = self.session_writer.checkpoint(self.snapshot(cx));

@@ -190,6 +190,25 @@ impl Workspace {
         }
     }
 
+    /// Before the window closes: write any document edited since the
+    /// quit's own writes were queued, a keystroke while they ran. Returns
+    /// whether a write now runs or waits. Replies and Projects are not
+    /// asked again: their edits come only through a document's.
+    pub(super) fn autosave_late_edits(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let ids: Vec<_> = self.tabs.iter().map(|tab| tab.id()).collect();
+        for id in ids {
+            if let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) {
+                view.update(cx, |view, _| view.cancel_autosave());
+            }
+            self.autosave_document(id, window, cx);
+        }
+        self.document_writer.busy()
+    }
+
     pub(super) fn queue_write(
         &mut self,
         target: Target,
