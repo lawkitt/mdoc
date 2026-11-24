@@ -316,10 +316,14 @@ pub(super) struct Workspace {
     /// Documents a move or a delete is rewriting: their autosaves wait
     /// until they load again.
     moving: std::collections::HashSet<mdoc_store::document_id::VaultId>,
-    /// Of those, the ones whose tab loads them again now.
-    reloading: std::collections::HashSet<mdoc_store::document_id::VaultId>,
+    /// Of those, the ones whose tab loads them again now, with that load's
+    /// generation: an older load ending is not the reload.
+    reloading: std::collections::HashMap<mdoc_store::document_id::VaultId, u64>,
     /// The running job started reloads and ends once they have (ADR 0130).
     reloads_hold_writer: bool,
+    /// Projects a document's save is writing off the main thread: their
+    /// names are not the Vault's until it ends.
+    projects_saving: std::collections::HashSet<String>,
     /// The quit at the head of the queue waits for a tab list write.
     quit_waits_for_session: bool,
     /// Tests only: moves run in the order ADR 0130 forbids.
@@ -583,6 +587,7 @@ impl Workspace {
             moving: Default::default(),
             reloading: Default::default(),
             reloads_hold_writer: false,
+            projects_saving: Default::default(),
             quit_waits_for_session: false,
             #[cfg(test)]
             broken_order: false,
@@ -1164,6 +1169,8 @@ impl Workspace {
         }
     }
 
+    /// Load tab `id`'s document from the Vault; the load's generation when
+    /// one started.
     fn load_document(
         &mut self,
         id: u64,
@@ -1171,14 +1178,12 @@ impl Workspace {
         record: TabRecord,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Option<u64> {
         #[cfg(test)]
         {
             self.project_ui.member_reads += 1;
         }
-        let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
-            return;
-        };
+        let view = self.tabs.get(id).and_then(|tab| tab.view().cloned())?;
         let (generation, notes_writes) = view.update(cx, |view, cx| {
             let generation = view.lifecycle.begin_load();
             view.error = None;
@@ -1209,14 +1214,14 @@ impl Workspace {
                         // It loads once the key opens the Vault.
                         None => self.vault.wait(id),
                     }
-                    return;
+                    return None;
                 }
             },
         };
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.move_reload_ended(&loading, window, cx);
+                this.move_reload_ended(&loading, generation, window, cx);
                 if !this.tabs.contains(id) {
                     // Its viewing copy may have been made after the tab went.
                     if let Some(dir) = this.viewing_dir(id) {
@@ -1332,6 +1337,7 @@ impl Workspace {
             });
         })
         .detach();
+        Some(generation)
     }
 
     /// Where tab `id` keeps its viewing copy.
@@ -1968,18 +1974,21 @@ impl Workspace {
         );
     }
 
-    /// A move's reload of `document` ends, done or with its tab gone. Once
-    /// the last of its job's reloads has, and the view holds the moved
-    /// text, the next job may read it.
+    /// A load of `document` ends, done or with its tab gone. When it is a
+    /// move's reload (its `generation`, not an older load's), and the last
+    /// of its job's reloads, the next job may read the view once it holds
+    /// the moved text.
     fn move_reload_ended(
         &mut self,
         document: &mdoc_store::document_id::VaultId,
+        generation: u64,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.reloading.remove(document) {
+        if self.reloading.get(document) != Some(&generation) {
             return;
         }
+        self.reloading.remove(document);
         self.moving.remove(document);
         if self.reloading.is_empty() && std::mem::take(&mut self.reloads_hold_writer) {
             cx.defer_in(window, |this, window, cx| this.advance_writer(window, cx));

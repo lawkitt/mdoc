@@ -555,11 +555,18 @@ impl Workspace {
             ReplyOwner::Project(project) => Some(project),
             ReplyOwner::Document(document) => vault.document(&document).ok()?.project,
         });
-        if let Some(project) = project
-            && (self.project_ui.is_unwritten(&project)
-                || self.document_writer.has(&Target::Project(project.clone())))
-        {
-            if let Err(error) = self.write_now(&vault, &[Some(project.clone())]) {
+        if let Some(project) = project {
+            // Its open members' names waiting for their fold count too.
+            let folded = self.fold_members(&[Some(project.clone())], cx);
+            let due = self.project_ui.is_unwritten(&project)
+                || self.document_writer.has(&Target::Project(project.clone()));
+            let written = folded.and_then(|()| match due {
+                true => {
+                    (self.write_now(&vault, &[Some(project.clone())])).map_err(|e| e.to_string())
+                }
+                false => Ok(()),
+            });
+            if let Err(error) = written {
                 self.project_ui.mark_unwritten(&project);
                 self.notices.post(format!(
                     "Could not promote the AI reply: its Project's names could not be saved. \

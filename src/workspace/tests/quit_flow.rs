@@ -354,3 +354,26 @@ fn system_quit_waits_through_a_failed_final_save(cx: &mut TestAppContext) {
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
     assert_eq!(*replies.borrow(), [false, true]);
 }
+
+/// Review of #1175 (P2): Always and Never lists changed while a quit waits
+/// are saved before the window closes: the quit stays the last job.
+#[gpui::test]
+fn a_list_changed_while_a_quit_waits_is_saved_before_it_closes(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
+    cx.simulate_input("first");
+    wait(cx, 1000);
+    cx.simulate_input(" second");
+    tabs.update_in(cx, |tabs, window, cx| {
+        // A save runs off the main thread; the quit waits behind it.
+        let tab = tabs.tabs.active();
+        tabs.autosave(tab, window, cx);
+        tabs.quit(window, cx);
+        let mut lists = mdoc_store::lists::Lists::default();
+        lists.add_never("Supreme Court");
+        tabs.save_user_lists(lists, window, cx);
+    });
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    assert!(vault.user_lists().unwrap().lists.never_has("Supreme Court"));
+}

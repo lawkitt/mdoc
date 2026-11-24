@@ -810,6 +810,23 @@ impl Workspace {
         let from = self.project_of(id);
         let before = vault.document(id).ok();
         let title = before.as_ref().map(|d| d.title.clone()).unwrap_or_default();
+        // The Projects it writes hold every open member's names, a change
+        // still waiting for its fold included: the move numbers the
+        // document's names against all of them (ADR 0130).
+        let places = match &op {
+            Op::Move { to } => vec![from.clone(), to.clone()],
+            Op::Undo { undo, .. } => vec![from.clone(), undo.project.clone()],
+            _ => vec![from.clone()],
+        };
+        if let Err(error) = self.fold_members(&places, cx) {
+            self.moving.remove(&document);
+            self.notices.post(format!(
+                "Could not move \u{201c}{title}\u{201d}: its Project's names could not be kept. \
+                 {error}"
+            ));
+            cx.notify();
+            return Ran::Ended;
+        }
         let (result, moving, made) = match op {
             Op::Move { to } => (
                 self.write_now(&vault, &[from.clone(), to.clone()])
@@ -923,6 +940,33 @@ impl Workspace {
         self.hold_for_reloads()
     }
 
+    /// Fold the names of every open member of `projects` whose change waits
+    /// for its fold, for a job about to write those Projects.
+    pub(super) fn fold_members(
+        &mut self,
+        projects: &[Option<String>],
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let tabs: Vec<u64> = (self.tabs.iter())
+            .filter(|tab| {
+                tab.view().is_some_and(|view| {
+                    let view = view.read(cx);
+                    view.project_save_pending()
+                        && (view.project.link())
+                            .is_some_and(|link| projects.iter().flatten().any(|p| *p == link.id))
+                })
+            })
+            .map(|tab| tab.id())
+            .collect();
+        for tab in tabs {
+            if let Some(view) = self.tab_view(tab) {
+                view.update(cx, |view, _| view.take_project_save());
+            }
+            self.fold_into_project(tab, cx)?;
+        }
+        Ok(())
+    }
+
     /// A job that started reloads holds the writer until they end: no
     /// later job reads a view a reload is about to replace (ADR 0130).
     pub(super) fn hold_for_reloads(&mut self) -> Ran {
@@ -1031,8 +1075,14 @@ impl Workspace {
             let (_, effect) = view.project.leave();
             view.carry_out_project_link(Some(effect), cx);
         });
-        self.reloading.insert(document.clone());
-        self.load_document(id, DocumentId::Vault(document), record, window, cx);
+        match self.load_document(id, DocumentId::Vault(document.clone()), record, window, cx) {
+            Some(generation) => {
+                self.reloading.insert(document, generation);
+            }
+            None => {
+                self.moving.remove(&document);
+            }
+        }
     }
 
     fn show_toast(
@@ -1231,6 +1281,18 @@ impl Workspace {
             }
             return Ran::Ended;
         };
+        // The Project's documents changed since the question (an import, a
+        // move): nothing is written, and the question comes again. The
+        // Vault checks once more under its lock, for other handles.
+        let mut now: Vec<String> = (self.project_members(&project_id).iter())
+            .map(|id| id.as_str().to_string())
+            .collect();
+        let mut asked: Vec<String> = members.iter().map(|m| m.as_str().to_string()).collect();
+        now.sort();
+        asked.sort();
+        if now != asked {
+            return self.ask_delete_again(project_id, &members, window, cx);
+        }
         // Moved to Unfiled, each open member loads again from the Vault:
         // what it shows now is written first, edits made while the delete
         // waited included. One that can't be written stops the delete
@@ -1282,17 +1344,7 @@ impl Workspace {
         let confirmed: Vec<String> = members.iter().map(|m| m.as_str().to_string()).collect();
         let result = vault.delete_project_with(&project_id, documents, &confirmed);
         if let Ok(false) = result {
-            for member in &members {
-                self.moving.remove(member);
-            }
-            self.notices.post(
-                "The Project's documents changed before it was deleted, so nothing was \
-                 deleted. Choose again for them as they are now.",
-            );
-            // Asked again, about the documents it holds now.
-            self.delete_project(project_id, window, cx);
-            cx.notify();
-            return Ran::Ended;
+            return self.ask_delete_again(project_id, &members, window, cx);
         }
         let result = result.map(|_| ());
         let tabs: Vec<(u64, VaultId)> = (members.iter())
@@ -1336,7 +1388,22 @@ impl Workspace {
                     self.projects.put(project);
                 }
                 for (tab, member) in tabs {
-                    self.reload_tab(tab, member, window, cx);
+                    match documents {
+                        // Written at the head: the Vault holds what it showed.
+                        ProjectDocuments::MoveToUnfiled => self.reload_tab(tab, member, window, cx),
+                        // Not written first: one still there keeps its view
+                        // and its edits; one gone closes.
+                        ProjectDocuments::Delete => {
+                            self.moving.remove(&member);
+                            let gone = matches!(
+                                vault.document(member.as_str()),
+                                Err(VaultError::NotFound { .. })
+                            );
+                            if gone {
+                                self.remove(tab, window, cx);
+                            }
+                        }
+                    }
                 }
                 for member in &members {
                     if self
@@ -1356,6 +1423,27 @@ impl Workspace {
         self.checkpoint(window, cx);
         cx.notify();
         self.hold_for_reloads()
+    }
+
+    /// A Project delete found other documents than its question named:
+    /// nothing is deleted, and the question comes again for them.
+    fn ask_delete_again(
+        &mut self,
+        project_id: String,
+        members: &[VaultId],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Ran {
+        for member in members {
+            self.moving.remove(member);
+        }
+        self.notices.post(
+            "The Project's documents changed before it was deleted, so nothing was \
+             deleted. Choose again for them as they are now.",
+        );
+        self.delete_project(project_id, window, cx);
+        cx.notify();
+        Ran::Ended
     }
 
     // ---- Rename, categories, lists ----------------------------------------

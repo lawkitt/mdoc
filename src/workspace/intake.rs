@@ -324,11 +324,8 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let steps = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                // A quit is the last job: what was sealed goes with it.
-                if this.quit_flow.quitting() {
-                    this.admitted_all(window, cx);
-                    return;
-                }
+                // Published before a quit waiting at the head, the quit
+                // being the last job: a cancelled quit loses nothing.
                 this.next_op += 1;
                 let target = super::document_writer::Target::Op(this.next_op);
                 let staged = Staged { steps, project };

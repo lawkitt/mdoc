@@ -46,6 +46,8 @@ struct Run<'a> {
     exports: Vec<Asking>,
     words: usize,
     folders: Vec<tempfile::TempDir>,
+    /// What the run did, step by step, for a failure's message.
+    log: Vec<String>,
 }
 
 impl Run<'_> {
@@ -203,6 +205,7 @@ impl Run<'_> {
         if answer != "Cancel" && project {
             self.project_deleted = true;
         }
+        self.log.push(format!("answer {answer}"));
         if answer == "Delete" || answer == "Delete Documents" {
             self.confirmed.extend(named);
         }
@@ -249,14 +252,37 @@ impl Run<'_> {
         }
     }
 
+    /// The window is still open: the quit has not closed it.
+    fn open(&self) -> bool {
+        self.cx.cx.read(|cx| !cx.windows().is_empty())
+    }
+
     fn step(&mut self) {
+        if !self.open() {
+            return;
+        }
         if self.cx.has_pending_prompt() && self.random(3) == 0 {
             self.answer(false);
             return;
         }
         let i = self.random(self.docs.len());
         let questioned = self.cx.has_pending_prompt();
-        match self.random(100) {
+        let roll = self.random(100);
+        let doc = ["a", "b", "c"][i];
+        self.log.push(match roll {
+            0..30 => format!("type {doc}"),
+            30..40 => format!("name {doc}"),
+            40..46 => format!("notes {doc}"),
+            46..51 => format!("reply {doc}"),
+            51..60 => format!("move {doc}"),
+            60..68 => format!("type+move {doc}"),
+            68..72 => format!("new project {doc}"),
+            72..77 if !questioned => "delete project".into(),
+            77..81 if !questioned => "delete unfiled".into(),
+            81..86 => "export".into(),
+            _ => "wait".into(),
+        });
+        match roll {
             0..30 => self.type_word(i),
             30..40 => self.apply_name(i),
             40..46 => self.type_notes(i),
@@ -276,30 +302,39 @@ impl Run<'_> {
         self.ticks();
     }
 
+    /// Quit at this point of the run, whatever is still queued, running or
+    /// asking; editing goes on until the quit's turn closes the window.
+    fn quit(&mut self) {
+        if self.open() {
+            self.log.push("quit".into());
+            self.cx.dispatch_action(Quit);
+        }
+    }
+
     /// End the run: questions left are cancelled, everything due runs, and
-    /// the window quits.
+    /// the window has quit.
     fn finish(&mut self) -> Vec<crate::workspace::export_project::ExportSeen> {
         for _ in 0..4 {
+            if !self.open() {
+                break;
+            }
             while self.cx.has_pending_prompt() {
                 self.answer(true);
             }
+            self.quit();
             self.cx
                 .executor()
                 .advance_clock(std::time::Duration::from_secs(2));
             self.cx.run_until_parked();
         }
-        let seen = self
-            .tabs
-            .update(self.cx, |tabs, _| std::mem::take(&mut tabs.exports_seen));
-        self.cx.dispatch_action(Quit);
-        self.cx.run_until_parked();
-        if !self.cx.cx.read(|cx| cx.windows().is_empty()) {
+        if self.open() {
             let tabs = self.tabs.clone();
             let notice =
                 (self.cx).update(|_, cx| tabs.read(cx).notices.message().map(str::to_owned));
             panic!("the window did not quit: {notice:?}");
         }
-        seen
+        let tabs = self.tabs.clone();
+        (self.cx.cx).update(|cx| tabs.update(cx, |tabs, _| std::mem::take(&mut tabs.exports_seen)))
     }
 }
 
@@ -376,8 +411,15 @@ fn interleave(cx: &mut TestAppContext, broken: bool) {
         exports: Vec::new(),
         words: 0,
         folders: Vec::new(),
+        log: Vec::new(),
     };
-    for _ in 0..STEPS {
+    // The quit comes at a seeded step, with work still queued; the steps
+    // after it type on until the window closes.
+    let quit_at = STEPS / 2 + run.random(STEPS / 2);
+    for step in 0..STEPS {
+        if step == quit_at {
+            run.quit();
+        }
         run.step();
     }
     let seen = run.finish();
@@ -403,9 +445,11 @@ fn check(run: &Run, root: &std::path::Path, seen: &[crate::workspace::export_pro
         };
         let restored = RestoreMap::new(names_of(&stored)).restore_in_place(&stored.markdown);
         assert_eq!(
-            restored.text, doc.plain,
-            "lost an edit or restored an alias to another person: {:?}",
-            stored.markdown
+            restored.text,
+            doc.plain,
+            "lost an edit or restored an alias to another person: {:?} after {}",
+            stored.markdown,
+            run.log.join(", ")
         );
         if let Some(notes) = &doc.notes {
             assert_eq!(&stored.notes, notes, "lost notes");
@@ -464,69 +508,110 @@ fn the_interleavings_catch_a_move_that_reads_its_tab_too_late(cx: &mut TestAppCo
     interleave(cx, true);
 }
 
-/// ADR 0130, rule 1: the window writes the Vault only from a job at the
-/// head of its writer. Every call of a Vault write method in the app's own
-/// code is in one of the job bodies listed here; a write anywhere else
-/// fails this, before it can race the queue.
-#[test]
-fn the_vault_is_written_only_by_jobs_of_the_writer() {
-    const WRITES: &[&str] = &[
-        "create_project",
-        "create_project_with",
-        "update_project",
-        "save_project",
-        "create_document",
-        "import_document",
-        "import_document_expecting",
-        "publish_import",
-        "update_document",
-        "set_notes",
-        "save_document",
-        "delete_document",
-        "delete_unfiled_documents",
-        "update_user_lists",
-        "save_user_lists",
-        "move_document",
-        "move_document_to_new_project",
-        "move_document_to_new_project_with",
-        "undo_move",
-        "delete_project",
-        "delete_project_with",
-        "save_reply",
-        "save_shared_reply",
-        "update_shared_reply",
-        "promote_reply",
-        "delete_reply",
-        "flush",
-        // A read, but of one committed state: it runs as a job too.
-        "export_project",
-    ];
-    /// The job bodies, by file under `src/` and function.
-    const JOBS: &[(&str, &str)] = &[
-        ("workspace.rs", "run_quit"),
-        ("workspace/autosave.rs", "run_notes_save"),
-        ("workspace/autosave.rs", "run_save"),
-        ("workspace/autosave.rs", "write_captured"),
-        ("workspace/autosave.rs", "save_vault"),
-        ("workspace/autosave.rs", "create_tab_now"),
-        ("workspace/projects_ui.rs", "write_now"),
-        ("workspace/projects_ui.rs", "run_op"),
-        ("workspace/projects_ui.rs", "run_delete"),
-        ("workspace/tree_ui.rs", "run_delete_documents"),
-        ("workspace/saved_replies.rs", "run_reply_save"),
-        ("workspace/saved_replies.rs", "run_promote"),
-        ("workspace/saved_replies.rs", "run_delete_reply"),
-        ("workspace/intake.rs", "run_import"),
-        ("workspace/folder_sheet_ui.rs", "run_new_project"),
-        ("workspace/user_lists.rs", "run_user_lists"),
-        ("workspace/export_project.rs", "run_export"),
-    ];
+/// The Vault's write methods, and `export_project`: a read, but of one
+/// committed state, so it runs as a job too.
+const WRITES: &[&str] = &[
+    "create_project",
+    "create_project_with",
+    "update_project",
+    "save_project",
+    "create_document",
+    "import_document",
+    "import_document_expecting",
+    "publish_import",
+    "update_document",
+    "set_notes",
+    "save_document",
+    "delete_document",
+    "delete_unfiled_documents",
+    "update_user_lists",
+    "save_user_lists",
+    "move_document",
+    "move_document_to_new_project",
+    "move_document_to_new_project_with",
+    "undo_move",
+    "delete_project",
+    "delete_project_with",
+    "save_reply",
+    "save_shared_reply",
+    "update_shared_reply",
+    "promote_reply",
+    "delete_reply",
+    "flush",
+    "export_project",
+];
+
+/// Receivers that are the window itself, whose methods of the same names
+/// queue jobs (`self.move_document(…)`), and files' own `flush`.
+const NOT_THE_VAULT: &[&str] = &["self", "this", "tabs", "file", "pipe", "out", "stdout"];
+
+/// The job bodies, by file under `src/` and function.
+const JOBS: &[(&str, &str)] = &[
+    ("workspace.rs", "run_quit"),
+    ("workspace/autosave.rs", "run_notes_save"),
+    ("workspace/autosave.rs", "run_save"),
+    ("workspace/autosave.rs", "write_captured"),
+    ("workspace/autosave.rs", "save_vault"),
+    ("workspace/autosave.rs", "create_tab_now"),
+    ("workspace/projects_ui.rs", "write_now"),
+    ("workspace/projects_ui.rs", "run_op"),
+    ("workspace/projects_ui.rs", "run_delete"),
+    ("workspace/tree_ui.rs", "run_delete_documents"),
+    ("workspace/saved_replies.rs", "run_reply_save"),
+    ("workspace/saved_replies.rs", "run_promote"),
+    ("workspace/saved_replies.rs", "run_delete_reply"),
+    ("workspace/intake.rs", "run_import"),
+    ("workspace/folder_sheet_ui.rs", "run_new_project"),
+    ("workspace/user_lists.rs", "run_user_lists"),
+    ("workspace/export_project.rs", "run_export"),
+];
+
+/// Every call of a Vault write method in `text`, whatever its receiver is
+/// named (`vault.…`, `store.…`, `self.vault.vault()?.…`), but the window's
+/// own: the function it is in, and the method.
+fn vault_writes(text: &str) -> Vec<(String, String)> {
     let call = regex::Regex::new(&format!(
-        r"\bvault(?:\(\)\??)?\s*\.\s*({})\s*\(",
+        r"\b(\w+)(?:\(\))?\??\s*\.\s*({})\s*\(",
         WRITES.join("|")
     ))
     .unwrap();
     let function = regex::Regex::new(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+(\w+)").unwrap();
+    (call.captures_iter(text))
+        .filter(|at| !NOT_THE_VAULT.contains(&&at[1]))
+        .map(|at| {
+            let start = at.get(0).unwrap().start();
+            let within = (function.captures_iter(&text[..start]).last())
+                .map(|function| function[1].to_string())
+                .unwrap_or_default();
+            (within, at[2].to_string())
+        })
+        .collect()
+}
+
+/// The scan finds a write however its receiver is named, and leaves the
+/// window's own methods of the same names alone.
+#[test]
+fn the_writer_guard_finds_a_vault_write_through_any_name() {
+    let text = "fn run_op() {\n    vault.move_document(id, None);\n}\n\
+                fn sneaky(store: &Vault) {\n    store.update_document(id, |_| {});\n    \
+                self.vault.vault()?.set_notes(id, notes);\n    \
+                self.move_document(id, None, window, cx);\n    file.flush();\n}\n";
+    assert_eq!(
+        vault_writes(text),
+        [
+            ("run_op".to_string(), "move_document".to_string()),
+            ("sneaky".to_string(), "update_document".to_string()),
+            ("sneaky".to_string(), "set_notes".to_string()),
+        ]
+    );
+}
+
+/// ADR 0130, rule 1: the window writes the Vault only from a job at the
+/// head of its writer. Every call of a Vault write method in the app's own
+/// code is in one of the job bodies in `JOBS`; a write anywhere else fails
+/// this, before it can race the queue.
+#[test]
+fn the_vault_is_written_only_by_jobs_of_the_writer() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut found = Vec::new();
     let mut dirs = vec![root.clone()];
@@ -551,12 +636,8 @@ fn the_vault_is_written_only_by_jobs_of_the_writer() {
             // A file's own unit tests come last.
             let text = text.split("\n#[cfg(test)]\nmod tests").next().unwrap();
             let file = (path.strip_prefix(&root).unwrap().to_string_lossy()).replace('\\', "/");
-            for at in call.captures_iter(text) {
-                let start = at.get(0).unwrap().start();
-                let within = (function.captures_iter(&text[..start]).last())
-                    .map(|function| function[1].to_string())
-                    .unwrap_or_default();
-                found.push((file.clone(), within, at[1].to_string()));
+            for (within, method) in vault_writes(text) {
+                found.push((file.clone(), within, method));
             }
         }
     }

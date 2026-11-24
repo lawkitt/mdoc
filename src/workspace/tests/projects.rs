@@ -1735,3 +1735,204 @@ fn an_unfiled_delete_that_cannot_read_a_record_keeps_its_tab(cx: &mut TestAppCon
     assert_eq!(text_of(&view, cx), "Ann wrote, edited.");
     assert!(vault.document(id.as_str()).is_ok(), "nothing was deleted");
 }
+
+/// Review of #1175 (P1): a Project's names written with a member's save
+/// count as unwritten until that save ends, so the shelf never checks a
+/// closed member against the names before them.
+#[gpui::test]
+fn a_projects_names_saved_with_a_member_are_unwritten_until_the_save_ends(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let tab = open_applied(&tabs, cx, dir.path(), "a.md", "Anna Petrova wrote.", &[]);
+    let project = new_project(&tabs, cx, tab);
+    settle(cx);
+    let view = view_of(&tabs, cx, tab);
+    tabs.update_in(cx, |tabs, window, cx| {
+        view.update(cx, |view, cx| {
+            view.pii.set_reviewing(true);
+            let text = view.editor.read(cx).text().to_string();
+            view.pii
+                .review_mut()
+                .add_manual(&text, 0.."Anna Petrova".len(), Person)
+                .unwrap();
+            view.apply_all_pii(&PiiApplyAll, window, cx);
+        });
+        // The save takes the Project's new names with it, off the main
+        // thread.
+        tabs.autosave(tab, window, cx);
+        assert!(tabs.projects_saving.contains(&project));
+        assert!(tabs.project_unwritten(&project, cx), "the save still runs");
+    });
+    // Its fold, scheduled again by the commit, settles too.
+    settle(cx);
+    cx.update(|_, cx| assert!(!tabs.read(cx).project_unwritten(&project, cx)));
+    let names = vault(&tabs, cx)
+        .project(&project)
+        .unwrap()
+        .mapping
+        .exported();
+    assert!(
+        names
+            .iter()
+            .any(|n| n.originals.iter().any(|o| &**o == "Anna Petrova"))
+    );
+}
+
+/// Review of #1175: a Project delete that finds other documents than its
+/// question named writes nothing, not even its members' edits, and asks
+/// again.
+#[gpui::test]
+fn a_project_delete_that_finds_other_documents_writes_nothing(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let tab = open_applied(&tabs, cx, dir.path(), "a.md", "Ann wrote.", &[]);
+    let project = new_project(&tabs, cx, tab);
+    let other = open_applied(&tabs, cx, dir.path(), "b.md", "Ben wrote.", &[]);
+    let other_id = cx.update(|_, cx| tabs.read(cx).tab_document(other, cx).unwrap());
+    let vault = vault(&tabs, cx);
+    let view = view_of(&tabs, cx, tab);
+    view.update(cx, |view, cx| {
+        view.editor
+            .update(cx, |editor, cx| editor.set_text("Ann wrote, edited.", cx));
+        view.cancel_autosave();
+    });
+    let members = cx.update(|_, cx| tabs.read(cx).project_members(&project));
+    // Another handle moves a document in after the question.
+    vault
+        .move_document(other_id.as_str(), Some(&project))
+        .unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        let unfiled = mdoc_vault::ProjectDocuments::MoveToUnfiled;
+        tabs.forget_project(&project, unfiled, members, window, cx);
+    });
+    let document = stored(&tabs, cx, tab);
+    assert_eq!(document.markdown, "Ann wrote.", "nothing was written");
+    assert!(vault.project(&project).is_ok(), "nothing was deleted");
+    assert!(cx.has_pending_prompt(), "asked again");
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+}
+
+/// Review of #1175 (P2): a Delete Documents that fails keeps a member that
+/// is still there, with the edit it showed: it is not loaded again over it.
+#[cfg(windows)]
+#[gpui::test]
+fn a_failed_project_delete_keeps_a_surviving_members_edit(cx: &mut TestAppContext) {
+    use std::os::windows::fs::OpenOptionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let tab = open_applied(&tabs, cx, dir.path(), "a.md", "Ann wrote.", &[]);
+    let project = new_project(&tabs, cx, tab);
+    let view = view_of(&tabs, cx, tab);
+    view.update(cx, |view, cx| {
+        view.editor
+            .update(cx, |editor, cx| editor.set_text("Ann wrote, edited.", cx));
+        view.cancel_autosave();
+    });
+    let id = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
+    let vault = vault(&tabs, cx);
+    let record = vault.root().join("docs").join(id.as_str()).join("doc.enc");
+    // Another program holds the record with no sharing: the delete fails.
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(&record)
+        .unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        let members = tabs.project_members(&project);
+        let delete = mdoc_vault::ProjectDocuments::Delete;
+        tabs.forget_project(&project, delete, members, window, cx);
+    });
+    cx.run_until_parked();
+    drop(held);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.tabs.contains(tab), "the tab stays");
+        assert!(tabs.moving.is_empty());
+    });
+    assert_eq!(text_of(&view, cx), "Ann wrote, edited.");
+    assert!(vault.document(id.as_str()).is_ok());
+}
+
+/// Review of #1175: only the move's own reload ends the hold on the
+/// writer; an older load of the document ending meanwhile does not.
+#[gpui::test]
+fn an_older_load_ending_never_ends_a_moves_hold(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let tab = open_applied(&tabs, cx, dir.path(), "a.md", "Ann wrote.", &[]);
+    let id = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.reloading.insert(id.clone(), 5);
+        tabs.reloads_hold_writer = true;
+        tabs.move_reload_ended(&id, 4, window, cx);
+        assert!(tabs.reloads_hold_writer && tabs.reloading.contains_key(&id));
+        tabs.move_reload_ended(&id, 5, window, cx);
+        assert!(tabs.reloading.is_empty());
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(!tabs.read(cx).reloads_hold_writer));
+}
+
+/// Found by the interleaving test (ADR 0130): a document moved into a
+/// Project while another member's new name waits for its fold is numbered
+/// against that name too, so the two never share an alias.
+#[gpui::test]
+fn a_move_numbers_against_a_members_name_still_waiting_for_its_fold(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let member = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Boris Ivanov signed for Clara Novak.",
+        &[("Boris Ivanov", Person)],
+    );
+    let project = new_project(&tabs, cx, member);
+    let moved = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova wrote.",
+        &[("Anna Petrova", Person)],
+    );
+    settle(cx);
+    let member_view = view_of(&tabs, cx, member);
+    tabs.update_in(cx, |tabs, window, cx| {
+        // Clara becomes the member's PERSON_2; its fold waits.
+        member_view.update(cx, |view, cx| {
+            let text = view.editor.read(cx).text().to_string();
+            let start = text.find("Clara Novak").unwrap();
+            view.pii.set_reviewing(true);
+            view.pii
+                .review_mut()
+                .add_manual(&text, start..start + "Clara Novak".len(), Person)
+                .unwrap();
+            view.apply_all_pii(&PiiApplyAll, window, cx);
+        });
+        tabs.move_tab(moved, Some(project.clone()), window, cx);
+    });
+    settle(cx);
+    let names = vault(&tabs, cx)
+        .project(&project)
+        .unwrap()
+        .mapping
+        .exported();
+    let restore = |markdown: &str| {
+        mdoc_pii::restore::RestoreMap::new(names.clone())
+            .restore_in_place(markdown)
+            .text
+    };
+    assert_eq!(
+        restore(&stored(&tabs, cx, moved).markdown),
+        "Anna Petrova wrote."
+    );
+    assert_eq!(
+        restore(&stored(&tabs, cx, member).markdown),
+        "Boris Ivanov signed for Clara Novak."
+    );
+}

@@ -50,15 +50,20 @@ impl Vault {
     /// Seal `source` as a future Document's original into `staging/`, one
     /// chunk at a time and without the write lock.
     pub fn stage_import(&self, source: impl Read) -> Result<StagedImport, VaultError> {
-        self.check_alive()?;
         let id = new_id()?;
         let dir = self.root.join(STAGING);
-        std::fs::create_dir_all(&dir)?;
-        let mut file = tempfile::Builder::new()
-            .prefix(IMPORT_PREFIX)
-            .tempfile_in(&dir)?;
-        // Held while staged: an opening handle never removes it.
-        file.as_file().lock()?;
+        let mut file = {
+            // Made and locked under the write lock, which an opening handle
+            // sweeps under: it never sees the file before its lock.
+            let _lock = self.write_lock()?;
+            std::fs::create_dir_all(&dir)?;
+            let file = tempfile::Builder::new()
+                .prefix(IMPORT_PREFIX)
+                .tempfile_in(&dir)?;
+            // Held while staged: an opening handle never removes it.
+            file.as_file().lock()?;
+            file
+        };
         let sealed = original::seal(&self.sealer, &id, source, file.as_file_mut())?;
         file.as_file().sync_all()?;
         Ok(StagedImport {

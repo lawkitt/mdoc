@@ -461,11 +461,18 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Ran {
         let job = match (&target, write) {
-            (Target::Project(id), Write::Project) => match self.projects.project(id) {
-                Some(project) => Job::Project(Box::new(project.clone())),
-                // Deleted since.
-                None => return Ran::Ended,
-            },
+            (Target::Project(id), Write::Project) => {
+                // Its open members' names waiting for their fold go too.
+                if let Err(error) = self.fold_members(&[Some(id.clone())], cx) {
+                    self.notices
+                        .post(format!("Could not keep the Project's names: {error}"));
+                }
+                match self.projects.project(id) {
+                    Some(project) => Job::Project(Box::new(project.clone())),
+                    // Deleted since.
+                    None => return Ran::Ended,
+                }
+            }
             (Target::Tab(tab), Write::Create) => match self.new_document_of(*tab, cx) {
                 Some(new) => Job::Create(new),
                 None => return Ran::Ended,
@@ -475,7 +482,14 @@ impl Workspace {
                     return Ran::Ended;
                 };
                 match self.capture(tab, false, cx) {
-                    Ok(Some(captured)) => Job::Save(Box::new(captured)),
+                    Ok(Some(captured)) => {
+                        // Its names are not the Vault's until this write
+                        // ends: the shelf waits for them.
+                        if let Some(project) = &captured.project {
+                            self.projects_saving.insert(project.id.clone());
+                        }
+                        Job::Save(Box::new(captured))
+                    }
                     Ok(None) => return Ran::Ended,
                     Err(error) => {
                         self.save_failed(&target, error, window, cx);
@@ -574,10 +588,16 @@ impl Workspace {
                     self.autosave(tab, window, cx);
                 }
             }
-            (_, Ok(Wrote::Saved(captured))) => self.commit_captured(&captured, cx),
+            (_, Ok(Wrote::Saved(captured))) => {
+                if let Some(project) = &captured.project {
+                    self.projects_saving.remove(&project.id);
+                }
+                self.commit_captured(&captured, cx)
+            }
             (_, Ok(_)) => {}
             (target, Err(Failed { error, captured })) => {
                 if let Some(project) = captured.as_ref().and_then(|c| c.project.as_ref()) {
+                    self.projects_saving.remove(&project.id);
                     // Written again by the next write of it, or the quit.
                     self.project_ui.mark_unwritten(&project.id);
                 }
