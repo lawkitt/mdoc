@@ -84,7 +84,9 @@ struct ProjectPage: View {
             }
         }
         .sheet(item: $shownReply) { reply in
-            SavedReplySheet(reply: reply, restored: library.restore(reply.id))
+            SavedReplySheet(reply: reply, restored: library.restore(reply.id)) {
+                app.promote(reply.id)
+            }
         }
         .refreshable {
             // A reply Restore with mdoc saved meanwhile.

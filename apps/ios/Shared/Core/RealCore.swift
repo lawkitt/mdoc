@@ -320,6 +320,19 @@ final class RealLibrary: Library, @unchecked Sendable {
         RestoreResult(try core { try vault.restoreReply(id: id.rawValue) })
     }
 
+    func savedReply(_ id: ReplyID) -> SavedReply? {
+        vault.replyInfo(id: id.rawValue).map(SavedReply.init)
+    }
+
+    /// Promote to Document: the reply restores with the names as the taps
+    /// left them, so those are saved first.
+    func promoteReply(_ id: ReplyID) throws -> DocumentID {
+        saveChangesReporting()
+        let promoted = try core { try vault.promoteReply(id: id.rawValue) }
+        noteChange()
+        return lock.withLock { ids[promoted.id] ?? DocumentID(rawValue: promoted.id) }
+    }
+
     /// The saved replies that restore with a saved document's names: its
     /// Project's while it is in one, else its own (#1091 Decision 4).
     fileprivate func replies(vaultID: String, projectID: String?) -> [SavedReply] {
@@ -1054,7 +1067,14 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             mergeHints: review.linkHints, canUndo: review.canUndo, canRedo: review.canRedo,
             undoStep: review.undoStep, redoStep: review.redoStep,
             counts: MentionCounts(proposed: Int(review.proposed), replaced: Int(review.replaced), kept: Int(review.kept)),
-            origin: ffi.info()?.origin ?? .ordinary)
+            origin: ffi.info()?.origin ?? .ordinary, promotedFrom: promotedFrom())
+    }
+
+    /// The saved reply this document was promoted from, from the Vault's
+    /// manifest: deleted once it is not listed there.
+    private func promotedFrom() -> PromotedFrom? {
+        guard let reply = ffi.fromReply() else { return nil }
+        return library.savedReply(ReplyID(rawValue: reply)).map(PromotedFrom.reply) ?? .deletedReply
     }
 
     /// The saved replies that restore with this document's names, from
@@ -1303,6 +1323,21 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         }
         lock.withLock { shownReply = nil }
         return snapshot()
+    }
+
+    // MARK: Notes (#1091 Decision 3)
+
+    func notes() -> String {
+        reopenIfPending()
+        return ffi.notes()
+    }
+
+    /// The core holds the notes with the document; they save once typing
+    /// pauses, as a typed edit does.
+    func setNotes(_ notes: String) throws {
+        reopenIfPending()
+        try core { try ffi.setNotes(notes: notes) }
+        scheduleSave(pause: library.typingPause)
     }
 
     // MARK: Review bar (ADR 0098)

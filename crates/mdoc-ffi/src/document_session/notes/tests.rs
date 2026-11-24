@@ -61,7 +61,10 @@ fn notes_save_with_the_document_and_reopen() {
     let vault = vault(&scratch);
     let (session, id) = reviewed(&vault, None);
     assert_eq!(session.notes(), "");
-    assert_eq!(session.save_pending_into_vault(vault.clone()).unwrap(), None);
+    assert_eq!(
+        session.save_pending_into_vault(vault.clone()).unwrap(),
+        None
+    );
 
     session.set_notes(NOTES.into()).unwrap();
     assert!(session.has_unsaved_changes(), "notes alone are a change");
@@ -168,7 +171,10 @@ fn a_promoted_reply_opens_as_a_document_with_the_way_back() {
     let opened = DocumentSession::new();
     let snapshot = (opened.open_from_vault(vault.clone(), promoted.id.clone())).unwrap();
     assert_eq!(snapshot.text, "Tell Ann Lee to sign.");
-    assert!(snapshot.proposed > 0, "the Project's names are proposed again");
+    assert!(
+        snapshot.proposed > 0,
+        "the Project's names are proposed again"
+    );
     assert_eq!(opened.from_reply(), Some(reply.id.clone()));
     assert_eq!(opened.notes(), "");
     assert_eq!(vault.reply_info(reply.id.clone()), Some(reply.clone()));

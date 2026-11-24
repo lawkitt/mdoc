@@ -33,6 +33,8 @@ struct DocumentScreen: View {
     @State private var screenID = UUID()
     /// The text's ↑ control.
     @State private var textViewport = PageViewport()
+    /// The saved reply a promoted document came from, shown restored.
+    @State private var shownFromReply: SavedReply?
 
     private var hasRightPane: Bool { model.hasRightPane }
 
@@ -88,6 +90,16 @@ struct DocumentScreen: View {
             }
             .sheet(item: Binding(get: { sameAsCandidate.map(PickerSource.init) }, set: { if $0 == nil { sameAsCandidate = nil } })) {
                 sameAsPicker($0.id)
+            }
+            .sheet(isPresented: $model.showsNotes) {
+                NotesSheet(model: model)
+            }
+            .sheet(item: $shownFromReply) { reply in
+                if let app {
+                    SavedReplySheet(reply: reply, restored: app.library.restore(reply.id)) {
+                        app.promote(reply.id)
+                    }
+                }
             }
             .sheet(isPresented: $model.showsReplySheet) {
                 TypeReplySheet(projectName: model.snapshot.projectName) { reply in
@@ -155,7 +167,9 @@ struct DocumentScreen: View {
                 if identitiesInPane && model.wantsIdentities {
                     identities
                 } else if model.pane == .reply, let reply = model.snapshot.reply {
-                    ReplyPane(reply: reply, replies: model.snapshot.replies, onShow: model.showReply, onClear: model.clearReply)
+                    ReplyPane(
+                        reply: reply, replies: model.snapshot.replies, onShow: model.showReply,
+                        onPromote: promote(reply), onClear: model.clearReply)
                 } else {
                     originalPane()
                 }
@@ -178,11 +192,18 @@ struct DocumentScreen: View {
                 case .reply:
                     if let reply = model.snapshot.reply {
                         ReplyPane(
-                            reply: reply, replies: model.snapshot.replies, onShow: model.showReply, onClear: model.clearReply)
+                            reply: reply, replies: model.snapshot.replies, onShow: model.showReply,
+                            onPromote: promote(reply), onClear: model.clearReply)
                     }
                 }
             }
         }
+    }
+
+    /// Promote to Document of the reply the pane shows (#1091 Decision 3).
+    private func promote(_ reply: ReplySnapshot) -> (() -> Void)? {
+        guard let app, let id = reply.id else { return nil }
+        return { app.promote(id) }
     }
 
     private func originalPane(reachesBottom: Bool = false) -> some View {
@@ -483,6 +504,34 @@ struct DocumentScreen: View {
                 }
             }
         }
+        // The document's own notes, and the reply it was promoted from
+        // (#1091 Decision 3).
+        Section {
+            Button {
+                model.showsNotes = true
+            } label: {
+                Label("Notes", systemImage: "note.text")
+            }
+            .accessibilityIdentifier("document-notes")
+            switch model.snapshot.promotedFrom {
+            case .reply(let reply):
+                Button {
+                    shownFromReply = reply
+                } label: {
+                    Label("From AI reply", systemImage: "text.bubble")
+                    Text(reply.title)
+                }
+                .accessibilityIdentifier("from-reply")
+            case .deletedReply:
+                Button {} label: {
+                    Label("From a deleted AI reply", systemImage: "text.bubble")
+                }
+                .disabled(true)
+                .accessibilityIdentifier("from-reply")
+            case nil:
+                EmptyView()
+            }
+        }
         // The review bar takes the action bar's place while reviewing, so
         // these are here too (ADR 0114).
         // Always listed; until the document is ready, disabled with why,
@@ -555,12 +604,21 @@ struct DocumentScreen: View {
                             .truncationMode(.tail)
                             .frame(maxWidth: titleWidth)
                             .accessibilityIdentifier("left-out-line")
+                    } else if let from = model.snapshot.promotedFrom {
+                        // The way back is in the menu, as Open… is.
+                        Label(from.label, systemImage: "text.bubble")
+                            .labelStyle(.titleAndIcon)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .frame(maxWidth: titleWidth)
+                            .accessibilityIdentifier("from-reply-line")
                     }
                 }
             }
             .accessibilityLabel(Text(model.snapshot.title))
-            .accessibilityValue(Text(model.snapshot.leftOut ?? ""))
-            .accessibilityHint(Text("Find, show Markdown, share, rename, move or delete the document."))
+            .accessibilityValue(Text(model.snapshot.leftOut ?? model.snapshot.promotedFrom?.label ?? ""))
+            .accessibilityHint(Text("Find, show Markdown, notes, share, rename, move or delete the document."))
             .accessibilityIdentifier("title-menu")
         }
         if model.isEditing {

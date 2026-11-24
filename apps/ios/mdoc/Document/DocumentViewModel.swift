@@ -123,6 +123,8 @@ final class DocumentViewModel {
     private(set) var pane: Pane = .text
     /// Type a reply: the sheet for a reply written by hand.
     var showsReplySheet = false
+    /// Notes: the sheet with the document's private notes.
+    var showsNotes = false
     var share: ShareItems?
     var errorMessage: String?
     /// A short confirmation such as "Copied for AI".
@@ -579,6 +581,29 @@ final class DocumentViewModel {
     /// pane shows the newest one left, or the text when none is.
     func clearReply() {
         perform { try session.clearReply() }
+    }
+
+    // MARK: Notes (#1091 Decision 3)
+
+    /// The document's notes as the core holds them.
+    var notes: String { session.notes() }
+
+    /// Typed in Notes; saved once typing pauses.
+    func setNotes(_ notes: String) {
+        do {
+            try session.setNotes(notes)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Notes closed: what was typed is saved now, not after the pause.
+    func saveNotes() {
+        do {
+            try session.saveChanges()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // MARK: Identities

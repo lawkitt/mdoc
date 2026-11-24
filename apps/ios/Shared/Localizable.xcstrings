@@ -436,6 +436,12 @@
     "Each document you add lands in Unfiled, or in the Project whose page you add it from." : {
 
     },
+    "From a deleted AI reply" : {
+
+    },
+    "From AI reply" : {
+
+    },
     "Home" : {
 
     },
@@ -472,6 +478,12 @@
     "None" : {
 
     },
+    "Notes" : {
+
+    },
+    "Notes about this document: deadlines, who to call, what to check. Only you see them." : {
+
+    },
     "Nothing in Unfiled" : {
 
     },
@@ -487,10 +499,16 @@
     "Open the document you imported before, or import the file again as a new document." : {
 
     },
+    "Private to this device. Never sent with Copy for AI or Share." : {
+
+    },
     "Project" : {
 
     },
     "Project %@" : {
+
+    },
+    "Promote to Document" : {
 
     },
     "Remove" : {

@@ -135,7 +135,8 @@ impl Vault {
     pub fn promote_reply(&self, id: String) -> Result<DocumentInfo, CoreError> {
         let _writes = self.lock_writes();
         let document = self.store.promote_reply(&id)?;
-        Ok(self.infos(vec![mdoc_vault::DocumentSummary::of(&document)])
+        Ok(self
+            .infos(vec![mdoc_vault::DocumentSummary::of(&document)])
             .remove(0))
     }
 }
