@@ -46,6 +46,7 @@ mod home;
 mod import_flow;
 mod menu_bar;
 mod navigation;
+mod new_project;
 mod notices;
 mod project_page;
 mod projects;

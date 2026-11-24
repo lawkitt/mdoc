@@ -45,6 +45,8 @@ pub(super) enum Write {
     Notes(String),
     /// Promote to Document of this saved AI reply, then open it.
     Promote(String),
+    /// New Project: an empty Project, then its page.
+    NewProject(super::new_project::NewProjectJob),
 }
 
 /// A move or a delete, run at the head of the writer's queue.
@@ -349,6 +351,11 @@ impl Workspace {
             }
             Write::Promote(reply) => {
                 self.run_promote(&reply, window, cx);
+                self.advance_writer(window, cx);
+                return;
+            }
+            Write::NewProject(job) => {
+                self.run_new_project(job, window, cx);
                 self.advance_writer(window, cx);
                 return;
             }

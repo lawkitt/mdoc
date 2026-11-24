@@ -57,6 +57,7 @@ mod home;
 mod import;
 mod narrow;
 mod navigation;
+mod new_project;
 mod notes;
 mod old_cases;
 mod pdf_source;
@@ -400,6 +401,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     tree::scenes(d, &project)?;
     folder_sheet::scenes(d, path, &project)?;
     projects::delete(d, project)?;
+    new_project::scenes(d)?;
     confirm::scenes(d)?;
     comparison::scenes(d, &view)?;
     import::scenes(d)?;

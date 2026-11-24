@@ -261,6 +261,7 @@ impl Workspace {
                             .on_action(|_: &super::OpenPalette, _, cx| cx.stop_propagation())
                             .on_action(|_: &super::Settings, _, cx| cx.stop_propagation())
                             .on_action(|_: &super::OpenProject, _, cx| cx.stop_propagation())
+                            .on_action(|_: &super::NewProject, _, cx| cx.stop_propagation())
                             // Taking focus above Settings must not bypass its
                             // restrictions on document commands.
                             .when(
