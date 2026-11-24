@@ -281,6 +281,15 @@ impl Workspace {
                                 view.update(cx, |view, _| {
                                     view.reply.mark_saved(&reply.id, revision)
                                 });
+                                // Edited in place: its page shows it as saved,
+                                // which is what Promote takes.
+                                if let Some(page) = self.reply_page.as_mut()
+                                    && page.id == reply.id
+                                {
+                                    page.loaded = Ok(reply.clone());
+                                    page.made_from = None;
+                                    self.refresh_reply_page(cx);
+                                }
                                 Some(reply.id)
                             }
                             Err(error) => {
