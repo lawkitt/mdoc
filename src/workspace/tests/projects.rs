@@ -1681,10 +1681,6 @@ fn a_retired_alias_applied_while_a_move_waits_is_renumbered_first(cx: &mut TestA
                 .add_manual(&text, 0.."Anna Petrova".len(), Person)
                 .unwrap();
         }
-        eprintln!(
-            "DEBUG before apply remaining={} text={text}",
-            view.pii.review().remaining()
-        );
         view.apply_all_pii(&PiiApplyAll, window, cx);
     });
     cx.run_until_parked();
