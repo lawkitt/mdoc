@@ -200,6 +200,7 @@ impl Vault {
         }
         // Its own replies go with its mapping; its Documents' follow them.
         self.delete_replies_of(&lock, &ReplyOwner::Project(id.to_string()))?;
+        self.delete_activity_locked(&lock, id)?;
         self.check_alive()?;
         super::remove_sealed(&crate::manifest::project_path(&self.root, id))?;
         self.forget_deleted::<Project>(id)?;

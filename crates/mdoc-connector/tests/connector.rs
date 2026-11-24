@@ -10,6 +10,7 @@ use mdoc_vault::{DocumentOrigin, NewDocument, NewProject, SourceKind, Vault};
 use std::sync::Arc;
 
 const KEY: [u8; 32] = [7; 32];
+const CLAUDE: &str = "Claude";
 const ON: AiConnectorConfig = AiConnectorConfig { preview: true };
 
 struct Fixture {
@@ -94,7 +95,7 @@ impl Fixture {
     }
 
     fn text(&self, id: &str) -> String {
-        match self.connector.get_document(id, None).unwrap() {
+        match self.connector.get_document(CLAUDE, id, None).unwrap() {
             Read::Text { text, .. } => text,
             other => panic!("not a text: {other:?}"),
         }
@@ -122,7 +123,7 @@ fn no_read_reaches_another_project_or_unfiled() {
         for part in [None, Some(1)] {
             assert!(
                 matches!(
-                    f.connector.get_document(id, part),
+                    f.connector.get_document(CLAUDE, id, part),
                     Err(ConnectorError::NotShared)
                 ),
                 "{id} {part:?}"
@@ -133,13 +134,13 @@ fn no_read_reaches_another_project_or_unfiled() {
     f.vault.move_document(&letter, Some(&other)).unwrap();
     assert!(f.listed().is_empty());
     assert!(matches!(
-        f.connector.get_document(&letter, None),
+        f.connector.get_document(CLAUDE, &letter, None),
         Err(ConnectorError::NotShared)
     ));
     f.vault.move_document(&elsewhere, None).unwrap();
     f.connector.share(&other).unwrap();
     assert!(matches!(
-        f.connector.get_document(&elsewhere, None),
+        f.connector.get_document(CLAUDE, &elsewhere, None),
         Err(ConnectorError::NotShared)
     ));
 }
@@ -178,7 +179,7 @@ fn each_read_rechecks_the_projects_names() {
     assert_eq!(row, (letter.clone(), label.clone(), not_ready));
     for part in [None, Some(1)] {
         assert_eq!(
-            f.connector.get_document(&letter, part).unwrap(),
+            f.connector.get_document(CLAUDE, &letter, part).unwrap(),
             Read::NeedsReview {
                 doc_id: letter.clone(),
                 label: label.clone(),
@@ -243,7 +244,7 @@ fn no_label_comes_from_a_stored_title() {
     assert_eq!(label_of(&draft), format!("Document {}", number(&draft)));
     assert_eq!(f.row(&draft).2, State::NeedsReview(Readiness::NotReviewed));
     for id in [&lease, &memo, &draft, &copy] {
-        let read = f.connector.get_document(id, None).unwrap();
+        let read = f.connector.get_document(CLAUDE, id, None).unwrap();
         let (Read::Text { label: got, .. } | Read::NeedsReview { label: got, .. }) = read else {
             panic!("{read:?}");
         };
@@ -280,7 +281,7 @@ fn a_long_document_is_read_as_an_outline_and_parts() {
         size,
         parts,
         ..
-    } = f.connector.get_document(&long, None).unwrap()
+    } = f.connector.get_document(CLAUDE, &long, None).unwrap()
     else {
         panic!("not an outline");
     };
@@ -299,7 +300,10 @@ fn a_long_document_is_read_as_an_outline_and_parts() {
             text,
             headings,
             ..
-        } = f.connector.get_document(&long, Some(info.part)).unwrap()
+        } = f
+            .connector
+            .get_document(CLAUDE, &long, Some(info.part))
+            .unwrap()
         else {
             panic!("not a part");
         };
@@ -315,7 +319,7 @@ fn a_long_document_is_read_as_an_outline_and_parts() {
     let past = parts.len() + 1;
     for part in [0, past] {
         assert!(matches!(
-            f.connector.get_document(&long, Some(part)),
+            f.connector.get_document(CLAUDE, &long, Some(part)),
             Err(ConnectorError::NoSuchPart { of }) if of == parts.len()
         ));
     }
@@ -323,11 +327,11 @@ fn a_long_document_is_read_as_an_outline_and_parts() {
     let text = f.text(&short);
     assert_eq!(text, f.vault.text_for_ai(&short).unwrap());
     assert_eq!(
-        f.connector.get_document(&short, Some(1)).unwrap(),
-        f.connector.get_document(&short, None).unwrap()
+        f.connector.get_document(CLAUDE, &short, Some(1)).unwrap(),
+        f.connector.get_document(CLAUDE, &short, None).unwrap()
     );
     assert!(matches!(
-        f.connector.get_document(&short, Some(2)),
+        f.connector.get_document(CLAUDE, &short, Some(2)),
         Err(ConnectorError::NoSuchPart { of: 1 })
     ));
 }
@@ -352,7 +356,7 @@ fn with_the_ai_project_off_nothing_is_listed() {
             Err(ConnectorError::NothingShared)
         ));
         assert!(matches!(
-            f.connector.get_document(&letter, None),
+            f.connector.get_document(CLAUDE, &letter, None),
             Err(ConnectorError::NothingShared)
         ));
     };
@@ -382,7 +386,7 @@ fn a_document_excluded_from_ai_is_not_offered() {
     let listed: Vec<_> = f.listed().into_iter().map(|row| (row.0, row.1)).collect();
     assert_eq!(listed, [(letter, "Document 1".to_string())]);
     assert!(matches!(
-        f.connector.get_document(&kept, None),
+        f.connector.get_document(CLAUDE, &kept, None),
         Err(ConnectorError::NotShared)
     ));
 }
