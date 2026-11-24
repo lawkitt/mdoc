@@ -1610,3 +1610,89 @@ fn move_to_new_project_writes_its_settings_with_the_move(cx: &mut TestAppContext
     });
     assert_eq!(stored.skip, skip);
 }
+
+/// Review of #1152 (P1): a proposal applied while a move waits, whose
+/// alias another member has retired since, is renumbered before the
+/// document is written, so the moved text restores to its own person.
+#[gpui::test]
+fn a_retired_alias_applied_while_a_move_waits_is_renumbered_first(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let other = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "c.md",
+        "Boris Ivanov signed.",
+        &[("Boris Ivanov", Person)],
+    );
+    let to = new_project(&tabs, cx, other);
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Anna Petrova called.",
+        &[("Anna Petrova", Person)],
+    );
+    let from = new_project(&tabs, cx, first);
+    let tab = open_applied(&tabs, cx, dir.path(), "a.md", "Anna Petrova wrote.", &[]);
+    move_tab(&tabs, cx, tab, Some(&from));
+    settle(cx);
+    // The move waits behind another write.
+    let other_view = view_of(&tabs, cx, other);
+    other_view.update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            let later = format!("{} Later.", editor.text());
+            editor.set_text(later, cx);
+        })
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.autosave_all(window, cx);
+        tabs.move_tab(tab, Some(to.clone()), window, cx);
+    });
+    // Meanwhile the first member's Not a name retires PERSON_1 in the
+    // Project, as its save would; the tab's proposal still names it.
+    let first_id = cx.update(|_, cx| tabs.read(cx).tab_document(first, cx).unwrap());
+    tabs.update(cx, |tabs, _| {
+        tabs.projects.edit(&from, |project| {
+            let anna = (project.mapping.identities.iter_mut())
+                .find(|identity| identity.alias == "PERSON_1")?;
+            anna.originals.clear();
+            anna.not_a_name_by = Some(first_id.as_str().to_string());
+            Some(())
+        })
+    });
+    assert!(
+        project(&tabs, cx, &from)
+            .mapping
+            .reserved_aliases()
+            .contains(&"PERSON_1".to_string())
+    );
+    // Then the tab applies its proposal.
+    let view = view_of(&tabs, cx, tab);
+    view.update_in(cx, |view, window, cx| {
+        view.pii.set_reviewing(true);
+        let text = view.editor.read(cx).text().to_string();
+        if view.pii.review().remaining() == 0 {
+            view.pii
+                .review_mut()
+                .add_manual(&text, 0.."Anna Petrova".len(), Person)
+                .unwrap();
+        }
+        eprintln!(
+            "DEBUG before apply remaining={} text={text}",
+            view.pii.review().remaining()
+        );
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+    });
+    cx.run_until_parked();
+    let document = stored(&tabs, cx, tab);
+    assert_eq!(document.project.as_deref(), Some(to.as_str()));
+    let names = vault(&tabs, cx).project(&to).unwrap().mapping.exported();
+    let restored = mdoc_pii::restore::RestoreMap::new(names)
+        .restore_in_place(&document.markdown)
+        .text;
+    assert_eq!(restored, "Anna Petrova wrote.", "{}", document.markdown);
+}
