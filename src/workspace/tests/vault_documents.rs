@@ -696,6 +696,40 @@ fn a_converted_text_emptied_by_its_user_stays_empty_after_a_restart(cx: &mut Tes
     });
 }
 
+/// Review of #1145 (P2-5): what a conversion warned about and left out
+/// is saved with its original and shows again after a restart.
+#[gpui::test]
+fn a_conversions_warning_comes_back_after_a_restart(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let docx = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/import/text.docx");
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![docx], cx);
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        assert!(!view.editor.read(cx).text().is_empty());
+        view.session.warning = Some("Some pages had no text.".into());
+        view.session.left_out = Some("Left out: 2 images.".into());
+        let edited = format!("{} Edited.", view.editor.read(cx).text());
+        view.editor
+            .update(cx, |editor, cx| editor.set_text(edited, cx));
+    });
+    wait(cx, 1000);
+    let session = cx.update(|_, cx| tabs.read(cx).snapshot(cx));
+    let (restored, cx) = boot_on(&mut cx.cx, dir.path(), session);
+    active(&restored, cx).read_with(cx, |view, cx| {
+        assert!(view.editor.read(cx).text().ends_with(" Edited."));
+        assert_eq!(
+            view.session.warning.as_deref(),
+            Some("Some pages had no text.")
+        );
+        assert_eq!(
+            view.session.left_out.as_deref(),
+            Some("Left out: 2 images.")
+        );
+    });
+}
+
 #[gpui::test]
 fn a_second_open_of_a_file_still_importing_asks_as_a_repeat(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
