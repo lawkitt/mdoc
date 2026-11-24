@@ -420,53 +420,142 @@ items 33–35 are polish and do not.
 Working with Claude Desktop or ChatGPT's desktop app through a local MCP
 connector ([ADR 0126](docs/adr/0126-local-mcp-ai-connector.md)) and a
 floating companion window ([ADR 0128](docs/adr/0128-floating-companion-window.md));
-record in [#1164](https://github.com/lawkitt/mdoc/issues/1164). *Blocked by:* Milestone
-1. It ships as 0.5.0, after 0.4.0.
+spec and grill record in [#1164](https://github.com/lawkitt/mdoc/issues/1164). It ships
+as 0.5.0, after 0.4.0, whose gates keep priority.
 
-The items are outlines in build order. `to-tickets` splits them after the
-maintainer's day of use on the landed Vault build
-([#1153](https://github.com/lawkitt/mdoc/issues/1153)) and after four spikes:
-whether ChatGPT's ordinary chats call local tools, whether an `.mcpb` can
-point at an installed binary, whether Claude's prefill link works as
-documented, and whether GPUI floats a non-activating window on Windows.
+Every item lands on `main` behind one setting, "AI connector (preview)", off
+by default: with it off nothing new is reachable and the shelf popup stays.
+Items are in dependency order; 1–4 are spikes whose answers go on
+[#1164](https://github.com/lawkitt/mdoc/issues/1164). Rows that need the Claude Desktop
+or ChatGPT apps themselves are the maintainer's.
 
-1. **[Desktop] Connector core.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
+1. **[Spike] Claude's prefill link.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+   Does `claude://claude.ai/new?q=…` open a new chat with the text prefilled
+   and not sent, for a short prompt and one near 14,000 characters? *Done
+   when:* the answer and what was tried are a comment on the issue.
+2. **[Spike] ChatGPT chats and local tools.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+   Do ordinary chats in ChatGPT's desktop app call a local stdio MCP server,
+   or only its local Work and Codex threads? A tiny test server logs every
+   call. *Done when:* the answer is a comment on the issue and the test entry
+   is gone from the shared config.
+3. **[Spike] A Claude bundle pointing at the installed shim.** *From
+   [#1164](https://github.com/lawkitt/mdoc/issues/1164).* Can an `.mcpb` hold only a
+   launcher for a binary inside an installed app? The maintainer runs it,
+   since the install can restart Claude Desktop. *Done when:* the answer is a
+   comment on the issue.
+4. **[Spike] A floating window on Windows.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+   Can GPUI show a small topmost window that takes no keyboard focus when it
+   appears, with a tray icon, a system-wide hotkey and exclusion from screen
+   capture? *Done when:* what worked and what did not is a comment on the
+   issue.
+5. **[Core] Connector service: the AI project and reads.** *From
+   [#1164](https://github.com/lawkitt/mdoc/issues/1164) (ADR 0126).* One service over
+   the Vault holds the AI project (off by default), lists its documents by
+   AI label, size and state, and returns a Ready document's text for AI or
+   its "needs review" state, with an outline and parts above about 60,000
+   characters. *Blocked by:* Vault & Projects item 29. *Done when:* core
+   tests on a temp Vault prove no read reaches another Project or Unfiled,
+   each read re-checks the Project's names, no label comes from a stored
+   title, and the connector is in item 29's list of exits.
+6. **[Core] Deliveries and AI activity.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+   A delivery names the documents it read and is a reply or a new Document
+   with a title; one that names a document outside the AI project is refused.
+   Each read and delivery is recorded in the Vault with its app and time.
+   *Blocked by:* item 5. *Done when:* core tests pin the refusals, a reply
+   restoring by identity, a delivered Document linking back, and the record.
+7. **[Desktop] The shim and local IPC.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
    (ADR 0126); promotes Later's Agent access item.* mdoc listens on an
-   owner-only socket or pipe; the `mdoc-mcp` shim, shipped in the app, speaks
-   MCP on stdio in both protocol eras and may start mdoc. `list_documents`,
-   `get_document` (an outline with parts above about 60,000 characters) and
-   `deliver_reply` (reply or document) serve the one AI project, plus a
-   "restore" prompt. *Done when:* integration tests prove no tool reaches
-   another Project or Unfiled, only Ready documents are read and each read
-   re-checks the Project's names, no response carries an original or a real
-   name, and a delivery naming a document outside what is served is refused.
-2. **[Desktop] Sharing, Ask and replies.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-   The share prompt, never a share that follows the view; Ask on a document,
-   a Project and Unfiled (Move to a new Project and share), opening the AI
-   app with a prefilled prompt; automatic scan on entering the AI project and
-   no automatic replacement; a needs-review notification; a delivery
-   notification without focus; a delivered document; the Project page's AI
-   activity; Settings › AI connector with Add to Claude Desktop, ChatGPT and
-   Test connection. *Blocked by:* item 1. *Done when:* end-to-end flows pass
-   with Claude Desktop, and with ChatGPT as far as its spike allows.
-3. **[Desktop] The companion.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
-   (ADR 0128).* One floating window with a system-wide hotkey: the AI project
-   and a stop button, documents with their state, the latest reply restored,
-   a simple review, a drop target. It opens by itself only for a delivery or
-   a review request and never takes focus; it is excluded from screen
-   capture and hides restored text until hover. It replaces the shelf popup.
-   *Blocked by:* item 2. *Done when:* native checks of the hotkey, focus and
-   capture exclusion pass on macOS, and on Windows if its spike passed.
-4. **[iOS] The phone loop.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-   Ask AI shares the pseudonymized text into the AI app; a "Paste reply?"
-   banner on return; Shortcuts actions for Pseudonymize and Restore. Android
-   follows with its share targets. *Done when:* the iOS job passes with tests
-   of each, and a device check shares to an AI app and restores its answer.
+   owner-only socket or pipe. The `mdoc-mcp` shim, shipped in the app, speaks
+   MCP on stdio in both protocol eras: three tools with their annotations, a
+   "restore" prompt, and instructions asking the model to show its answer and
+   deliver it. It may start mdoc. *Blocked by:* items 5, 6. *Done when:* a
+   test client drives the shim over stdio in both eras against a fake app,
+   and no response carries an original or a real name.
+8. **[Desktop] The share prompt and the AI project in the window.** *From
+   [#1164](https://github.com/lawkitt/mdoc/issues/1164).* The AI project is always
+   shown, with Stop sharing. When an AI app asks and nothing is shared, mdoc
+   asks to share the last-viewed Project; the share never follows the view.
+   A document entering the AI project is scanned, never replaced, by itself.
+   The Project page lists AI activity. *Blocked by:* items 6, 7. *Done when:*
+   workspace tests and headless renders of the prompt, the indicator and the
+   activity list.
+9. **[Desktop] Notifications and where a reply lands.** *From
+   [#1164](https://github.com/lawkitt/mdoc/issues/1164).* A delivery and a request for
+   an unreviewed document each raise an OS notification that opens the Reply
+   page or the review; mdoc never takes focus unless a setting says so. A
+   delivered Document opens for review. *Blocked by:* items 6, 7. *Done
+   when:* workspace tests with an injected notifier; headless renders of the
+   badge and the Reply page from a delivery.
+10. **[Desktop] Ask.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+    On the document header and the Project page: Ask Claude, Ask ChatGPT and
+    Copy for AI, remembering the last choice. It shares that Project as part
+    of the click, offers "Move to a new Project and share" for Unfiled, and
+    opens the AI app with a prompt naming the document by its AI label.
+    *Blocked by:* items 1, 2, 8. *Done when:* workspace tests of each path
+    and of the prompt's text; headless renders of the menu.
+11. **[Desktop] Settings › AI connector.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+    The preview setting; Add to Claude Desktop (a launcher bundle, or the
+    config file with consent, as item 3 found); Add to ChatGPT; Test
+    connection, which opens the AI app with a first prompt. *Blocked by:*
+    items 3, 7. *Done when:* tests of what each button writes, against temp
+    folders; headless renders of the page.
+12. **[Check] A real model end to end.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+    A script runs the Claude command-line app with a throwaway config and
+    the dev profile against the built shim: the model lists, reads, shows its
+    answer with aliases and delivers it. Not in CI. *Blocked by:* items 7, 9
+    and Vault & Projects item 30. *Done when:* the run passes on macOS and its
+    transcript is on the issue, with the maintainer's rows listed.
+13. **[Desktop] Prefactor: the shelf's rows as a view.** *From
+    [#1164](https://github.com/lawkitt/mdoc/issues/1164) (ADR 0128).* The rows that
+    list Ready documents with Copy and drag become a view the popup hosts
+    today and the companion can host. No behaviour changes. *Blocked by:*
+    Vault & Projects item 23. *Done when:* the shelf's tests and renders pass
+    unchanged.
+14. **[macOS] The companion window.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
+    (ADR 0128).* One floating window toggled from the menu bar icon: the AI
+    project and Stop sharing, its documents with their state, the latest
+    reply restored with Copy and Save as document, a drop target, and the
+    shelf's rows. It opens by itself only for a delivery or a review request
+    and never takes focus; it is excluded from screen capture and hides
+    restored text until hover. With the preview on it replaces the shelf
+    popup. *Blocked by:* items 8, 9, 13. *Done when:* headless renders of its
+    states; native checks of focus and capture exclusion.
+15. **[Desktop] The system-wide hotkey.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
+    (ADR 0128).* `global-hotkey` toggles the companion from any app, ⌥M by
+    default, changeable and off-able in Settings. *Blocked by:* item 14.
+    *Done when:* tests of the setting; a native check from another app.
+16. **[Desktop] Review in the companion.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+    A document that needs review lists its proposals with Replace all and
+    becomes Ready there; Open in mdoc covers the rest. *Blocked by:* item 14.
+    *Done when:* workspace tests of the review and headless renders.
+17. **[Windows] The companion and a tray icon.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+    As items 14–16, if item 4 found a way; otherwise Windows keeps
+    notifications and the Reply page and this item moves to Later. *Blocked
+    by:* items 4, 14. *Done when:* headless renders on Windows and the native
+    checks item 14 names.
+18. **[iOS] Ask AI and the reply banner.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+    Ask AI shares the pseudonymized text into the AI app; on return, a "Paste
+    reply?" banner restores what the user pastes. *Done when:* the iOS job
+    passes with tests of both, and a device check shares to an AI app and
+    restores its answer.
+19. **[iOS] Shortcuts actions.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+    Pseudonymize text and Restore text as Shortcuts actions. *Done when:* the
+    iOS job passes with tests of each action's result.
+20. **[Android] Ask AI and the reply banner.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+    As item 18. *Blocked by:* item 18. *Done when:* the Android job passes
+    with tests of both.
+21. **[Docs] Words, privacy and release notes.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+    `privacy.md` says what a connected AI app can read and that any process
+    running as the user can read the same; the glossary gains the companion
+    and AI activity; the release notes introduce the preview. *Blocked by:*
+    items 12, 14. *Done when:* docs lint passes.
 
 - **[Desktop] Later: Word export.** A delivered document and any other export
   as `.docx`. *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
 - **[Desktop] Later: a call that waits for review.** Only once every host
   allows more than a minute per tool call.
+- **Later: what a day of real use finds.** The maintainer's frictions on the
+  landed Vault build become items here.
 
 ## Personal documents
 
@@ -511,7 +600,7 @@ connector has shipped.
    [#1165](https://github.com/lawkitt/mdoc/issues/1165).* The companion's search and Personal
    segment, with drag (text and a `.md` file) and Copy and no unlock for the
    pseudonymized version; the connector serves allowed Personal documents
-   beside the AI project. *Blocked by:* item 4 and Milestone 2 item 3. *Done
+   beside the AI project. *Blocked by:* item 4 and Milestone 2 item 14. *Done
    when:* integration tests prove nothing leaves that was not allowed.
 6. **[Mobile] Personal on phones.** *From [#1165](https://github.com/lawkitt/mdoc/issues/1165).*
    Pinned in the sidebar; scan capture read by the machine-readable-zone
