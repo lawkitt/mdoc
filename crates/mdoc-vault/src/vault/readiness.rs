@@ -165,6 +165,20 @@ impl Vault {
         Ok((document, mapping))
     }
 
+    /// The Document `id`'s title as it leaves with [`Self::text_for_ai`]'s
+    /// text (a shared file's name, a share sheet's subject): every original
+    /// its Project knows now, or its own mapping while Unfiled, replaced by
+    /// its alias, as the desktop shelf shows titles. A name the Project
+    /// knows only from another Document is masked too (#1192). Whether the
+    /// Document may leave is `text_for_ai`'s to decide.
+    pub fn title_for_ai(&self, id: &str) -> Result<String, VaultError> {
+        let document = self.document(id)?;
+        let mapping = self.mapping_of(&document)?;
+        Ok(RestoreMap::new(mapping.exported())
+            .pseudonymize(&document.title)
+            .0)
+    }
+
     /// The mapping `document`'s names live in: its Project's as stored now,
     /// or its own while Unfiled.
     fn mapping_of(&self, document: &Document) -> Result<Mapping, VaultError> {
