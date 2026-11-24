@@ -26,6 +26,13 @@ import org.junit.runner.RunWith
 import uniffi.mdoc_ffi.CoreException
 
 /**
+ * A move writes the Vault and reopens the document before its toast shows; on
+ * the PC queue runner's emulator, beside a Windows build, that took over 15 s
+ * (#1184), so the move toasts get a longer wait than the screens' default.
+ */
+private const val MOVE_TIMEOUT = 45_000L
+
+/**
  * A document's moves through the screens (#1091 Decision 9): Move to
  * Project… from an Unfiled row and its Undo, Move to New Project… from
  * the document's menu, Move to Unfiled from a Project's page, and a move
@@ -95,11 +102,11 @@ class MoveTest {
         tap("Move to Project…")
         compose.waitForText("Move to Project")
         tap("Harbour")
-        compose.waitForText("Moved to Harbour")
+        compose.waitForText("Moved to Harbour", timeout = MOVE_TIMEOUT)
         assertEquals(harbour.raw, vault.document(vaultId(letter)).projectId)
         compose.waitUntilGone("Letter")
         tap("Undo")
-        compose.waitForText("Moved back to Unfiled")
+        compose.waitForText("Moved back to Unfiled", timeout = MOVE_TIMEOUT)
         compose.waitForText("Letter")
         assertNull(vault.document(vaultId(letter)).projectId)
     }
@@ -116,7 +123,7 @@ class MoveTest {
         compose.waitForText("The document leaves where it is for a new Project. Replies already sent still restore with the names they were sent with.")
         compose.shown(hasSetTextAction()).performTextInput("Riverside")
         tap("Move")
-        compose.waitForText("Moved to Riverside")
+        compose.waitForText("Moved to Riverside", timeout = MOVE_TIMEOUT)
         assertEquals(listOf("Riverside"), vault.projects().map { it.name })
         assertEquals(vault.projects().single().id, vault.document(vaultId(letter)).projectId)
         // The open letter shows its new place: its menu offers Move to Unfiled.
@@ -133,7 +140,7 @@ class MoveTest {
         compose.sidebar("Harbour")
         menuOf("Lease")
         tap("Move to Unfiled")
-        compose.waitForText("Moved to Unfiled")
+        compose.waitForText("Moved to Unfiled", timeout = MOVE_TIMEOUT)
         assertNull(vault.document(vaultId(lease)).projectId)
         compose.waitUntilGone("Lease")
         compose.sidebar("Unfiled")
