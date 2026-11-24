@@ -34,6 +34,9 @@ class MdocApplication : Application() {
 
     val network: NetworkWatch by lazy { NetworkWatch(this) }
 
+    /** Settings' choices the screens follow: the AI connector preview. */
+    val preferences: io.github.lawkitt.mdoc.settings.Preferences by lazy { io.github.lawkitt.mdoc.settings.Preferences(this) }
+
     /** Model setup, shared by Home and the documents. */
     val setup: SetupController by lazy { SetupController(this, { core.models }, { core.storage }, jobs, network) }
 }

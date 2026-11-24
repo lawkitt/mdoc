@@ -75,7 +75,12 @@ data class DocumentState(
     val showsNotes: Boolean = false,
     /** The saved reply a promoted document came from, shown restored (From AI reply). */
     val fromReply: ShownReply? = null,
-)
+    /** Where Ask AI's wait for the AI app's answer stands; null when nothing waits. */
+    val replyOffer: ReplyOffer? = null,
+) {
+    /** "Paste reply?" shows, back from the AI app Ask AI shared to. */
+    val showsReplyBanner: Boolean get() = replyOffer == ReplyOffer.Offered
+}
 
 enum class PasswordPrompt {
     Needed,
@@ -232,8 +237,43 @@ class DocumentViewModel(
 
     fun restoreReply(reply: String) = change {
         val restored = session.restoreReply(reply)
-        mutable.update { it.copy(snapshot = restored, showsReplySheet = false, showsReply = true) }
+        // The answer Ask AI waited for is in, however it came; a restore
+        // that fails keeps the banner.
+        mutable.update { it.copy(snapshot = restored, showsReplySheet = false, showsReply = true, replyOffer = null) }
     }
+
+    // Ask AI (#1164 decision 11, Milestone 2 item 20)
+
+    /**
+     * Ask AI: Copy for AI's hand-off, as Share as text sends it, with the
+     * wait for the answer armed; null, with why shown, until Ready, and
+     * then nothing waits.
+     */
+    suspend fun askAi(): HandOff? = handOff()?.also { mutable.update { it.copy(replyOffer = AskAiWait.asked()) } }
+
+    /** Ask AI's chooser started an app; `inFront`: mdoc is resumed. */
+    fun askAiChosen(inFront: Boolean) {
+        mutable.update { it.copy(replyOffer = AskAiWait.chosen(it.replyOffer, inFront)) }
+        if (inFront) offeredReply()
+    }
+
+    /** mdoc is in front again: back from the AI app, the banner shows. */
+    fun askAiReturned() {
+        mutable.update { it.copy(replyOffer = AskAiWait.resumed(it.replyOffer)) }
+        offeredReply()
+    }
+
+    /**
+     * The banner shows over the bar, so an open candidate's sheet or
+     * Replace… gives way to it: the user is back for the reply.
+     */
+    private fun offeredReply() {
+        if (!mutable.value.showsReplyBanner) return
+        mutable.update { it.copy(reviewing = null, manual = null) }
+    }
+
+    /** × on the banner: Paste in the bar stays. */
+    fun dismissReplyBanner() = mutable.update { it.copy(replyOffer = null) }
 
     fun showReply(show: Boolean) = mutable.update { it.copy(showsReply = show) }
 

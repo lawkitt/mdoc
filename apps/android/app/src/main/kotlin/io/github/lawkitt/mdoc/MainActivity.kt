@@ -134,6 +134,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     val scope = rememberCoroutineScope()
     val state by home.state.collectAsStateWithLifecycle()
     val setupState by app.setup.state.collectAsStateWithLifecycle()
+    val aiConnector by app.preferences.aiConnectorPreview.collectAsStateWithLifecycle()
     // Setup reads the core's models once the library has opened.
     LaunchedEffect(state.loaded, state.error) {
         if (state.loaded && state.error == null) {
@@ -294,6 +295,8 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                 onCancel = app.setup::cancel,
                 onUseCellular = app.setup::askCellular,
                 onBack = { settings = false },
+                aiConnectorPreview = aiConnector,
+                onAiConnectorPreview = app.preferences::setAiConnectorPreview,
             )
         } else if (current == null) {
             // Back from a sidebar page goes Home, Material's start
@@ -357,6 +360,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                         home.refresh()
                         if (open == current && !settings) openDocument(it)
                     },
+                    aiConnector = aiConnector,
                 )
             }
         }

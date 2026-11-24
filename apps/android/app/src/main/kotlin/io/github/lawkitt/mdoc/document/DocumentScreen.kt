@@ -35,6 +35,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.Lock
@@ -68,6 +69,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -95,7 +97,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.lawkitt.mdoc.R
 import io.github.lawkitt.mdoc.core.Candidate
@@ -148,6 +152,8 @@ fun DocumentScreen(
     moves: Long = 0,
     /** Opens another document in this one's place: one Promote to Document made. */
     onOpenDocument: (DocumentId) -> Unit = {},
+    /** Settings › AI connector (preview): Ask AI and "Paste reply?" (#1164). */
+    aiConnector: Boolean = false,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     val job by model.running.collectAsStateWithLifecycle()
@@ -172,8 +178,21 @@ fun DocumentScreen(
     LaunchedEffect(job) { if (job == null) model.refresh() }
     LifecycleResumeEffect(model) {
         model.resumed()
+        // Back from the AI app Ask AI shared to, "Paste reply?" shows.
+        model.askAiReturned()
         onPauseOrDispose {}
     }
+    // Ask AI's chooser says when it started an app (the twin of iOS's
+    // completed share sheet); only while the preview is on.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(model, aiConnector) {
+        if (!aiConnector) return@DisposableEffect onDispose {}
+        val app = context.applicationContext
+        val receiver = registerAskAiChosen(app) { model.askAiChosen(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
+        onDispose { app.unregisterReceiver(receiver) }
+    }
+    // The banner shows over the text: on a phone the Original gives way.
+    LaunchedEffect(state.showsReplyBanner) { if (state.showsReplyBanner) showsOriginal = false }
 
     Scaffold(
         modifier = modifier,
@@ -211,6 +230,19 @@ fun DocumentScreen(
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         // The hand-off's second way out (a long press on iOS).
                         if (model.primaryAction(state, job) == PrimaryAction.HandOff && !state.showsReply) {
+                            // Ask AI took Share's place on the bar (#1164).
+                            if (aiConnector) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.share)) },
+                                    modifier = Modifier.testTag("menu-share"),
+                                    onClick = {
+                                        menu = false
+                                        scope.launch {
+                                            model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, false, context)) }
+                                        }
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.share_as_file)) },
                                 onClick = {
@@ -274,42 +306,57 @@ fun DocumentScreen(
             )
         },
         bottomBar = {
-            // The password card's Unlock is the way on while it asks, as on iOS.
-            if (state.passwordPrompt == null || job != null) ActionBar(
-                action = model.primaryAction(state, job),
-                hasReply = snapshot.reply != null,
-                showsReply = state.showsReply,
-                onRecognize = {
-                    beforeJob()
-                    model.recognize()
-                },
-                onFindNames = {
-                    beforeJob()
-                    model.findNames()
-                },
-                onCancel = model::cancelJob,
-                onReplaceAll = model::replaceAll,
-                onShare = { asFile ->
-                    scope.launch { model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, asFile, context)) } }
-                },
-                onCopy = {
-                    scope.launch {
-                        model.handOff()?.let {
-                            copy(context, it.text)
-                            model.notice(R.string.copied_for_ai)
+            Column {
+                // Back from the AI app Ask AI shared to (#1164 decision 11).
+                if (aiConnector && state.showsReplyBanner) {
+                    ReplyBanner(
+                        onPaste = { if (it.isNotBlank()) model.restoreReply(it) },
+                        onType = { model.showReplySheet(true) },
+                        onClose = model::dismissReplyBanner,
+                    )
+                }
+                // The password card's Unlock is the way on while it asks, as on iOS.
+                if (state.passwordPrompt == null || job != null) ActionBar(
+                    action = model.primaryAction(state, job),
+                    askAi = if (aiConnector) {
+                        { scope.launch { model.askAi()?.let { context.startActivity(askAiIntent(it, context)) } } }
+                    } else {
+                        null
+                    },
+                    hasReply = snapshot.reply != null,
+                    showsReply = state.showsReply,
+                    onRecognize = {
+                        beforeJob()
+                        model.recognize()
+                    },
+                    onFindNames = {
+                        beforeJob()
+                        model.findNames()
+                    },
+                    onCancel = model::cancelJob,
+                    onReplaceAll = model::replaceAll,
+                    onShare = { asFile ->
+                        scope.launch { model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, asFile, context)) } }
+                    },
+                    onCopy = {
+                        scope.launch {
+                            model.handOff()?.let {
+                                copy(context, it.text)
+                                model.notice(R.string.copied_for_ai)
+                            }
                         }
-                    }
-                },
-                onPasteReply = { model.showReplySheet(true) },
-                onShareReply = { snapshot.reply?.let { context.startActivity(shareIntent(it.restored.text, null, false, context)) } },
-                onCopyReply = {
-                    snapshot.reply?.let {
-                        copy(context, it.restored.text, sensitive = true)
-                        model.notice(R.string.copied_reply)
-                    }
-                },
-                onShowReply = model::showReply,
-            )
+                    },
+                    onPasteReply = { model.showReplySheet(true) },
+                    onShareReply = { snapshot.reply?.let { context.startActivity(shareIntent(it.restored.text, null, false, context)) } },
+                    onCopyReply = {
+                        snapshot.reply?.let {
+                            copy(context, it.restored.text, sensitive = true)
+                            model.notice(R.string.copied_reply)
+                        }
+                    },
+                    onShowReply = model::showReply,
+                )
+            }
         },
     ) { padding ->
         // The keyboard takes its height from the screen (edge to edge draws
@@ -559,6 +606,8 @@ private fun RecognizingPane(title: Int, body: Int, modifier: Modifier = Modifier
 @Composable
 private fun ActionBar(
     action: PrimaryAction,
+    /** Ask AI, in Share's place: the AI connector preview is on. */
+    askAi: (() -> Unit)?,
     hasReply: Boolean,
     showsReply: Boolean,
     onRecognize: () -> Unit,
@@ -598,6 +647,12 @@ private fun ActionBar(
                         Triple(onShareReply, R.string.share, R.string.share_reply),
                         Triple(onCopyReply, R.string.copy, R.string.copy_reply),
                         Triple(onPasteReply, R.string.paste, R.string.paste_another_reply),
+                    )
+                } else if (askAi != null) {
+                    HandOffRow(
+                        Triple(askAi, R.string.ask_ai, R.string.ask_ai),
+                        Triple(onCopy, R.string.copy, R.string.copy),
+                        Triple(onPasteReply, R.string.paste, R.string.paste_reply),
                     )
                 } else {
                     HandOffRow(
@@ -840,6 +895,43 @@ private fun IdentitiesSheet(
     }
 }
 
+/**
+ * "Paste reply?" over the bar, back from the AI app Ask AI shared to
+ * (#1164 decision 11): Paste restores the answer on the clipboard in one
+ * tap, as the bar's Paste sheet does; Type a reply opens that sheet for one
+ * that is not. × puts it away; the bar's Paste stays.
+ */
+@Composable
+private fun ReplyBanner(onPaste: (String) -> Unit, onType: () -> Unit, onClose: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth().testTag("reply-banner")) {
+        Column(
+            Modifier.wrapContentWidth().widthIn(max = ReadingWidth).padding(16.dp, 4.dp, 4.dp, 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(stringResource(R.string.paste_reply_question)) }
+                        append(" ")
+                        append(stringResource(R.string.paste_reply_banner))
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f).padding(top = 12.dp),
+                )
+                IconButton(onClick = onClose, modifier = Modifier.testTag("reply-banner-close")) {
+                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close))
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(end = 12.dp)) {
+                Box(Modifier.testTag("reply-banner-paste")) { PasteFromClipboard(onPaste = onPaste) }
+                OutlinedButton(onClick = onType, modifier = Modifier.testTag("reply-banner-type")) {
+                    Text(stringResource(R.string.type_a_reply), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
 /** Paste AI reply: restored with this document's names and saved in the Vault as a reply to it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -952,17 +1044,15 @@ private fun ReplyPane(reply: ReplySnapshot, onPromote: (() -> Unit)?, onRemove: 
  * document's own title, which can hold a name the text no longer shows.
  */
 fun shareIntent(text: String, fileName: String?, asFile: Boolean, context: Context): Intent {
-    val title = fileName?.removeSuffix(".md")
-    val send = if (asFile && fileName != null) {
-        val dir = java.io.File(context.cacheDir, "hand-off").apply { deleteRecursively(); mkdirs() }
-        val file = java.io.File(dir, fileName).apply { writeText(text) }
-        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-        Intent(Intent.ACTION_SEND).setType("text/markdown").putExtra(Intent.EXTRA_STREAM, uri)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    } else {
-        Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
-    }
-    title?.let { send.putExtra(Intent.EXTRA_TITLE, it) }
+    // As text: what Ask AI sends too (`AskAi.kt`).
+    if (!asFile || fileName == null) return chooser(SharedText.of(text, fileName))
+    val title = fileName.removeSuffix(".md")
+    val dir = java.io.File(context.cacheDir, "hand-off").apply { deleteRecursively(); mkdirs() }
+    val file = java.io.File(dir, fileName).apply { writeText(text) }
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+    val send = Intent(Intent.ACTION_SEND).setType("text/markdown").putExtra(Intent.EXTRA_STREAM, uri)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        .putExtra(Intent.EXTRA_TITLE, title)
     return Intent.createChooser(send, title)
 }
 
