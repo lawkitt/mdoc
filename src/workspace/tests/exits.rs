@@ -74,7 +74,7 @@ enum Via {
     /// The command palette's Copy for AI.
     Palette,
     /// The menu bar shelf's Copy for AI on a row: its button's click, ⌘C
-    /// and ⌘1…⌘8 all run `ShelfView::copy`.
+    /// and ⌘1…⌘8 all run `ShelfRows::copy`.
     ShelfCopy(Placement),
     /// A drag from the shelf: its text and its `.md` file, name and all.
     ShelfDrag(Placement),
@@ -285,8 +285,8 @@ fn ready(cx: &mut TestAppContext, via: Via) -> Fixture<'_> {
         let key = fixture.key();
         let shelf = open_shelf(fixture.cx);
         let index = shelf
-            .read_with(fixture.cx, |view, _| {
-                let documents = &view.content().documents;
+            .read_with(fixture.cx, |view, cx| {
+                let documents = &view.content(cx).documents;
                 let at = documents.iter().position(|row| row.key == key).unwrap();
                 assert_eq!(documents[at].readiness, Readiness::Ready);
                 at
@@ -463,7 +463,7 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Vec<String> {
             let dragged = shelf
                 .update(fixture.cx, |view, window, cx| {
                     view.drag(index, window, cx);
-                    view.dragged.take()
+                    view.rows().update(cx, |rows, _| rows.dragged.take())
                 })
                 .unwrap();
             if let Some((text, file)) = dragged {

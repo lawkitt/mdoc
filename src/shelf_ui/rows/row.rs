@@ -4,7 +4,7 @@
 //! meta line "5 min ago · 1,297 words · 24 replaced". A row that is not
 //! ready starts its meta line with its state, so the title keeps its room.
 
-use super::ShelfView;
+use super::{ShelfRows, ShelfRowsEvent};
 use crate::{
     shelf::{Preview, ShelfDocument},
     style::{self, Theme},
@@ -23,7 +23,7 @@ pub(crate) const PREVIEW_WIDTH: f32 = crate::menu_bar::SHELF_WIDTH - 2. * 8. - 2
 const PREVIEW_SIZE: f32 = 12.;
 const PREVIEW_LINES: usize = 2;
 
-/// Heights the shelf sums to size its window.
+/// Heights the rows sum to size their host.
 pub(super) const READY_ROW: f32 = 92.;
 pub(super) const WAITING_ROW: f32 = 58.;
 const TITLE_LINE: f32 = 20.;
@@ -347,11 +347,11 @@ fn label(text: impl Into<SharedString>, color: Hsla) -> gpui::Div {
         .child(text.into())
 }
 
-impl ShelfView {
+impl ShelfRows {
     pub(super) fn document_row(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let document = &self.content.documents[index];
+        let document = &self.documents[index];
         let ready = document.readiness.is_ready();
         let copied = self.copied == Some(index);
         let (title, title_width) = self
@@ -524,9 +524,9 @@ impl ShelfView {
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.mouse_move(event, window, cx)
             }))
-            .on_click(cx.listener(move |this, _, window, cx| {
+            .on_click(cx.listener(move |this, _, _, cx| {
                 this.press = None;
-                this.open(index, window, cx)
+                cx.emit(ShelfRowsEvent::Open(index));
             }))
             .into_any_element()
     }
