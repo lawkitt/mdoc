@@ -37,6 +37,7 @@ use std::{
 mod comment_rail;
 mod decision_history;
 mod default_categories;
+mod document_notes;
 mod docx_queue;
 mod export_project;
 mod focus_regions;

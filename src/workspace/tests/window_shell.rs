@@ -1620,7 +1620,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let plain_view = active(&tabs, cx);
     plain_view.update_in(cx, |view, window, cx| {
-        view.inspector_share = false;
+        view.inspector = crate::document_view::Inspector::Review;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }
@@ -1678,7 +1678,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
                 "applied_panel" => view.apply_all_pii(&PiiApplyAll, window, cx),
                 _ => view.toggle_compare(window, cx),
             }
-            view.inspector_share = false;
+            view.inspector = crate::document_view::Inspector::Review;
             if !view.replacements_open() {
                 view.toggle_replacements_panel(window, cx);
             }
@@ -1715,7 +1715,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
             }
             assert_eq!(view.compare.is_some(), phase == "before_after");
             assert!(
-                !view.inspector_share,
+                view.inspector != crate::document_view::Inspector::Share,
                 "measure the Review tab, not the post-Apply Share tab"
             );
         });
@@ -1774,7 +1774,7 @@ fn expand_and_collapse_all_identities(cx: &mut TestAppContext) {
             view.toggle_replacements_panel(window, cx);
         }
         // Apply all leaves the inspector on Share; the list is on Review.
-        view.inspector_share = false;
+        view.inspector = crate::document_view::Inspector::Review;
         cx.notify();
     });
     cx.run_until_parked();

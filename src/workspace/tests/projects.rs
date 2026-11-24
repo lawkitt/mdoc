@@ -111,7 +111,7 @@ fn shortcuts_work_right_after_share_move_to_new_project(cx: &mut TestAppContext)
     cx.update(|_, cx| crate::bind_app_keys(cx));
     let view = active(&tabs, cx);
     view.update_in(cx, |view, window, cx| {
-        view.inspector_share = true;
+        view.inspector = crate::document_view::Inspector::Share;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }
@@ -805,7 +805,7 @@ fn the_clipboard_notice_times_out_or_clears_on_the_next_action(cx: &mut TestAppC
 /// Open the replacements panel of `view` and draw it.
 fn show_panel(view: &Entity<DocumentView>, cx: &mut VisualTestContext) {
     view.update_in(cx, |view, window, cx| {
-        view.inspector_share = false;
+        view.inspector = crate::document_view::Inspector::Review;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }

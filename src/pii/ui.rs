@@ -530,10 +530,10 @@ impl DocumentView {
         }
         if self.pii.mapping.open {
             parts.push(
-                if self.inspector_share {
-                    "Share tab"
-                } else {
-                    "Review tab"
+                match self.inspector {
+                    crate::document_view::Inspector::Review => "Review tab",
+                    crate::document_view::Inspector::Share => "Share tab",
+                    crate::document_view::Inspector::Notes => "Notes tab",
                 }
                 .into(),
             );
@@ -908,7 +908,7 @@ impl DocumentView {
                 if panel.contains_focused(window, cx) {
                     window.focus(panel, cx);
                 }
-                self.inspector_share = true;
+                self.inspector = crate::document_view::Inspector::Share;
             }
         }
         // Nothing is left to review, so the popup closes.

@@ -62,7 +62,7 @@ pub(super) fn scenes(
     d.focus_pair("sidebar-row", sidebar)?;
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
-            v.inspector_share = true;
+            v.inspector = crate::document_view::Inspector::Share;
             window.focus(&v.replacements_focus(), cx);
             cx.notify();
         });
@@ -73,7 +73,7 @@ pub(super) fn scenes(
     d.focus_pair("beside-selected-tab", review_tab)?;
     d.change(|_, _, cx| {
         view.update(cx, |v, cx| {
-            v.inspector_share = false;
+            v.inspector = crate::document_view::Inspector::Review;
             cx.notify();
         })
     })?;

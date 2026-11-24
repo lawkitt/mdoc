@@ -206,7 +206,11 @@ fn the_reply_page_controls_are_keyboard_reachable(cx: &mut TestAppContext) {
     paste_reply(&tabs, cx, "PERSON_1 met PERSON_9.");
     draw(cx);
     let targets = cx.update(|_, cx| tabs.read(cx).reply_page.as_ref().unwrap().test_controls());
-    assert_eq!(targets.len(), 3, "Copy, Next unrecognized and Delete");
+    assert_eq!(
+        targets.len(),
+        4,
+        "Copy, Next unrecognized, Promote and Delete"
+    );
     let mut seen = Vec::new();
     for _ in 0..30 {
         cx.simulate_keystrokes("tab");
@@ -272,7 +276,7 @@ fn closing_a_tab_saves_the_reply_in_its_box(cx: &mut TestAppContext) {
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }
-        view.inspector_share = true;
+        view.inspector = crate::document_view::Inspector::Share;
         cx.notify();
     });
     draw(cx);
@@ -301,7 +305,7 @@ fn a_reply_deleted_from_its_page_is_not_saved_again_by_its_box(cx: &mut TestAppC
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let view = active(&tabs, cx);
     view.update_in(cx, |view, window, cx| {
-        view.inspector_share = true;
+        view.inspector = crate::document_view::Inspector::Share;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }

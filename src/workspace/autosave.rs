@@ -37,6 +37,10 @@ pub(super) enum Write {
     Op(VaultId, Op),
     /// An AI reply to a tab's document, run at the head of the queue.
     Reply(super::saved_replies::ReplySave),
+    /// A document's private notes, as the tab held them when queued.
+    Notes(String),
+    /// Promote to Document of this saved AI reply, then open it.
+    Promote(String),
 }
 
 /// A move or a delete, run at the head of the writer's queue.
@@ -126,6 +130,71 @@ impl Workspace {
         self.autosave_document(id, window, cx);
         // A reply pasted in its box goes after the names it binds.
         self.queue_box_reply(id, window, cx);
+        self.queue_notes(id, window, cx);
+    }
+
+    /// Queue tab `id`'s notes when they changed since they were last
+    /// written: they save as its text does, through the one writer.
+    fn queue_notes(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
+            return;
+        };
+        let (document, notes) = {
+            let view = view.read(cx);
+            let Some(DocumentId::Vault(document)) = view.session.document.id() else {
+                return;
+            };
+            if !view.notes.unsaved() || self.vault.vault().is_none() {
+                return;
+            }
+            (document, view.notes.text().to_string())
+        };
+        view.update(cx, |view, _| view.notes_queued());
+        self.queue_write(Target::Notes(document), Write::Notes(notes), window, cx);
+    }
+
+    /// Write notes at the head of the writer's queue; every tab showing the
+    /// document learns they are written.
+    fn run_notes_save(
+        &mut self,
+        document: &VaultId,
+        notes: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(vault) = self.vault.vault().cloned() else {
+            return;
+        };
+        let target = DocumentId::Vault(document.clone());
+        match vault.set_notes(document.as_str(), notes.clone()) {
+            Ok(_) => {
+                for view in self.tabs.iter().filter_map(|tab| tab.view()) {
+                    view.update(cx, |view, _| {
+                        if view.session.document.is(&target) {
+                            view.notes.mark_saved(notes.clone());
+                        }
+                    });
+                }
+            }
+            // Deleted meanwhile: nothing to keep them with.
+            Err(mdoc_vault::VaultError::NotFound { .. }) => {}
+            Err(error) => {
+                let tab = self.find_document(&target, None, cx);
+                if let Some(tab) = tab {
+                    self.closing_after_write.remove(&tab);
+                }
+                if self.quit_flow.abandon() {
+                    Self::quit_cancelled(cx);
+                    crate::menu_bar::reveal_if_hidden(window, cx);
+                }
+                let name = (tab.and_then(|tab| self.tabs.get(tab)?.view().cloned()))
+                    .map(|view| view.read(cx).display_name());
+                self.notices.post(match name {
+                    Some(name) => format!("Could not save the notes of “{name}”: {error}"),
+                    None => format!("Could not save a closed document's notes: {error}"),
+                });
+            }
+        }
     }
 
     fn autosave_document(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
@@ -227,6 +296,18 @@ impl Workspace {
             }
             Write::Reply(save) => {
                 self.run_reply_save(save, window, cx);
+                self.advance_writer(window, cx);
+                return;
+            }
+            Write::Notes(notes) => {
+                if let Target::Notes(document) = &target {
+                    self.run_notes_save(document, notes, window, cx);
+                }
+                self.advance_writer(window, cx);
+                return;
+            }
+            Write::Promote(reply) => {
+                self.run_promote(&reply, window, cx);
                 self.advance_writer(window, cx);
                 return;
             }
@@ -351,7 +432,7 @@ impl Workspace {
                     self.autosave(tab, window, cx);
                 }
             }
-            (Target::Project(_) | Target::Op(_) | Target::Reply(_), Ok(_)) => {}
+            (Target::Project(_) | Target::Op(_) | Target::Reply(_) | Target::Notes(_), Ok(_)) => {}
             (Target::Document(document), Ok(_)) => {
                 let tabs: Vec<_> = self
                     .tabs
@@ -387,7 +468,9 @@ impl Workspace {
                 let tab = match &target {
                     Target::Tab(tab) => Some(*tab),
                     Target::Document(document) => self.find_document(document, None, cx),
-                    Target::Project(_) | Target::Op(_) | Target::Reply(_) => None,
+                    Target::Project(_) | Target::Op(_) | Target::Reply(_) | Target::Notes(_) => {
+                        None
+                    }
                 };
                 if let Some(tab) = tab {
                     self.closing_after_write.remove(&tab);
@@ -411,7 +494,10 @@ impl Workspace {
                         Target::Document(document) => self
                             .find_document(document, None, cx)
                             .and_then(|tab| self.tabs.get(tab)?.view().cloned()),
-                        Target::Project(_) | Target::Op(_) | Target::Reply(_) => None,
+                        Target::Project(_)
+                        | Target::Op(_)
+                        | Target::Reply(_)
+                        | Target::Notes(_) => None,
                     }
                     .map(|view| view.read(cx).display_name());
                     self.notices.post(match name {
@@ -509,8 +595,13 @@ impl Workspace {
         let document = (self.tabs.get(id))
             .and_then(|tab| tab.view())
             .and_then(|view| view.read(cx).session.document.id());
+        let notes = match &document {
+            Some(DocumentId::Vault(id)) => self.document_writer.has(&Target::Notes(id.clone())),
+            None => false,
+        };
         self.document_writer.has(&Target::Tab(id))
             || self.document_writer.has(&Target::Reply(id))
+            || notes
             || document
                 .is_some_and(|document| self.document_writer.has(&Target::Document(document)))
     }

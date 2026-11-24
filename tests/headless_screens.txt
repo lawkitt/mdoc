@@ -33,6 +33,8 @@ before-after
 applied-alias-selected
 reply-view
 share-reply
+document-notes-empty
+document-notes
 share-leftover
 decision-history
 open-project
@@ -74,6 +76,8 @@ import-fax
 import-heic
 import-heic-missing
 saved-reply
+reply-page-promote
+document-from-reply
 comments-rail
 comments-resolved
 comments-markers

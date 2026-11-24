@@ -1604,7 +1604,7 @@ fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1");
         // Inspector: back to Review for the notice.
-        app.inspector_share = false;
+        app.inspector = crate::document_view::Inspector::Review;
         cx.notify();
     });
     cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -2084,7 +2084,7 @@ fn inspector_share_tab_copies_for_ai_after_apply(cx: &mut gpui::TestAppContext) 
     // Applied: the header offers Share, which opens the Inspector's Share tab.
     click(cx, "primary-share");
     app.read_with(cx, |app, _| {
-        assert!(app.inspector_share);
+        assert_eq!(app.inspector, crate::document_view::Inspector::Share);
         assert!(app.replacements_open());
     });
     assert!(cx.debug_bounds("share-status").is_some());
@@ -2331,7 +2331,7 @@ fn merge_hint_applied_alias_keeps_restoring_and_merge_is_one_undo(cx: &mut gpui:
         if !app.replacements_open() {
             app.toggle_replacements_panel(window, cx);
         }
-        app.inspector_share = false;
+        app.inspector = crate::document_view::Inspector::Review;
         cx.notify();
         app.pii.review.merge_hints().remove(0)
     });
@@ -2410,7 +2410,7 @@ fn merge_hint_retains_target_primary_for_equal_length_wordings(cx: &mut gpui::Te
         if !app.replacements_open() {
             app.toggle_replacements_panel(window, cx);
         }
-        app.inspector_share = false;
+        app.inspector = crate::document_view::Inspector::Review;
         cx.notify();
         hint
     });

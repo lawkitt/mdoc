@@ -1215,6 +1215,10 @@ impl Workspace {
                             let mut names = None;
                             if let Some(vault) = vault {
                                 names = vault.names;
+                                view.load_notes(vault.notes, cx);
+                                view.from_reply = (vault.from_reply).map(|id| {
+                                    crate::document_view::notes::FromReply { id, gone: false }
+                                });
                                 view.session.name = Some(vault.title);
                                 view.session.follows_first_line = vault.follows;
                                 view.session.warning = vault.warning;
@@ -2817,6 +2821,10 @@ struct VaultLoaded {
     left_out: Option<String>,
     /// An Unfiled document's own names, for a load without its review.
     names: Option<LocalNames>,
+    /// Its private notes.
+    notes: String,
+    /// The AI Reply it was promoted from.
+    from_reply: Option<String>,
 }
 
 /// An Unfiled document's names, as its mapping keeps them.
@@ -2873,6 +2881,8 @@ fn load_from_vault(
             warning,
             left_out,
             names,
+            notes: stored.notes,
+            from_reply: stored.from_reply,
         }),
     })
 }

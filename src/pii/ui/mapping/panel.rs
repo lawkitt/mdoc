@@ -242,7 +242,7 @@ impl DocumentView {
             .trim()
             .to_lowercase()
     }
-    pub(super) fn replacement_entity_count(&self, cx: &App) -> usize {
+    pub(crate) fn replacement_entity_count(&self, cx: &App) -> usize {
         let query = self.replacement_query(cx);
         self.replacement_projection(cx)
             .rows
@@ -691,11 +691,15 @@ impl DocumentView {
         if !self.pii.mapping.open || !self.can_copy_markdown() {
             return None;
         }
+        // Notes need no detection set up.
+        if self.inspector == crate::document_view::Inspector::Notes {
+            return Some(self.notes_panel(window, cx));
+        }
         if self.pii.setup {
             return Some(self.pii_setup_panel(window, cx));
         }
-        // Inspector: Review | Share.
-        if self.inspector_share {
+        // Inspector: Review | Share | Notes.
+        if self.inspector == crate::document_view::Inspector::Share {
             return Some(self.share_panel(window, cx));
         }
         let theme = self.theme.get();

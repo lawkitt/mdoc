@@ -57,6 +57,7 @@ mod home;
 mod import;
 mod narrow;
 mod navigation;
+mod notes;
 mod old_cases;
 mod pdf_source;
 mod projects;
@@ -393,6 +394,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     review::before_after(d, &view)?;
     review::applied_alias(d, &view)?;
     restore::reply_view(d, &view)?;
+    notes::scenes(d, &view)?;
     decisions::scenes(d, &view)?;
     let project = projects::scenes(d)?;
     tree::scenes(d, &project)?;
@@ -402,6 +404,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     comparison::scenes(d, &view)?;
     import::scenes(d)?;
     restore::saved_reply(d)?;
+    notes::promoted(d)?;
     comments::scenes(d)?;
     pdf_source::scenes(d)?;
     pdf_source::encrypted(d)?;
