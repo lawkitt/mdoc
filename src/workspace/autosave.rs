@@ -133,8 +133,9 @@ impl Workspace {
         self.queue_notes(id, window, cx);
     }
 
-    /// Queue tab `id`'s notes when they changed since they were last
-    /// written: they save as its text does, through the one writer.
+    /// Queue tab `id`'s notes when they differ from what was last handed to
+    /// the writer or written: they save as its text does, through the one
+    /// writer.
     fn queue_notes(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
             return;
@@ -144,12 +145,13 @@ impl Workspace {
             let Some(DocumentId::Vault(document)) = view.session.document.id() else {
                 return;
             };
-            if !view.notes.unsaved() || self.vault.vault().is_none() {
+            if !view.notes.needs_write() || self.vault.vault().is_none() {
                 return;
             }
             (document, view.notes.text().to_string())
         };
-        view.update(cx, |view, _| view.notes_queued());
+        let queued = notes.clone();
+        view.update(cx, |view, _| view.notes.queued(queued));
         self.queue_write(Target::Notes(document), Write::Notes(notes), window, cx);
     }
 
@@ -177,11 +179,15 @@ impl Workspace {
                 }
             }
             // Deleted meanwhile: nothing to keep them with.
-            Err(mdoc_vault::VaultError::NotFound { .. }) => {}
+            Err(mdoc_vault::VaultError::NotFound { .. }) => self.notes_write_failed(&target, cx),
             Err(error) => {
+                self.notes_write_failed(&target, cx);
                 let tab = self.find_document(&target, None, cx);
                 if let Some(tab) = tab {
+                    // The close waiting on them stops, and the view stays
+                    // with its notes.
                     self.closing_after_write.remove(&tab);
+                    self.unsaved.insert(tab);
                 }
                 if self.quit_flow.abandon() {
                     Self::quit_cancelled(cx);
@@ -194,6 +200,17 @@ impl Workspace {
                     None => format!("Could not save a closed document's notes: {error}"),
                 });
             }
+        }
+    }
+
+    /// The notes handed over for `target` were not written.
+    fn notes_write_failed(&mut self, target: &DocumentId, cx: &mut Context<Self>) {
+        for view in self.tabs.iter().filter_map(|tab| tab.view()) {
+            view.update(cx, |view, _| {
+                if view.session.document.is(target) {
+                    view.notes.write_failed();
+                }
+            });
         }
     }
 

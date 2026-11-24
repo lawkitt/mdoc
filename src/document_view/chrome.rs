@@ -206,6 +206,10 @@ impl DocumentView {
                         if fresh {
                             this.start_pii_scan(cx);
                         }
+                        // A scan is reviewed in Review, not beside Notes.
+                        if this.inspector == super::Inspector::Notes {
+                            this.inspector = super::Inspector::Review;
+                        }
                         if !this.replacements_open() {
                             this.toggle_replacements_panel(window, cx);
                         }

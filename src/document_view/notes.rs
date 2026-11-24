@@ -12,10 +12,17 @@ use mdoc_editor::EditorState;
 /// What the Notes tab holds.
 #[derive(Default)]
 pub(crate) struct NotesState {
+    /// The Vault document these are the notes of.
+    document: Option<String>,
     /// The notes as they are now: the editor's text once it exists.
     text: String,
     /// As last loaded or written.
     saved: String,
+    /// Handed to the writer and not written yet.
+    pending: Option<String>,
+    /// Writes of these notes that ended, so a load that started before one
+    /// does not put older notes back.
+    writes: u64,
     /// Made when the Notes tab first shows.
     editor: Option<(Entity<EditorState>, Subscription)>,
     scroll: gpui::ScrollHandle,
@@ -28,14 +35,42 @@ impl NotesState {
         &self.text
     }
 
-    /// The notes changed since they were last written.
+    /// The notes differ from what the Vault holds.
     pub(crate) fn unsaved(&self) -> bool {
         self.text != self.saved
     }
 
+    /// The notes differ from what was last handed to the writer, or
+    /// written: a write is due. An undo back to the written text while a
+    /// newer one waits is one too.
+    pub(crate) fn needs_write(&self) -> bool {
+        self.text != *self.pending.as_ref().unwrap_or(&self.saved)
+    }
+
+    /// The writer took `text`.
+    pub(crate) fn queued(&mut self, text: String) {
+        self.pending = Some(text);
+        self.save = None;
+    }
+
     /// `written` reached the Vault.
     pub(crate) fn mark_saved(&mut self, written: String) {
+        if self.pending.as_ref() == Some(&written) {
+            self.pending = None;
+        }
         self.saved = written;
+        self.writes += 1;
+    }
+
+    /// The write handed over failed: the notes are due again.
+    pub(crate) fn write_failed(&mut self) {
+        self.pending = None;
+        self.writes += 1;
+    }
+
+    /// Writes that ended so far; a load passes back what it read then.
+    pub(crate) fn writes(&self) -> u64 {
+        self.writes
     }
 
     pub(crate) fn editor(&self) -> Option<&Entity<EditorState>> {
@@ -56,10 +91,27 @@ pub(crate) const EMPTY_HINT: &str =
     "Notes about this document: deadlines, who to call, what to check. Only you see them.";
 
 impl DocumentView {
-    /// The document loaded with `notes`: they show, unless notes typed
-    /// here wait to be written (a move's reload), which stay.
-    pub(crate) fn load_notes(&mut self, notes: String, cx: &mut Context<Self>) {
-        let typed = self.notes.unsaved();
+    /// Vault document `document` loaded with `notes`, read when `writes`
+    /// writes of its notes had ended. Another document's notes replace
+    /// these; the same document's show unless notes typed here wait to be
+    /// written (a move's reload), or a write ended since the read, whose
+    /// notes are newer.
+    pub(crate) fn load_notes(
+        &mut self,
+        document: &str,
+        notes: String,
+        writes: u64,
+        cx: &mut Context<Self>,
+    ) {
+        let same = self.notes.document.as_deref() == Some(document);
+        if same && (self.notes.writes != writes || self.notes.pending.is_some()) {
+            return;
+        }
+        let typed = same && self.notes.unsaved();
+        if !same {
+            self.notes.document = Some(document.to_string());
+            self.notes.save = None;
+        }
         self.notes.saved = notes.clone();
         if typed {
             return;
@@ -105,7 +157,7 @@ impl DocumentView {
 
     /// The notes changed: save them once typing pauses, as the text is.
     fn schedule_notes_save(&mut self, cx: &mut Context<Self>) {
-        if !self.notes.unsaved() {
+        if !self.notes.needs_write() {
             self.notes.save = None;
             return;
         }
@@ -118,23 +170,28 @@ impl DocumentView {
         }));
     }
 
-    /// The writer took the notes: no save waits any more.
-    pub(crate) fn notes_queued(&mut self) {
-        self.notes.save = None;
-    }
-
     /// More › Notes: the Inspector on its Notes tab, the editor focused.
+    /// Opening it there starts no review.
     pub(crate) fn show_notes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.inspector = Inspector::Notes;
         if !self.replacements_open() {
-            self.toggle_replacements_panel(window, cx);
+            self.open_inspector(window, cx);
         }
-        self.inspector = Inspector::Notes;
         self.ensure_notes_editor(window, cx);
         if let Some(editor) = self.notes.editor() {
             window.focus(&editor.read(cx).focus_handle(cx), cx);
         }
         cx.notify();
+    }
+
+    /// "From AI reply" (the header, the palette, the menu bar): the reply
+    /// on its page, while it exists.
+    pub(crate) fn open_source_reply(&mut self, cx: &mut Context<Self>) {
+        if let Some(from) = self.from_reply.as_ref().filter(|from| !from.gone) {
+            cx.emit(workspace::TabEvent::Reply(workspace::ReplyEvent::Open(
+                from.id.clone(),
+            )));
+        }
     }
 
     /// Type `text` as the notes (tests and headless renders).
@@ -269,12 +326,52 @@ impl DocumentView {
                 .aria_label("From AI reply: open the reply")
                 .text_size(px(12.))
                 .text_color(theme.search_accent())
-                .on_click(cx.listener(move |_, _, _, cx| {
-                    cx.emit(workspace::TabEvent::Reply(workspace::ReplyEvent::Open(
-                        from.id.clone(),
-                    )))
-                }))
+                .on_click(cx.listener(|this, _, _, cx| this.open_source_reply(cx)))
                 .into_any_element(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NotesState;
+
+    fn typed(state: &mut NotesState, text: &str) {
+        state.text = text.into();
+    }
+
+    /// Notes typed back to what was written while newer ones wait in the
+    /// writer are due again, so the newer ones do not win.
+    #[test]
+    fn an_undo_back_to_the_written_notes_while_newer_wait_is_written() {
+        let mut state = NotesState {
+            saved: "A".into(),
+            ..NotesState::default()
+        };
+        typed(&mut state, "A");
+        assert!(!state.needs_write());
+        typed(&mut state, "B");
+        assert!(state.needs_write());
+        state.queued("B".into());
+        assert!(!state.needs_write());
+        typed(&mut state, "A");
+        assert!(state.needs_write(), "A must be written after B");
+        state.mark_saved("B".into());
+        assert!(state.needs_write() && state.unsaved());
+        state.queued("A".into());
+        state.mark_saved("A".into());
+        assert!(!state.needs_write() && !state.unsaved());
+        assert_eq!(state.writes(), 2);
+    }
+
+    /// A failed write makes the notes due again and counts as an end.
+    #[test]
+    fn a_failed_write_is_due_again() {
+        let mut state = NotesState::default();
+        typed(&mut state, "B");
+        state.queued("B".into());
+        state.write_failed();
+        assert!(state.needs_write() && state.unsaved());
+        assert_eq!(state.writes(), 1);
     }
 }

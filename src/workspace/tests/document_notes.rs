@@ -77,7 +77,23 @@ fn notes_save_reload_and_never_leave_for_an_ai(cx: &mut TestAppContext) {
         NOTES
     );
 
-    // Never in what leaves for an AI.
+    // Never in what leaves for an AI: Share's Copy for AI.
+    click_toolbar(cx, "inspector-share");
+    click_toolbar(cx, "share-copy-for-ai");
+    let clipboard = cx
+        .read_from_clipboard()
+        .and_then(|item| item.text())
+        .unwrap_or_default();
+    assert!(clipboard.contains("PERSON_1"), "{clipboard}");
+    assert!(!clipboard.contains("deposit"), "{clipboard}");
+    // Nor does the palette's search find words only the notes hold.
+    cx.simulate_keystrokes("secondary-k");
+    cx.simulate_input("deposit");
+    draw(cx);
+    let found = cx.update(|_, cx| tabs.read(cx).palette_section("Documents", cx));
+    assert!(found.is_empty(), "{found:?}");
+    cx.simulate_keystrokes("escape");
+    draw(cx);
     let copy = cx.update(|_, cx| view.read(cx).text_for_ai(cx));
     assert!(copy.contains("PERSON_1"), "{copy}");
     assert!(!copy.contains("deposit"), "{copy}");
@@ -155,6 +171,55 @@ fn empty_notes_show_a_hint(cx: &mut TestAppContext) {
     // Back to Review by its tab.
     click_toolbar(cx, "inspector-review");
     cx.update(|_, cx| assert_eq!(view.read(cx).inspector, Inspector::Review));
+}
+
+/// From inside Notes, Tab moves on instead of indenting and Esc closes the
+/// Inspector; opening Notes on a document never reviewed starts no review,
+/// so Pseudonymize still scans on its first click. The palette lists Notes.
+#[gpui::test]
+fn notes_keys_leave_the_field_and_opening_notes_starts_no_review(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    // The app's keymap, in its order: the field's Tab after the editor's.
+    cx.update(|_, cx| crate::bind_all_keys(cx));
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    let path = dir.path().join("plain.md");
+    std::fs::write(&path, "Anna Petrova signed.").unwrap();
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+    cx.run_until_parked();
+    // The palette offers Notes for a Vault document.
+    cx.simulate_keystrokes("secondary-k");
+    cx.simulate_input("notes");
+    draw(cx);
+    let labels = cx.update(|_, cx| tabs.read(cx).palette_labels(cx));
+    assert!(labels.iter().any(|label| label == "Notes"), "{labels:?}");
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| view.show_notes(window, cx));
+    draw(cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(view.replacements_open());
+        assert!(!view.pii.reviewing(), "Notes opened no review");
+    });
+    let editor = cx.update(|_, cx| view.read(cx).notes.editor().unwrap().clone());
+    key(cx, "tab");
+    cx.update(|window, cx| {
+        assert!(
+            !editor.read(cx).focus_handle(cx).is_focused(window),
+            "Tab moved on"
+        );
+        assert_eq!(editor.read(cx).text(), "", "and typed nothing");
+    });
+    view.update_in(cx, |view, window, cx| view.show_notes(window, cx));
+    key(cx, "escape");
+    cx.update(|_, cx| {
+        assert!(
+            !view.read(cx).replacements_open(),
+            "Esc closed the Inspector"
+        )
+    });
 }
 
 /// Export Project… writes a document's notes beside it.

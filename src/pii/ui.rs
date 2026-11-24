@@ -303,7 +303,7 @@ impl ReviewUi {
 /// The Replacements checklist: Space ticks, Enter jumps to the
 /// mention, →/← show and hide mentions, ⌫ keeps the original.
 pub(crate) const LIST: &str =
-    "IdentityPanel && !ReplacementSearch && !SettingsInput && !UiControl && !ReplyBox";
+    "IdentityPanel && !ReplacementSearch && !SettingsInput && !UiControl && !ReplyBox && !NotesBox";
 /// The mention bar: Enter applies in the selected scope and moves on, Space
 /// unticks in it, ⌫ / ⌘⌫ / ⇧⌘⌫ keep this / same wording / all.
 pub(crate) const POPUP: &str = "PseudonymReview && !PseudonymReplacement && !UiControl && !UiMenu";
@@ -328,6 +328,14 @@ pub(crate) fn bind_keys(cx: &mut App) {
             "shift-tab",
             crate::ui::PreviousControl,
             Some("ReplyBox > Editor"),
+        ),
+        // The Notes field too: Tab and Shift+Tab move on (Esc closes the
+        // Inspector, from the shortcuts table).
+        KeyBinding::new("tab", crate::ui::NextControl, Some("NotesBox > Editor")),
+        KeyBinding::new(
+            "shift-tab",
+            crate::ui::PreviousControl,
+            Some("NotesBox > Editor"),
         ),
         KeyBinding::new("down", PiiNextChoice, Some("PiiChooser")),
         KeyBinding::new("up", PiiPreviousChoice, Some("PiiChooser")),

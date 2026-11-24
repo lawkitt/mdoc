@@ -1149,11 +1149,12 @@ impl Workspace {
         let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
             return;
         };
-        let generation = view.update(cx, |view, cx| {
+        let (generation, notes_writes) = view.update(cx, |view, cx| {
             let generation = view.lifecycle.begin_load();
             view.error = None;
             cx.notify();
-            generation
+            // Notes written after this read are newer than what it reads.
+            (generation, view.notes.writes())
         });
         let weak = view.downgrade();
         let loading = document.vault().clone();
@@ -1215,7 +1216,7 @@ impl Workspace {
                             let mut names = None;
                             if let Some(vault) = vault {
                                 names = vault.names;
-                                view.load_notes(vault.notes, cx);
+                                view.load_notes(loading.as_str(), vault.notes, notes_writes, cx);
                                 view.from_reply = (vault.from_reply).map(|id| {
                                     crate::document_view::notes::FromReply { id, gone: false }
                                 });
@@ -1760,6 +1761,12 @@ impl Workspace {
         self.autosave(id, window, cx);
         if self.write_pending_for(id, cx) {
             self.closing_after_write.insert(id);
+            return;
+        }
+        // Notes whose write just failed keep the tab, as its text would.
+        if (self.tabs.get(id).and_then(|tab| tab.view()))
+            .is_some_and(|view| view.read(cx).notes.unsaved())
+        {
             return;
         }
         self.remove(id, window, cx);

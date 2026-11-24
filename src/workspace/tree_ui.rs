@@ -468,6 +468,10 @@ impl Workspace {
             }
             self.navigation.forget(&Stop::Document(document.clone()));
         }
+        // Their replies went with them: a page showing one closes, and
+        // documents promoted from them say so.
+        self.drop_gone_reply_page(window, cx);
+        self.refresh_saved_replies(cx);
         let now = self.tree_now();
         self.tree.keep_chosen(&now.documents);
         if let Some(error) = failed {

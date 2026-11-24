@@ -598,6 +598,14 @@ impl DocumentView {
         }
         cx.notify();
     }
+    /// Open the Inspector without starting a review: its Notes tab needs
+    /// none, and Pseudonymize still scans on its first click.
+    pub(crate) fn open_inspector(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.pii.mapping.open {
+            self.pii.mapping.open_panel(window.focused(cx));
+        }
+        cx.notify();
+    }
     /// Stop the running scan. With nothing found or applied yet, also leave
     /// review, so Pseudonymize starts afresh next time.
     pub(super) fn stop_pii_scan(&mut self, window: &mut Window, cx: &mut Context<Self>) {

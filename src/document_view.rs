@@ -60,6 +60,8 @@ actions!(
         ShowOriginalView,
         ShowPseudonymizedView,
         ShowReplacements,
+        ShowNotes,
+        OpenSourceReply,
         ZoomIn,
         ZoomOut,
         ZoomReset,
@@ -2585,6 +2587,12 @@ impl Render for DocumentView {
             .on_action(cx.listener(|this, _: &ShowReplacements, window, cx| {
                 this.show_replacements(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &ShowNotes, window, cx| {
+                if this.can_copy_markdown() && this.notes_available() {
+                    this.show_notes(window, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, _: &OpenSourceReply, _, cx| this.open_source_reply(cx)))
             .on_action(cx.listener(Self::pseudonymize_clipboard))
             .on_action(cx.listener(Self::restore_clipboard))
             .on_action(cx.listener(Self::pseudonymize))

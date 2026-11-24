@@ -1318,6 +1318,16 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
+        "Notes: close the Inspector",
+        &[on!(
+            Ui,
+            Some("NotesBox > Editor"),
+            &["escape"],
+            crate::ui::CloseMenu
+        )],
+    ),
+    row(
+        Panel,
         "Open documents with the recovery key",
         &[on!(
             Shell,

@@ -515,6 +515,23 @@ impl Workspace {
         let Some(vault) = self.vault.vault().cloned() else {
             return;
         };
+        // The page restores with the window's Project; one whose names did
+        // not reach the Vault would restore otherwise there.
+        let project = vault.reply(id).ok().and_then(|reply| match reply.owner {
+            ReplyOwner::Project(project) => Some(project),
+            ReplyOwner::Document(document) => vault.document(&document).ok()?.project,
+        });
+        if let Some(project) = project
+            && self.project_ui.is_unwritten(&project)
+        {
+            self.notices.post(
+                "Could not promote the AI reply: its Project's names are not saved yet. Try \
+                 again once they are."
+                    .to_string(),
+            );
+            cx.notify();
+            return;
+        }
         let promoted = vault
             .promote_reply(id)
             .map_err(|error| error.to_string())
