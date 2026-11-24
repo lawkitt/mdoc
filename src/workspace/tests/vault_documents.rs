@@ -906,3 +906,71 @@ fn a_desktop_save_drops_the_counts_of_the_review_it_replaces(cx: &mut TestAppCon
     assert_eq!(saved.markdown, "# Note, edited");
     assert_eq!(saved.counts, None);
 }
+
+/// Review of #1145, round 2 (P2): Import Again of a Markdown file changed
+/// while the question was up stores the Markdown and the original from the
+/// same bytes, the ones admission read.
+#[gpui::test]
+fn import_again_keeps_one_snapshot_of_a_changed_markdown_file(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (first, second) = (dir.path().join("First.md"), dir.path().join("Second.md"));
+    std::fs::write(&first, "# Note").unwrap();
+    std::fs::write(&second, "# Note").unwrap();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![first], cx);
+    open(&tabs, vec![second.clone()], cx);
+    assert!(cx.has_pending_prompt());
+    // Another editor saves the file while the question shows.
+    std::fs::write(&second, "# Note, changed").unwrap();
+    cx.simulate_prompt_answer("Import Again");
+    cx.run_until_parked();
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
+    let summaries = vault.documents();
+    assert_eq!(summaries.len(), 2);
+    let read = mdoc_vault::source_sha256(&b"# Note"[..]).unwrap();
+    for summary in summaries {
+        let document = vault.document(&summary.id).unwrap();
+        assert_eq!(document.markdown, "# Note");
+        assert_eq!(document.original.unwrap().sha256, read, "the same bytes");
+    }
+}
+
+/// Review of #1145, round 2 (P2): a converted file changed while the
+/// repeated-import question was up is admitted again as it is now, so a
+/// change that makes it a repeat of another document asks again.
+#[gpui::test]
+fn import_again_admits_a_changed_converted_file_again(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let (a, c) = (
+        std::fs::read(fixtures.join("import/text.docx")).unwrap(),
+        std::fs::read(fixtures.join("import/handmade-hidden.docx")).unwrap(),
+    );
+    let paths: Vec<_> = ["A.docx", "B.docx", "C.docx"]
+        .iter()
+        .map(|name| dir.path().join(name))
+        .collect();
+    std::fs::write(&paths[0], &a).unwrap();
+    std::fs::write(&paths[1], &a).unwrap();
+    std::fs::write(&paths[2], &c).unwrap();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![paths[0].clone(), paths[2].clone()], cx);
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
+    assert_eq!(vault.documents().len(), 2);
+    open(&tabs, vec![paths[1].clone()], cx);
+    assert_eq!(
+        cx.pending_prompt().unwrap().0,
+        "“B.docx” is already in mdoc"
+    );
+    // Saved meanwhile with C's bytes: a repeat of C now, not of A.
+    std::fs::write(&paths[1], &c).unwrap();
+    cx.simulate_prompt_answer("Import Again");
+    cx.run_until_parked();
+    assert!(
+        cx.has_pending_prompt(),
+        "asked again, for the bytes it has now"
+    );
+    cx.simulate_prompt_answer("Open Existing");
+    cx.run_until_parked();
+    assert_eq!(vault.documents().len(), 2, "nothing imported unasked");
+}
