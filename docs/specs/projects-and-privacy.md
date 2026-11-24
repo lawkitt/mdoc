@@ -22,8 +22,9 @@ in [CONTEXT.md](../../CONTEXT.md).
   index are encrypted at rest with `AES-256-GCM` under the OS-held key, under
   opaque names ([ADR 0125](../adr/0125-unified-encrypted-vault-and-projects.md));
   password-protected originals stay locked on disk.
-- Never write a plaintext key file or a plaintext fallback, not for dev
-  builds and not as an opt-in; without a keyring, the Vault is unavailable.
+- Never write a plaintext key file or a plaintext fallback, not as an
+  opt-in and not for a dev build outside a debug build's `MDOC_DEV_PROFILE`
+  scratch folder; without a keyring, the Vault is unavailable.
 - The key is the only way to read the Vault, so desktop shows a recovery key,
   accepts one on the wrong-key screen, and exports a Project as Markdown and
   originals. Mobile offers neither: its files never reach a backup, and device

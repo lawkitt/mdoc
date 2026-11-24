@@ -52,18 +52,32 @@ fn dev_profile_from(value: Option<OsString>, honoured: bool, cwd: &Path) -> Opti
     Some(cwd.join(value))
 }
 
-/// This process's dev profile folder, read once. Settings, the session, the
-/// Vault and its key file, models and the update cache all live in it, and
-/// the OS key store is never asked.
+static DEV_PROFILE: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+
+/// Read [`DEV_PROFILE_VAR`] for this process. Only the app's `main` calls
+/// it, so tests (whose `deny-os-services` guard it would bypass) and the
+/// headless renders never take a dev profile from the environment.
+pub fn use_dev_profile() -> Option<&'static Path> {
+    DEV_PROFILE
+        .get_or_init(|| {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            dev_profile_from(
+                std::env::var_os(DEV_PROFILE_VAR),
+                DEV_PROFILE_HONOURED,
+                &cwd,
+            )
+        })
+        .as_deref()
+}
+
+/// This process's dev profile folder, once [`use_dev_profile`] found one.
+/// Settings, the session, the Vault and its key file, models and the update
+/// cache all live in it, and the OS key store is never asked.
 pub fn dev_profile() -> Option<&'static Path> {
-    static PROFILE: std::sync::LazyLock<Option<PathBuf>> = std::sync::LazyLock::new(|| {
-        if !DEV_PROFILE_HONOURED {
-            return None;
-        }
-        let cwd = std::env::current_dir().unwrap_or_default();
-        dev_profile_from(std::env::var_os(DEV_PROFILE_VAR), true, &cwd)
-    });
-    PROFILE.as_deref()
+    if isolated() {
+        return None;
+    }
+    DEV_PROFILE.get().and_then(Option::as_deref)
 }
 
 pub fn data_local_dir() -> Option<PathBuf> {
@@ -134,7 +148,14 @@ mod tests {
             cfg!(debug_assertions) && cfg!(any(target_os = "macos", target_os = "windows"))
         );
         #[cfg(not(debug_assertions))]
-        assert!(!DEV_PROFILE_HONOURED && dev_profile().is_none());
+        assert!(!DEV_PROFILE_HONOURED && use_dev_profile().is_none());
+    }
+
+    #[test]
+    fn without_the_apps_main_no_dev_profile_is_taken() {
+        // A test process never calls `use_dev_profile`, whatever its
+        // environment holds.
+        assert_eq!(dev_profile(), None);
     }
 
     #[test]

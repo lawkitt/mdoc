@@ -19,6 +19,8 @@ checked by hand on a clean user account.
 ## Rejected
 
 - **A plaintext key file**, even for dev builds or as an opt-in default.
+  The one exception is a debug build's `MDOC_DEV_PROFILE` scratch folder
+  (#1153), which release builds ignore.
 - **The per-query `kSecUseAuthenticationUIFail` flag**: it doesn't prevent
   the dialog; only the process-wide switch does.
 

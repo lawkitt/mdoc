@@ -110,8 +110,9 @@ pub fn vault_key(quiet: bool) -> Result<Option<[u8; 32]>, KeyError> {
 }
 
 /// Keep `key`, a recovery key that opened the Vault, as the Vault key: in
-/// the Vault key slot of the OS key store, never in a plain file. The OS
-/// key and the old cases folder are left as they are (#1091 Decision 2).
+/// the Vault key slot of the OS key store, never in a plain file outside a
+/// dev profile. The OS key and the old cases folder are left as they are
+/// (#1091 Decision 2).
 pub fn store_vault_key(key: &[u8; 32]) -> Result<(), KeyError> {
     if crate::app_paths::isolated() {
         return Err(KeyError::KeysDisabled);
@@ -192,21 +193,38 @@ mod dev_key {
             Ok(bytes) => bytes.try_into().map_err(|_| KeyError::KeyDamaged),
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 let key = <[u8; 32]>::generate();
-                store(path, &key)?;
-                Ok(key)
+                match write(path, &key, false) {
+                    Ok(()) => Ok(key),
+                    // Another mdoc on this profile made one first: use its.
+                    Err(KeyError::KeyWrite(e)) if e.kind() == io::ErrorKind::AlreadyExists => {
+                        std::fs::read(path)
+                            .map_err(KeyError::KeyRead)?
+                            .try_into()
+                            .map_err(|_| KeyError::KeyDamaged)
+                    }
+                    Err(e) => Err(e),
+                }
             }
             Err(e) => Err(KeyError::KeyRead(e)),
         }
     }
 
     pub fn store(path: &Path, key: &[u8; 32]) -> Result<(), KeyError> {
+        write(path, key, true)
+    }
+
+    pub fn write(path: &Path, key: &[u8; 32], replace: bool) -> Result<(), KeyError> {
         let dir = path.parent().ok_or(KeyError::NoAppData)?;
         std::fs::create_dir_all(dir)
             .and_then(|_| {
                 let mut file = tempfile::NamedTempFile::new_in(dir)?;
                 file.write_all(key)?;
                 file.as_file().sync_all()?;
-                file.persist(path).map_err(|e| e.error)?;
+                if replace {
+                    file.persist(path).map_err(|e| e.error)?;
+                } else {
+                    file.persist_noclobber(path).map_err(|e| e.error)?;
+                }
                 Ok(())
             })
             .map_err(KeyError::KeyWrite)
@@ -825,6 +843,14 @@ mod tests {
         let first = dev_key::load_or_create(&path).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), first);
         assert_eq!(dev_key::load_or_create(&path).unwrap(), first);
+        // A second mdoc that found no key keeps the first one's.
+        let other = dir.path().join("other.key");
+        std::fs::write(&other, [3; 32]).unwrap();
+        assert!(matches!(
+            dev_key::write(&other, &[4; 32], false),
+            Err(KeyError::KeyWrite(e)) if e.kind() == std::io::ErrorKind::AlreadyExists
+        ));
+        assert_eq!(dev_key::load_or_create(&other).unwrap(), [3; 32]);
         dev_key::store(&path, &[7; 32]).unwrap();
         assert_eq!(dev_key::load_or_create(&path).unwrap(), [7; 32]);
         std::fs::write(&path, b"short").unwrap();
