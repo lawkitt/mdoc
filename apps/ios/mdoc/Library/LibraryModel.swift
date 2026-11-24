@@ -11,6 +11,9 @@ struct PendingImport: Identifiable, Equatable, Sendable {
     var unreadPages = 0
     /// The name of the file it came from, from Files or "Open in mdoc".
     var fileName: String? = nil
+    /// The Project it was started from, where the import sheet starts;
+    /// nil, Unfiled (#1091 Decision 35).
+    var project: ProjectID? = nil
 
     /// The one file whose bytes a saved document records as its source
     /// (#1091 Decision 7): a file, or a single photo. Camera pages and

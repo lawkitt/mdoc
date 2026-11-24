@@ -55,14 +55,7 @@ final class DeviceRestoreUITests: XCTestCase {
 
         // A second reply for the Project, pasted in mdoc: the pane's menu
         // switches between them, and Remove deletes the one shown.
-        let paste = app.buttons["paste-reply"].firstMatch
-        XCTAssertTrue(paste.waitForExistence(timeout: MdocUITest.timeout))
-        paste.tap()
-        let editor = app.textViews["reply-editor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: MdocUITest.timeout))
-        editor.tap()
-        editor.typeText("Pasted reply for \(projectAlias).")
-        app.buttons["reply-restore"].tap()
+        MdocUITest.pasteReply("Pasted reply for \(projectAlias).", in: app)
         expectRestored("Pasted reply for maya.ellison@example.com.", in: app)
         let picker = app.buttons["reply-picker"].firstMatch
         XCTAssertTrue(picker.waitForExistence(timeout: MdocUITest.timeout), "no menu of saved replies")

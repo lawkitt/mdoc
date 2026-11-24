@@ -68,13 +68,8 @@ final class ReviewFlowUITests: XCTestCase {
         XCTAssertTrue(sheet.waitForExistence(timeout: 10))
         MdocUITest.closeShareSheet(app)
 
-        // Restore: paste the AI's reply into the document.
-        app.buttons["paste-reply"].tap()
-        let editor = app.textViews["reply-editor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: MdocUITest.timeout))
-        editor.tap()
-        editor.typeText("Write to EMAIL_1 today. EMAIL_9 is new.")
-        app.buttons["reply-restore"].tap()
+        // Restore: one Paste restores the AI's reply on the clipboard.
+        MdocUITest.pasteReply("Write to EMAIL_1 today. EMAIL_9 is new.", in: app)
 
         let restored = app.textViews["restored-text"]
         XCTAssertTrue(restored.waitForExistence(timeout: 10))
@@ -82,6 +77,34 @@ final class ReviewFlowUITests: XCTestCase {
         let summary = app.staticTexts["restore-summary"]
         XCTAssertTrue(summary.label.contains("1 value restored"))
         XCTAssertTrue(summary.label.contains("1 unrecognized"))
+    }
+
+    /// Type a reply, beside Paste: a reply written by hand is restored too.
+    @MainActor
+    func testATypedReplyIsRestored() throws {
+        let app = MdocUITest.launch()
+        let document = MdocUITest.documentRow(app)
+        XCTAssertTrue(document.waitForExistence(timeout: 60))
+        document.tap()
+        let primary = app.buttons["primary-action"]
+        XCTAssertTrue(primary.waitForExistence(timeout: 30))
+        if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
+        if primary.label.hasPrefix("Replace") { primary.tap() }
+
+        let typeReply = app.buttons["type-reply"]
+        XCTAssertTrue(typeReply.waitForExistence(timeout: MdocUITest.timeout))
+        typeReply.tap()
+        let editor = app.textViews["reply-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: MdocUITest.timeout))
+        if !editor.wait(until: NSPredicate(format: "hasKeyboardFocus == true"), timeout: 5) { editor.tap() }
+        editor.typeText("Call EMAIL_1 back.")
+        app.buttons["reply-restore"].tap()
+
+        let restored = app.textViews["restored-text"]
+        XCTAssertTrue(restored.waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            restored.wait(until: NSPredicate(format: "value CONTAINS %@", "Call \(MdocUITest.email) back."), timeout: 10),
+            "the typed reply, restored")
     }
 }
 
@@ -228,6 +251,30 @@ enum MdocUITest {
     static func openSettings(_ app: XCUIApplication) {
         revealSidebar(app)
         app.buttons["settings-button"].firstMatch.tap()
+    }
+
+    /// Puts `text` on the clipboard, as copying it in another app would,
+    /// for the app's Paste to read.
+    static func copy(_ text: String) {
+        UIPasteboard.general.string = text
+    }
+
+    /// Paste on the document's bar: one tap restores the reply on the
+    /// clipboard.
+    @MainActor
+    static func pasteReply(_ text: String, in app: XCUIApplication) {
+        copy(text)
+        tapWhenEnabled(app.descendants(matching: .any)["paste-reply"].firstMatch)
+    }
+
+    /// Taps a Paste control once it is enabled: it dims while the
+    /// clipboard is empty and takes a moment to see a copy made in the
+    /// runner, and a tap before then does nothing.
+    @MainActor
+    static func tapWhenEnabled(_ paste: XCUIElement) {
+        XCTAssertTrue(paste.waitForExistence(timeout: timeout))
+        XCTAssertTrue(paste.wait(until: NSPredicate(format: "isEnabled == true"), timeout: timeout), "Paste stayed dimmed")
+        paste.tap()
     }
 
     /// The first document row the sidebar's search lists before anything is

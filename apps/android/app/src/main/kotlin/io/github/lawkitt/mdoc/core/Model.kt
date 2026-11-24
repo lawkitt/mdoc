@@ -109,6 +109,27 @@ enum class ProjectDeletion {
     DeleteDocuments,
 }
 
+/** Where a move takes a saved document (#1091 Decision 9): a Project, a new one named so, or Unfiled. */
+sealed interface MoveTarget {
+    data class Existing(val project: ProjectId) : MoveTarget
+
+    data class NewProject(val name: String) : MoveTarget
+
+    data object Unfiled : MoveTarget
+}
+
+/** Where a move took a document, for "Moved to <Project>" and its Undo (iOS `ProjectMove`). */
+data class ProjectMove(
+    /** The id this run lists it by. */
+    val document: DocumentId,
+    /** The Project it is in now; `null`: Unfiled. */
+    val to: ProjectSummary?,
+    /** The Project it left, which keeps its names; `null`: it was Unfiled. */
+    val from: ProjectId?,
+    /** The Vault's handle for Undo, good while this core runs. */
+    val undo: ULong,
+)
+
 data class LibrarySnapshot(
     val projects: List<ProjectSummary> = emptyList(),
     val documents: List<DocumentSummary> = emptyList(),
@@ -294,6 +315,12 @@ data class DocumentSnapshot(
     /** Text recognition began and kept finished pages: Recognize resumes. */
     val resumesOcr: Boolean = false,
     val original: OriginalSource = OriginalSource.None,
+    /**
+     * How many times its session opened it from the Vault when this was
+     * taken: a move opens it again, and a review action on a snapshot from
+     * before is refused, as its ranges were of the old text.
+     */
+    val opened: Int = 0,
 ) {
     val pendingCount: Int get() = candidates.count { it.state == MentionState.Proposed }
     val replacedCount: Int get() = candidates.count { it.state == MentionState.Replaced }

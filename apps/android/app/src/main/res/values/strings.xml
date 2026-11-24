@@ -58,6 +58,15 @@
     <string name="move_documents_to_unfiled">Move its documents to Unfiled</string>
     <string name="delete_them">Delete them</string>
     <string name="delete_project_question">Delete Project?</string>
+    <string name="move_to_project_ellipsis">Move to Project…</string>
+    <string name="move_to_new_project_ellipsis">Move to New Project…</string>
+    <string name="move_to_unfiled">Move to Unfiled</string>
+    <string name="move_to_project">Move to Project</string>
+    <string name="search_projects">Search Projects</string>
+    <string name="move">Move</string>
+    <string name="move_new_project_body">The document leaves where it is for a new Project. Replies already sent still restore with the names they were sent with.</string>
+    <string name="moved_to">Moved to %1$s</string>
+    <string name="moved_back_to">Moved back to %1$s</string>
     <string name="project_has_no_documents">“%1$s” has no documents. Its names and its AI replies are deleted with it.</string>
     <string name="project_menu">Project</string>
     <string name="replies">Replies</string>

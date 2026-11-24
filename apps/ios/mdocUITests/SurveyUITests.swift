@@ -29,24 +29,13 @@ final class SurveyUITests: XCTestCase {
 
         MdocUITest.revealSidebar(app)
         shot("37-sidebar-empty")
+        MdocUITest.copy(Self.pastedText)
         app.buttons["new-menu"].firstMatch.tap()
         // The menu's item, not Start's Paste tile of the same name.
-        let pasteItem = app.collectionViews.buttons["Paste text"].firstMatch
+        let pasteItem = MdocUITest.menuItem("Paste", app)
         XCTAssertTrue(pasteItem.waitForExistence(timeout: MdocUITest.timeout))
         shot("02-add-menu")
         pasteItem.tap()
-        let editor = app.textViews.firstMatch
-        XCTAssertTrue(editor.waitForExistence(timeout: MdocUITest.timeout))
-        shot("03-paste-sheet-empty")
-        editor.tap()
-        editor.typeText(Self.pastedText)
-        shot("04-paste-sheet-filled")
-        nextOrAdd(app)
-
-        if app.buttons["import-add"].waitForExistence(timeout: MdocUITest.probeTimeout) {
-            shot("05-import-sheet")
-            app.buttons["import-add"].tap()
-        }
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 30))
         shot("06-document-before-scan")
@@ -167,13 +156,7 @@ final class SurveyUITests: XCTestCase {
         shot("21-share-sheet")
         restoreInExtension(app)
 
-        app.buttons["paste-reply"].tap()
-        let reply = app.textViews["reply-editor"]
-        XCTAssertTrue(reply.waitForExistence(timeout: MdocUITest.timeout))
-        shot("23-reply-sheet-empty")
-        reply.tap()
-        reply.typeText(Self.replyText)
-        app.buttons["reply-restore"].tap()
+        MdocUITest.pasteReply(Self.replyText, in: app)
         XCTAssertTrue(app.descendants(matching: .any)["restore-summary"].waitForExistence(timeout: 10))
         shot("24-reply-pane")
     }
@@ -501,19 +484,12 @@ final class SurveyUITests: XCTestCase {
     @MainActor
     func test5BelowFloor() throws {
         let app = launch(seed: nil)
-        XCTAssertTrue(app.buttons["empty-paste"].firstMatch.waitForExistence(timeout: 30))
+        XCTAssertTrue(app.descendants(matching: .any)["empty-paste"].firstMatch.waitForExistence(timeout: 30))
         XCTAssertFalse(app.buttons["setup-download"].exists)
         shot("31-home-empty-below-floor")
 
-        app.buttons["empty-paste"].firstMatch.tap()
-        let editor = app.textViews.firstMatch
-        XCTAssertTrue(editor.waitForExistence(timeout: MdocUITest.timeout))
-        editor.tap()
-        editor.typeText(Self.pastedText)
-        nextOrAdd(app)
-        if app.buttons["import-add"].waitForExistence(timeout: MdocUITest.probeTimeout) {
-            app.buttons["import-add"].tap()
-        }
+        MdocUITest.copy(Self.pastedText)
+        MdocUITest.tapWhenEnabled(app.descendants(matching: .any)["empty-paste"].firstMatch)
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.descendants(matching: .any)["below-floor-note"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Find names"].exists)
@@ -581,17 +557,6 @@ final class SurveyUITests: XCTestCase {
         app.launchEnvironment["MDOC_SLOW_TOASTS"] = "1"
         app.launch()
         return app
-    }
-
-    /// Paste's sheet ends in Next (then the import sheet) or Add.
-    @MainActor
-    private func nextOrAdd(_ app: XCUIApplication) {
-        let next = app.buttons["Next"].firstMatch
-        if next.exists {
-            next.tap()
-        } else {
-            app.buttons["import-add"].firstMatch.tap()
-        }
     }
 
     /// The sidebar: on iPhone ☰ slides it out; on iPad it stands beside

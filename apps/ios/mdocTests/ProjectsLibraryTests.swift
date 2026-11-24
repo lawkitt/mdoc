@@ -152,7 +152,7 @@ final class ProjectsLibraryTests: XCTestCase {
         let app = try app()
         XCTAssertNil(app.intakeProject)
         let typed = try newDocument(app, typing: "Shopping list")
-        app.addText("Ann Lee signed.", title: "Pasted", into: app.intakeProject)
+        app.paste("Ann Lee signed.")
         let pasted = try XCTUnwrap(app.openModel)
         app.showStart()
         XCTAssertEqual(app.library.projects.count, 2, "no Project of its own")

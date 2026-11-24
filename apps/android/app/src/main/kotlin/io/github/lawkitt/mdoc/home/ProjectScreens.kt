@@ -33,6 +33,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -199,6 +200,7 @@ fun ProjectPage(
     onHideReply: () -> Unit,
     onMenu: (() -> Unit)? = null,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
+    onMove: ((DocumentId, MoveCommand) -> Unit)? = null,
 ) {
     var segment by rememberSaveable(project.id.raw) { mutableStateOf(ProjectSegment.Documents) }
     var query by rememberSaveable(project.id.raw) { mutableStateOf("") }
@@ -251,7 +253,12 @@ fun ProjectPage(
                     } else {
                         LazyColumn(inner) {
                             items(documents, key = { it.id.raw }) { document ->
-                                DocumentRow(document, null, state.canFindNames, onDelete = { onDelete(document.id) }) { onOpen(document.id) }
+                                DocumentRow(
+                                    document, null, state.canFindNames,
+                                    onDelete = { onDelete(document.id) },
+                                    moves = documentMoves(document, state, onMove),
+                                    onMove = { onMove?.invoke(document.id, it) },
+                                ) { onOpen(document.id) }
                             }
                         }
                     }
@@ -438,6 +445,54 @@ private fun SavedReplySheet(shown: ShownReply, onDismiss: () -> Unit) {
 @Composable
 fun NewProjectDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) {
     NameDialog(R.string.new_project, R.string.new_project_body, "", R.string.create, onCreate, onDismiss)
+}
+
+/** Move to New Project…: the new Project's name; Move is off while it is blank, as on iOS. */
+@Composable
+fun MoveToNewProjectDialog(onMove: (String) -> Unit, onDismiss: () -> Unit) {
+    NameDialog(R.string.new_project, R.string.move_new_project_body, "", R.string.move, onMove, onDismiss)
+}
+
+/**
+ * Move to Project…: every Project but the document's own, as All
+ * Projects orders them, searchable from as many as All Documents' search
+ * (iOS's All Projects… picker). A tap moves it.
+ */
+@Composable
+fun MoveToProjectDialog(projects: List<ProjectSummary>, onPick: (ProjectId) -> Unit, onDismiss: () -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val shown = projects.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.move_to_project)) },
+        text = {
+            Column {
+                if (projects.size >= SEARCH_THRESHOLD) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text(stringResource(R.string.search_projects)) },
+                        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    )
+                }
+                LazyColumn {
+                    items(shown, key = { it.id.raw }) { project ->
+                        ListItem(
+                            modifier = Modifier.clickable { onPick(project.id) },
+                            // The dialog's own surface shows through.
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            leadingContent = { ProjectDot(project, 12) },
+                            headlineContent = { Text(project.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
 }
 
 /** Rename… on a Project: its new name. */

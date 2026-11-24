@@ -106,6 +106,10 @@ import io.github.lawkitt.mdoc.core.OriginalSource
 import io.github.lawkitt.mdoc.core.ReplySnapshot
 import io.github.lawkitt.mdoc.core.RestoredSegment
 import io.github.lawkitt.mdoc.core.Scope
+import io.github.lawkitt.mdoc.core.ProjectSummary
+import io.github.lawkitt.mdoc.home.HomeViewModel
+import io.github.lawkitt.mdoc.home.MoveCommand
+import io.github.lawkitt.mdoc.home.MoveMenuItems
 import io.github.lawkitt.mdoc.home.PasteFromClipboard
 import io.github.lawkitt.mdoc.jobs.JobKind
 import io.github.lawkitt.mdoc.setup.SetupCard
@@ -130,6 +134,13 @@ fun DocumentScreen(
     modifier: Modifier = Modifier,
     beforeJob: () -> Unit = {},
     setup: SetupController? = null,
+    /** The app's snackbar, which a move's Undo shows on. */
+    snackbar: SnackbarHostState = remember { SnackbarHostState() },
+    /** Every Project, for the moves its menu offers. */
+    projects: List<ProjectSummary> = emptyList(),
+    onMove: ((MoveCommand) -> Unit)? = null,
+    /** Moves and Undos finished: the document reads itself again at each. */
+    moves: Long = 0,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     val job by model.running.collectAsStateWithLifecycle()
@@ -137,8 +148,10 @@ fun DocumentScreen(
     val snapshot = state.snapshot
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val snackbar = remember { SnackbarHostState() }
     var menu by remember { mutableStateOf(false) }
+    // A move rewrote its text and changed its Project.
+    LaunchedEffect(moves) { if (moves > 0) model.refresh() }
+    val moveCommands = if (onMove == null) emptyList() else HomeViewModel.moveCommands(snapshot.projectId, model.saved, projects)
     var showsOriginal by rememberSaveable { mutableStateOf(false) }
     val reviewScroll = rememberScrollState()
 
@@ -185,6 +198,11 @@ fun DocumentScreen(
                                     }
                                 },
                             )
+                        }
+                        // iOS's title menu: Move to Project, before Delete.
+                        MoveMenuItems(moveCommands) { command ->
+                            menu = false
+                            onMove?.invoke(command)
                         }
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.delete)) },

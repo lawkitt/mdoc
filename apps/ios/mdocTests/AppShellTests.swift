@@ -63,8 +63,8 @@ final class AppShellTests: XCTestCase {
         let navigator = Navigator()
         navigator.present(.settings)
         let settings = navigator.presentation?.id
-        navigator.present(.intake(.paste))
-        XCTAssertEqual(navigator.presentation?.id, Presentation.intake(.paste).id)
+        navigator.present(.intake(.files))
+        XCTAssertEqual(navigator.presentation?.id, Presentation.intake(.files).id)
         navigator.dismiss(settings)
         XCTAssertNotNil(navigator.presentation, "a stale dismissal leaves the newer one")
         navigator.dismiss()

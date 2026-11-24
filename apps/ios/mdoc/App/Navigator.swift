@@ -8,9 +8,9 @@ enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// The ways in: the camera, Photos, Files and pasted text.
+/// The ways in that present something: the camera, Photos and Files.
 enum Intake: String, Identifiable, Hashable {
-    case scan, photos, files, paste
+    case scan, photos, files
     var id: String { rawValue }
 }
 

@@ -29,6 +29,9 @@ counted in the import note. Full desktop acceptance runs on the last RC.
 #925's phase 2 (white text, repeated headers and footers, table and scan
 fixes) merges after rc.3 is tagged.
 
+The Vault & Projects milestone ships in 0.4.0 as well ([#1153](https://github.com/lawkitt/mdoc/issues/1153)); its
+section lists what gates the next candidate.
+
 Three tracks run in parallel and each releases when ready: desktop 0.4.0,
 iOS (the first to ship) and Android.
 
@@ -384,18 +387,14 @@ replies before updating.
 
 Items are in priority order: core, then mobile, then desktop; the mobile
 and desktop tracks can run side by side once the core items they need are
-done. Desktop items 16–22 share one integration branch, because the app is
+done. Desktop items 16–22 and 25 share one integration branch, because the app is
 not coherent between them and `main` stays releasable; item 23 lands them.
 
-13. **[Android] Android sidebar and Project page.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* As item 11.
-    *Blocked by:* item 12. *Done when:* the Android job passes with tests of
-    the Project page and the delete question.
-14. **[Mobile] Retire the old mobile library.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The old exported
-    objects and their storage code go. *Blocked by:* items 10, 12. *Done
-    when:* nothing in the core, iOS or Android names them, and the bindings
-    are regenerated.
+The Vault ships as 0.4.0 ([#1153](https://github.com/lawkitt/mdoc/issues/1153)). Items 28–32, the
+GUI rows in [#1146](https://github.com/lawkitt/mdoc/issues/1146) and one day
+of real use by the maintainer on the landed build gate its next candidate;
+items 33–35 are polish and do not.
+
 16. **[Desktop] Documents live in the Vault and save themselves.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The Vault opens at
     launch through the existing key flow. Every import, paste, new document
@@ -452,7 +451,7 @@ not coherent between them and `main` stays releasable; item 23 lands them.
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Items 16–22 merge
     from their integration branch; the case store, recents and plain-file
     persistence go; the old cases folder and key are never touched. *Blocked
-    by:* items 18, 19, 20, 21, 22. *Done when:* a test pins the old cases
+    by:* items 18, 19, 20, 21, 22, 25. *Done when:* a test pins the old cases
     folder untouched; headless renders of every screen pass on macOS and
     Windows; native checks of drag-to-move, the recovery screens and autosave
     across a quit pass on both.
@@ -464,38 +463,184 @@ not coherent between them and `main` stays releasable; item 23 lands them.
     docs. *Blocked by:* items 14, 23. *Done when:* docs lint passes, and a
     search for the old container term finds only the `CASE_1` category and
     letter case.
+25. **[Desktop] Document notes and Promote to Document.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3, as decided
+    on 2026-11-24.* A Document keeps private freeform notes, sealed in its
+    record, never in Copy for AI or Share, exported beside it as
+    `<Title>.notes.md`, not searched. A saved Reply's restored text can become
+    a new Document in the Reply's place; it goes through review, and the
+    Reply stays. The core part lands with it on the integration branch.
+    *Done when:* core tests pin old records loading and notes never reaching
+    AI text; workspace tests and headless renders of the notes and Promote.
+26. **[iOS] Document notes and Promote to Document.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3.* As item
+    25, over the core API it adds. *Blocked by:* items 23, 25. *Done when:*
+    the iOS job passes with tests of notes and Promote.
+27. **[Android] Document notes and Promote to Document.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3.* As item
+    26. *Blocked by:* items 23, 25. *Done when:* the Android job passes with
+    tests of notes and Promote.
+28. **[Desktop] One ordering rule for Vault operations.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* Three review rounds of the
+    cut-over kept finding orderings between the write queue and live edits
+    (quit, move, delete, export, reload), one of them twice. Every
+    Vault-changing desktop operation follows one ordering rule, recorded in an
+    ADR. *Blocked by:* item 23. *Done when:* a randomized test interleaves
+    save, move, delete, export and quit and finds no lost edit and no alias
+    restored to another identity, and it fails on a deliberately broken order.
+29. **[Core] Every way text leaves is checked.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* One suite lists each exit:
+    Copy for AI and Share on every platform, the menu bar shelf, Export, and
+    later the connector. Each is tested against the readiness check, because
+    the cut-over's editor Copy for AI skipped it. *Blocked by:* item 23.
+    *Done when:* the suite passes on desktop and the mobile core, and taking
+    the check out of any one exit fails it.
+30. **[Dev] A dev profile folder for debug builds.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153); replaces Engineering's
+    profile override.* `MDOC_DEV_PROFILE=<dir>`, on macOS and Windows: the
+    profile and a key file live in that folder, the Keychain and DPAPI are
+    never asked, and the window title says "dev profile". No cargo feature.
+    *Done when:* a test pins that release builds ignore it; an agent runs a
+    GUI row on each platform with no OS prompt; `docs/development.md` (Fleet)
+    and the fleet profile's rule name it.
+31. **[Desktop] New Project.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* A Project appears only
+    through Move to New Project or an opened folder. A New Project command in
+    the Project menu, the palette and the tree's Projects header creates an
+    empty Project and opens its page, as both phones do. *Blocked by:* item
+    23. *Done when:* workspace tests; headless renders of the header and the
+    empty Project page.
+32. **[Android] Move a document to a Project.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153) and #1091 decision 9.* The
+    app never calls the core's move, so an Unfiled document cannot join a
+    Project. A document's menu and Unfiled rows offer Move to Project, Move
+    to New Project and Move to Unfiled, with Undo, as iOS does. *Done when:*
+    the Android job passes with a move and its Undo.
+35. **[Desktop] An updated runtime says it is an update.** *From
+    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* A profile that has the
+    detector's files but an older runtime is asked for 185 MB under "Set up
+    pseudonymization". The card says an update is needed and its size. *Done
+    when:* a headless render of the card in that state.
 
 - **[Desktop] Later: a horizontal tab strip.** Only if the tree proves short
   for working sets; needs no schema change. It would take the existing title
   row, with a 36-pt document header and no breadcrumb.
+- **[Desktop, Mobile] Later: pin a Project.** The record's `pinned` field and
+  the pinned-first order exist on every platform; nothing sets it. *From
+  [#1153](https://github.com/lawkitt/mdoc/issues/1153).*
 
 ## Desktop AI Connector — MCP (Milestone 2)
 
-Local MCP connector for Claude Desktop and ChatGPT's desktop app
-([ADR 0126](docs/adr/0126-local-mcp-ai-connector.md)). *Blocked by:* Milestone 1.
+Working with Claude Desktop or ChatGPT's desktop app through a local MCP
+connector ([ADR 0126](docs/adr/0126-local-mcp-ai-connector.md)) and a
+floating companion window ([ADR 0128](docs/adr/0128-floating-companion-window.md));
+record in [#1164](https://github.com/lawkitt/mdoc/issues/1164). *Blocked by:* Milestone
+1. It ships as 0.5.0, after 0.4.0.
 
-1. **[Desktop] Local IPC and `mdoc-mcp` shim.** *From the 2026-11-22 grills
-   (ADR 0126); promotes Later's Agent access item.* Desktop `mdoc` listens
-   on an owner-only Unix socket (macOS) or named pipe (Windows), with no
-   token; a thin `mdoc-mcp` shim, shipped inside the app, speaks MCP on
-   stdio only and exposes `list_documents`, `get_document` and
-   `deliver_reply` for the one AI project chosen in mdoc; `deliver_reply`
-   must name a document it read and is refused when that document is not
-   in the current AI project (candidate base: `craft-mcp-server`). *Done when:* integration tests prove that no tool
-   reaches another Project or Unfiled, only Ready documents are read and
-   each read re-checks the Project's names, the AI's label never comes from
-   the stored title, no response carries an original, and a closed or locked
-   app returns an error without launching.
-2. **[Desktop] AI project selector, registration and UI.** *From the
-   2026-11-22 grills (ADR 0126).* An always-visible AI project selector (off
-   by default) with a per-document exclude switch, live activity indicator,
-   non-focus-stealing `deliver_reply` notification that opens the Reply
-   and badges its Project's row,
-   and Settings › AI connector with Add to Claude Desktop and Add to
-   ChatGPT, which register the installed shim. Check then whether ChatGPT's
-   ordinary chats (not only its Codex host) call local servers, and whether
-   an `.mcpb` manifest can point at an installed binary. *Done when:*
-   end-to-end flows pass on both apps.
+The items are outlines in build order. `to-tickets` splits them after the
+maintainer's day of use on the landed Vault build
+([#1153](https://github.com/lawkitt/mdoc/issues/1153)) and after four spikes:
+whether ChatGPT's ordinary chats call local tools, whether an `.mcpb` can
+point at an installed binary, whether Claude's prefill link works as
+documented, and whether GPUI floats a non-activating window on Windows.
+
+1. **[Desktop] Connector core.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
+   (ADR 0126); promotes Later's Agent access item.* mdoc listens on an
+   owner-only socket or pipe; the `mdoc-mcp` shim, shipped in the app, speaks
+   MCP on stdio in both protocol eras and may start mdoc. `list_documents`,
+   `get_document` (an outline with parts above about 60,000 characters) and
+   `deliver_reply` (reply or document) serve the one AI project, plus a
+   "restore" prompt. *Done when:* integration tests prove no tool reaches
+   another Project or Unfiled, only Ready documents are read and each read
+   re-checks the Project's names, no response carries an original or a real
+   name, and a delivery naming a document outside what is served is refused.
+2. **[Desktop] Sharing, Ask and replies.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+   The share prompt, never a share that follows the view; Ask on a document,
+   a Project and Unfiled (Move to a new Project and share), opening the AI
+   app with a prefilled prompt; automatic scan on entering the AI project and
+   no automatic replacement; a needs-review notification; a delivery
+   notification without focus; a delivered document; the Project page's AI
+   activity; Settings › AI connector with Add to Claude Desktop, ChatGPT and
+   Test connection. *Blocked by:* item 1. *Done when:* end-to-end flows pass
+   with Claude Desktop, and with ChatGPT as far as its spike allows.
+3. **[Desktop] The companion.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
+   (ADR 0128).* One floating window with a system-wide hotkey: the AI project
+   and a stop button, documents with their state, the latest reply restored,
+   a simple review, a drop target. It opens by itself only for a delivery or
+   a review request and never takes focus; it is excluded from screen
+   capture and hides restored text until hover. It replaces the shelf popup.
+   *Blocked by:* item 2. *Done when:* native checks of the hotkey, focus and
+   capture exclusion pass on macOS, and on Windows if its spike passed.
+4. **[iOS] The phone loop.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+   Ask AI shares the pseudonymized text into the AI app; a "Paste reply?"
+   banner on return; Shortcuts actions for Pseudonymize and Restore. Android
+   follows with its share targets. *Done when:* the iOS job passes with tests
+   of each, and a device check shares to an AI app and restores its answer.
+
+- **[Desktop] Later: Word export.** A delivered document and any other export
+  as `.docx`. *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
+- **[Desktop] Later: a call that waits for review.** Only once every host
+  allows more than a minute per tool call.
+
+## Personal documents
+
+A Personal section in the Vault for a user's own documents, with its own
+aliases and private form filling
+([ADR 0129](docs/adr/0129-personal-documents-restore-only-aliases.md));
+record, the note's wording and an approved example in
+[#1165](https://github.com/lawkitt/mdoc/issues/1165). It runs after Milestone 2 and
+before the transfer. The line it must earn: "Let any AI fill in your forms.
+It never sees your passport number."
+
+The items are outlines in build order; `to-tickets` splits them when the
+connector has shipped.
+
+1. **[Core, Desktop] ID cards, aliases and the note.** *From
+   [#1165](https://github.com/lawkitt/mdoc/issues/1165) (ADR 0129).* People; a card as a
+   scan and confirmed fields; the Personal alias series, one alias per stored
+   field, valid in every Project; each field an alias or readable; "Copy my
+   details for AI"; a reply restores personal aliases exactly as stored and
+   computes nothing; a table reply gets a checklist view. *Done when:* core
+   tests pin the stored value coming back unchanged and the note's wording,
+   and item 2 passes.
+2. **[Quality] The form set.** *From [#1165](https://github.com/lawkitt/mdoc/issues/1165).*
+   Ten real blank forms, two made-up people, Claude and ChatGPT. *Done
+   when:* every alias in an answer is from the note and written exactly, no
+   real value is invented or asked for, every blank a card could answer has
+   its alias or a clear instruction, no instruction is wrong on a checked
+   sample, and the results are published.
+3. **[Desktop] The Personal section.** *From [#1165](https://github.com/lawkitt/mdoc/issues/1165).*
+   A pinned entry by person and kind; device authentication, masked values
+   and a clipboard that forgets; capture from an image or PDF with each
+   field confirmed; a card's values replaced in every document; AI access
+   off, chosen or all; Export Personal; a second entry on Home with a sample
+   to try. *Blocked by:* item 1. *Done when:* workspace tests and headless
+   renders of the section, a card and the lock; native checks of the unlock.
+4. **[Core, Desktop] Personal contracts and other documents.** *From
+   [#1165](https://github.com/lawkitt/mdoc/issues/1165).* Ordinary Documents under a person
+   and a kind, reviewed and Ready as any other, carrying personal aliases;
+   Copy to Project. *Blocked by:* item 3. *Done when:* tests pin a personal
+   detail keeping its alias inside a Project.
+5. **[Desktop] Personal in the companion and the connector.** *From
+   [#1165](https://github.com/lawkitt/mdoc/issues/1165).* The companion's search and Personal
+   segment, with drag (text and a `.md` file) and Copy and no unlock for the
+   pseudonymized version; the connector serves allowed Personal documents
+   beside the AI project. *Blocked by:* item 4 and Milestone 2 item 3. *Done
+   when:* integration tests prove nothing leaves that was not allowed.
+6. **[Mobile] Personal on phones.** *From [#1165](https://github.com/lawkitt/mdoc/issues/1165).*
+   Pinned in the sidebar; scan capture read by the machine-readable-zone
+   rules; the lock; Copy for AI and Ask AI; a counter view of a restored
+   guide; user-wide Always and Never lists; a Shortcuts action returning a
+   pseudonymized document. *Blocked by:* item 1. *Done when:* the iOS and
+   Android jobs pass with tests of each, and a device check fills a paper
+   form from the counter view.
+
+- **[Desktop] Later: typing values into a form.** One hotkey types the next
+  restored value into the field in focus; needs the macOS Accessibility
+  permission. *From [#1165](https://github.com/lawkitt/mdoc/issues/1165).*
+- **[Desktop] Later: writing into fillable PDFs.** *From [#1165](https://github.com/lawkitt/mdoc/issues/1165).*
+- **Later:** a watermark on shared copies; expiry reminders; per-country ID
+  templates. *From [#1165](https://github.com/lawkitt/mdoc/issues/1165).*
 
 ## Cross-Device Vault Transfer (Milestone 3)
 
@@ -503,6 +648,10 @@ On-demand transfer of a Document, a Project or everything between devices,
 as a bundle sealed under a one-time pairing key
 ([ADR 0127](docs/adr/0127-cross-device-p2p-vault-transfer.md)): no accounts,
 servers, relays or new dependencies. *Blocked by:* Milestone 1.
+
+It runs after Personal documents and carries them too, matching personal
+identities by person and value, never by alias number
+([#1165](https://github.com/lawkitt/mdoc/issues/1165)).
 
 1. **[Core] Sealed bundle and merge.** *From the 2026-11-22 grills (ADR
    0127).* A versioned, chunked bundle sealed under the pairing key (a
@@ -959,9 +1108,11 @@ Android takes what applies. Its clipboard finding is
   stay live. *Done when:* an experiment shows covered captures update and
   whether background keys reach GPUI, and `docs/development.md` (Fleet) says
   which GUI rows still need focus. *From the 0.3.0 away hub.*
-- **Dev-build profile override:** debug builds read `MDOC_PROFILE_DIR`, so GUI
-  checks run on a scratch profile instead of moving the user's
-  `session.json` and `recents.json` aside. *From the 0.3.0 away hub.*
+- **GUI rows by agents:** once Vault & Projects item 30 exists, one agent
+  run works the rows in #1146 and triages the older "GUI rows pending"
+  issues (#254, #353, #774, #786, #960, #968, #1016, #1063, #1090), dropping
+  rows whose screens are gone. The maintainer keeps the native rows:
+  Keychain, installers, drags between apps. *From [#1153](https://github.com/lawkitt/mdoc/issues/1153).*
 - **`build.rs` declares what it reads:** it prints no `rerun-if-changed`, so
   cargo reruns it, and rebuilds the `mdoc` crate, whenever any file under the
   repository root changes (a log, a render, a scratch file). One `just perf`

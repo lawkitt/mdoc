@@ -90,7 +90,7 @@ struct DocumentScreen: View {
                 sameAsPicker($0.id)
             }
             .sheet(isPresented: $model.showsReplySheet) {
-                ReplySheet(projectName: model.snapshot.projectName) { reply in
+                TypeReplySheet(projectName: model.snapshot.projectName) { reply in
                     model.restore(reply: reply)
                 }
             }
@@ -679,6 +679,8 @@ struct DocumentScreen: View {
             } else {
                 if model.showsBelowFloorNote {
                     BelowFloorNote(reason: setup.snapshot.belowFloor)
+                } else if model.showsRulesOnlyNote, !setup.missing(.detector).isEmpty {
+                    ActionNote(text: RulesOnly.note, identifier: "rules-only-note")
                 } else if let minutes = model.scanEstimate {
                     ScanEstimateNote(minutes: minutes)
                 }

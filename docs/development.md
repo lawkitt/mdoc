@@ -161,6 +161,13 @@ Bash 3.2 compatible for macOS's `/bin/bash`.
   platform crate, or editing outside its item.
 - A dev build uses the real profile: copy `~/Library/Application Support/mdoc`
   aside before a GUI check and restore it after.
+- An integration branch keeps `main`'s required checks. After every two or
+  three items merged into it, one cross-provider review of the whole branch
+  runs, limited to the privacy and data-loss rules. It never blocks a merge
+  into the branch; its findings go to a running fix list
+  ([#1153](https://github.com/lawkitt/mdoc/issues/1153)).
+- A test that takes two unrelated PRs out of the merge queue is quarantined,
+  with an issue; a hub does this without asking.
 
 **Profile.** The fleet tools in the maintainer's config repository read
 this block; change it with the rules above.

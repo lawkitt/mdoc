@@ -121,6 +121,7 @@ final class DocumentViewModel {
     /// document first showed in a regular window.
     private var settledPlacement: IdentitiesPlacement?
     private(set) var pane: Pane = .text
+    /// Type a reply: the sheet for a reply written by hand.
     var showsReplySheet = false
     var share: ShareItems?
     var errorMessage: String?
@@ -131,6 +132,12 @@ final class DocumentViewModel {
     /// Below the floor, where Find names would be: the device cannot find
     /// names, and selecting text marks one (ADR 0088).
     var showsBelowFloorNote: Bool { !findsNames && snapshot.phase == .unscanned }
+    /// The rules marked this document after Not now on the name finder's
+    /// download (#1153).
+    private(set) var proposedRules = false
+    /// Above Find names, once the rules alone marked the document and while
+    /// the name finder is still to download: names need it (#1153).
+    var showsRulesOnlyNote: Bool { proposedRules && findsNames && primaryAction == .findNames }
     /// Minutes a scan takes on this phone, under Find names when it is
     /// expected to take more than about a minute (ADR 0120).
     var scanEstimate: Int? {
@@ -366,9 +373,14 @@ final class DocumentViewModel {
 
     /// Download & continue: the job that asked for setup runs again.
     /// Not now on the document's setup card: Find names (or Recognize)
-    /// returns as the primary action.
+    /// returns as the primary action. Not now on the name finder's download
+    /// marks what the rules find meanwhile, once (#1153); the document stays
+    /// unscanned, so Find names can still download the name finder.
     func skipSetup() {
+        let skipped = waitingForSetup
         waitingForSetup = nil
+        guard skipped == .scan, !proposedRules, snapshot.phase == .unscanned else { return }
+        proposedRules = perform(undoable: false) { try session.proposeRules() }
     }
 
     func continueAfterSetup() async {
@@ -534,7 +546,8 @@ final class DocumentViewModel {
 
     // MARK: Restore
 
-    /// Paste reply: restores it with this document's Project and opens it.
+    /// Paste or Type a reply: restores it with this document's Project and
+    /// opens it.
     func restore(reply: String) {
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

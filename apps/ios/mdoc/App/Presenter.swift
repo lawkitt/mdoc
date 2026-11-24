@@ -222,7 +222,7 @@ private struct ProjectDialogs: ViewModifier {
     }
 }
 
-/// Settings, Paste, and the sheets that carry a value: All projects…, Share
+/// Settings and the sheets that carry a value: All projects…, Share
 /// and the import sheet.
 private struct Sheets: ViewModifier {
     let app: AppModel
@@ -259,12 +259,6 @@ private struct Sheets: ViewModifier {
                     app.trySample()
                 }
             }
-            .sheet(isPresented: navigator.isPresenting { if case .intake(.paste) = $0 { true } else { false } }) {
-                PasteTextSheet(projects: library.projects, startingProject: app.intakeProject) { text, title, project in
-                    navigator.dismiss()
-                    app.addText(text, title: title, into: project)
-                }
-            }
             // A reply saved through Restore with mdoc from a share sheet
             // shows once it closes.
             .sheet(item: navigator.presented(Sheet.init), onDismiss: { app.takeInChanges() }) { sheet in
@@ -277,7 +271,7 @@ private struct Sheets: ViewModifier {
                 case .share(let items):
                     ActivityView(items: items.items)
                 case .importing(let pending):
-                    ImportSheet(pending: pending, projects: library.projects, startingProject: app.intakeProject) { title, project in
+                    ImportSheet(pending: pending, projects: library.projects, startingProject: pending.project) { title, project in
                         app.finishImport(pending, title: title, into: project)
                     }
                 }
