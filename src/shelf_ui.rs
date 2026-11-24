@@ -510,10 +510,25 @@ impl ShelfView {
         text
     }
 
+    /// A test of the exits suite took `gate`'s check out: row `index`
+    /// hands out what it listed, unchecked.
+    #[cfg(test)]
+    fn unchecked(&self, gate: crate::exits::Gate, index: usize) -> Option<Option<String>> {
+        crate::exits::taken_out(gate).then(|| {
+            let listed = self.content.documents.get(index)?;
+            listed.text_for_ai().map(str::to_owned)
+        })
+    }
+
     /// Copy for AI on a ready row: the text a drag carries, then ✓ "Copied"
     /// and the shelf closes after [`COPIED_FOR`].
     pub(crate) fn copy(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(text) = self.checked_again(index, window, cx) else {
+        #[cfg(test)]
+        let text = (self.unchecked(crate::exits::Gate::ShelfCopy, index))
+            .unwrap_or_else(|| self.checked_again(index, window, cx));
+        #[cfg(not(test))]
+        let text = self.checked_again(index, window, cx);
+        let Some(text) = text else {
             cx.notify();
             return;
         };
@@ -608,7 +623,12 @@ impl ShelfView {
     /// on one pasteboard item, under a card with its title and preview. The
     /// first drop retires the hint.
     pub(crate) fn drag(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(text) = self.checked_again(index, window, cx) else {
+        #[cfg(test)]
+        let text = (self.unchecked(crate::exits::Gate::ShelfDrag, index))
+            .unwrap_or_else(|| self.checked_again(index, window, cx));
+        #[cfg(not(test))]
+        let text = self.checked_again(index, window, cx);
+        let Some(text) = text else {
             cx.notify();
             return;
         };

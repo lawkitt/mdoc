@@ -13,6 +13,8 @@ uniffi::setup_scaffolding!();
 pub mod document_session;
 pub mod editor;
 mod error;
+#[cfg(test)]
+mod exits;
 pub mod file_names;
 pub mod markdown;
 #[cfg(not(target_os = "android"))]

@@ -554,13 +554,16 @@ impl DocumentSession {
         self.with_document(|document| document.review.dismiss_hint(from, into))
     }
 
-    /// Copy for AI: the alias-only note, then the text, byte for byte what
-    /// desktop Copy for AI copies.
+    /// The alias-only note, then the session's text, byte for byte what
+    /// desktop Copy for AI would copy once checked (the parity tests).
+    /// Unchecked against the Project's names, so never what leaves: the
+    /// apps' Copy for AI and Share send `Vault::text_for_ai`.
     pub fn copy_for_ai(&self) -> Result<String, CoreError> {
         self.read_document(|document| document.review.copy_for_ai())
     }
 
-    /// What Share sends: the same text as Copy for AI.
+    /// The same text as [`Self::copy_for_ai`], unchecked: not what Share
+    /// sends, which is `Vault::text_for_ai`.
     pub fn share_text(&self) -> Result<String, CoreError> {
         self.copy_for_ai()
     }
