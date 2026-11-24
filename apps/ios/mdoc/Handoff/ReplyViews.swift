@@ -66,11 +66,14 @@ struct TypeReplySheet: View {
 /// it (ADR 0087), so here is only its summary and Remove. With more than
 /// one saved reply (its Project's, or its own while Unfiled), a menu picks
 /// the one shown, newest first. A Project's page lists its replies too; an
-/// Unfiled document's are only here (#1091 Decisions 4 and 31).
+/// Unfiled document's are only here (#1091 Decisions 4 and 31). Promote to
+/// Document makes a new document of it (#1091 Decision 3).
 struct ReplyPane: View {
     let reply: ReplySnapshot
     var replies: [SavedReply] = []
     var onShow: (ReplyID) -> Void = { _ in }
+    /// Nil: the reply can't be promoted here.
+    var onPromote: (() -> Void)? = nil
     let onClear: () -> Void
     @State private var confirmsRemove = false
 
@@ -84,6 +87,9 @@ struct ReplyPane: View {
             HStack {
                 RestoreSummary(result: reply.restored)
                 Spacer()
+                if let onPromote {
+                    PromoteButton(action: onPromote)
+                }
                 // The reply is kept in the Vault (ADR 0078) and has no
                 // undo, so removing it asks first.
                 Button(role: .destructive) {
@@ -155,11 +161,32 @@ struct SavedReplyRow: View {
     }
 }
 
-/// A saved reply restored, from a Project's list of replies: Copy and
-/// Share, as the Reply pane's bar has.
+/// Promote to Document (#1091 Decision 3): the restored reply becomes a
+/// new document in the reply's place, and the reply stays.
+struct PromoteButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("Promote to Document", systemImage: "doc.badge.plus")
+                .labelStyle(.iconOnly)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityHint(Text("Makes a new document of the restored reply. The reply stays."))
+        .accessibilityIdentifier("promote-reply")
+    }
+}
+
+/// A saved reply restored, from a Project's list of replies or a promoted
+/// document's way back: Copy and Share, as the Reply pane's bar has, and
+/// Promote to Document.
 struct SavedReplySheet: View {
     let reply: SavedReply
     let restored: Result<RestoreResult, CoreError>
+    /// Nil: the reply can't be promoted here. Called as the sheet closes:
+    /// the presenter promotes once it has gone, so an error can show.
+    var onPromote: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var share: ShareItems?
     @State private var copied = false
@@ -184,6 +211,12 @@ struct SavedReplySheet: View {
                                 Label("Share", systemImage: "square.and.arrow.up")
                             }
                             .accessibilityIdentifier("share-reply")
+                            if let onPromote {
+                                PromoteButton {
+                                    onPromote()
+                                    dismiss()
+                                }
+                            }
                             Spacer()
                             Button {
                                 RestoredPasteboard.copy(result.text)

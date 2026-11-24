@@ -543,6 +543,20 @@ final class AppModel {
         }
     }
 
+    // MARK: Promote to Document (#1091 Decision 3)
+
+    /// A saved reply becomes a new document in its place (its Project, or
+    /// Unfiled), which opens, not reviewed; the reply stays.
+    func promote(_ reply: ReplyID) {
+        do {
+            let id = try library.promote(reply)
+            Haptics.decision()
+            open(id)
+        } catch {
+            present(error)
+        }
+    }
+
     // MARK: Share
 
     /// Share from a menu: the reviewed text, over whatever shows.

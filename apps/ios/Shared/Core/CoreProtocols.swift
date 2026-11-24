@@ -39,6 +39,13 @@ protocol Library: AnyObject, Sendable {
     /// Saved reply `id` restored with the people it named when saved, as
     /// they are now (#1091 Decision 18).
     func restoreSavedReply(_ id: ReplyID) throws -> RestoreResult
+    /// Saved reply `id` as lists show it; nil once it is deleted.
+    func savedReply(_ id: ReplyID) -> SavedReply?
+    /// Promote to Document (#1091 Decision 3): a new document in saved
+    /// reply `id`'s place, its Project or Unfiled, whose text is the reply
+    /// restored as it restores now. It is not reviewed, and it names the
+    /// reply (`DocumentSnapshot.promotedFrom`); the reply stays.
+    func promoteReply(_ id: ReplyID) throws -> DocumentID
     /// Saves the jobs that finished while the phone was locked, and returns
     /// their documents.
     func saveDeferred() throws -> [DocumentID]
@@ -98,6 +105,8 @@ enum SaveEvent: Sendable {
 extension Library {
     func takeInChanges() -> Bool { false }
     func restoreSavedReply(_ id: ReplyID) throws -> RestoreResult { throw CoreError.notFound }
+    func savedReply(_ id: ReplyID) -> SavedReply? { nil }
+    func promoteReply(_ id: ReplyID) throws -> DocumentID { throw CoreError.notFound }
     func saveDeferred() throws -> [DocumentID] { [] }
     func saveChanges() throws {}
     func observeSaves(_ observer: @escaping @MainActor @Sendable (SaveEvent) -> Void) {}
@@ -156,6 +165,14 @@ protocol DocumentSession: AnyObject, Sendable {
     func showReply(_ id: ReplyID) -> DocumentSnapshot
     /// Remove reply: deletes the reply the pane shows from the Vault.
     func clearReply() throws -> DocumentSnapshot
+
+    // MARK: Notes (#1091 Decision 3)
+
+    /// The document's private notes, as typed; empty when it has none.
+    func notes() -> String
+    /// Replaces the notes; they are saved with the document once typing
+    /// pauses, as a typed edit is. Copy for AI and Share never send them.
+    func setNotes(_ notes: String) throws
 
     // MARK: Review bar (ADR 0098)
     //
@@ -276,6 +293,10 @@ struct Core: Sendable {
 
 extension DocumentSession {
     func takeUnlockedDocx() -> UnlockedDocx? { nil }
+
+    func notes() -> String { "" }
+
+    func setNotes(_ notes: String) throws { throw CoreError.notFound }
 
     func closeOriginal() {}
 

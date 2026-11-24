@@ -983,3 +983,36 @@ fn an_import_records_its_source_kind() {
         crate::vault::DocumentSourceKind::Scan
     );
 }
+
+/// Android's Move to New Project from the open document: a tap left
+/// unsaved, the move while no save runs, the session opened again, then
+/// its next saves. Nothing is refused as changed elsewhere, and the record
+/// stays in the new Project.
+#[test]
+fn an_open_document_moved_to_a_new_project_saves_again() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let (session, saved) = saved(&vault, None, "Ann Lee wrote.", &["Ann Lee"], "Letter");
+    session.undo().unwrap();
+    let moved = vault
+        .move_document_to_new_project(saved.id.clone(), "Riverside".into())
+        .unwrap();
+    let riverside = moved.project.unwrap().id;
+    // A save between the move and the reopen is refused, as before.
+    assert!(session.save_pending_into_vault(vault.clone()).is_err());
+    session
+        .open_from_vault(vault.clone(), saved.id.clone())
+        .unwrap();
+    session.save_pending_into_vault(vault.clone()).unwrap();
+    session.replace_all().unwrap();
+    let again = session.save_pending_into_vault(vault.clone()).unwrap();
+    assert_eq!(
+        again.and_then(|change| change.project_id),
+        Some(riverside.clone())
+    );
+    assert_eq!(
+        vault.document(saved.id).unwrap().project_id,
+        Some(riverside)
+    );
+    assert_eq!(vault.projects().len(), 1);
+}

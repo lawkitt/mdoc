@@ -27,6 +27,8 @@ struct ProjectPage: View {
     @State private var query = ""
     /// A saved reply shown restored.
     @State private var shownReply: SavedReply?
+    /// Promote to Document from that sheet, once it has closed.
+    @State private var promoting: ReplyID?
 
     private var library: LibraryModel { app.library }
     private var project: ProjectSummary? { library.project(projectID) }
@@ -83,8 +85,10 @@ struct ProjectPage: View {
                 AddMenu(app: app)
             }
         }
-        .sheet(item: $shownReply) { reply in
-            SavedReplySheet(reply: reply, restored: library.restore(reply.id))
+        .sheet(item: $shownReply, onDismiss: promote) { reply in
+            SavedReplySheet(reply: reply, restored: library.restore(reply.id)) {
+                promoting = reply.id
+            }
         }
         .refreshable {
             // A reply Restore with mdoc saved meanwhile.
@@ -92,6 +96,13 @@ struct ProjectPage: View {
             library.refresh()
         }
         .accessibilityIdentifier("project-page")
+    }
+
+    /// Promote to Document asked for in the sheet that just closed.
+    private func promote() {
+        guard let reply = promoting else { return }
+        promoting = nil
+        app.promote(reply)
     }
 
     /// The Project's colour and name, never "Documents".

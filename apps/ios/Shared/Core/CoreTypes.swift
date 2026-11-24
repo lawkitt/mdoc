@@ -413,6 +413,21 @@ struct SavedReply: Identifiable, Hashable, Sendable {
     var created: Date
 }
 
+/// Where a promoted document came from (#1091 Decision 3): its saved AI
+/// reply, the way back to it, or one deleted since.
+enum PromotedFrom: Hashable, Sendable {
+    case reply(SavedReply)
+    case deletedReply
+
+    /// The quiet line under the title.
+    var label: String {
+        switch self {
+        case .reply: String(localized: "From AI reply")
+        case .deletedReply: String(localized: "From a deleted AI reply")
+        }
+    }
+}
+
 /// The document's AI reply shown in its Reply pane, kept in alias form with
 /// its restored reading. `id` is the saved reply's.
 struct ReplySnapshot: Hashable, Sendable {
@@ -485,6 +500,9 @@ struct DocumentSnapshot: Equatable, Sendable {
     /// How it began: a new document follows its first line and is
     /// discarded when left empty; the sample restores (ADR 0109).
     var origin: DocumentOrigin = .ordinary
+    /// The saved AI reply it was promoted from (#1091 Decision 3); nil for
+    /// any other document.
+    var promotedFrom: PromotedFrom? = nil
 
     var pendingCount: Int {
         counts?.proposed ?? candidates.filter { $0.state == .proposed }.count

@@ -193,6 +193,12 @@ final class LibraryModel {
         }
     }
 
+    /// Promote to Document: the new document, listed (#1091 Decision 3).
+    func promote(_ reply: ReplyID) throws -> DocumentID {
+        defer { refresh() }
+        return try library.promoteReply(reply)
+    }
+
     // MARK: Changes
 
     func refresh() {
