@@ -39,7 +39,6 @@ fn failed_open_preserves_current_document(cx: &mut TestAppContext) {
         let notice = tabs.read(cx).notice_text().unwrap();
         assert!(notice.contains("missing.md"), "{notice}");
     });
-    assert!(cx.update(|_, cx| app.read(cx).session.document.path.is_none()));
 }
 
 #[gpui::test]

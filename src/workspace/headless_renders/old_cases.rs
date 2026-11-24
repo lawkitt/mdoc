@@ -1,7 +1,7 @@
 //! The old cases folder stays untouched (#1091 Decision 2, ROADMAP item
 //! 23). Before any app state exists the runner fills the sandbox profile
-//! with what an earlier build left: `cases/` and `cases-dev/` with sealed
-//! case files, the user-wide lists, a stand-in for the OS-sealed key file,
+//! with what an earlier build left: `cases/` and `cases-dev/` with a case
+//! file it sealed and stand-ins for others, the user-wide lists, a stand-in for the OS-sealed key file,
 //! nested folders, and `recents.json` beside them. After every scene, in
 //! both themes, and the cut-over pass, every entry must read as it did:
 //! the same names, kinds, sizes, contents and modified times.
@@ -21,36 +21,30 @@ fn old_time() -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(1_735_776_000)
 }
 
+/// A case file an earlier build sealed (`tests/fixtures/old-cases`).
+const OLD_CASE: &[u8] =
+    include_bytes!("../../../tests/fixtures/old-cases/0123456789abcdef0123456789abcdef.case");
+
 /// Write an earlier build's files into `mdoc`, the profile's app folder.
 pub(super) fn fill(mdoc: &Path) -> Result<()> {
     let io = |e: std::io::Error| e.to_string();
-    for (folder, names) in [
-        (
-            "cases",
-            &["Smith v. Jones", "Estate of Raman", "Lease review"][..],
-        ),
-        ("cases-dev", &["Dev build case"][..]),
-    ] {
+    // Bytes that stand for a sealed file: never opened here.
+    let sealed = |magic: &[u8], seed: u32| -> Vec<u8> {
+        let tail = (0..300u32).map(|i| ((i * 37 + seed * 11) % 251) as u8);
+        magic.iter().copied().chain(tail).collect()
+    };
+    for (folder, cases) in [("cases", 3), ("cases-dev", 1)] {
         let dir = mdoc.join(folder);
         std::fs::create_dir_all(&dir).map_err(io)?;
-        let store = mdoc_store::cases::Store::with_key(dir.clone(), &[7; 32]);
-        for name in names {
-            store
-                .save(&mdoc_store::cases::Case::new(
-                    (*name).into(),
-                    &[],
-                    Some(PathBuf::from(format!("/old/{name}.md"))),
-                ))
-                .map_err(io)?;
+        std::fs::write(dir.join("0123456789abcdef0123456789abcdef.case"), OLD_CASE).map_err(io)?;
+        for n in 1..cases {
+            let name = format!("{:032x}.case", 0xfeed_0000_u32 + n);
+            std::fs::write(dir.join(name), sealed(b"MDOCCASE1", n)).map_err(io)?;
         }
-        let mut lists = mdoc_store::cases::UserLists::default();
-        lists.lists.add_never("Supreme Court");
-        lists.revision = 1;
-        store.save_lists(&lists).map_err(io)?;
+        std::fs::write(dir.join("user.lists"), sealed(b"MDOCLIST1", 9)).map_err(io)?;
         // The OS-sealed key file's stand-in: never read here, as the
         // sandbox refuses the OS key.
-        let key: Vec<u8> = (0..230u32).map(|i| (i * 37 % 251) as u8).collect();
-        std::fs::write(dir.join("key.dpapi"), key).map_err(io)?;
+        std::fs::write(dir.join("key.dpapi"), sealed(b"", 7)).map_err(io)?;
         let nested = dir.join("archive").join("2025");
         std::fs::create_dir_all(&nested).map_err(io)?;
         std::fs::write(nested.join("notes.txt"), "Kept by an earlier build.").map_err(io)?;
@@ -228,14 +222,9 @@ mod tests {
                 "{path} in {names:?}"
             );
         }
-        // Sealed under the old key: it opens them, another key does not.
-        let store = mdoc_store::cases::Store::with_key(cases.clone(), &[7; 32]);
-        assert_eq!(store.list().0.len(), 3);
-        assert!(
-            mdoc_store::cases::Store::with_key(cases, &[8; 32])
-                .list()
-                .0
-                .is_empty()
+        assert_eq!(
+            std::fs::read(cases.join("0123456789abcdef0123456789abcdef.case")).unwrap(),
+            OLD_CASE
         );
         assert!(snapshot.check(&mdoc).is_ok());
     }

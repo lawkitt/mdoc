@@ -460,7 +460,6 @@ fn paired_preview_hides_reopens_and_failed_replacement_preserves_attachment(
     cx.update(|_, cx| {
         assert!(!view.read(cx).preview.visible());
         assert_eq!(view.read(cx).preview.attachment(), Some(&pdf));
-        assert!(view.read(cx).session.document.path.is_none());
     });
     cx.dispatch_action(TogglePreview);
     cx.run_until_parked();
@@ -737,7 +736,6 @@ fn menu_routes_save_export_and_open_to_the_active_document(cx: &mut TestAppConte
     );
     cx.update(|_, cx| {
         let view = view.read(cx);
-        assert!(view.session.document.path.is_none());
         assert!(view.session.document.vault.is_some());
     });
     // Open has no header button: ⌘O, Home and the palette.

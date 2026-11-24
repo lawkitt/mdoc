@@ -337,7 +337,7 @@ impl Workspace {
                             record.set_document(document);
                             let id = self.push(record);
                             self.name_from_vault(id);
-                            crate::document_view::LastFolder::note(&path, cx);
+                            // Not imported: the last folder stays as it was.
                             self.admitted_from.insert(id, path);
                             created.push(id);
                             id

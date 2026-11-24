@@ -316,7 +316,11 @@ impl DocumentView {
             editor.set_autoscroll(scroll.clone());
             editor
         });
-        let images = images::install(&editor, Document::default().directory(), cx);
+        let images = images::install(
+            &editor,
+            document_session::DocumentSession::default().directory(),
+            cx,
+        );
         window.focus(&editor.read(cx).focus_handle(cx), cx);
         let subscription =
             cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {

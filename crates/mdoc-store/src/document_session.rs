@@ -62,13 +62,6 @@ impl DocumentSession {
             .as_ref()
             .map(|path| path.with_extension("md"))
             .and_then(|path| path.file_name()?.to_str().map(str::to_owned))
-            .or_else(|| {
-                self.document
-                    .path
-                    .as_ref()
-                    .and_then(|path| path.file_name())
-                    .map(|name| name.to_string_lossy().into_owned())
-            })
             .or_else(|| self.name.clone())
             .unwrap_or_else(|| "Untitled.md".into())
     }
@@ -81,10 +74,8 @@ impl DocumentSession {
             return name.clone();
         }
         let suggested = self.source.as_ref().map(|path| path.with_extension("md"));
-        self.document
-            .path
+        suggested
             .as_deref()
-            .or(suggested.as_deref())
             .and_then(|path| path.file_name())
             .map(|name| name.to_string_lossy().into_owned())
             .or_else(|| self.name.clone())
@@ -92,12 +83,10 @@ impl DocumentSession {
     }
 
     pub fn directory(&self) -> PathBuf {
-        if self.document.path.is_none()
-            && let Some(parent) = self.source.as_ref().and_then(|path| path.parent())
-        {
+        if let Some(parent) = self.source.as_ref().and_then(|path| path.parent()) {
             return parent.to_path_buf();
         }
-        self.document.directory()
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     }
 
     /// Where Export Markdown starts (#180): the document's folder, or its
@@ -107,7 +96,7 @@ impl DocumentSession {
     /// exists, then Documents, then home: never the process's working
     /// directory, which for a launched app is its install folder.
     pub fn export_directory(&self, last_folder: Option<&Path>) -> PathBuf {
-        let own = (self.document.path.is_some() || self.source.is_some()).then(|| self.directory());
+        let own = self.source.is_some().then(|| self.directory());
         own.into_iter()
             .chain(last_folder.map(Path::to_path_buf))
             .chain(dirs::document_dir())
@@ -130,15 +119,11 @@ mod tests {
     }
 
     #[test]
-    fn export_starts_in_the_document_or_source_folder() {
+    fn a_conversion_exports_from_its_source_folder() {
         let dir = tempfile::tempdir().unwrap();
         let last = tempfile::tempdir().unwrap();
         let mut session = DocumentSession::default();
         session.import(dir.path().join("scan.pdf"), None);
-        assert_eq!(session.export_directory(Some(last.path())), dir.path());
-        let note = dir.path().join("note.md");
-        std::fs::write(&note, "text").unwrap();
-        session.replace(Document::open(note).unwrap());
         assert_eq!(session.export_directory(Some(last.path())), dir.path());
     }
 
