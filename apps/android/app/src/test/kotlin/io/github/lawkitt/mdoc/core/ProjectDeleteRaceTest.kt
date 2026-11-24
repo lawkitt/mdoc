@@ -118,6 +118,8 @@ class ProjectDeleteRaceTest {
         left.recognize(Quiet)
         documents.deleteInVault = { _, _ ->
             vault.moveDocument(moved.vaultId!!, null)
+            // Seen only if the one left is opened again from the Vault.
+            vault.renameDocument(left.vaultId!!, "Renamed behind its session")
             throw CoreException.Io("the disk is full")
         }
         val error = assertThrows(AppError.Failed::class.java) {
@@ -126,11 +128,35 @@ class ProjectDeleteRaceTest {
         assertEquals("the disk is full", error.message)
         assertNull("the moved one shows Unfiled", moved.snapshot().projectId)
         assertEquals("the one left stays", project.id, left.snapshot().projectId)
-        // The moved one saves, in Unfiled; the one left, in the Project.
+        assertEquals("the one left was not opened again: its job runs on", "Lease", left.snapshot().title)
+        documents.deleteInVault = { id, how -> vault.deleteProject(id, how) }
+        // The moved one saves, in Unfiled.
         moved.replaceMaya()
-        left.replaceMaya()
         assertNull(vault.document(moved.vaultId!!).projectId)
         assertEquals(project.id.raw, vault.document(left.vaultId!!).projectId)
         assertFalse(vault.projects().isEmpty())
+    }
+
+    /**
+     * An import started into a Project while its delete runs, after the
+     * delete counted its imports and members: it lands in Unfiled, and
+     * neither the delete nor a stale session takes it.
+     */
+    @Test
+    fun anImportStartedWhileItsProjectIsDeletedLandsInUnfiled() {
+        for (how in listOf(ProjectDeletion.DeleteDocuments, ProjectDeletion.MoveToUnfiled)) {
+            val project = documents.createProject("Ellison $how")
+            var late: Documents.Session? = null
+            documents.deleteInVault = { id, kind ->
+                late = documents.importDocument(ImportSource.Text(letterText), "Late $how", project.id).also { it.recognize(Quiet) }
+                vault.deleteProject(id, kind)
+            }
+            documents.deleteProject(project.id, how)
+            val session = checkNotNull(late)
+            assertNull("$how: it shows Unfiled", session.snapshot().projectId)
+            assertNull("$how: it is in Unfiled in the Vault", vault.document(session.vaultId!!).projectId)
+            session.replaceMaya()
+            assertTrue("$how: it is listed", documents.snapshot().documents.any { it.id == session.id })
+        }
     }
 }

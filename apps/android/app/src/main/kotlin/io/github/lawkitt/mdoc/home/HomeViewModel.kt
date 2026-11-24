@@ -313,7 +313,11 @@ class HomeViewModel(
     /** One page load: its Project is the page shown while it is the latest. */
     private class PageLoad(val project: ProjectId)
 
-    /** The latest page load, whose Project a refresh reads again; only its result is shown. */
+    /**
+     * The latest page load, whose Project a refresh reads again; only its
+     * result is shown. Started and published under this reference's lock,
+     * so a load started never lets an older one's result in after it.
+     */
     private val pageLoad = AtomicReference<PageLoad?>(null)
 
     private val pageShown: ProjectId? get() = pageLoad.get()?.project
@@ -333,10 +337,12 @@ class HomeViewModel(
      */
     fun loadPage(id: ProjectId): Job {
         val load = PageLoad(id)
-        pageLoad.set(load)
+        synchronized(pageLoad) { pageLoad.set(load) }
         return viewModelScope.launch(Dispatchers.IO) {
             val page = runCatching { readPage(id) }.getOrElse { ProjectPageData(id) }
-            mutable.update { if (pageLoad.get() !== load) it else it.copy(page = page) }
+            synchronized(pageLoad) {
+                if (pageLoad.get() === load) mutable.update { it.copy(page = page) }
+            }
         }
     }
 
