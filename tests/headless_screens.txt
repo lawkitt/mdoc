@@ -14,6 +14,7 @@ selection-pill
 selection-category-menu
 setup-consent
 setup-consent-fp32
+setup-runtime-update
 settings-general
 settings-detection
 settings-recognition

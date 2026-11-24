@@ -12,6 +12,53 @@ use std::{
     sync::Arc,
 };
 
+/// The pseudonymization setup card's words. A profile whose model is here
+/// but whose shared runtime is an earlier release's is asked for an update,
+/// not a first setup.
+#[derive(Debug, PartialEq, Eq)]
+struct SetupCopy {
+    title: &'static str,
+    text: &'static str,
+    /// The primary button while setup is needed and nothing failed.
+    action: &'static str,
+    note: String,
+}
+
+impl SetupCopy {
+    fn new(model: Option<settings::Model>, pending: mdoc_import::model_download::Pending) -> Self {
+        let update = pending.runtime_update();
+        let note = match model {
+            Some(m) if update => format!(
+                "{} · {} MB runtime update",
+                crate::models::short_name(m),
+                mdoc_import::model_download::megabytes(pending.total())
+            ),
+            Some(m) if pending.total() > 0 => format!(
+                "{} · {}, once",
+                crate::models::short_name(m),
+                pending.download_label()
+            ),
+            Some(m) => format!("{} · runs on this computer", crate::models::short_name(m)),
+            None => String::new(),
+        };
+        if update {
+            Self {
+                title: "Update pseudonymization",
+                text: "The model is already on this computer; this version of mdoc needs a newer shared runtime to run it. Review the whole document before sharing.",
+                action: "Update & scan",
+                note,
+            }
+        } else {
+            Self {
+                title: "Set up pseudonymization",
+                text: "Detects names, organizations and identifiers on this computer. Review the whole document before sharing.",
+                action: "Download & scan",
+                note,
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct ReplacementRow {
     pub id: u64,
@@ -373,21 +420,19 @@ impl DocumentView {
         });
         let idle = panel.working.is_none() && !mdoc_import::model_work::busy();
         let error = self.pii.error.clone();
+        let copy = SetupCopy::new(model, pending);
         let primary = if !needs_setup {
             "Pseudonymize"
         } else if error.is_some() {
             "Retry"
         } else {
-            "Download & scan"
+            copy.action
         };
         let card = ui::state_card("pii-setup-card", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "pii-setup-card".into()))
             .max_w_full()
-            .child(ui::card_title("Set up pseudonymization"))
-            .child(ui::card_text(
-                "Detects names, organizations and identifiers on this computer. Review the whole document before sharing.",
-                theme,
-            ));
+            .child(ui::card_title(copy.title))
+            .child(ui::card_text(copy.text, theme));
         let card = if let Some(state) = progress {
             card.child(ui::setup_progress(
                 "pii-setup-progress",
@@ -453,17 +498,7 @@ impl DocumentView {
                         ),
                 )
         };
-        let note = match model {
-            Some(m) if pending.total() > 0 => {
-                format!(
-                    "{} · {}, once",
-                    crate::models::short_name(m),
-                    pending.download_label()
-                )
-            }
-            Some(m) => format!("{} · runs on this computer", crate::models::short_name(m)),
-            None => String::new(),
-        };
+        let note = copy.note;
         ui::panel("identity-panel", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "identity-panel".into()))
             // A card inset in the document, like the content card.
@@ -1130,5 +1165,71 @@ pub(super) fn replacement_summary(
         "Nothing to replace yet".to_string()
     } else {
         parts.join(" · ")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SetupCopy;
+    use mdoc_import::{model_download::Pending, ocr};
+    use mdoc_store::settings::{Model, PiiModel};
+
+    /// A model installed beside an earlier release's runtime (a 0.4.0-rc.3
+    /// profile) is an update of the runtime's size; a first setup, a
+    /// cancelled one and a ready model keep their words.
+    #[test]
+    fn an_earlier_runtime_asks_for_an_update() {
+        let model = Some(Model::Pii(PiiModel::Fp16));
+        let runtime = ocr::onnx_runtime_size();
+        let full = 600_000_000 + runtime;
+        let update = SetupCopy::new(
+            model,
+            Pending {
+                model: 0,
+                runtime,
+                full,
+                replaces_runtime: true,
+            },
+        );
+        assert_eq!(update.title, "Update pseudonymization");
+        assert_eq!(update.action, "Update & scan");
+        assert_eq!(update.note, "Standard model · 185 MB runtime update");
+        assert!(update.text.contains("newer shared runtime"));
+
+        let first = Pending {
+            model: 600_000_000,
+            runtime,
+            full,
+            replaces_runtime: false,
+        };
+        let setup = SetupCopy::new(model, first);
+        assert_eq!(setup.title, "Set up pseudonymization");
+        assert_eq!(setup.action, "Download & scan");
+        assert_eq!(setup.note, "Standard model · 785 MB download, once");
+        // The model missing too is a setup, whatever runtime is there.
+        let both = SetupCopy::new(
+            model,
+            Pending {
+                replaces_runtime: true,
+                ..first
+            },
+        );
+        assert_eq!(both, setup);
+        // Only the runtime missing, with none installed: as before.
+        let runtime_only = SetupCopy::new(model, Pending { model: 0, ..first });
+        assert_eq!(runtime_only.title, "Set up pseudonymization");
+        assert_eq!(
+            runtime_only.note,
+            "Standard model · 185 MB left to download, once"
+        );
+        let ready = SetupCopy::new(
+            model,
+            Pending {
+                full,
+                ..Pending::default()
+            },
+        );
+        assert_eq!(ready.title, "Set up pseudonymization");
+        assert_eq!(ready.note, "Standard model · runs on this computer");
     }
 }
