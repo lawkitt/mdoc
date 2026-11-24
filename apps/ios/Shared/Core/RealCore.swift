@@ -1276,13 +1276,14 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     }
 
     /// Copy for AI and Share (#1091 Decision 19): saved first, then the
-    /// session refuses while proposals are pending and names the file, and
-    /// the text comes from the Vault, which checks the document is Ready
+    /// session refuses while proposals are pending, the Vault names the
+    /// file with the title masked by every name its Project knows (#1192),
+    /// and the text comes from the Vault, which checks the document is Ready
     /// against its Project's names as they are now. The Vault also notes
     /// the share, so a move's Undo keeps the names a reply may use.
     func copyForAI() throws -> HandOff {
         try saveChanges()
-        let handOff = try core { try ffi.handOff() }
+        let handOff = try core { try ffi.handOff(vault: library.vault) }
         guard let vaultID else { throw CoreError.notFound }
         let text = try core { try library.vault.textForAi(id: vaultID) }
         // The Restore extension restores with where it went.

@@ -580,12 +580,6 @@ impl DocumentSession {
         self.copy_for_ai()
     }
 
-    /// A name for the shared `.md` file: the title with this document's
-    /// known originals replaced by their aliases.
-    pub fn share_file_name(&self) -> Result<String, CoreError> {
-        self.read_document(Document::share_file_name)
-    }
-
     /// Restore an AI reply with this document's mapping, as desktop's reply
     /// box does.
     pub fn restore_reply(&self, reply: String) -> Result<RestoredReply, CoreError> {
@@ -631,17 +625,6 @@ impl DocumentSession {
 }
 
 impl Document {
-    /// `DocumentSession::share_file_name`.
-    fn share_file_name(&self) -> String {
-        let map = RestoreMap::new(self.review.review.export_identities());
-        let (title, _) = map.pseudonymize(&self.title);
-        let title: String = title
-            .chars()
-            .map(|c| if "/\\:".contains(c) { '-' } else { c })
-            .collect();
-        format!("{}.md", title.trim())
-    }
-
     /// Its Project in the Vault: the `project_id` of snapshots and `info`.
     fn project(&self) -> Option<&str> {
         (self.vault.as_ref()).and_then(|place| place.project.as_deref())

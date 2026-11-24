@@ -459,6 +459,30 @@ impl Vault {
         undo.shared.insert(place, count);
         Ok(text)
     }
+
+    /// The name of the `.md` file Share sends for document `id`, and so of
+    /// the share sheet's subject and preview title: its title as saved,
+    /// masked with every name its Project knows now (its own mapping while
+    /// Unfiled), as the desktop shelf masks titles (#1192). It goes with
+    /// [`Self::text_for_ai`]'s text, which decides whether anything leaves.
+    pub fn share_file_name(&self, id: String) -> Result<String, CoreError> {
+        #[cfg(test)]
+        if crate::exits::taken_out(crate::exits::Gate::ShareFileName) {
+            // A test of the exits suite took the mask out: the title as saved.
+            return Ok(md_file_name(&self.store.document(&id)?.title));
+        }
+        Ok(md_file_name(&self.store.title_for_ai(&id)?))
+    }
+}
+
+/// A shared `.md` file's name for `title`: the characters a path splits on
+/// become `-`.
+fn md_file_name(title: &str) -> String {
+    let title: String = title
+        .chars()
+        .map(|c| if "/\\:".contains(c) { '-' } else { c })
+        .collect();
+    format!("{}.md", title.trim())
 }
 
 impl Vault {

@@ -816,7 +816,7 @@ fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
     );
     assert_eq!(
         vault.text_for_ai(saved.id.clone()).unwrap(),
-        by_hand.hand_off().unwrap().text
+        by_hand.hand_off(vault.clone()).unwrap().text
     );
     assert_eq!(
         by_hand.snapshot().unwrap().phase,

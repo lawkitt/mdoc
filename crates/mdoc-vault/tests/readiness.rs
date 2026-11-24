@@ -383,3 +383,55 @@ fn a_fingerprint_saved_without_a_scan_reads_ready_until_the_text_changes() {
     );
     assert!(vault.text_for_ai(&letter).is_err());
 }
+
+/// The title leaves masked with every name its Project knows, as the
+/// desktop shelf shows it: Boris Ivanov is a name only another document
+/// holds, and the letter's text never mentions him, so the letter is Ready
+/// and its title, which does, leaves as PERSON_2's (#1192).
+#[test]
+fn a_title_leaves_masked_with_every_name_its_project_knows() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let project = project_with(
+        &vault,
+        &[
+            person("PERSON_1", &["Anna Petrova"]),
+            person("PERSON_2", &["Boris Ivanov"]),
+        ],
+    );
+    let letter = document(&vault, Some(&project), "PERSON_1 signed.");
+    vault
+        .update_document(&letter, |d| {
+            d.title = "Boris Ivanov: Anna Petrova lease".into()
+        })
+        .unwrap();
+    save_ready(&vault, &letter);
+
+    assert_eq!(vault.readiness(&letter).unwrap(), Readiness::Ready);
+    assert_eq!(
+        vault.title_for_ai(&letter).unwrap(),
+        "PERSON_2: PERSON_1 lease"
+    );
+}
+
+/// An Unfiled document's title is masked with its own mapping, its whole
+/// name list; a Project's names say nothing about it.
+#[test]
+fn an_unfiled_title_is_masked_with_its_own_names() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    project_with(&vault, &[person("PERSON_1", &["Boris Ivanov"])]);
+    let note = document(&vault, None, "PERSON_1 signed.");
+    vault
+        .update_document(&note, |d| {
+            let mut mapping = Mapping::default();
+            mapping.merge(&[person("PERSON_1", &["Anna Petrova"])]);
+            d.mapping = mapping;
+            d.title = "Anna Petrova and Boris Ivanov".into();
+        })
+        .unwrap();
+    assert_eq!(
+        vault.title_for_ai(&note).unwrap(),
+        "PERSON_1 and Boris Ivanov"
+    );
+}
