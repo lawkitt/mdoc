@@ -436,6 +436,21 @@ class HomeViewModel(
 
     fun hideSavedReply() = mutable.update { it.copy(shownReply = null) }
 
+    /**
+     * Promote to Document from a Project's Replies (#1091 Decision 3): the
+     * sheet closes, and the new document, in the reply's place, is
+     * returned for the caller to open; the reply stays. Null when it failed,
+     * which the failure's dialog says.
+     */
+    suspend fun promote(reply: SavedReplyRow): DocumentId? {
+        hideSavedReply()
+        val promoted = withContext(Dispatchers.IO) { runCatching { core().documents.promoteReply(reply.id) } }
+            .onFailure { error -> mutable.update { it.copy(failed = error.message ?: error.toString()) } }
+            .getOrNull()
+        refreshNow()
+        return promoted
+    }
+
     // Repeated imports (#1091 Decision 7)
 
     /** "Already in mdoc" answered Open Existing: what was brought in goes, and the caller opens the returned document. */

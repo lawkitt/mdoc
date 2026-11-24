@@ -217,6 +217,15 @@
     <string name="unrecognised">%1$d unrecognised</string>
     <string name="nothing_to_restore">Nothing to restore</string>
 
+    <!-- Notes and Promote to Document (#1091 Decision 3), in iOS's words -->
+    <string name="notes">Notes</string>
+    <string name="once_the_document_is_read">Once the document is read</string>
+    <string name="notes_private">Private to this device. Never sent with Copy for AI or Share.</string>
+    <string name="notes_placeholder">Notes about this document: deadlines, who to call, what to check. Only you see them.</string>
+    <string name="promote_to_document">Promote to Document</string>
+    <string name="from_ai_reply">From AI reply</string>
+    <string name="from_deleted_ai_reply">From a deleted AI reply</string>
+
     <!-- Setup -->
     <string name="setup_names_title">Set up name finding</string>
     <string name="setup_ocr_title">Set up text recognition</string>

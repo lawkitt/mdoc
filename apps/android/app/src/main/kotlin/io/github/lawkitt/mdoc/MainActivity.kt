@@ -350,6 +350,11 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                     projects = state.projects,
                     onMove = { move(DocumentId(current), it) },
                     moves = state.moves,
+                    // Promote to Document's new document opens in this one's place.
+                    onOpenDocument = {
+                        home.refresh()
+                        openDocument(it)
+                    },
                 )
             }
         }
@@ -469,6 +474,7 @@ private fun Page(
     onMove: (DocumentId, MoveCommand) -> Unit,
     setupCard: (@Composable () -> Unit)?,
 ) {
+    val scope = rememberCoroutineScope()
     when (destination) {
         Destination.Home -> HomeScreen(
             state = state,
@@ -533,6 +539,7 @@ private fun Page(
                     onRemoveListed = { wording, always -> home.removeListed(project.id, wording, always) },
                     onShowReply = home::showSavedReply,
                     onHideReply = home::hideSavedReply,
+                    onPromote = { reply -> scope.launch(Dispatchers.Main) { home.promote(reply)?.let(onOpen) } },
                     onMenu = onMenu,
                     snackbar = snackbar,
                     onMove = onMove,

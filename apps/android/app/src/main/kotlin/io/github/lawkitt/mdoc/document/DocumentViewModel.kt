@@ -13,15 +13,20 @@ import io.github.lawkitt.mdoc.core.DocumentSnapshot
 import io.github.lawkitt.mdoc.core.Documents
 import io.github.lawkitt.mdoc.core.HandOff
 import io.github.lawkitt.mdoc.core.MentionState
+import io.github.lawkitt.mdoc.core.PromotedFrom
 import io.github.lawkitt.mdoc.core.Scope
 import io.github.lawkitt.mdoc.core.SourceRange
+import io.github.lawkitt.mdoc.home.ShownReply
 import io.github.lawkitt.mdoc.jobs.CancelReason
 import io.github.lawkitt.mdoc.jobs.JobKind
 import io.github.lawkitt.mdoc.jobs.JobOutcome
 import io.github.lawkitt.mdoc.jobs.Jobs
 import io.github.lawkitt.mdoc.jobs.RunningJob
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,6 +71,10 @@ data class DocumentState(
     val needsSetup: JobKind? = null,
     /** A locked DOCX or PDF waits for its password: the password card shows. */
     val passwordPrompt: PasswordPrompt? = null,
+    /** Notes: the sheet with the document's private notes. */
+    val showsNotes: Boolean = false,
+    /** The saved reply a promoted document came from, shown restored (From AI reply). */
+    val fromReply: ShownReply? = null,
 )
 
 enum class PasswordPrompt {
@@ -231,6 +240,71 @@ class DocumentViewModel(
     /** Remove reply: the one shown, by its id, never a newer one saved meanwhile. */
     fun clearReply(shown: String) = change { mutable.update { it.copy(snapshot = session.clearReply(shown), showsReply = false) } }
 
+    // Notes (#1091 Decision 3)
+
+    /**
+     * One notes call at a time, in the order typed. Its scope outlives the
+     * view model, so what was typed is saved when the document closes.
+     */
+    private val notesCalls = Dispatchers.IO.limitedParallelism(1)
+    private val notesScope = CoroutineScope(SupervisorJob() + notesCalls)
+    private var notesSave: Job? = null
+
+    /** How long typing pauses before Notes saves, as iOS's typing pause; the tests shorten it. */
+    internal var notesPause: Long = NOTES_PAUSE_MS
+
+    fun showNotes() = mutable.update { it.copy(showsNotes = true) }
+
+    /** The document's notes as the core holds them, once what was typed before is in; null when they can't be read. */
+    suspend fun notes(): String? = withContext(notesCalls) { runCatching { session.notes() }.onFailure(::show).getOrNull() }
+
+    /** Typed in Notes: the core holds it at once, and it is saved once typing pauses. */
+    fun setNotes(notes: String) {
+        notesScope.launch { runCatching { session.setNotes(notes) }.onFailure(::show) }
+        notesSave?.cancel()
+        notesSave = notesScope.launch {
+            delay(notesPause)
+            saveNotesNow()
+        }
+    }
+
+    /** Notes closed: what was typed is saved now, not after the pause. */
+    fun closeNotes() {
+        mutable.update { it.copy(showsNotes = false) }
+        notesSave?.cancel()
+        notesScope.launch { saveNotesNow() }
+    }
+
+    private fun saveNotesNow() {
+        runCatching { session.saveNotes() }.onFailure(::show)
+    }
+
+    // Promote to Document (#1091 Decision 3)
+
+    /**
+     * Promote to Document of saved reply `reply`: a new document in the
+     * reply's place, which `onOpen` opens; the reply stays. After the notes
+     * typed here are in, as Promote saves what is pending first.
+     */
+    fun promote(reply: String, onOpen: (DocumentId) -> Unit) = viewModelScope.launch {
+        mutable.update { it.copy(fromReply = null) }
+        withContext(notesCalls) { runCatching { documents.promoteReply(reply) } }
+            .onSuccess(onOpen)
+            .onFailure(::show)
+    }
+
+    /** From AI reply: the reply this document was promoted from, restored as it restores now. */
+    fun showFromReply() {
+        val from = (mutable.value.snapshot.promotedFrom as? PromotedFrom.Reply)?.reply ?: return
+        mutable.update { it.copy(fromReply = ShownReply(from)) }
+        viewModelScope.launch {
+            val restored = withContext(Dispatchers.IO) { runCatching { documents.restoreSavedReply(from.id) }.getOrNull() }
+            mutable.update { if (it.fromReply?.reply != from) it else it.copy(fromReply = ShownReply(from, restored, restored == null)) }
+        }
+    }
+
+    fun hideFromReply() = mutable.update { it.copy(fromReply = null) }
+
     fun dismissError() = mutable.update { it.copy(error = null) }
 
     fun refresh() = viewModelScope.launch(Dispatchers.IO) {
@@ -249,6 +323,9 @@ class DocumentViewModel(
     /** The document closed: its decrypted original goes (#1091 Decision 24). */
     override fun onCleared() {
         session.closeOriginal()
+        // Notes typed in the last pause are saved as the document closes.
+        notesSave?.cancel()
+        notesScope.launch { runCatching { session.saveNotes() } }
     }
 
     fun delete(onDeleted: () -> Unit) = viewModelScope.launch {
@@ -271,6 +348,9 @@ class DocumentViewModel(
     }
 
     private companion object {
+        /** iOS's typing pause before a save. */
+        const val NOTES_PAUSE_MS = 1000L
+
         /** The next proposal after `current` in reading order, wrapping round. */
         fun nextProposal(candidates: List<Candidate>, current: CandidateId): CandidateId? {
             val proposals = candidates.filter { it.state == MentionState.Proposed }.sortedBy { it.range.start }

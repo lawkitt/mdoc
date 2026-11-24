@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -79,6 +80,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -99,8 +101,10 @@ import io.github.lawkitt.mdoc.R
 import io.github.lawkitt.mdoc.core.Candidate
 import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.Decision
+import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.DocumentPhase
 import io.github.lawkitt.mdoc.core.Identity
+import io.github.lawkitt.mdoc.core.PromotedFrom
 import io.github.lawkitt.mdoc.core.MentionState
 import io.github.lawkitt.mdoc.core.OriginalSource
 import io.github.lawkitt.mdoc.core.ReplySnapshot
@@ -111,6 +115,7 @@ import io.github.lawkitt.mdoc.home.HomeViewModel
 import io.github.lawkitt.mdoc.home.MoveCommand
 import io.github.lawkitt.mdoc.home.MoveMenuItems
 import io.github.lawkitt.mdoc.home.PasteFromClipboard
+import io.github.lawkitt.mdoc.home.SavedReplySheet
 import io.github.lawkitt.mdoc.jobs.JobKind
 import io.github.lawkitt.mdoc.setup.SetupCard
 import io.github.lawkitt.mdoc.setup.SetupController
@@ -141,6 +146,8 @@ fun DocumentScreen(
     onMove: ((MoveCommand) -> Unit)? = null,
     /** Moves and Undos finished: the document reads itself again at each. */
     moves: Long = 0,
+    /** Opens another document in this one's place: one Promote to Document made. */
+    onOpenDocument: (DocumentId) -> Unit = {},
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     val job by model.running.collectAsStateWithLifecycle()
@@ -173,7 +180,22 @@ fun DocumentScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(snapshot.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    Column {
+                        Text(snapshot.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        // A promoted document says where it came from; the way back is in ⋯ (#1091 Decision 3).
+                        snapshot.promotedFrom?.let { from ->
+                            Text(
+                                stringResource(from.label),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.testTag("from-reply-line"),
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
@@ -199,6 +221,42 @@ fun DocumentScreen(
                                 },
                             )
                         }
+                        // The document's own notes, and the reply it was promoted
+                        // from (#1091 Decision 3). The core keeps notes with the
+                        // document it has read: until then nothing typed could be kept.
+                        val read = snapshot.phase != DocumentPhase.Recognizing
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(stringResource(R.string.notes))
+                                    if (!read) {
+                                        Text(
+                                            stringResource(R.string.once_the_document_is_read),
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                }
+                            },
+                            enabled = read,
+                            modifier = Modifier.testTag("document-notes"),
+                            onClick = {
+                                menu = false
+                                model.showNotes()
+                            },
+                        )
+                        snapshot.promotedFrom?.let { from ->
+                            DropdownMenuItem(
+                                text = { Text(stringResource(from.label)) },
+                                // Once the reply is deleted there is nothing to go back to.
+                                enabled = from is PromotedFrom.Reply,
+                                modifier = Modifier.testTag("from-reply"),
+                                onClick = {
+                                    menu = false
+                                    model.showFromReply()
+                                },
+                            )
+                        }
+                        HorizontalDivider()
                         // iOS's title menu: Move to Project, before Delete.
                         MoveMenuItems(moveCommands) { command ->
                             menu = false
@@ -386,7 +444,15 @@ fun DocumentScreen(
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
-                    pane == Pane.Reply -> Readable { ReplyPane(snapshot.reply!!, onRemove = { snapshot.reply.id?.let(model::clearReply) }) }
+                    pane == Pane.Reply -> Readable {
+                        val reply = snapshot.reply!!
+                        val promote: (() -> Unit)? = reply.id?.let { id -> { model.promote(id, onOpenDocument) } }
+                        ReplyPane(
+                            reply,
+                            onPromote = promote,
+                            onRemove = { reply.id?.let(model::clearReply) },
+                        )
+                    }
                     pane == Pane.Original -> OriginalView(snapshot.original, Modifier.fillMaxSize())
                     wide && hasOriginal -> Row(Modifier.fillMaxSize()) {
                         text(Modifier.weight(1f).fillMaxHeight())
@@ -432,6 +498,12 @@ fun DocumentScreen(
     }
     if (state.showsReplySheet) {
         ReplySheet(snapshot.projectName, onRestore = model::restoreReply, onDismiss = { model.showReplySheet(false) })
+    }
+    if (state.showsNotes) {
+        NotesSheet(model)
+    }
+    state.fromReply?.let { shown ->
+        SavedReplySheet(shown, onDismiss = model::hideFromReply, onPromote = { model.promote(shown.reply.id, onOpenDocument) })
     }
     state.error?.let { message ->
         AlertDialog(
@@ -798,9 +870,62 @@ private fun ReplySheet(projectName: String?, onRestore: (String) -> Unit, onDism
     }
 }
 
+/**
+ * Notes (#1091 Decision 3): what the user keeps about the document for
+ * themselves, saved with it once typing pauses and when the sheet closes.
+ * Copy for AI and Share never send them.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NotesSheet(model: DocumentViewModel) {
+    // Null until the notes are read in: typing changes them from then on.
+    var notes by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(model) { notes = model.notes() ?: "" }
+    ModalBottomSheet(onDismissRequest = model::closeNotes, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(24.dp, 0.dp, 24.dp, 24.dp).imePadding(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.notes),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f).semantics { heading() },
+                )
+                TextButton(onClick = model::closeNotes, modifier = Modifier.testTag("notes-done")) { Text(stringResource(R.string.done)) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("notes-hint").semantics(mergeDescendants = true) {}) {
+                Icon(Icons.Outlined.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                Text(
+                    stringResource(R.string.notes_private),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            notes?.let { current ->
+                OutlinedTextField(
+                    value = current,
+                    onValueChange = {
+                        notes = it
+                        model.setNotes(it)
+                    },
+                    placeholder = { Text(stringResource(R.string.notes_placeholder)) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp).testTag("notes-editor"),
+                )
+            }
+        }
+    }
+}
+
+/** Promote to Document (#1091 Decision 3): the restored reply becomes a new document in the reply's place; the reply stays. */
+@Composable
+internal fun PromoteButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    TextButton(onClick = onClick, modifier = modifier.testTag("promote-reply")) { Text(stringResource(R.string.promote_to_document)) }
+}
+
 /** The restored reply, its restored values highlighted. */
 @Composable
-private fun ReplyPane(reply: ReplySnapshot, onRemove: () -> Unit) {
+private fun ReplyPane(reply: ReplySnapshot, onPromote: (() -> Unit)?, onRemove: () -> Unit) {
     val restored = reply.restored
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Card {
@@ -814,7 +939,10 @@ private fun ReplyPane(reply: ReplySnapshot, onRemove: () -> Unit) {
             )
         }
         RestoredText(restored, reply.styling, Modifier.fillMaxWidth())
-        TextButton(onClick = onRemove) { Text(stringResource(R.string.remove_reply)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            onPromote?.let { PromoteButton(it) }
+            TextButton(onClick = onRemove) { Text(stringResource(R.string.remove_reply)) }
+        }
     }
 }
 
@@ -850,6 +978,13 @@ internal fun copy(context: Context, text: String, sensitive: Boolean = false) {
     }
     context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
 }
+
+/** The way back's words: "From AI reply", or "From a deleted AI reply" once it is gone. */
+private val PromotedFrom.label: Int
+    get() = when (this) {
+        is PromotedFrom.Reply -> R.string.from_ai_reply
+        PromotedFrom.DeletedReply -> R.string.from_deleted_ai_reply
+    }
 
 private enum class Pane(val label: Int) {
     Text(R.string.text),

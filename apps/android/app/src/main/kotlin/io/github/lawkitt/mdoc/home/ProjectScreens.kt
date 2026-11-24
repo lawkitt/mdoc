@@ -76,6 +76,7 @@ import io.github.lawkitt.mdoc.core.ProjectNameRow
 import io.github.lawkitt.mdoc.core.ProjectSummary
 import io.github.lawkitt.mdoc.core.RestoreResult
 import io.github.lawkitt.mdoc.core.SavedReplyRow
+import io.github.lawkitt.mdoc.document.PromoteButton
 import io.github.lawkitt.mdoc.document.copy
 import io.github.lawkitt.mdoc.document.shareIntent
 import io.github.lawkitt.mdoc.ui.Palette
@@ -198,6 +199,8 @@ fun ProjectPage(
     onRemoveListed: (String, Boolean) -> Unit,
     onShowReply: (SavedReplyRow) -> Unit,
     onHideReply: () -> Unit,
+    /** Promote to Document of the reply shown (#1091 Decision 3). */
+    onPromote: (SavedReplyRow) -> Unit = {},
     onMenu: (() -> Unit)? = null,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     onMove: ((DocumentId, MoveCommand) -> Unit)? = null,
@@ -268,7 +271,7 @@ fun ProjectPage(
             }
         }
     }
-    state.shownReply?.let { shown -> SavedReplySheet(shown, onHideReply) }
+    state.shownReply?.let { shown -> SavedReplySheet(shown, onHideReply, onPromote = { onPromote(shown.reply) }) }
 }
 
 /** Replies (#1091 Decision 31): the Project's saved replies, newest first; a tap shows one restored. */
@@ -401,10 +404,14 @@ private fun ListedRow(wording: String, detail: String?, onRemove: () -> Unit) {
     )
 }
 
-/** A saved reply restored, from a Project's Replies: Copy and Share, as the Reply pane's bar has. */
+/**
+ * A saved reply restored, from a Project's Replies or a promoted
+ * document's way back: Copy and Share, as the Reply pane's bar has, and
+ * Promote to Document (#1091 Decision 3), which closes the sheet first.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SavedReplySheet(shown: ShownReply, onDismiss: () -> Unit) {
+internal fun SavedReplySheet(shown: ShownReply, onDismiss: () -> Unit, onPromote: (() -> Unit)? = null) {
     val context = LocalContext.current
     val reply = shown.reply
     var copied by remember(reply.id) { mutableStateOf(false) }
@@ -434,6 +441,7 @@ private fun SavedReplySheet(shown: ShownReply, onDismiss: () -> Unit) {
                             copied = true
                         }) { Text(stringResource(if (copied) R.string.copied else R.string.copy)) }
                     }
+                    onPromote?.let { PromoteButton(it) }
                 }
                 shown.failed -> Text(stringResource(R.string.nothing_to_restore), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
