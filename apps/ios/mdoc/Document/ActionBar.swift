@@ -77,8 +77,13 @@ struct ActionBar: View {
             }
         case .handOff:
             VStack(spacing: Space.xs) {
-                if !model.snapshot.candidates.isEmpty {
-                    AllReviewedLine(candidates: model.snapshot.candidates)
+                HStack(alignment: .center, spacing: Space.xs) {
+                    if !model.snapshot.candidates.isEmpty {
+                        AllReviewedLine(candidates: model.snapshot.candidates)
+                    } else {
+                        Spacer(minLength: 0)
+                    }
+                    typeReply
                 }
                 handOffButtons
             }
@@ -90,6 +95,13 @@ struct ActionBar: View {
     /// (ADR 0111). Short labels keep three buttons in one row on a phone;
     /// VoiceOver says what each acts on.
     private var replyButtons: some View {
+        VStack(alignment: .trailing, spacing: Space.xs) {
+            typeReply
+            replyButtonRow
+        }
+    }
+
+    private var replyButtonRow: some View {
         layout {
             Button {
                 model.shareReply()
@@ -148,15 +160,27 @@ struct ActionBar: View {
             }
     }
 
-    /// Paste, which opens the reply sheet.
-    private func pasteReply(accessibilityLabel: LocalizedStringKey) -> some View {
-        Button {
+    /// Type a reply: small, above Paste, for a reply that is not on the
+    /// clipboard or needs editing first; Paste stays the way in.
+    private var typeReply: some View {
+        Button("Type a reply") {
             model.showsReplySheet = true
-        } label: {
-            Label("Paste", systemImage: "arrow.uturn.backward")
-                .frame(maxWidth: .infinity)
         }
-        .secondaryAction()
+        .font(Typography.caption)
+        .textAction()
+        .frame(minHeight: Size.target)
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        .accessibilityIdentifier("type-reply")
+    }
+
+    /// Paste: one tap restores the reply on the clipboard. HTML first, so
+    /// a table copied from the ChatGPT app stays one.
+    private func pasteReply(accessibilityLabel: LocalizedStringKey) -> some View {
+        PasteControl(look: .bar, types: [.html, .plainText]) { providers in
+            Task { @MainActor in
+                if let text = await PastedReply.text(from: providers) { model.restore(reply: text) }
+            }
+        }
         .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityIdentifier("paste-reply")
     }
@@ -207,17 +231,35 @@ struct ActionBar: View {
     }
 }
 
-/// Below the detector floor, where Find names would be (ADR 0088).
-struct BelowFloorNote: View {
-    let reason: FloorReason?
+/// A footnote where Find names would be, or above it.
+struct ActionNote: View {
+    let text: String
+    let identifier: String
 
     var body: some View {
-        Label(BelowFloor.note(reason), systemImage: "info.circle")
+        Label(text, systemImage: "info.circle")
             .font(.footnote)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("below-floor-note")
+            .accessibilityIdentifier(identifier)
+    }
+}
+
+/// What a document the rules alone marked says above Find names, after Not
+/// now on the name finder's download (#1153). It names what the rules mark,
+/// whether or not they found any.
+enum RulesOnly {
+    static let note = String(
+        localized: "Only email addresses, links and ID numbers are marked. Names need the name finder: Find names downloads it.")
+}
+
+/// Below the detector floor, where Find names would be (ADR 0088).
+struct BelowFloorNote: View {
+    let reason: FloorReason?
+
+    var body: some View {
+        ActionNote(text: BelowFloor.note(reason), identifier: "below-floor-note")
     }
 }

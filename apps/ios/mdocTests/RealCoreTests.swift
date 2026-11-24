@@ -732,6 +732,117 @@ final class BackgroundModelDownloaderTests: XCTestCase {
     }
 }
 
+// MARK: Delete Project's writes (#1140)
+
+extension RealCoreTests {
+    /// The Project a pending import's record names, or nil when no record
+    /// is left; `.some(nil)` is Unfiled.
+    private func recordedProject(_ document: DocumentID, in storage: MdocStorage) -> String?? {
+        PendingImports(storage: storage).all().first { $0.id == document }.map(\.projectID)
+    }
+
+    /// An import not read yet that was to join a Project deleted with its
+    /// documents moved to Unfiled has its record moved to Unfiled before
+    /// the Project goes: a stop between the two writes leaves no record
+    /// naming a Project that is gone. A record that can't be written stops
+    /// the delete; a delete that fails puts the record back.
+    func testAProjectDeleteMovesAPendingImportsRecordFirst() throws {
+        let seeded = try Fixture.seeded()
+        let library = try XCTUnwrap(seeded.library as? RealLibrary)
+        let ellison = seeded.ellison.rawValue
+        let note = try library.importDocument(.text("Ann Lee signed."), title: "Note", into: seeded.ellison)
+        XCTAssertEqual(recordedProject(note.id, in: seeded.storage), .some(ellison))
+
+        // The record's folder unwritable: written after the Project's
+        // delete, the record would still name the Project, as after a stop
+        // between the two.
+        try Fixture.setFolder(seeded.storage.intake, writable: false)
+        defer { try? Fixture.setFolder(seeded.storage.intake, writable: true) }
+        XCTAssertThrowsError(try library.deleteProject(seeded.ellison, documents: .moveToUnfiled))
+        try Fixture.setFolder(seeded.storage.intake, writable: true)
+        XCTAssertTrue(library.vault.projects().contains { $0.id == ellison }, "the Project stays")
+        XCTAssertEqual(recordedProject(note.id, in: seeded.storage), .some(ellison))
+        XCTAssertEqual(note.snapshot().projectID, seeded.ellison)
+
+        // The record unreadable: not taken for no record, it stops the
+        // delete too.
+        let record = seeded.storage.intake.appendingPathComponent("pending.json")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: record.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: record.path) }
+        XCTAssertThrowsError(try library.deleteProject(seeded.ellison, documents: .moveToUnfiled))
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: record.path)
+        XCTAssertTrue(library.vault.projects().contains { $0.id == ellison }, "the Project stays")
+        XCTAssertEqual(recordedProject(note.id, in: seeded.storage), .some(ellison))
+
+        // The Vault unwritable: the delete fails, and the record is back.
+        try Fixture.setVault(seeded.storage, writable: false)
+        defer { try? Fixture.setVault(seeded.storage, writable: true) }
+        XCTAssertThrowsError(try library.deleteProject(seeded.ellison, documents: .moveToUnfiled))
+        try Fixture.setVault(seeded.storage, writable: true)
+        XCTAssertEqual(recordedProject(note.id, in: seeded.storage), .some(ellison))
+        XCTAssertEqual(note.snapshot().projectID, seeded.ellison)
+
+        try library.deleteProject(seeded.ellison, documents: .moveToUnfiled)
+        XCTAssertEqual(recordedProject(note.id, in: seeded.storage), .some(nil))
+        XCTAssertNil(note.snapshot().projectID)
+    }
+
+    /// An import's first save that lands as Delete Project lists the
+    /// Project's documents is not missed: moved, its session shows it in
+    /// Unfiled; deleted, its session goes with it.
+    func testAFirstSaveAsAProjectIsDeletedIsNotMissed() throws {
+        for documents in [ProjectDeletion.moveToUnfiled, .deleteDocuments] {
+            let seeded = try Fixture.seeded()
+            let library = try XCTUnwrap(seeded.library as? RealLibrary)
+            let note = try library.importDocument(.text("Ann Lee signed."), title: "Note", into: seeded.ellison)
+            library.listingProject = {
+                library.listingProject = nil
+                do {
+                    _ = try note.recognize(observer: TestObserver())
+                } catch {
+                    XCTFail("its first save: \(error)")
+                }
+            }
+            try library.deleteProject(seeded.ellison, documents: documents)
+            XCTAssertNil(library.listingProject, "it saved while the Project was listed")
+            let vaultID = try XCTUnwrap((note as? RealSession)?.vaultID)
+            switch documents {
+            case .moveToUnfiled:
+                XCTAssertNil(try library.vault.document(id: vaultID).projectId, "moved in the Vault")
+                XCTAssertNil(note.snapshot().projectID, "and shown in Unfiled")
+            case .deleteDocuments:
+                XCTAssertThrowsError(try library.vault.document(id: vaultID), "deleted in the Vault")
+                XCTAssertFalse(library.snapshot().documents.contains { $0.id == note.id }, "and listed nowhere")
+            }
+        }
+    }
+
+    /// A Project delete that fails part way, a document already moved to
+    /// Unfiled: its open session shows it there before the error does; the
+    /// one not moved still shows the Project.
+    func testAPartialProjectDeleteShowsWhatMovedInUnfiled() throws {
+        let seeded = try Fixture.seeded()
+        let library = try XCTUnwrap(seeded.library as? RealLibrary)
+        let ellison = seeded.ellison.rawValue
+        let sessions = try [seeded.letter, seeded.quotation].map { try XCTUnwrap(seeded.session($0) as? RealSession) }
+        // The Vault moves them in this order; the second can't be written.
+        let members = library.vault.documents().filter { $0.projectId == ellison }.map(\.id)
+        XCTAssertEqual(Set(members), Set(sessions.compactMap(\.vaultID)))
+        let stuck = seeded.storage.vault.appendingPathComponent("docs").appendingPathComponent(members[1])
+        try Fixture.setFolder(stuck, writable: false)
+        defer { try? Fixture.setFolder(stuck, writable: true) }
+
+        XCTAssertThrowsError(try library.deleteProject(seeded.ellison, documents: .moveToUnfiled))
+        try Fixture.setFolder(stuck, writable: true)
+        XCTAssertNil(try library.vault.document(id: members[0]).projectId, "moved before the failure")
+        XCTAssertEqual(try library.vault.document(id: members[1]).projectId, ellison)
+        let moved = try XCTUnwrap(sessions.first { $0.vaultID == members[0] })
+        let kept = try XCTUnwrap(sessions.first { $0.vaultID == members[1] })
+        XCTAssertNil(moved.snapshot().projectID, "the moved one shows Unfiled")
+        XCTAssertEqual(kept.snapshot().projectID, seeded.ellison)
+    }
+}
+
 /// The Keychain store, on the Simulator's keychain under a test service.
 final class KeychainVaultKeyStoreTests: XCTestCase {
     func testTheKeyIsMadeOnceAndKept() throws {

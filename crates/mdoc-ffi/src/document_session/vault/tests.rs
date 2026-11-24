@@ -840,6 +840,53 @@ fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
     );
 }
 
+/// The rules alone, before the name finder is downloaded (#1153): an
+/// email address is proposed, and the document stays unscanned, so a
+/// save with nothing left to decide is not Ready on a phone that can find
+/// names. A later scan finds the same mention once.
+#[test]
+fn the_rules_alone_mark_an_email_address_and_leave_the_document_unscanned() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let session = session("Ann Lee wrote from ann.lee@example.com today.", "Letter");
+    let marked = session.propose_rules().unwrap();
+    let emails: Vec<_> = marked
+        .mentions
+        .iter()
+        .filter(|m| m.category == Category::Email)
+        .collect();
+    assert_eq!(emails.len(), 1);
+    assert_eq!(emails[0].original, "ann.lee@example.com");
+    assert_eq!(emails[0].state, MentionState::Proposed);
+    assert!(
+        marked
+            .mentions
+            .iter()
+            .all(|m| m.category != Category::Person),
+        "names need the detector"
+    );
+    assert!(!marked.scanned);
+    assert_eq!(marked.phase, DocumentPhase::Unscanned);
+
+    session.replace_all().unwrap();
+    let saved = session.save_into_vault(vault.clone()).unwrap();
+    assert_eq!(
+        vault.readiness(saved.id).unwrap(),
+        crate::vault::Readiness::NotReviewed,
+        "no names were looked for"
+    );
+    let scanned = session.scan(None, None).unwrap();
+    assert!(scanned.scanned);
+    assert_eq!(
+        scanned
+            .mentions
+            .iter()
+            .filter(|m| m.category == Category::Email)
+            .count(),
+        1
+    );
+}
+
 /// A document saved above the floor, unscanned, is saved Ready by its next
 /// save once the phone falls below it (timing the detector can put it
 /// there), with no change of its own; opened again, the same (review 3).

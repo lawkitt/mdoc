@@ -49,6 +49,17 @@ enum PastedReply {
         return nil
     }
 
+    /// The first provider's plain text that has any: a pasted document,
+    /// whose formatting is not kept.
+    static func plainText(from providers: [NSItemProvider]) async -> String? {
+        for provider in providers {
+            if let text = await plain(from: provider), !text.isEmpty {
+                return text
+            }
+        }
+        return nil
+    }
+
     private static func html(from provider: NSItemProvider) async -> String? {
         guard provider.hasItemConformingToTypeIdentifier(UTType.html.identifier) else { return nil }
         return await withCheckedContinuation { continuation in

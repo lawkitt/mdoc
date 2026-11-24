@@ -174,7 +174,7 @@ final class DocumentViewModelTests: XCTestCase {
         let reply = "\(maya) should hear from \(joinery) by Friday."
         model.showsReplySheet = true
         model.restore(reply: reply)
-        XCTAssertFalse(model.showsReplySheet)
+        XCTAssertFalse(model.showsReplySheet, "Type a reply's sheet closes")
         XCTAssertEqual(model.pane, .reply)
         XCTAssertEqual(model.snapshot.reply?.restored.text, "Maya Ellison should hear from Brightwater Joinery Ltd by Friday.")
         XCTAssertEqual(model.snapshot.reply?.aliasText, reply)
@@ -190,6 +190,49 @@ final class DocumentViewModelTests: XCTestCase {
         await model.findNames()
         XCTAssertTrue(model.needsSetup)
         XCTAssertEqual(model.setupNeeds, .detector)
+    }
+
+    /// Not now on the name finder's download marks what the rules find, once,
+    /// before any download (#1153): a pasted document's email address. Names
+    /// need the name finder, so the document stays unscanned, Find names
+    /// stays, the note says why, and it is not Ready for Copy for AI.
+    func testNotNowMarksAPastedEmailAddressBeforeAnyDownload() async throws {
+        let (core, storage) = try Fixture.core(memory: Fixture.detectorTier)
+        let session = try core.library.importDocument(
+            .text("Ann Lee wrote from ann.lee@example.com today."), title: "Note", into: nil)
+        let model = DocumentViewModel(
+            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
+        await model.recognize()
+        await model.findNames()
+        XCTAssertEqual(model.setupNeeds, .detector)
+        XCTAssertTrue(model.snapshot.candidates.isEmpty)
+        XCTAssertFalse(model.showsRulesOnlyNote)
+
+        model.skipSetup()
+        XCTAssertFalse(model.needsSetup)
+        let marked = model.snapshot.candidates.filter { $0.state == .proposed }
+        XCTAssertEqual(marked.map(\.original), ["ann.lee@example.com"])
+        XCTAssertEqual(marked.first?.category, .email)
+        XCTAssertEqual(model.snapshot.phase, .unscanned)
+        XCTAssertEqual(model.primaryAction, .findNames)
+        XCTAssertTrue(model.showsRulesOnlyNote)
+        XCTAssertNil(model.errorMessage)
+
+        // Once: Find names asks again, and a second Not now adds nothing.
+        await model.findNames()
+        XCTAssertTrue(model.needsSetup)
+        model.skipSetup()
+        XCTAssertEqual(model.snapshot.candidates.count, marked.count)
+
+        // Replaced, it saves; but no names were looked for, so it is not Ready.
+        model.replaceAllPending()
+        XCTAssertEqual(model.primaryAction, .findNames)
+        XCTAssertThrowsError(try session.copyForAI())
+        let real = try XCTUnwrap(session as? RealSession)
+        try real.saveChanges()
+        let library = try XCTUnwrap(core.library as? RealLibrary)
+        let id = try XCTUnwrap(real.vaultID)
+        XCTAssertNotEqual(try library.vault.readiness(id: id), .ready)
     }
 
     /// On iPad the Documents page and the document are on screen together: the setup card

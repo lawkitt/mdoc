@@ -98,11 +98,15 @@ in [CONTEXT.md](../../CONTEXT.md).
 - A transfer never rewrites aliases: a Project whose aliases clash with the
   local one arrives as a separate copy.
 - The desktop MCP connector ([ADR 0126](../adr/0126-local-mcp-ai-connector.md))
-  serves one AI project, chosen and always shown in mdoc: only its `Ready`
-  documents, labelled from their reviewed text and never by stored title.
-  Unfiled documents stay hidden. `deliver_reply` restores only inside mdoc,
-  returns no real name, and is refused unless it names a document of the
-  current AI project.
+  serves one AI project, chosen and always shown in mdoc, plus the Personal
+  documents the user allowed: only `Ready` documents, labelled from their
+  reviewed text and never by stored title. Unfiled documents stay hidden.
+  `deliver_reply` restores only inside mdoc, returns no real name, and is
+  refused unless it names a document it read from what is served now.
+- A Personal alias stands for one stored value. mdoc puts it back exactly as
+  stored and computes nothing from it
+  ([ADR 0129](../adr/0129-personal-documents-restore-only-aliases.md)).
+  Personal is closed to an AI until the user allows chosen documents or all.
 - Any process running as the user can read the AI project's pseudonymized
   documents through the connector; never claim otherwise.
 - The update check is one unauthenticated GET to the GitHub Releases API

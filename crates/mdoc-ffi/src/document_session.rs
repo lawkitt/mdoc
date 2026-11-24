@@ -376,6 +376,20 @@ impl DocumentSession {
         })
     }
 
+    /// The structured rules alone (an email address, a link, a tax or
+    /// insurance number), proposed as a scan's finds are, on a phone that
+    /// has not downloaded its name finder (#1153). Unlike `scan` it leaves
+    /// the document unscanned: no names were looked for, so Find names is
+    /// still offered, and a save with no proposals left records it Ready
+    /// only where `set_no_name_finder` says this phone finds none.
+    pub fn propose_rules(&self) -> Result<ReviewSnapshot, CoreError> {
+        self.with_document(|document| {
+            let mut detections = mdoc_detect::scan_rules(&document.review.text)?;
+            detections.retain(|d| !document.skip.contains(&d.category));
+            document.review.ingest(detections)
+        })
+    }
+
     /// Candidates found elsewhere, ingested as a scan's are.
     pub fn add_candidates(&self, candidates: Vec<Candidate>) -> Result<ReviewSnapshot, CoreError> {
         let detections = candidates

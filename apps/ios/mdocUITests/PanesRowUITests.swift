@@ -137,14 +137,7 @@ final class PanesRowUITests: XCTestCase {
     /// Paste reply with a line of sample text.
     @MainActor
     private func restoreReply(_ app: XCUIApplication) {
-        let paste = app.buttons["paste-reply"]
-        XCTAssertTrue(paste.waitForExistence(timeout: 10))
-        paste.tap()
-        let editor = app.textViews["reply-editor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: MdocUITest.timeout))
-        editor.tap()
-        editor.typeText("Thanks. The fixture document reads well.")
-        app.buttons["reply-restore"].tap()
+        MdocUITest.pasteReply("Thanks. The fixture document reads well.", in: app)
         XCTAssertTrue(app.descendants(matching: .any)["restore-summary"].firstMatch.waitForExistence(timeout: 10))
     }
 

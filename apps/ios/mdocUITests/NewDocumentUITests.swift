@@ -3,7 +3,7 @@ import XCTest
 /// New document (ADR 0109, slice 6): New document is first in the
 /// sidebar's + menu and ⌘N, and opens in edit mode with the keyboard up;
 /// left empty it leaves no row. Its title and Find names again are
-/// NewDocumentTests' (ADR 0112's sweep). Paste starts in Unfiled.
+/// NewDocumentTests' (ADR 0112's sweep). Paste opens in Unfiled.
 final class NewDocumentUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -83,19 +83,25 @@ final class NewDocumentUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["document-row"].firstMatch.exists)
     }
 
-    /// Paste's sheet asks for a Project, not a case, and starts on
-    /// Unfiled: no import makes a Project of its own (#1091 Decision 35).
+    /// One tap on the + menu's Paste opens the clipboard's text as a
+    /// document titled by its first line, with no sheet and no paste
+    /// prompt, in Unfiled: no import makes a Project of its own (#1091
+    /// Decision 35).
     @MainActor
-    func testPasteStartsInUnfiled() throws {
+    func testOneTapPastesIntoUnfiled() throws {
+        MdocUITest.copy("Lease for Ann Lee\n\nAnn Lee signed the lease.")
         let app = launch()
         MdocUITest.revealSidebar(app)
         app.buttons["new-menu"].firstMatch.tap()
-        let paste = app.collectionViews.buttons["Paste text"].firstMatch
+        let paste = MdocUITest.menuItem("Paste", app)
         XCTAssertTrue(paste.waitForExistence(timeout: MdocUITest.timeout))
         paste.tap()
-        // The picker reads "Project, Unfiled" (its title, then its choice).
-        let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Project' AND label CONTAINS 'Unfiled'")).firstMatch
-        XCTAssertTrue(picker.waitForExistence(timeout: MdocUITest.timeout), "the Project picker on Unfiled")
-        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'new case'")).firstMatch.exists)
+        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: MdocUITest.timeout), "no document after one tap")
+        XCTAssertEqual(app.buttons["title-menu"].label, "Lease for Ann Lee")
+        MdocUITest.revealSidebar(app)
+        let unfiled = app.descendants(matching: .any)["sidebar-unfiled"].firstMatch
+        XCTAssertTrue(unfiled.waitForExistence(timeout: MdocUITest.timeout))
+        unfiled.tap()
+        XCTAssertTrue(row(app, title: "Lease for Ann Lee").waitForExistence(timeout: MdocUITest.timeout), "listed in Unfiled")
     }
 }

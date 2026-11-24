@@ -21,7 +21,7 @@ struct MdocApp: App {
             RootView(app: app)
                 .onOpenURL { url in
                     // "Open in mdoc" from the share sheet's app row.
-                    app.receiveFile(url)
+                    app.openInMdoc(url)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
                     app.saveDeferred()
