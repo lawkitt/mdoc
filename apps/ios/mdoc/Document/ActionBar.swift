@@ -207,17 +207,27 @@ struct ActionBar: View {
     }
 }
 
-/// Below the detector floor, where Find names would be (ADR 0088).
-struct BelowFloorNote: View {
-    let reason: FloorReason?
+/// A footnote where Find names would be, or above it.
+struct ActionNote: View {
+    let text: String
+    let identifier: String
 
     var body: some View {
-        Label(BelowFloor.note(reason), systemImage: "info.circle")
+        Label(text, systemImage: "info.circle")
             .font(.footnote)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("below-floor-note")
+            .accessibilityIdentifier(identifier)
+    }
+}
+
+/// Below the detector floor, where Find names would be (ADR 0088).
+struct BelowFloorNote: View {
+    let reason: FloorReason?
+
+    var body: some View {
+        ActionNote(text: BelowFloor.note(reason), identifier: "below-floor-note")
     }
 }

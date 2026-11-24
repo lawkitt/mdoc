@@ -196,6 +196,11 @@ protocol DocumentSession: AnyObject, Sendable {
     /// its category. Try a sample uses it, so the sample reviews before the
     /// name finder is downloaded (ADR 0099).
     func propose(_ names: [SampleDocument.Name]) throws -> DocumentSnapshot
+    /// The structured rules alone (an email address, a link, a tax or
+    /// insurance number), proposed as a scan's finds are, after Not now on
+    /// the name finder's download (#1153). The document stays unscanned:
+    /// no names were looked for, so Find names is still offered.
+    func proposeRules() throws -> DocumentSnapshot
     /// Rename…: the alias of this mention (`.this` splits it off under the
     /// alias) or of its identity. Throws `.aliasTaken` with the
     /// identity that has the alias already: Same as is the way to it.

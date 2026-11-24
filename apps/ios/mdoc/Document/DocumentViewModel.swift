@@ -131,6 +131,17 @@ final class DocumentViewModel {
     /// Below the floor, where Find names would be: the device cannot find
     /// names, and selecting text marks one (ADR 0088).
     var showsBelowFloorNote: Bool { !findsNames && snapshot.phase == .unscanned }
+    /// The rules marked this document after Not now on the name finder's
+    /// download (#1153).
+    private(set) var proposedRules = false
+    /// Where Find names is, once the rules alone marked the document: names
+    /// need the name finder (#1153).
+    var rulesOnlyNote: String? {
+        guard proposedRules, findsNames, primaryAction == .findNames else { return nil }
+        return snapshot.candidates.isEmpty
+            ? String(localized: "No email addresses, links or ID numbers found. Names need the name finder: Find names downloads it.")
+            : String(localized: "Email addresses, links and ID numbers are marked. Names need the name finder: Find names downloads it.")
+    }
     /// Minutes a scan takes on this phone, under Find names when it is
     /// expected to take more than about a minute (ADR 0120).
     var scanEstimate: Int? {
@@ -366,9 +377,14 @@ final class DocumentViewModel {
 
     /// Download & continue: the job that asked for setup runs again.
     /// Not now on the document's setup card: Find names (or Recognize)
-    /// returns as the primary action.
+    /// returns as the primary action. Not now on the name finder's download
+    /// marks what the rules find meanwhile, once (#1153); the document stays
+    /// unscanned, so Find names can still download the name finder.
     func skipSetup() {
+        let skipped = waitingForSetup
         waitingForSetup = nil
+        guard skipped == .scan, !proposedRules, snapshot.phase == .unscanned else { return }
+        proposedRules = perform(undoable: false) { try session.proposeRules() }
     }
 
     func continueAfterSetup() async {

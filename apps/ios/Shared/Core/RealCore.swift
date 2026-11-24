@@ -1326,6 +1326,14 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return snapshot()
     }
 
+    func proposeRules() throws -> DocumentSnapshot {
+        _ = try core { try ffi.proposeRules() }
+        // Saved as a scan's result is, but unscanned: Ready only below the
+        // floor (`findsNoNames`), as for names marked by hand.
+        try saveAfterJob { [self] in try save() }
+        return snapshot()
+    }
+
     func hideTarget(_ range: SourceRange) throws -> WordsTarget {
         try core { try ffi.hideTarget(range: range.textRange) }
     }

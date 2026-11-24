@@ -679,6 +679,9 @@ struct DocumentScreen: View {
             } else {
                 if model.showsBelowFloorNote {
                     BelowFloorNote(reason: setup.snapshot.belowFloor)
+                } else if let note = model.rulesOnlyNote {
+                    // Names need the name finder (#1153).
+                    ActionNote(text: note, identifier: "rules-only-note")
                 } else if let minutes = model.scanEstimate {
                     ScanEstimateNote(minutes: minutes)
                 }
