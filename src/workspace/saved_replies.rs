@@ -186,7 +186,8 @@ impl Workspace {
         if view.read(cx).reply.unsaved().is_none()
             // One waiting saves whatever the box holds when it runs.
             || self.document_writer.has(&Target::Reply(tab))
-            || self.tab_document(tab, cx).is_none()
+            // A move's reload is due: it saves nothing until then.
+            || self.tab_document(tab, cx).is_none_or(|d| self.moving.contains(&d))
             || self.vault.vault().is_none()
         {
             return;

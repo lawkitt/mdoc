@@ -169,7 +169,9 @@ impl Workspace {
         };
         let target = DocumentId::Vault(document.clone());
         match vault.set_notes(document.as_str(), notes.clone()) {
-            Ok(_) => {
+            // Deleted meanwhile: nothing to keep them with, and nothing to
+            // write them again (a quit's last pass would ask forever).
+            Ok(_) | Err(mdoc_vault::VaultError::NotFound { .. }) => {
                 for view in self.tabs.iter().filter_map(|tab| tab.view()) {
                     view.update(cx, |view, _| {
                         if view.session.document.is(&target) {
@@ -178,8 +180,6 @@ impl Workspace {
                     });
                 }
             }
-            // Deleted meanwhile: nothing to keep them with.
-            Err(mdoc_vault::VaultError::NotFound { .. }) => self.notes_write_failed(&target, cx),
             Err(error) => {
                 self.notes_write_failed(&target, cx);
                 let tab = self.find_document(&target, None, cx);
@@ -276,10 +276,10 @@ impl Workspace {
         }
     }
 
-    /// Before the window closes: write any document edited since the
-    /// quit's own writes were queued, a keystroke while they ran. Returns
-    /// whether a write now runs or waits. Replies and Projects are not
-    /// asked again: their edits come only through a document's.
+    /// Before the window closes: write whatever was edited since the
+    /// quit's own writes were queued, a keystroke while they ran, in every
+    /// editable field: the text, Notes and the reply box. Returns whether a
+    /// write now runs or waits.
     pub(super) fn autosave_late_edits(
         &mut self,
         window: &mut Window,
@@ -290,7 +290,7 @@ impl Workspace {
             if let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) {
                 view.update(cx, |view, _| view.cancel_autosave());
             }
-            self.autosave_document(id, window, cx);
+            self.autosave(id, window, cx);
         }
         self.document_writer.busy()
     }

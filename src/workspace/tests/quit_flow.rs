@@ -35,7 +35,8 @@ fn a_quit_writes_every_draft_and_asks_nothing(cx: &mut TestAppContext) {
 }
 
 /// Review of #1145 (P2-4): a keystroke accepted while a quit's last
-/// writes run is written too before the window closes.
+/// writes run is written too before the window closes: in the text, and
+/// (round 2, P2) in Notes and the reply box.
 #[gpui::test]
 fn a_keystroke_during_the_quits_last_write_is_written(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
@@ -54,11 +55,24 @@ fn a_keystroke_during_the_quits_last_write_is_written(cx: &mut TestAppContext) {
                 editor.set_text(more, cx);
             })
         });
+        // Notes wait for their pause, and the box's reply for its own.
+        view.update(cx, |view, cx| {
+            view.type_notes("Call back.", window, cx);
+            view.fill_reply("A late reply.", window, cx);
+        });
     });
     cx.run_until_parked();
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
     let id = &vault.documents()[0].id;
-    assert_eq!(vault.document(id).unwrap().markdown, "first second third");
+    let document = vault.document(id).unwrap();
+    assert_eq!(document.markdown, "first second third");
+    assert_eq!(document.notes, "Call back.");
+    let replies = vault.replies();
+    assert_eq!(replies.len(), 1, "the box's reply is saved");
+    assert_eq!(
+        vault.reply(&replies[0].id).unwrap().markdown,
+        "A late reply."
+    );
 }
 
 #[gpui::test]
