@@ -8,6 +8,7 @@
 mod actions;
 mod editing;
 mod intake;
+mod notes;
 mod origin;
 mod resume;
 mod review;
@@ -134,9 +135,9 @@ struct Document {
     generation: u64,
     /// Scanned, or names proposed some other way, even if none were found.
     scanned: bool,
-    /// `ReviewText::change_key` at the last save: equal now, nothing
-    /// changed since, and a save would write what is there.
-    saved: Option<((u64, u64, usize), bool)>,
+    /// `change_key` at the last save: equal now, nothing changed since,
+    /// and a save would write what is there.
+    saved: Option<ChangeKey>,
     /// A `save_pending_into_vault` joined the Project again, and no save
     /// has told the app yet (`SavedVaultChange::rejoined`).
     rejoined: bool,
@@ -154,7 +155,18 @@ struct Document {
     /// Where it is in the Vault, once it joined a Project there or was
     /// saved or opened there (`vault`); `None` before then.
     vault: Option<vault::Place>,
+    /// The user's private notes, as typed (`set_notes`): saved with the
+    /// document, never in Copy for AI or Share.
+    notes: String,
+    /// Bumped by each `set_notes` that changed them, so a save owes them.
+    notes_edits: u64,
+    /// The AI Reply it was promoted from, as its record says.
+    from_reply: Option<String>,
 }
+
+/// What a save compares: the review's change key, whether it was scanned,
+/// and the notes' edits.
+type ChangeKey = ((u64, u64, usize), bool, u64);
 
 #[derive(uniffi::Object)]
 pub struct DocumentSession {
@@ -633,9 +645,10 @@ impl Document {
         (self.vault.as_ref()).and_then(|place| place.project.as_deref())
     }
 
-    /// Changes when the review does, or when the document is first scanned.
-    fn change_key(&self) -> ((u64, u64, usize), bool) {
-        (self.review.change_key(), self.scanned)
+    /// Changes when the review or the notes do, or when the document is
+    /// first scanned.
+    fn change_key(&self) -> ChangeKey {
+        (self.review.change_key(), self.scanned, self.notes_edits)
     }
 
     fn snapshot(&mut self) -> ReviewSnapshot {
@@ -693,6 +706,9 @@ impl DocumentSession {
             source_kind: imported.source_kind,
             source: imported.source,
             vault: None,
+            notes: String::new(),
+            notes_edits: 0,
+            from_reply: None,
         };
         if let Some(opened) = opened {
             document.origin = opened.origin;

@@ -325,7 +325,8 @@ impl DocumentSession {
 /// written without it.
 struct Pending {
     generation: u64,
-    key: ((u64, u64, usize), bool),
+    key: super::ChangeKey,
+    notes: String,
     title: String,
     origin: DocumentOrigin,
     source_kind: mdoc_vault::SourceKind,
@@ -363,6 +364,7 @@ impl Document {
         Pending {
             generation: self.generation,
             key: self.change_key(),
+            notes: self.notes.clone(),
             title: self.title.clone(),
             origin: self.origin,
             source_kind: self.source_kind,
@@ -506,6 +508,8 @@ impl Document {
         } = from;
         open_review(&mut self.review, &stored, project.as_ref());
         self.scanned = stored.scanned;
+        self.notes.clone_from(&stored.notes);
+        self.from_reply.clone_from(&stored.from_reply);
         if let Some(project) = &project {
             self.review.dismiss_pairs(&project.dismissed_hints);
             self.skip = project.skipped();
@@ -517,7 +521,7 @@ impl Document {
         self.saved = Some(if as_saved {
             self.change_key()
         } else {
-            ((0, 0, 0), false)
+            ((0, 0, 0), false, 0)
         });
         self.vault = Some(Place {
             id: Some(stored.id),
@@ -665,6 +669,7 @@ impl Pending {
             record.title.clone_from(&self.title);
             record.origin = self.origin.into();
             record.markdown.clone_from(&self.text);
+            record.notes.clone_from(&self.notes);
             // An import's first save holds its converted text, even when
             // that is empty. A record opened before its import finished
             // stays waiting for its conversion.

@@ -117,6 +117,27 @@ impl Vault {
         let _writes = self.lock_writes();
         Ok(self.store.delete_reply(&id)?)
     }
+
+    /// Saved reply `id` as lists show it, from the manifest; `None` once it
+    /// is deleted: a promoted document's way back reads so.
+    pub fn reply_info(&self, id: String) -> Option<ReplyInfo> {
+        (self.store.replies().into_iter())
+            .find(|reply| reply.id == id)
+            .map(info)
+    }
+
+    /// Promote to Document (#1091 Decision 3): a new document in saved
+    /// reply `id`'s place (its Project, or Unfiled for an Unfiled
+    /// document's reply) whose text is the reply restored as it restores
+    /// now, real names back. It is not reviewed, has no original, and
+    /// names the reply (`DocumentSession::from_reply`); the reply stays.
+    /// Nothing is written when the reply or its place is gone.
+    pub fn promote_reply(&self, id: String) -> Result<DocumentInfo, CoreError> {
+        let _writes = self.lock_writes();
+        let document = self.store.promote_reply(&id)?;
+        Ok(self.infos(vec![mdoc_vault::DocumentSummary::of(&document)])
+            .remove(0))
+    }
 }
 
 #[uniffi::export]
