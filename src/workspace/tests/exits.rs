@@ -73,7 +73,8 @@ enum Via {
     Shortcut,
     /// The command palette's Copy for AI.
     Palette,
-    /// The menu bar shelf's Copy for AI, a click or ⌘C, on a row.
+    /// The menu bar shelf's Copy for AI on a row: its button's click, ⌘C
+    /// and ⌘1…⌘8 all run `ShelfView::copy`.
     ShelfCopy(Placement),
     /// A drag from the shelf: its text and its `.md` file, name and all.
     ShelfDrag(Placement),
@@ -153,12 +154,17 @@ enum Scenario {
     /// Boris Ivanov joins the Project's names in the Vault from outside the
     /// window, which never hears of it: only the Vault's check knows.
     NameOnlyTheVaultKnows,
+    /// Another writer adds a sentence naming no one the Project knows to
+    /// the stored text: changed since its review, with no known name in it,
+    /// so only the review's fingerprint catches it.
+    ChangedElsewhere,
 }
 
-const NOT_READY: [Scenario; 3] = [
+const NOT_READY: [Scenario; 4] = [
     Scenario::NameFromAnotherDocument,
     Scenario::MappedNameAsWritten,
     Scenario::NameOnlyTheVaultKnows,
+    Scenario::ChangedElsewhere,
 ];
 
 impl Scenario {
@@ -166,7 +172,9 @@ impl Scenario {
     /// leave as written.
     fn known_names(self) -> &'static [&'static str] {
         match self {
-            Scenario::Ready | Scenario::MappedNameAsWritten => &["Anna Petrova"],
+            Scenario::Ready | Scenario::MappedNameAsWritten | Scenario::ChangedElsewhere => {
+                &["Anna Petrova"]
+            }
             Scenario::NameFromAnotherDocument | Scenario::NameOnlyTheVaultKnows => {
                 &["Anna Petrova", "Boris Ivanov"]
             }
@@ -247,7 +255,7 @@ fn ready(cx: &mut TestAppContext, via: Via) -> Fixture<'_> {
         &tabs,
         cx,
         dir.path(),
-        "lease.md",
+        "Anna Petrova lease.md",
         TEXT,
         &[("Anna Petrova", Person)],
     );
@@ -336,6 +344,18 @@ impl Fixture<'_> {
                         .unwrap();
                 }
             },
+            Scenario::ChangedElsewhere => {
+                vault(&tabs, cx)
+                    .update_document(self.document.as_str(), |document| {
+                        document.markdown.push_str(" Clara Moss signed.")
+                    })
+                    .unwrap();
+                let readiness = vault(&tabs, cx).readiness(self.document.as_str());
+                assert_eq!(
+                    readiness.unwrap(),
+                    mdoc_vault::Readiness::ChangedSinceReview
+                );
+            }
             Scenario::NameOnlyTheVaultKnows => {
                 vault(&tabs, cx)
                     .update_project(&self.project, |project| {
@@ -539,6 +559,14 @@ fn no_exit_hands_out_a_name_another_document_added(cx: &mut TestAppContext) {
 #[gpui::test]
 fn no_exit_hands_out_a_mapped_name_as_written(cx: &mut TestAppContext) {
     let faults = suite(cx, &[Scenario::MappedNameAsWritten]);
+    assert!(faults.is_empty(), "{faults:#?}");
+}
+
+/// Done when: no exit hands out a document changed since its review, even
+/// with no known name in the change.
+#[gpui::test]
+fn no_exit_hands_out_a_document_changed_since_review(cx: &mut TestAppContext) {
+    let faults = suite(cx, &[Scenario::ChangedElsewhere]);
     assert!(faults.is_empty(), "{faults:#?}");
 }
 

@@ -11,6 +11,16 @@
 //! composition, and the suite runs both against a document that is not
 //! Ready.
 //!
+//! What each carries: the text (the clipboard, the share sheet's text, the
+//! `.md` file's contents), the file's name, and the share sheet's subject
+//! and preview title. Android takes its subject from the file's name.
+//! **iOS Share as text: its title** was found unchecked by item 29's
+//! review: `DocumentViewModel.share(asFile: false)` passes the raw document
+//! title (`snapshot.title`) to `TitledText`, the sheet's subject and
+//! preview title. The Mac hub fixes it with an XCTest (#1091), so that it
+//! takes the file's name without `.md` as Android does. The mirror below
+//! sends what that fix sends.
+//!
 //! **Not exits:** `DocumentSession::copy_for_ai`, `share_text` and
 //! `HandOff::text` are the session's unchecked text. The apps never send
 //! them, and only the parity tests read them. By the maintainer's ruling on
@@ -77,12 +87,12 @@ struct Exit {
 /// Every way text leaves for an AI through the mobile core.
 const EXITS: &[Exit] = &[
     Exit {
-        name: "iOS Copy for AI and Share (text and file)",
+        name: "iOS Copy for AI and Share: text, file, file name, Share as text's title",
         gate: Gate::TextForAi,
         send: ios,
     },
     Exit {
-        name: "Android Copy for AI and Share (text and file)",
+        name: "Android Copy for AI and Share: text, file, file name, title",
         gate: Gate::TextForAi,
         send: android,
     },
@@ -90,7 +100,8 @@ const EXITS: &[Exit] = &[
 ];
 
 /// `RealCore.copyForAI`: saved first, then the session's refusal and file
-/// name, then the Vault's text.
+/// name, then the Vault's text; Share as text's subject is the file's name
+/// without `.md` (#1091, the Mac hub's fix).
 fn ios(letter: &Letter) -> Option<Vec<String>> {
     letter
         .session
@@ -98,7 +109,17 @@ fn ios(letter: &Letter) -> Option<Vec<String>> {
         .ok()?;
     let hand_off = letter.session.hand_off().ok()?;
     let text = letter.vault.text_for_ai(letter.id.clone()).ok()?;
-    Some(vec![text, hand_off.file_name])
+    let subject = subject(&hand_off.file_name);
+    Some(vec![text, hand_off.file_name, subject])
+}
+
+/// The share sheet's subject and preview title: the file's name without
+/// `.md`.
+fn subject(file_name: &str) -> String {
+    file_name
+        .strip_suffix(".md")
+        .unwrap_or(file_name)
+        .to_owned()
 }
 
 /// `Documents.copyForAi`: its own pending check, the file name, then the
@@ -109,7 +130,9 @@ fn android(letter: &Letter) -> Option<Vec<String>> {
     }
     let file_name = letter.session.share_file_name().ok()?;
     let text = letter.vault.text_for_ai(letter.id.clone()).ok()?;
-    Some(vec![text, file_name])
+    // `shareIntent`'s EXTRA_TITLE and chooser title.
+    let subject = subject(&file_name);
+    Some(vec![text, file_name, subject])
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,18 +147,24 @@ enum Scenario {
     /// Boris Ivanov joins the Project's names in the Vault, and no session
     /// hears of it.
     NameOnlyTheVaultKnows,
+    /// Another writer adds a sentence naming no one the Project knows to
+    /// the saved text: only the review's fingerprint catches it.
+    ChangedElsewhere,
 }
 
-const NOT_READY: [Scenario; 3] = [
+const NOT_READY: [Scenario; 4] = [
     Scenario::NameFromAnotherDocument,
     Scenario::MappedNameAsWritten,
     Scenario::NameOnlyTheVaultKnows,
+    Scenario::ChangedElsewhere,
 ];
 
 impl Scenario {
     fn known_names(self) -> &'static [&'static str] {
         match self {
-            Scenario::Ready | Scenario::MappedNameAsWritten => &["Anna Petrova"],
+            Scenario::Ready | Scenario::MappedNameAsWritten | Scenario::ChangedElsewhere => {
+                &["Anna Petrova"]
+            }
             Scenario::NameFromAnotherDocument | Scenario::NameOnlyTheVaultKnows => {
                 &["Anna Petrova", "Boris Ivanov"]
             }
@@ -207,7 +236,13 @@ fn ready() -> Letter {
     )
     .unwrap();
     let project = vault.create_project("Case".into()).unwrap().id;
-    let (session, letter) = saved(&vault, &project, TEXT, "Lease", &["Anna Petrova"]);
+    let (session, letter) = saved(
+        &vault,
+        &project,
+        TEXT,
+        "Anna Petrova lease",
+        &["Anna Petrova"],
+    );
     assert_eq!(
         vault.readiness(letter.id.clone()).unwrap(),
         crate::vault::Readiness::Ready
@@ -241,6 +276,17 @@ impl Letter {
                         document.markdown.push_str(" Anna Petrova signed.")
                     })
                     .unwrap();
+            }
+            Scenario::ChangedElsewhere => {
+                store
+                    .update_document(&self.id, |document| {
+                        document.markdown.push_str(" Clara Moss signed.")
+                    })
+                    .unwrap();
+                assert_eq!(
+                    store.readiness(&self.id).unwrap(),
+                    mdoc_vault::Readiness::ChangedSinceReview
+                );
             }
             Scenario::NameOnlyTheVaultKnows => {
                 store
