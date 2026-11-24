@@ -13,7 +13,9 @@ use mdoc_store::{
     document::Document,
     document_id::{DocumentId, VaultId},
 };
-use mdoc_vault::{DocumentOrigin, MoveUndo, NewDocument, ProjectDocuments, SourceKind};
+use mdoc_vault::{
+    DocumentOrigin, MoveUndo, NewDocument, ProjectDocuments, ReviewCounts, SourceKind,
+};
 
 /// One autosave, of the text a document showed when it was queued.
 pub(super) enum Write {
@@ -30,6 +32,8 @@ pub(super) enum Write {
         names: Box<Names>,
         /// Scanned, and no proposals left: its text is Ready.
         ready: bool,
+        /// What its review counts now, for lists without a live view.
+        counts: Option<ReviewCounts>,
     },
     /// The Project the target names, as the window holds it then.
     Project,
@@ -85,6 +89,7 @@ enum Job {
         notes: Option<Notes>,
         names: Box<Names>,
         ready: bool,
+        counts: Option<ReviewCounts>,
     },
     Project(Box<mdoc_vault::Project>),
 }
@@ -369,6 +374,7 @@ impl Workspace {
                 notes,
                 names,
                 ready,
+                counts,
             } => Job::Vault {
                 markdown,
                 title,
@@ -376,6 +382,7 @@ impl Workspace {
                 notes,
                 names,
                 ready,
+                counts,
             },
         };
         let vault = self.vault.vault().cloned();
@@ -607,6 +614,7 @@ impl Workspace {
             notes,
             names,
             ready,
+            counts,
         } = write
         else {
             return Ok(());
@@ -619,6 +627,7 @@ impl Workspace {
             notes,
             names,
             ready,
+            counts,
         };
         save_vault(vault, &document, job)?;
         view.update(cx, |view, cx| {
@@ -659,6 +668,13 @@ fn vault_write(
     cx: &gpui::App,
 ) -> Write {
     let names = view.pii.review();
+    // Proposals left as the window counts them (`remaining`), so Home and
+    // the Project page say Needs review once the view is gone.
+    let counts = review.as_ref().map(|_| ReviewCounts {
+        proposed: names.remaining() as u64,
+        replaced: names.applied().len() as u64,
+        kept: names.kept_mentions().len() as u64,
+    });
     Write::Vault {
         title: view
             .session
@@ -677,6 +693,7 @@ fn vault_write(
             not_names: names.not_a_name_pairs(),
         }),
         ready: super::shelf_source::ready(view, cx),
+        counts,
     }
 }
 
@@ -689,6 +706,7 @@ fn save_vault(vault: &mdoc_vault::Vault, id: &VaultId, job: Job) -> Result<(), S
         notes,
         names,
         ready,
+        counts,
     } = job
     else {
         return Ok(());
@@ -699,8 +717,8 @@ fn save_vault(vault: &mdoc_vault::Vault, id: &VaultId, job: Job) -> Result<(), S
             // Its text is written: it opens as text from now on.
             document.unconverted = false;
             document.review = review.map(|review| *review);
-            // Counted from the review it replaces: lists count it again.
-            document.counts = None;
+            // Counted from the review it saves; none without one.
+            document.counts = counts;
             if let (Some(notes), Some(original)) = (notes, document.original.as_mut()) {
                 original.info.import_warning = notes.warning;
                 original.info.left_out = notes.left_out;
