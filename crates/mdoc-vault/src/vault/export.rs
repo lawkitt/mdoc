@@ -45,7 +45,8 @@ pub struct Exported {
 impl Vault {
     /// Write Project `id`'s documents into a new folder inside `into`,
     /// which must lie outside the Vault. A pasted or new document has no
-    /// original; one whose conversion never finished has no Markdown.
+    /// original; one whose conversion never finished has no Markdown, and
+    /// one whose text was cleared since has an empty one.
     pub fn export_project(&self, id: &str, into: &Path) -> Result<Exported, VaultError> {
         let project = self.project(id)?;
         // Checked before anything is created, whatever alias names it.
@@ -71,9 +72,11 @@ impl Vault {
                     return Ok(false);
                 }
                 // Its Markdown and its notes take one stem together, " 2"
-                // and all, so neither pairs with another document's.
+                // and all, so neither pairs with another document's. Only a
+                // conversion that never finished has no Markdown; a text its
+                // user cleared, or an empty text file, is written empty.
                 let mut texts: Vec<(&str, &str)> = Vec::new();
-                if !document.markdown.is_empty() || document.original.is_none() {
+                if !document.pending_conversion() || text_source(&document) {
                     texts.push((".md", &document.markdown));
                 }
                 if !document.notes.trim().is_empty() {
@@ -111,6 +114,17 @@ impl Vault {
         }
         Ok(exported)
     }
+}
+
+/// A Markdown or plain text source is its own text, with no conversion to
+/// wait for.
+fn text_source(document: &crate::Document) -> bool {
+    (document.original.as_ref()).is_some_and(|original| {
+        let (_, extension) = split_name(&original.info.file_name);
+        [".md", ".markdown", ".mdown", ".txt"]
+            .iter()
+            .any(|text| extension.eq_ignore_ascii_case(text))
+    })
 }
 
 /// Names taken in one folder, compared ignoring case as Windows and macOS

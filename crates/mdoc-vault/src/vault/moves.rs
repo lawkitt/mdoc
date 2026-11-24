@@ -129,6 +129,28 @@ impl Vault {
     /// as it may be in the Project; one that never will (another key,
     /// damaged) is passed over.
     pub fn delete_project(&self, id: &str, documents: ProjectDocuments) -> Result<(), VaultError> {
+        self.delete_project_of(id, documents, None).map(|_| ())
+    }
+
+    /// [`Self::delete_project`], only while the Project's Documents are
+    /// still `members`, the ones the user was asked about: compared under
+    /// the write lock, so a Document filed in meanwhile is never deleted
+    /// unasked. `Ok(false)` when they differ, and nothing is changed.
+    pub fn delete_project_with(
+        &self,
+        id: &str,
+        documents: ProjectDocuments,
+        members: &[String],
+    ) -> Result<bool, VaultError> {
+        self.delete_project_of(id, documents, Some(members))
+    }
+
+    fn delete_project_of(
+        &self,
+        id: &str,
+        documents: ProjectDocuments,
+        members: Option<&[String]>,
+    ) -> Result<bool, VaultError> {
         if !is_id(id) {
             return Err(VaultError::InvalidId);
         }
@@ -141,6 +163,17 @@ impl Vault {
             match self.load_record::<Document>(&document) {
                 Err(VaultError::Io(error)) => return Err(VaultError::Io(error)),
                 _ => continue,
+            }
+        }
+        if let Some(members) = members {
+            let mut now: Vec<String> = (self.documents_in(Some(id)).into_iter())
+                .map(|summary| summary.id)
+                .collect();
+            let mut asked = members.to_vec();
+            now.sort();
+            asked.sort();
+            if now != asked {
+                return Ok(false);
             }
         }
         for document in self.documents_in(Some(id)) {
@@ -156,7 +189,8 @@ impl Vault {
         self.delete_replies_of(&lock, &ReplyOwner::Project(id.to_string()))?;
         self.check_alive()?;
         super::remove_sealed(&crate::manifest::project_path(&self.root, id))?;
-        self.forget_deleted::<Project>(id)
+        self.forget_deleted::<Project>(id)?;
+        Ok(true)
     }
 
     fn move_locked(

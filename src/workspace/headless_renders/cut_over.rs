@@ -140,9 +140,11 @@ fn restart(d: &mut Driver, vault: &Path, profile: &Path) -> Result<()> {
     d.change({
         let project = project.clone();
         move |w, window, cx| {
+            let members = w.project_members(&project);
             w.forget_project(
                 &project,
                 mdoc_vault::ProjectDocuments::MoveToUnfiled,
+                members,
                 window,
                 cx,
             )

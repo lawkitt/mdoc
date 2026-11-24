@@ -58,3 +58,108 @@ fn export_project_writes_the_project_into_the_picked_folder(cx: &mut TestAppCont
     let notice = cx.update(|_, cx| tabs.read(cx).notice_text()).unwrap();
     assert!(notice.contains("Vault's own folder"), "{notice}");
 }
+
+/// Review of #1145 (P2-8): an open member whose save fails is not
+/// exported as its older revision: nothing is exported, and the notice
+/// names it.
+#[gpui::test]
+fn export_project_waits_for_its_members_saves_to_succeed(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    // The Vault stops at the next Document write, as a full disk would.
+    let fail = Arc::new(AtomicBool::new(false));
+    let root = dir.path().join("vault");
+    let hook: mdoc_vault::FaultHook = {
+        let fail = fail.clone();
+        Arc::new(move |step| {
+            if fail.load(Ordering::SeqCst) && step.kind == mdoc_vault::ObjectKind::Document {
+                mdoc_vault::Fault::Crash
+            } else {
+                mdoc_vault::Fault::Continue
+            }
+        })
+    };
+    let vault = mdoc_vault::Vault::open(&root, &[3; 32]).unwrap();
+    let project = vault
+        .create_project(NewProject {
+            name: "Lease".into(),
+            ..NewProject::default()
+        })
+        .unwrap();
+    let letter = vault
+        .create_document(NewDocument {
+            project: Some(project.id.clone()),
+            title: "Letter".into(),
+            source_kind: SourceKind::Text,
+            origin: DocumentOrigin::Ordinary,
+            markdown: "Dear landlord".into(),
+        })
+        .unwrap();
+    drop(vault);
+    let (tabs, cx) = boot_home_with(cx, Session::default(), move |tabs, _, _| {
+        tabs.use_vault(mdoc_vault::Vault::open_with_hook(root, &[3; 32], hook).unwrap())
+    });
+    let id = mdoc_store::document_id::VaultId::parse(&letter.id).unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_vault_document(id, window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        window.focus(&view.editor.read(cx).focus_handle(cx), cx)
+    });
+    fail.store(true, Ordering::SeqCst);
+    cx.simulate_input("New text. ");
+    // Its save is the export's own, not a pause's later one.
+    view.update(cx, |view, _| view.cancel_autosave());
+    let picked = tempfile::tempdir().unwrap();
+    let project_id = project.id.clone();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.export_project(project_id, window, cx)
+    });
+    let into = picked.path().to_path_buf();
+    cx.simulate_path_prompt_response(move |_| Some(vec![into]));
+    for _ in 0..10 {
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(100));
+        cx.run_until_parked();
+    }
+    let notice = cx.update(|_, cx| tabs.read(cx).notice_text()).unwrap();
+    assert!(
+        notice.starts_with("Could not export \u{201c}Lease\u{201d}: \u{201c}"),
+        "{notice}"
+    );
+    assert!(notice.ends_with("Nothing was exported."), "{notice}");
+    assert!(!picked.path().join("Lease").exists());
+}
+
+/// Review of #1150: a Project save that failed is tried again by Export
+/// Project, which then exports.
+#[gpui::test]
+fn export_project_retries_a_failed_project_save(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home_with(cx, Session::default(), |tabs, _, _| tabs.use_temp_vault());
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault()).unwrap();
+    let project = vault
+        .create_project(NewProject {
+            name: "Lease".into(),
+            ..NewProject::default()
+        })
+        .unwrap();
+    tabs.update_in(cx, |tabs, _, cx| {
+        tabs.load_projects(cx);
+        // As a save of its names that failed leaves it.
+        tabs.project_ui.mark_unwritten(&project.id);
+    });
+    let picked = tempfile::tempdir().unwrap();
+    let id = project.id.clone();
+    tabs.update_in(cx, |tabs, window, cx| tabs.export_project(id, window, cx));
+    let into = picked.path().to_path_buf();
+    cx.simulate_path_prompt_response(move |_| Some(vec![into]));
+    for _ in 0..10 {
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(100));
+        cx.run_until_parked();
+    }
+    let notice = cx.update(|_, cx| tabs.read(cx).notice_text()).unwrap();
+    assert!(notice.starts_with("Exported 0 documents"), "{notice}");
+    assert!(picked.path().join("Lease").exists());
+}

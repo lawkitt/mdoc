@@ -78,6 +78,61 @@ pub(super) fn repeated_import(d: &mut Driver, folder: &Path) -> Result<()> {
     d.key("escape")
 }
 
+/// A converted document whose original is gone: its saved Markdown opens,
+/// and the Source pane beside it says why it shows nothing. The tab closes
+/// after.
+pub(super) fn original_missing(d: &mut Driver) -> Result<()> {
+    let id = d.change(|w, _, _| -> Result<mdoc_store::document_id::VaultId> {
+        let vault = w.vault.vault().ok_or("the theme's Vault")?.clone();
+        let new = mdoc_vault::NewDocument {
+            project: None,
+            title: "Lease extension".into(),
+            source_kind: mdoc_vault::SourceKind::Pdf,
+            origin: mdoc_vault::DocumentOrigin::Ordinary,
+            markdown: "# Lease extension\n\nThe term is extended to 31 December, on the \
+                       terms of the original lease.\n"
+                .into(),
+        };
+        let info = mdoc_vault::OriginalInfo {
+            file_name: "Lease extension.pdf".into(),
+            ..mdoc_vault::OriginalInfo::default()
+        };
+        let document = (vault.import_document(new, &b"%PDF-1.4\n%%EOF\n"[..], info))
+            .map_err(|e| e.to_string())?;
+        // Gone, as a damaged or deleted file would be.
+        let original = (vault.root().join("docs").join(&document.id)).join("original.enc");
+        std::fs::remove_file(original).map_err(|e| e.to_string())?;
+        mdoc_store::document_id::VaultId::parse(&document.id).ok_or("the document's id".into())
+    })??;
+    d.change({
+        let id = id.clone();
+        move |w, window, cx| w.open_vault_document(id, window, cx)
+    })?;
+    // Loaded off the main thread: give it real time.
+    let mut loaded = false;
+    for _ in 0..600 {
+        d.settle()?;
+        loaded = d.change(|w, _, cx| {
+            (w.active_view()).is_some_and(|view| {
+                let view = view.read(cx);
+                view.lifecycle.ready() && view.preview.failed()
+            })
+        })?;
+        if loaded {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    if !loaded {
+        return Err("timed out waiting for the document".into());
+    }
+    d.capture("document-original-missing")?;
+    d.change(|w, window, cx| {
+        let tab = w.tabs.active();
+        w.close_tab(tab, window, cx);
+    })
+}
+
 /// Settle until `done` holds, for up to a minute of real time.
 pub(super) fn wait_until(
     d: &mut Driver,

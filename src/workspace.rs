@@ -129,6 +129,9 @@ pub(super) enum TabEvent {
     Save(SaveEvent),
     Project(ProjectEvent),
     Reply(ReplyEvent),
+    /// Copy for AI, from the Share tab, the menu or its shortcut: the
+    /// window checks it as the shelf does before anything is copied.
+    CopyForAi,
     ToggleTheme,
     /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
     /// Source follows and Settings keeps it.
@@ -340,6 +343,10 @@ pub(super) struct Workspace {
     /// Views whose last write failed: their edit is in no file, so eviction
     /// keeps them.
     unsaved: std::collections::HashSet<u64>,
+    /// The tab whose Copy for AI waits for its writes to land before the
+    /// Vault's outbound check runs, with the clipboard's text when it was
+    /// asked.
+    copy_for_ai_waiting: Option<(u64, Option<String>)>,
     /// One admission at a time, so a repeat waits for the import before it.
     admitting: bool,
     admit_queue: std::collections::VecDeque<(Vec<PathBuf>, Option<String>)>,
@@ -570,6 +577,7 @@ impl Workspace {
             closing_after_write: Default::default(),
             evicting: Default::default(),
             unsaved: Default::default(),
+            copy_for_ai_waiting: None,
             admitting: false,
             admit_queue: Default::default(),
             // Tests name their own; they never touch the real cache.
@@ -1214,7 +1222,9 @@ impl Workspace {
                             view.session.replace(document);
                             let mut copy = None;
                             let mut names = None;
+                            let mut source_error = None;
                             if let Some(vault) = vault {
+                                source_error = vault.source_error;
                                 names = vault.names;
                                 view.load_notes(loading.as_str(), vault.notes, notes_writes, cx);
                                 view.from_reply = (vault.from_reply).map(|id| {
@@ -1284,6 +1294,9 @@ impl Workspace {
                                 && let Some(path) = attachment
                             {
                                 view.open_path(path, window, cx);
+                            }
+                            if let Some(error) = source_error {
+                                view.preview.unavailable(error);
                             }
                             if view.active && !dialog {
                                 window.focus(&view.editor.read(cx).focus_handle(cx), cx);
@@ -1527,7 +1540,8 @@ impl Workspace {
     }
 
     /// Open `paths`, supported or not, as Vault documents: Unfiled, or in
-    /// Project `project`. A file open already comes to the front.
+    /// Project `project`. A file open already, unchanged, comes to the
+    /// front.
     fn finish_open(
         &mut self,
         paths: Vec<(PathBuf, bool)>,
@@ -1541,16 +1555,10 @@ impl Workspace {
         let (supported, unsupported): (Vec<_>, Vec<_>) =
             paths.into_iter().partition(|(_, supported)| *supported);
         self.post_unsupported(unsupported.into_iter().map(|(path, _)| path));
-        let (open, new): (Vec<_>, Vec<_>) = supported
-            .into_iter()
-            .map(|(path, _)| path)
-            .partition(|path| self.open_tab_for(path, cx).is_some());
-        if new.is_empty()
-            && let Some(id) = open.first().and_then(|path| self.open_tab_for(path, cx))
-        {
-            self.activate(id, window, cx);
-        }
-        self.admit(new, project, window, cx);
+        // Each is hashed first: a file open in a tab comes to the front only
+        // while its bytes are the ones that tab imported (`intake`).
+        let paths = supported.into_iter().map(|(path, _)| path).collect();
+        self.admit(paths, project, window, cx);
         cx.notify();
     }
 
@@ -1653,6 +1661,7 @@ impl Workspace {
                 self.dismiss_project_hint(id, from, into, cx)
             }
             TabEvent::Project(ProjectEvent::MoveToNew) => self.move_to_new_project(id, window, cx),
+            TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
             TabEvent::SourceDisplay(display) => {
                 let display = *display;
@@ -1944,6 +1953,12 @@ impl Workspace {
             || self.session_writer.writing()
             || self.document_writer.busy()
         {
+            return;
+        }
+        // Editing stays open while the last writes run: a keystroke since
+        // they were queued is written before the window closes, and this
+        // runs again once that write ends (a failed one cancels the quit).
+        if self.autosave_late_edits(window, cx) {
             return;
         }
         // The tab list as it stands now that every document has its id.
@@ -2822,6 +2837,8 @@ struct VaultLoaded {
     follows: bool,
     /// Its original's viewing copy, when it has a Source to show.
     copy: Option<PathBuf>,
+    /// Why its original didn't open, shown in the Source pane.
+    source_error: Option<String>,
     /// Admitted and not converted yet.
     unconverted: bool,
     warning: Option<String>,
@@ -2854,13 +2871,34 @@ fn load_from_vault(
     let original = (stored.original.as_ref()).filter(|original| {
         intake::needs_conversion(std::path::Path::new(&original.info.file_name))
     });
-    let copy = match (original, viewing) {
-        (Some(original), Some(dir)) => Some(
-            vault
-                .copy_original_to(id.as_str(), &dir, &original.info.file_name)
-                .map_err(|error| format!("Could not open the document's source. {error}"))?,
-        ),
-        _ => None,
+    // A source that doesn't open leaves its saved text and review to show,
+    // with the error where the Source would be; only a document with
+    // nothing else to show fails.
+    let (copy, source_error) = match (original, viewing) {
+        (Some(original), Some(dir)) => {
+            match vault.copy_original_to(id.as_str(), &dir, &original.info.file_name) {
+                Ok(copy) => (Some(copy), None),
+                Err(error) if stored.pending_conversion() => {
+                    return Err(format!("Could not open the document's source. {error}"));
+                }
+                Err(mdoc_vault::VaultError::NotFound { .. }) => (
+                    None,
+                    Some(
+                        "The original file is missing from the Vault, so it can't be shown. \
+                         The Markdown is not affected."
+                            .to_string(),
+                    ),
+                ),
+                Err(error) => (
+                    None,
+                    Some(format!(
+                        "The original file could not be opened, so it can't be shown. The \
+                         Markdown is not affected. {error}"
+                    )),
+                ),
+            }
+        }
+        _ => (None, None),
     };
     // Admitted and its text never written, though a move may have changed
     // its place: a text emptied by its user stays so.
@@ -2884,6 +2922,7 @@ fn load_from_vault(
             title: stored.title,
             follows: stored.origin == mdoc_vault::DocumentOrigin::New,
             copy,
+            source_error,
             unconverted,
             warning,
             left_out,

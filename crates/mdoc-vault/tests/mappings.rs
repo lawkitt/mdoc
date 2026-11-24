@@ -1337,6 +1337,36 @@ fn a_crash_moving_into_a_new_project_loses_nothing() {
 
 /// A crash part way through deleting a Project keeps it with the
 /// Documents not yet moved; deleting again finishes.
+/// Review of #1145 (P1-2): a delete confirmed for some Documents deletes
+/// nothing once another is filed in, and goes ahead with the ones asked
+/// about.
+#[test]
+fn a_project_delete_goes_only_with_the_documents_it_asked_about() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let names = [person("PERSON_1", &["Ann Lee"])];
+    let (project, first) = saved(&vault, "PERSON_1 wrote.", &names, "Case");
+    let asked = vec![first.clone()];
+    // Filed in while the question was up, as an import finishing would.
+    let late = new_document(&vault, Some(&project), "Late", "PERSON_1 called.");
+    let deleted = vault
+        .delete_project_with(&project, ProjectDocuments::Delete, &asked)
+        .unwrap();
+    assert!(!deleted);
+    assert!(vault.project(&project).is_ok());
+    let mut both = vec![first.clone(), late.clone()];
+    both.sort();
+    assert_eq!(ids_in(&vault, Some(&project)), both);
+    // Asked again about both: they go with it.
+    assert!(
+        vault
+            .delete_project_with(&project, ProjectDocuments::Delete, &[late, first])
+            .unwrap()
+    );
+    assert!(vault.projects().is_empty());
+    assert!(ids_in(&vault, None).is_empty());
+}
+
 #[test]
 fn a_crash_deleting_a_project_is_finished_by_deleting_again() {
     let folder = Folder::new();

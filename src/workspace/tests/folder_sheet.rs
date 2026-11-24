@@ -314,6 +314,33 @@ fn an_open_unfiled_file_moves_into_the_new_project(cx: &mut TestAppContext) {
     assert_eq!(tab_projects(&tabs, cx), vec![Some(project); 2]);
 }
 
+/// Review of #1150: a file replaced on disk since its tab imported it is
+/// new bytes. Add to a Project imports them; the old Unfiled document is
+/// not moved in beside them.
+#[gpui::test]
+fn a_replaced_open_file_is_imported_not_moved(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = folder(dir.path(), "Matter", &["a.md"]);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    drop_paths(&tabs, cx, vec![path.join("a.md")]);
+    let old = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    std::fs::write(path.join("a.md"), "Replaced text").unwrap();
+    drop_paths(&tabs, cx, vec![path]);
+    click_toolbar(cx, "folder-primary");
+    load_all(&tabs, cx);
+    let project = cx.update(|_, cx| tabs.read(cx).projects.summaries()[0].id.clone());
+    let vault = vault(&tabs, cx);
+    let filed: Vec<String> = (vault.documents_in(Some(&project)).into_iter())
+        .map(|summary| vault.document(&summary.id).unwrap().markdown)
+        .collect();
+    assert_eq!(filed, ["Replaced text"]);
+    let unfiled: Vec<String> = (vault.documents_in(None).into_iter())
+        .map(|summary| vault.document(&summary.id).unwrap().markdown)
+        .collect();
+    assert_eq!(unfiled, ["Text of a.md"], "the old import stays Unfiled");
+    assert!(cx.update(|_, cx| tabs.read(cx).tabs.contains(old)));
+}
+
 #[gpui::test]
 fn an_open_file_in_another_project_stays_there(cx: &mut TestAppContext) {
     use mdoc_pii::Category::Person;

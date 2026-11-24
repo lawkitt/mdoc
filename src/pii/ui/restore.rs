@@ -61,8 +61,9 @@ impl DocumentView {
     pub(crate) fn names_not_replaced(&self, cx: &App) -> usize {
         RestoreMap::new(self.known_identities()).known_names(self.editor.read(cx).text())
     }
-    /// What Copy for AI copies: the current text after the placeholder note.
-    /// The shelf copies and drags the same bytes.
+    /// The current text after the placeholder note: what Copy for AI, the
+    /// shelf and a drag hand out once the Vault's check of it passes.
+    #[cfg(test)]
     pub(crate) fn text_for_ai(&self, cx: &App) -> String {
         let aliases = self
             .pii
@@ -72,15 +73,27 @@ impl DocumentView {
             .map(|applied| applied.step.after.as_ref());
         mdoc_pii::handoff::for_ai(self.editor.read(cx).text(), aliases)
     }
+    /// Copy for AI (the Share tab, the menu, the shortcut): the window
+    /// checks the text as the shelf does, against the names its Project
+    /// holds now, and copies only what the Vault's outbound check passes
+    /// (#1091 Decision 19). Copy Markdown stays the deliberate raw copy.
     pub(crate) fn copy_for_ai(&mut self, _: &CopyForAi, _: &mut Window, cx: &mut Context<Self>) {
         if !self.can_copy_markdown() {
             return;
         }
-        let copied = self.text_for_ai(cx);
-        cx.write_to_clipboard(gpui::ClipboardItem::new_string(copied));
+        cx.emit(crate::workspace::TabEvent::CopyForAi);
+    }
+    /// The outbound check passed: `text` is what leaves.
+    pub(crate) fn copy_checked_for_ai(&mut self, text: String, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
         self.copied_for_ai = true;
         self.copied_reply = false;
         self.show_copy_feedback(cx);
+    }
+    /// The outbound check refused it: nothing is copied, and `why` says so.
+    pub(crate) fn copy_for_ai_refused(&mut self, why: String, cx: &mut Context<Self>) {
+        self.error = Some(why);
+        cx.notify();
     }
     /// Replace the clipboard text with this tab's aliases:
     /// the Project's names, or the tab's own mapping. Exact known names only.

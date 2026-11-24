@@ -34,6 +34,33 @@ fn a_quit_writes_every_draft_and_asks_nothing(cx: &mut TestAppContext) {
     assert_eq!(texts, ["first draft", "second draft"]);
 }
 
+/// Review of #1145 (P2-4): a keystroke accepted while a quit's last
+/// writes run is written too before the window closes.
+#[gpui::test]
+fn a_keystroke_during_the_quits_last_write_is_written(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
+    cx.simulate_input("first");
+    wait(cx, 1000);
+    assert_eq!(vault.documents().len(), 1, "created by its first save");
+    cx.simulate_input(" second");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.quit(window, cx);
+        // The quit's write of " second" is queued, not run yet.
+        let view = tabs.active_view().unwrap();
+        view.update(cx, |view, cx| {
+            view.editor.update(cx, |editor, cx| {
+                let more = format!("{} third", editor.text());
+                editor.set_text(more, cx);
+            })
+        });
+    });
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    let id = &vault.documents()[0].id;
+    assert_eq!(vault.document(id).unwrap().markdown, "first second third");
+}
+
 #[gpui::test]
 fn production_shell_queues_startup_opens_and_a_quit_writes_the_edit(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
