@@ -17,6 +17,7 @@ import io.github.lawkitt.mdoc.core.JobObserver
 import io.github.lawkitt.mdoc.core.ProjectId
 import io.github.lawkitt.mdoc.core.SourceRange
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -126,23 +127,25 @@ class NotesPromoteTest {
         compose.sidebar("Harbour")
         tap("Replies")
         tap("Reply to Lease")
-        compose.waitForText("Call Maya Bennett back.", substring = true)
+        // The restored text is drawn in a text view: the core says what the document holds.
+        compose.waitForText("1 value restored")
         tap("Promote to Document")
 
         compose.waitForShown(hasTestTag("from-reply-line") and hasText("From AI reply"))
         val promoted = vault.documents().single { it.title != "Lease" }
         assertEquals("in the reply's Project", harbour.raw, vault.document(promoted.id).projectId)
-        compose.waitForText("Call Maya Bennett back.", substring = true)
+        assertTrue("the real name back", documents.session(DocumentId(promoted.id)).snapshot().markdown.contains("Call Maya Bennett back."))
 
         moreOptions()
         tap("From AI reply")
-        compose.waitForText("Reply to Lease")
+        compose.waitForText("1 value restored")
         compose.waitForShown(hasText("Promote to Document") and hasClickAction())
         compose.back()
+        compose.waitUntil(15_000) { !compose.exists(hasText("1 value restored")) }
 
         // Deleted elsewhere: the document, opened again, shows it gone.
         vault.deleteReply(reply.id)
-        reload()
+        compose.back()
         compose.openDocument(promoted.title)
         compose.waitForShown(hasTestTag("from-reply-line") and hasText("From a deleted AI reply"))
         moreOptions()
@@ -158,7 +161,7 @@ class NotesPromoteTest {
         reload()
         compose.openDocument("Letter")
         tap("Reply")
-        compose.waitForText("Thank Maya Bennett.", substring = true)
+        compose.waitForText("1 value restored")
         tap("Promote to Document")
         compose.waitForShown(hasTestTag("from-reply-line") and hasText("From AI reply"))
         assertEquals("the letter and the promoted reply", 2, vault.documents().size)
