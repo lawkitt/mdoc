@@ -216,9 +216,16 @@ fn export_writes_notes_beside_their_document_only_when_there_are_some() {
         ]
     );
     let read = |name: &str| std::fs::read_to_string(exported.folder.join(name)).unwrap();
-    assert_eq!(read("Lease.md"), "One.");
-    assert_eq!(read("Lease.notes.md"), "First's notes.");
-    assert_eq!(read("Lease 2.notes.md"), "Second's notes.");
+    // Created in the same second, the two Leases take " 2" in id order:
+    // whichever it is, its notes are paired with it.
+    let notes_of = |text: &str| match text {
+        "One." => "First's notes.",
+        "Two." => "Second's notes.",
+        other => panic!("unexpected text {other:?}"),
+    };
+    assert_eq!(read("Lease.notes.md"), notes_of(&read("Lease.md")));
+    assert_eq!(read("Lease 2.notes.md"), notes_of(&read("Lease 2.md")));
+    assert_ne!(read("Lease.md"), read("Lease 2.md"));
 }
 
 /// A Project's Reply promotes into the Project: its text restored with
