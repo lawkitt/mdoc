@@ -1,7 +1,7 @@
 //! Accepted document identity and import provenance. Preview identity is separate:
 //! opening Markdown does not close a reference PDF.
 use crate::document::Document;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Default)]
 pub struct DocumentSession {
@@ -62,13 +62,6 @@ impl DocumentSession {
             .as_ref()
             .map(|path| path.with_extension("md"))
             .and_then(|path| path.file_name()?.to_str().map(str::to_owned))
-            .or_else(|| {
-                self.document
-                    .path
-                    .as_ref()
-                    .and_then(|path| path.file_name())
-                    .map(|name| name.to_string_lossy().into_owned())
-            })
             .or_else(|| self.name.clone())
             .unwrap_or_else(|| "Untitled.md".into())
     }
@@ -81,10 +74,8 @@ impl DocumentSession {
             return name.clone();
         }
         let suggested = self.source.as_ref().map(|path| path.with_extension("md"));
-        self.document
-            .path
+        suggested
             .as_deref()
-            .or(suggested.as_deref())
             .and_then(|path| path.file_name())
             .map(|name| name.to_string_lossy().into_owned())
             .or_else(|| self.name.clone())
@@ -92,24 +83,22 @@ impl DocumentSession {
     }
 
     pub fn directory(&self) -> PathBuf {
-        if self.document.path.is_none()
-            && let Some(parent) = self.source.as_ref().and_then(|path| path.parent())
-        {
+        if let Some(parent) = self.source.as_ref().and_then(|path| path.parent()) {
             return parent.to_path_buf();
         }
-        self.document.directory()
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     }
 
     /// Where Export Markdown starts (#180): the document's folder, or its
     /// source's for a conversion. A document with neither (Untitled, pasted
-    /// text, an AI reply), or whose folder is gone, starts in the first of
-    /// `recent_folders` that exists (Recents, most recent first), then
-    /// Documents, then home: never the process's working directory, which
-    /// for a launched app is its install folder.
-    pub fn export_directory(&self, recent_folders: &[PathBuf]) -> PathBuf {
-        let own = (self.document.path.is_some() || self.source.is_some()).then(|| self.directory());
+    /// text, an AI reply), or whose folder is gone, starts in `last_folder`
+    /// (the folder of the last file imported or exported this run) when it
+    /// exists, then Documents, then home: never the process's working
+    /// directory, which for a launched app is its install folder.
+    pub fn export_directory(&self, last_folder: Option<&Path>) -> PathBuf {
+        let own = self.source.is_some().then(|| self.directory());
         own.into_iter()
-            .chain(recent_folders.iter().cloned())
+            .chain(last_folder.map(Path::to_path_buf))
             .chain(dirs::document_dir())
             .chain(dirs::home_dir())
             .find(|dir| dir.is_dir())
@@ -121,7 +110,7 @@ impl DocumentSession {
 mod tests {
     use super::*;
 
-    /// Where Export Markdown starts with no folder of its own and no Recents.
+    /// Where Export Markdown starts with no folder of its own.
     fn fallback() -> PathBuf {
         dirs::document_dir()
             .filter(|dir| dir.is_dir())
@@ -130,42 +119,36 @@ mod tests {
     }
 
     #[test]
-    fn export_starts_in_the_document_or_source_folder() {
+    fn a_conversion_exports_from_its_source_folder() {
         let dir = tempfile::tempdir().unwrap();
-        let recent = tempfile::tempdir().unwrap();
-        let recents = [recent.path().to_path_buf()];
+        let last = tempfile::tempdir().unwrap();
         let mut session = DocumentSession::default();
         session.import(dir.path().join("scan.pdf"), None);
-        assert_eq!(session.export_directory(&recents), dir.path());
-        let note = dir.path().join("note.md");
-        std::fs::write(&note, "text").unwrap();
-        session.replace(Document::open(note).unwrap());
-        assert_eq!(session.export_directory(&recents), dir.path());
+        assert_eq!(session.export_directory(Some(last.path())), dir.path());
     }
 
     #[test]
-    fn a_document_without_a_folder_exports_from_a_recent_folder_then_documents() {
-        let recent = tempfile::tempdir().unwrap();
-        let gone = recent.path().join("gone");
+    fn a_document_without_a_folder_exports_from_the_last_folder_then_documents() {
+        let last = tempfile::tempdir().unwrap();
+        let gone = last.path().join("gone");
         let session = DocumentSession::default();
-        let recents = [gone.clone(), recent.path().to_path_buf()];
-        assert_eq!(session.export_directory(&recents), recent.path());
-        assert_eq!(session.export_directory(&[gone]), fallback());
-        assert_eq!(session.export_directory(&[]), fallback());
+        assert_eq!(session.export_directory(Some(last.path())), last.path());
+        assert_eq!(session.export_directory(Some(&gone)), fallback());
+        assert_eq!(session.export_directory(None), fallback());
         assert_ne!(
-            session.export_directory(&[]),
+            session.export_directory(None),
             std::env::current_dir().unwrap()
         );
     }
 
     #[test]
-    fn a_conversion_whose_source_folder_is_gone_exports_from_a_recent_folder() {
+    fn a_conversion_whose_source_folder_is_gone_exports_from_the_last_folder() {
         let dir = tempfile::tempdir().unwrap();
-        let recent = tempfile::tempdir().unwrap();
+        let last = tempfile::tempdir().unwrap();
         let mut session = DocumentSession::default();
         session.import(dir.path().join("gone").join("scan.pdf"), None);
-        let recents = [recent.path().to_path_buf()];
-        assert_eq!(session.export_directory(&recents), recent.path());
+        assert_eq!(session.export_directory(Some(last.path())), last.path());
+        assert_eq!(session.export_directory(None), fallback());
     }
 
     #[test]

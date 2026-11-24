@@ -40,11 +40,10 @@ impl ThemeChoice {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TabRecord {
-    /// The Vault document this tab shows; such a tab keeps no path, name or
-    /// attachment.
+    /// The Vault document this tab shows; such a tab keeps no name or
+    /// attachment. A tab names a Vault document, a source, or nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub document: Option<VaultId>,
-    pub markdown: PathBuf,
     pub source_only: bool,
     pub blank: bool,
     pub blank_disposable: bool,
@@ -64,37 +63,24 @@ pub struct TabRecord {
 impl TabRecord {
     /// The document this tab names: none for a blank or a source tab.
     pub fn document(&self) -> Option<DocumentId> {
-        match &self.document {
-            Some(id) => Some(DocumentId::Vault(id.clone())),
-            None => self
-                .names_document()
-                .then(|| DocumentId::File(self.markdown.clone())),
-        }
+        self.document.clone().map(DocumentId::Vault)
     }
 
     /// Whether this tab names a document, without building its id.
     pub fn names_document(&self) -> bool {
-        self.document.is_some() || !self.markdown.as_os_str().is_empty()
+        self.document.is_some()
     }
 
     /// Whether both tabs name the same document.
     pub fn same_document(&self, other: &TabRecord) -> bool {
-        self.names_document() && self.document == other.document && self.markdown == other.markdown
+        self.names_document() && self.document == other.document
     }
 
     /// The tab names `document` from now on.
     pub fn set_document(&mut self, document: DocumentId) {
-        match document {
-            DocumentId::Vault(id) => {
-                self.document = Some(id);
-                self.markdown = PathBuf::new();
-                self.name = None;
-            }
-            DocumentId::File(path) => {
-                self.document = None;
-                self.markdown = path;
-            }
-        }
+        let DocumentId::Vault(id) = document;
+        self.document = Some(id);
+        self.name = None;
     }
 }
 
@@ -114,8 +100,9 @@ pub struct Session {
     pub theme_choice: ThemeChoice,
 }
 /// The session format: 2 names Vault documents by id. A version 1 session's
-/// file tabs are dropped on load, with no migration; their files stay on
-/// disk.
+/// tabs, but for blank ones, are dropped on load, with no migration; their
+/// files stay on disk. A tab that still names a Markdown file (a key serde
+/// ignores now) names nothing and is dropped too.
 pub const VERSION: u32 = 2;
 
 impl Default for Session {
@@ -163,22 +150,26 @@ pub fn load(path: &Path) -> io::Result<Session> {
     {
         return Err(io::Error::other("Invalid Project id in session"));
     }
+    // A file tab, from an earlier build, names nothing now: it goes, and
+    // the active tab is still the one it was, or the first.
+    let names = |tab: &TabRecord| tab.document.is_some() || tab.source_only || tab.blank;
+    let active = session.tabs.get(session.active).filter(|tab| names(tab));
+    session.active = active.map_or(0, |_| {
+        session.tabs[..session.active]
+            .iter()
+            .filter(|tab| names(tab))
+            .count()
+    });
+    session.tabs.retain(names);
     if session.tabs.iter().any(|tab| {
         !(if tab.document.is_some() {
-            !tab.source_only
-                && !tab.blank
-                && tab.markdown.as_os_str().is_empty()
-                && tab.attachment.is_none()
+            !tab.source_only && !tab.blank && tab.attachment.is_none()
         } else if tab.source_only {
-            tab.markdown.as_os_str().is_empty()
-                && tab
-                    .attachment
-                    .as_ref()
-                    .is_some_and(|path| path.is_absolute())
-        } else if tab.blank {
-            tab.markdown.as_os_str().is_empty() && tab.attachment.is_none()
+            tab.attachment
+                .as_ref()
+                .is_some_and(|path| path.is_absolute())
         } else {
-            tab.markdown.is_absolute()
+            tab.attachment.is_none()
         }) || tab
             .attachment
             .as_ref()
@@ -235,8 +226,7 @@ mod tests {
         let mut session = Session::default();
         session.tabs.push(TabRecord {
             document: None,
-            markdown: dir.path().join("note.md"),
-            source_only: false,
+            source_only: true,
             blank: false,
             blank_disposable: false,
             name: None,
@@ -326,43 +316,72 @@ mod tests {
             tab(&"AB".repeat(16), ""),
             tab("../../secret", ""),
             tab(&good[1..], ""),
-            tab(&good, &elsewhere),
         ] {
             std::fs::write(&path, &json).unwrap();
             assert!(load(&path).is_err(), "{json}");
         }
+        // A path beside a Vault id is a key no build reads now.
+        std::fs::write(&path, tab(&good, &elsewhere)).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(
+            loaded.tabs[0].document.as_ref().map(VaultId::as_str),
+            Some(&*good)
+        );
+    }
+
+    #[test]
+    fn a_file_tab_names_nothing_and_is_dropped_keeping_the_active_tab() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        let note = dir.path().join("note.md");
+        let good = "ab".repeat(16);
+        let json = format!(
+            r#"{{"version":2,"tabs":[{{"markdown":{note:?}}},{{"document":"{good}"}}],"active":1,"sidebar_visible":true}}"#,
+            note = note.display().to_string()
+        );
+        std::fs::write(&path, json).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded.tabs.len(), 1);
+        assert_eq!(
+            loaded.tabs[0].document.as_ref().map(VaultId::as_str),
+            Some(&*good)
+        );
+        assert_eq!(loaded.active, 0);
     }
 
     #[test]
     fn a_version_1_session_keeps_its_layout_but_not_its_file_tabs() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("session.json");
+        let blank = TabRecord {
+            blank: true,
+            name: Some("Untitled 2.md".into()),
+            ..TabRecord::default()
+        };
         let session = Session {
             version: 1,
             tabs: vec![
-                TabRecord {
-                    markdown: dir.path().join("note.md"),
-                    ..TabRecord::default()
-                },
                 TabRecord {
                     source_only: true,
                     attachment: Some(dir.path().join("scan.pdf")),
                     ..TabRecord::default()
                 },
-                TabRecord {
-                    blank: true,
-                    name: Some("Untitled 2.md".into()),
-                    ..TabRecord::default()
-                },
+                blank.clone(),
             ],
             active: 1,
             theme_choice: ThemeChoice::Dark,
             ..Session::default()
         };
-        save(&path, &session).unwrap();
+        // A version 1 file tab, as that build wrote it.
+        let mut json = serde_json::to_value(&session).unwrap();
+        json["tabs"].as_array_mut().unwrap().insert(
+            0,
+            serde_json::json!({"markdown": dir.path().join("note.md")}),
+        );
+        std::fs::write(&path, json.to_string()).unwrap();
         let loaded = load(&path).unwrap();
         assert_eq!(loaded.version, 2);
-        assert_eq!(loaded.tabs, vec![session.tabs[2].clone()]);
+        assert_eq!(loaded.tabs, vec![blank]);
         assert_eq!(loaded.active, 0);
         assert_eq!(loaded.theme_choice, ThemeChoice::Dark);
     }

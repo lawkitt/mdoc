@@ -93,8 +93,8 @@ in [CONTEXT.md](../../CONTEXT.md).
   with an mdoc User-Agent; it sends nothing but what the request itself
   carries.
 - There is no telemetry and no server endpoint.
-- Recents store paths only, never content; decision history and the menu
-  bar shelf never write document text to disk.
+- Decision history and the menu bar shelf never write document text to
+  disk.
 
 ## Crash reports
 

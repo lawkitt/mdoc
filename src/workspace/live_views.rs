@@ -6,7 +6,7 @@
 //! releases and focuses the documents.
 
 use mdoc_store::{document_id::DocumentId, session_store::TabRecord};
-use std::{collections::HashSet, path::PathBuf};
+use std::collections::HashSet;
 
 /// How many documents stay live for their undo and scroll.
 pub(super) const LIMIT: usize = 8;
@@ -35,8 +35,6 @@ pub(super) struct LiveView<V> {
     /// The document this view holds, for finding it again.
     document: Option<DocumentId>,
     view: Option<V>,
-    /// Last opened/saved path observed, independent of the capped recent list.
-    recent_path: Option<PathBuf>,
 }
 
 impl<V> LiveView<V> {
@@ -48,7 +46,6 @@ impl<V> LiveView<V> {
             record,
             document: None,
             view: None,
-            recent_path: None,
         }
     }
 
@@ -167,7 +164,6 @@ impl<V> LiveViews<V> {
             record,
             document,
             view: None,
-            recent_path: None,
         });
         id
     }
@@ -229,19 +225,6 @@ impl<V> LiveViews<V> {
     ) -> Option<DocumentId> {
         let tab = self.get_mut(id)?;
         std::mem::replace(&mut tab.document, document)
-    }
-
-    /// Tab `id` shows `path` now. Returns whether that is a different path
-    /// from the last one seen, so it counts as opened again.
-    pub(super) fn note_recent(&mut self, id: u64, path: Option<&PathBuf>) -> bool {
-        let Some(tab) = self.get_mut(id) else {
-            return false;
-        };
-        let opened = path != tab.recent_path.as_ref();
-        if opened {
-            tab.recent_path = path.cloned();
-        }
-        opened
     }
 
     /// Make `id` the active view, the most recent, and leave Home. False for
@@ -320,24 +303,23 @@ impl<V> LiveViews<V> {
 mod tests {
     use super::*;
 
-    fn file(path: &str) -> DocumentId {
-        DocumentId::File(path.into())
+    fn vault(hex: &str) -> DocumentId {
+        DocumentId::Vault(mdoc_store::document_id::VaultId::parse(&hex.repeat(16)).unwrap())
     }
 
-    fn markdown(path: &str) -> TabRecord {
-        TabRecord {
-            markdown: path.into(),
-            ..TabRecord::default()
-        }
+    fn named(hex: &str) -> TabRecord {
+        let mut record = TabRecord::default();
+        record.set_document(vault(hex));
+        record
     }
 
     #[test]
-    fn tabs_get_new_ids_in_order_and_markdown_names_their_document() {
+    fn tabs_get_new_ids_in_order_and_a_record_names_its_document() {
         let mut tabs = LiveViews::<u8>::default();
-        let a = tabs.push(markdown("/cases/a.md"));
+        let a = tabs.push(named("0a"));
         let b = tabs.push(TabRecord::default());
         assert!(b > a);
-        assert_eq!(tabs.get(a).unwrap().document(), Some(&file("/cases/a.md")));
+        assert_eq!(tabs.get(a).unwrap().document(), Some(&vault("0a")));
         assert_eq!(tabs.get(b).unwrap().document(), None);
         assert_eq!(tabs.get(a).unwrap().view(), None);
         tabs.open(a, 7);
@@ -392,17 +374,9 @@ mod tests {
         assert!(tabs.get(b).unwrap().record().blank_disposable);
         tabs.keep_blank(None);
         assert!(!tabs.get(b).unwrap().record().blank_disposable);
-        assert_eq!(tabs.set_document(a, Some(file("/cases/a.md"))), None);
-        assert_eq!(
-            tabs.set_document(a, Some(file("/cases/b.md"))),
-            Some(file("/cases/a.md"))
-        );
+        assert_eq!(tabs.set_document(a, Some(vault("0a"))), None);
+        assert_eq!(tabs.set_document(a, Some(vault("0b"))), Some(vault("0a")));
         assert_eq!(tabs.set_document(99, None), None);
-        let path = PathBuf::from("/cases/b.md");
-        assert!(tabs.note_recent(a, Some(&path)));
-        assert!(!tabs.note_recent(a, Some(&path)));
-        assert!(tabs.note_recent(a, None));
-        assert!(!tabs.note_recent(99, Some(&path)));
     }
 
     #[test]

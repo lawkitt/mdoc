@@ -460,7 +460,6 @@ fn paired_preview_hides_reopens_and_failed_replacement_preserves_attachment(
     cx.update(|_, cx| {
         assert!(!view.read(cx).preview.visible());
         assert_eq!(view.read(cx).preview.attachment(), Some(&pdf));
-        assert!(view.read(cx).session.document.path.is_none());
     });
     cx.dispatch_action(TogglePreview);
     cx.run_until_parked();
@@ -482,8 +481,7 @@ fn every_menu_item_reaches_a_handler_in_a_document(cx: &mut TestAppContext) {
     cx.update(|_, cx| crate::menus::install(cx));
     cx.simulate_input("alpha beta");
     cx.run_until_parked();
-    let recent = [std::path::PathBuf::from("/tmp/recent.md")];
-    for (name, action) in crate::menus::items(&recent) {
+    for (name, action) in crate::menus::items() {
         // In the window's focus path, or app-wide (Hide, Minimize).
         let available = cx.update(|window, cx| {
             window.is_action_available(action.as_ref(), cx)
@@ -493,33 +491,16 @@ fn every_menu_item_reaches_a_handler_in_a_document(cx: &mut TestAppContext) {
     }
 }
 
-/// File › Open Recent follows Recents: its rows open their file, and Clear
-/// Menu empties it and Recents (decision 10 of the UI polish grill).
-#[gpui::test]
-fn open_recent_follows_recents_and_clear_menu_empties_it(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let paths: Vec<_> = ["first.md", "second.md"]
-        .iter()
-        .map(|name| {
-            let path = dir.path().join(name);
-            std::fs::write(&path, *name).unwrap();
-            path
-        })
+/// Documents live in the Vault, so the File menu lists no recent files:
+/// opening a file again is Open…, an import (#1091 Decisions 6 and 7).
+#[test]
+fn the_file_menu_has_no_open_recent() {
+    let names: Vec<_> = crate::menus::items()
+        .into_iter()
+        .map(|(name, _)| name)
         .collect();
-    let (tabs, cx) = boot_home(cx, Session::default());
-    let titles =
-        |cx: &mut VisualTestContext| cx.update(|_, cx| crate::menus::open_recent_titles(cx));
-    assert_eq!(titles(cx), ["Clear Menu"]);
-    for path in &paths {
-        cx.dispatch_action(crate::workspace::OpenRecent(path.clone()));
-        cx.run_until_parked();
-    }
-    assert_eq!(tab_names(&tabs, cx), ["first", "second"]);
-    assert_eq!(titles(cx), ["second.md", "first.md", "Clear Menu"]);
-    cx.dispatch_action(crate::workspace::ClearRecentFiles);
-    cx.run_until_parked();
-    assert_eq!(titles(cx), ["Clear Menu"]);
-    cx.update(|_, cx| assert!(tabs.read(cx).shell.recents.files.is_empty()));
+    assert!(names.iter().any(|name| name == "Open…"));
+    assert!(!names.iter().any(|name| name == "Clear Menu"), "{names:?}");
 }
 
 #[gpui::test]
@@ -568,31 +549,32 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
         );
     }
     let dir = tempfile::tempdir().unwrap();
-    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let pdf = base.join("tests/fixtures/reference.pdf");
-    let docx = base.join("tests/fixtures/docx-preview/comments.docx");
+    let root = dir.path().join("vault");
+    let vault = mdoc_vault::Vault::open(&root, &[3; 32]).unwrap();
     let mut session = Session::default();
     for index in 0..24 {
-        let path = dir.path().join(format!("note-{index}.md"));
-        let source = if index % 3 == 0 {
+        let markdown = if index % 3 == 0 {
             "# Heading\n\nalpha **beta** words for a long document.\n\n".repeat(2500)
         } else {
             "# Short\n\nhello world\n".repeat(30)
         };
-        std::fs::write(&path, source).unwrap();
+        let document = vault
+            .create_document(mdoc_vault::NewDocument {
+                project: None,
+                title: format!("note-{index}"),
+                source_kind: mdoc_vault::SourceKind::Markdown,
+                origin: mdoc_vault::DocumentOrigin::Ordinary,
+                markdown,
+            })
+            .unwrap();
         session.tabs.push(TabRecord {
-            markdown: path,
-            attachment: match index % 3 {
-                0 => None,
-                1 => Some(pdf.clone()),
-                _ => Some(docx.clone()),
-            },
-            preview_visible: index % 3 != 0,
+            document: mdoc_store::document_id::VaultId::parse(&document.id),
             ..TabRecord::default()
         });
     }
+    drop(vault);
     let start = Instant::now();
-    let (tabs, cx) = boot(cx, session);
+    let (tabs, cx) = boot_on_vault(cx, session, &root);
     cx.simulate_resize(size(px(1280.), px(800.)));
     draw(cx);
     eprintln!(
@@ -650,7 +632,7 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
     report("switch_with_implicit_test_frame", &mut switching);
     report("switch_frame", &mut frames);
     report("long_markdown_frame", &mut long_frames);
-    report("short_markdown_with_preview_frame", &mut short_frames);
+    report("short_markdown_frame", &mut short_frames);
     // Same document, same viewport, no tab change: distinguish inherited editor
     // layout cost from the sidebar/activation overhead.
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(ids[0], window, cx));
@@ -684,6 +666,8 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
     }
     report("metadata_snapshot_24_tabs", &mut snapshots);
     // Repeated DOCX pairs exercise temporary files and retained viewer release.
+    let docx =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx");
     eprintln!(
         "TABS_PERF before_close_cycles_rss_kib={:?}",
         crate::perf_tests::rss_kib()
@@ -752,7 +736,6 @@ fn menu_routes_save_export_and_open_to_the_active_document(cx: &mut TestAppConte
     );
     cx.update(|_, cx| {
         let view = view.read(cx);
-        assert!(view.session.document.path.is_none());
         assert!(view.session.document.vault.is_some());
     });
     // Open has no header button: ⌘O, Home and the palette.

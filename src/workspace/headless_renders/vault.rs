@@ -79,7 +79,7 @@ pub(super) fn repeated_import(d: &mut Driver, folder: &Path) -> Result<()> {
 }
 
 /// Settle until `done` holds, for up to a minute of real time.
-fn wait_until(
+pub(super) fn wait_until(
     d: &mut Driver,
     what: &str,
     done: impl Fn(&Workspace, &gpui::Window) -> bool,

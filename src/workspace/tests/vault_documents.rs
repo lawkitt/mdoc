@@ -50,7 +50,6 @@ fn a_restored_tab_opens_its_vault_document_by_id(cx: &mut TestAppContext) {
         assert_eq!(view.session.display_name(), "Lease");
         assert_eq!(view.editor.read(cx).cursor(), 7);
         assert!(view.session.document.vault.is_some());
-        assert!(view.session.document.path.is_none());
     });
 }
 
@@ -517,6 +516,38 @@ fn repeated(cx: &mut TestAppContext, answer: &str) -> (tempfile::TempDir, usize,
 fn a_repeated_import_opens_the_existing_document(cx: &mut TestAppContext) {
     let (_dir, documents, tabs) = repeated(cx, "Open Existing");
     assert_eq!((documents, tabs), (1, 1));
+}
+
+/// Open Existing imports nothing, so Export Markdown still starts where the
+/// last import came from, not in the repeat's folder.
+#[gpui::test]
+fn open_existing_leaves_the_last_folder_where_the_import_was(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (first, second) = (dir.path().join("first"), dir.path().join("second"));
+    for folder in [&first, &second] {
+        std::fs::create_dir_all(folder).unwrap();
+        std::fs::write(folder.join("Note.md"), "# Note").unwrap();
+    }
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![first.join("Note.md")], cx);
+    let imported = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(imported, window, cx));
+    cx.run_until_parked();
+    open(&tabs, vec![second.join("Note.md")], cx);
+    cx.simulate_prompt_answer("Open Existing");
+    cx.run_until_parked();
+    assert_eq!(documents(dir.path()).len(), 1);
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    cx.dispatch_action(crate::document_view::ExportMarkdown);
+    cx.run_until_parked();
+    let mut start = None;
+    cx.simulate_new_path_selection(|directory| {
+        start = Some(directory.to_path_buf());
+        None
+    });
+    cx.run_until_parked();
+    assert_eq!(start, Some(session_store::identity(&first)));
 }
 
 #[gpui::test]

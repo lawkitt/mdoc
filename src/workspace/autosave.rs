@@ -135,7 +135,7 @@ impl Workspace {
         let view = view.read(cx);
         let text = view.editor.read(cx).text().to_string();
         if let Some(document) = view.session.document.id() {
-            let review = document.vault().and_then(|_| view.saved_review());
+            let review = view.saved_review();
             let target = Target::Document(document.clone());
             // A move rewrites it: it loads again first.
             if let DocumentId::Vault(id) = &document
@@ -151,9 +151,6 @@ impl Workspace {
             {
                 return;
             }
-            let DocumentId::Vault(_) = document else {
-                return;
-            };
             let write = vault_write(view, text, review, cx);
             self.queue_write(target, write, window, cx);
             return;

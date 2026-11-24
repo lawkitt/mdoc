@@ -72,16 +72,24 @@ pub(crate) enum Next {
     Import(Box<import::Imported>),
 }
 
-/// The window's Recents folders, most recent first, for Export Markdown to start in
-/// when a document has no folder of its own (#180). The window shares them
-/// whenever its Recents change.
-pub(crate) struct RecentFolders(Vec<PathBuf>);
+/// The folder of the last file imported or exported this run, for Export
+/// Markdown to start in when a document has no folder of its own (#180).
+/// Kept in memory only: nothing about it is written to disk.
+#[derive(Default)]
+pub(crate) struct LastFolder(Option<PathBuf>);
 
-impl gpui::Global for RecentFolders {}
+impl gpui::Global for LastFolder {}
 
-impl RecentFolders {
-    pub(crate) fn share(folders: Vec<PathBuf>, cx: &mut App) {
-        cx.set_global(Self(folders));
+impl LastFolder {
+    /// `file` was imported or exported: its folder is the last one.
+    pub(crate) fn note(file: &std::path::Path, cx: &mut App) {
+        if let Some(folder) = file.parent().filter(|f| !f.as_os_str().is_empty()) {
+            cx.set_global(Self(Some(folder.to_path_buf())));
+        }
+    }
+
+    pub(crate) fn get(cx: &App) -> Option<&std::path::Path> {
+        cx.try_global::<Self>().and_then(|last| last.0.as_deref())
     }
 }
 
@@ -308,7 +316,11 @@ impl DocumentView {
             editor.set_autoscroll(scroll.clone());
             editor
         });
-        let images = images::install(&editor, Document::default().directory(), cx);
+        let images = images::install(
+            &editor,
+            document_session::DocumentSession::default().directory(),
+            cx,
+        );
         window.focus(&editor.read(cx).focus_handle(cx), cx);
         let subscription =
             cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {
@@ -1741,19 +1753,17 @@ impl DocumentView {
         self.session.directory()
     }
 
-    /// Where Export Markdown starts: the document's folder, else a Recents
-    /// folder, else Documents (#180).
+    /// Where Export Markdown starts: the document's folder, else the last
+    /// folder a file was imported from or exported to this run, else
+    /// Documents (#180).
     fn export_directory(&self, cx: &App) -> PathBuf {
-        let folders = cx
-            .try_global::<RecentFolders>()
-            .map_or(&[][..], |folders| &folders.0);
+        let last = LastFolder::get(cx);
         // A Vault document's Source is a viewing copy in the app cache,
         // removed with its tab: never a place to export to.
         if self.session.document.vault.is_some() {
-            return mdoc_store::document_session::DocumentSession::default()
-                .export_directory(folders);
+            return mdoc_store::document_session::DocumentSession::default().export_directory(last);
         }
-        self.session.export_directory(folders)
+        self.session.export_directory(last)
     }
 
     pub(crate) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -1887,6 +1897,7 @@ impl DocumentView {
                             this.error = Some(format!("Could not export: {error}"));
                         } else {
                             this.error = None;
+                            LastFolder::note(&path, cx);
                         }
                     }
                     Ok(Err(error)) => this.error = Some(chooser_unavailable(&error)),

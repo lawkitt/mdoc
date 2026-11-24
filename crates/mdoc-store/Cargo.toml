@@ -2,7 +2,7 @@
 name = "mdoc-store"
 version = "0.1.0"
 edition = "2024"
-description = "GUI-free app storage: paths, documents, session, recents, settings, saved cases and crash-report masking."
+description = "GUI-free app storage: paths, documents, session, settings, the OS-held key and crash-report masking."
 license = "GPL-3.0-or-later"
 publish = false
 repository = "https://github.com/lawkitt/mdoc"
@@ -28,7 +28,7 @@ thiserror = "2"
 url = "2"
 mdoc-pii = { path = "../mdoc-pii" }
 mdoc-spell = { path = "../mdoc-spell" }
-# Saved cases: AES-256-GCM files, the key held by the OS.
+# A new OS-held key's random bytes; bump with mdoc-vault's.
 aes-gcm = "0.11"
 
 [target.'cfg(target_os = "macos")'.dependencies]

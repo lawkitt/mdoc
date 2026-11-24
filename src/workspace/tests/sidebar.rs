@@ -258,7 +258,7 @@ fn new_sits_on_unfiled_and_a_row_menu_holds_the_reveal(cx: &mut TestAppContext) 
 }
 
 #[gpui::test]
-fn the_badge_names_the_source_until_saved_as_markdown(cx: &mut TestAppContext) {
+fn the_badge_names_the_source_until_it_is_a_vault_document(cx: &mut TestAppContext) {
     let tab = |record: TabRecord| Tab::detached(1, record);
     let docx = PathBuf::from("/contracts/sample.docx");
     let conversion = tab(TabRecord {
@@ -267,8 +267,7 @@ fn the_badge_names_the_source_until_saved_as_markdown(cx: &mut TestAppContext) {
         ..TabRecord::default()
     });
     let saved = tab(TabRecord {
-        markdown: PathBuf::from("/contracts/sample copy.md"),
-        attachment: Some(docx),
+        document: mdoc_store::document_id::VaultId::parse(&"5a".repeat(16)),
         ..TabRecord::default()
     });
     cx.update(|cx| {

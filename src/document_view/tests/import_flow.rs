@@ -20,7 +20,6 @@ fn inline_ocr_skip_imports_native_content_and_keeps_page_warning(cx: &mut TestAp
         assert!(!app.lifecycle.prompting());
         assert!(app.editor.read(cx).text().contains("Readable page three"));
         assert!(app.session.warning.as_ref().unwrap().contains("2, 5"));
-        assert!(app.session.document.path.is_none());
         assert_eq!(app.session.source.as_ref(), Some(&source));
     });
 }
@@ -286,7 +285,6 @@ fn import_action_converts_and_exports_without_touching_source(cx: &mut TestAppCo
     let markdown = cx.update(|_, cx| {
         let app = app.read(cx);
         assert!(!app.import.busy());
-        assert!(app.session.document.path.is_none());
         assert_eq!(app.save_directory(), dir.path());
         app.editor.read(cx).text().to_owned()
     });
@@ -298,7 +296,6 @@ fn import_action_converts_and_exports_without_touching_source(cx: &mut TestAppCo
     assert_eq!(std::fs::read_to_string(output).unwrap(), markdown);
     assert_eq!(std::fs::read_to_string(source).unwrap(), original);
     // The export is a copy: the document is still not that file.
-    assert!(cx.update(|_, cx| app.read(cx).session.document.path.is_none()));
 }
 
 #[gpui::test]

@@ -1,41 +1,19 @@
 //! What names a document across the desktop's live views, its session and
 //! its lookups: a Vault document by its opaque id, which the session stores
-//! instead of a path (ADR 0125), or a Markdown file a case still names.
+//! instead of a path (ADR 0125). Documents are never plain files.
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DocumentId {
     /// A Vault document.
     Vault(VaultId),
-    /// A Markdown file on disk, by the path normalized when it was opened or
-    /// saved ([`crate::session_store::identity`]).
-    File(PathBuf),
 }
 
 impl DocumentId {
-    /// The file this document is, when it is one.
-    pub fn file(&self) -> Option<&Path> {
-        match self {
-            Self::File(path) => Some(path),
-            Self::Vault(_) => None,
-        }
-    }
-
-    /// The file this document is, when it is one, taking it.
-    pub fn into_file(self) -> Option<PathBuf> {
-        match self {
-            Self::File(path) => Some(path),
-            Self::Vault(_) => None,
-        }
-    }
-
-    /// The Vault document this is, when it is one.
-    pub fn vault(&self) -> Option<&VaultId> {
-        match self {
-            Self::Vault(id) => Some(id),
-            Self::File(_) => None,
-        }
+    /// The Vault document this is.
+    pub fn vault(&self) -> &VaultId {
+        let Self::Vault(id) = self;
+        id
     }
 }
 

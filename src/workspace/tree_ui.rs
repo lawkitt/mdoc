@@ -178,7 +178,6 @@ impl Workspace {
         let empty = {
             let view = view.read(cx);
             view.session.document.id().is_none()
-                && view.session.document.path.is_none()
                 && view.preview.source().is_none()
                 && !view.lifecycle.loading()
                 && !view.lifecycle.source_only()
@@ -411,7 +410,7 @@ impl Workspace {
 
     /// Delete `documents` once the writes queued before are done; nothing
     /// writes them meanwhile.
-    fn forget_documents(
+    pub(super) fn forget_documents(
         &mut self,
         documents: Vec<VaultId>,
         window: &mut Window,

@@ -212,10 +212,7 @@ impl Workspace {
     /// Tab `id`'s Vault document, once its view holds it.
     pub(super) fn tab_document(&self, id: u64, cx: &App) -> Option<VaultId> {
         let view = self.tabs.get(id)?.view()?;
-        match view.read(cx).session.document.id()? {
-            DocumentId::Vault(id) => Some(id),
-            DocumentId::File(_) => None,
-        }
+        view.read(cx).session.document.vault.clone()
     }
 
     /// The Project the Vault files document `id` in, from its summary.
