@@ -123,10 +123,11 @@ class RestoreTest {
         shared("Second ${System.nanoTime()}")
         fun shareNew(reply: String) = share(reply).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         ActivityScenario.launch<RestoreActivity>(shareNew("First: PERSON_1.")).use { scenario ->
-            compose.waitUntil(15_000) { compose.onAllNodes(hasText("1 value restored")).fetchSemanticsNodes().isNotEmpty() }
-            // The activity is single-task: a new share arrives through onNewIntent.
+            compose.waitUntil(15_000) { compose.exists(hasText("1 value restored")) }
+            // The activity is single-task: a new share arrives through
+            // onNewIntent, which pauses it for a moment.
             scenario.onActivity { it.startActivity(shareNew("Second: PERSON_1 and PERSON_9.")) }
-            compose.waitUntil(15_000) { compose.onAllNodes(hasText("1 unrecognised", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(15_000) { compose.exists(hasText("1 unrecognised", substring = true)) }
         }
     }
 }

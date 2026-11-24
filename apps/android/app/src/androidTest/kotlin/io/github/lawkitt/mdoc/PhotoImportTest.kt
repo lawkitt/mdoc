@@ -180,6 +180,9 @@ class PhotoImportTest {
         assertTrue(originals.listFiles()!!.isEmpty())
         withContext(Dispatchers.Main) { home.cameraResult(true) }
         withTimeout(15_000) { home.state.first { it.scanPageCount == 1 } }
+        // The scan records the page before it deletes the raw shot, so a
+        // crash between the two never loses it (#1100).
+        compose.waitUntil(15_000) { CameraCapture.file(core.app, uri) == null }
         assertTrue(runCatching { resolver.openInputStream(uri)?.close() }.isFailure)
         withContext(Dispatchers.Main) { home.finishScan("Scan") }
         val staged = home.state.value.adding as PendingAdd.Received
@@ -287,8 +290,9 @@ class PhotoImportTest {
         assertTrue(kept.isFile)
         withContext(Dispatchers.Main) { restored.cameraResult(true) }
         withTimeout(15_000) { restored.state.first { it.scanPageCount == 2 } }
-        // The raw shot is gone once its clean copy is kept.
-        assertNull(CameraCapture.file(core.app, page2))
+        // The raw shot goes once its clean copy is recorded, a moment after
+        // the page shows (#1100).
+        compose.waitUntil(15_000) { CameraCapture.file(core.app, page2) == null }
         assertTrue(CameraCapture.dir(core.app).listFiles().orEmpty().isEmpty())
         withContext(Dispatchers.Main) { restored.finishScan("Scan") }
         val pages = ((restored.state.value.adding as PendingAdd.Received).source as ImportSource.Pages).pages
@@ -315,9 +319,10 @@ class PhotoImportTest {
         }
         withTimeout(15_000) { scan.state.first { it.pages.size == 1 && it.capture == null } }
         assertClean(scan.state.value.pages.single())
-        // A new Home saves it, and the raw shot goes.
+        // A new Home saves it, and the raw shot goes just after the page is
+        // recorded (#1100).
         withContext(Dispatchers.Main) { HomeViewModel({ core.app.core }, null, scan, SavedStateHandle()) }
-        assertNull(CameraCapture.file(core.app, shot))
+        compose.waitUntil(15_000) { CameraCapture.file(core.app, shot) == null }
     }
 
     /**
@@ -336,7 +341,8 @@ class PhotoImportTest {
         val snapshot = withContext(Dispatchers.Main) { saved.keys().associateWith { saved.get<Any?>(it) } }
         withContext(Dispatchers.Main) { home.cameraResult(true) }
         withTimeout(15_000) { scan.state.first { it.pages.size == 1 && it.capture == null } }
-        assertNull(CameraCapture.file(core.app, shot))
+        // The raw shot goes just after the page is recorded (#1100).
+        compose.waitUntil(15_000) { CameraCapture.file(core.app, shot) == null }
         // A new process restores the stopped activity's snapshot.
         val restored = withContext(Dispatchers.Main) {
             HomeViewModel({ core.app.core }, null, ScanSession(CameraCapture.dir(core.app)), SavedStateHandle(snapshot))

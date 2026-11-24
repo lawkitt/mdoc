@@ -270,7 +270,10 @@ class ProjectScreensTest {
 
         // Search finds a Project by name and opens its page.
         compose.back()
+        // Back lands on Home a moment later on a slow emulator.
+        compose.waitForShown(hasContentDescription("Show sidebar"))
         compose.shown(hasContentDescription("Show sidebar")).performClick()
+        compose.waitForShown(hasSetTextAction())
         compose.shown(hasSetTextAction()).performTextInput("project 1")
         tap("Project 1")
         compose.waitForText("What you add with + lands in this Project.")
