@@ -12,7 +12,7 @@ import java.io.File
  * imports (`pending.json`), until its first save. A decrypted original
  * being viewed sits in `vault-original-view/` in the cache, wiped when its
  * document closes and at launch (#1091 Decision 24). Models, their
- * downloads and the case key sit in the no-backup folder, so they are never
+ * downloads and the Vault key sit in the no-backup folder, so they are never
  * offered to a backup at all.
  *
  * The old library's `documents/`, `cases/`, `imports/` and `originals/`
@@ -52,7 +52,7 @@ class MdocStorage(
     }
 
     /** The wrapped key that seals the Vault, beside the models in no-backup storage. */
-    val caseKeyFile: File get() = File(noBackup, "case-key.bin")
+    val vaultKeyFile: File get() = File(noBackup, "case-key.bin")
 
     /** The list of imports not yet read. */
     val pendingFile: File get() = File(intake, "pending.json")

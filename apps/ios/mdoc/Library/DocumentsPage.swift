@@ -143,7 +143,7 @@ struct DocumentListRow: View {
     }
 }
 
-/// Search over titles and case names, from `LibraryModel.searchThreshold`
+/// Search over titles and Project names, from `LibraryModel.searchThreshold`
 /// documents.
 private struct DocumentsSearch: ViewModifier {
     @Bindable var library: LibraryModel
@@ -158,7 +158,7 @@ private struct DocumentsSearch: ViewModifier {
 }
 
 /// A document on the Documents page (ADR 0099): a source tile, the title, then the state
-/// in its color, when it last changed, and the case as a tag.
+/// in its color, when it last changed, and the Project as a tag.
 struct DocumentRow: View {
     let document: LibraryDocument
     let projectSummary: ProjectSummary?
@@ -178,7 +178,7 @@ struct DocumentRow: View {
                     .font(Typography.body.weight(.medium))
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
                     .fixedSize(horizontal: false, vertical: true)
-                // One line when it fits; else the case on its own line;
+                // One line when it fits; else the Project on its own line;
                 // else every part on its own line, so nothing truncates.
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: Space.xs) {
@@ -202,7 +202,7 @@ struct DocumentRow: View {
         .accessibilityIdentifier("document-row")
     }
 
-    /// Stacked (narrow or large text): the status, the time and the case
+    /// Stacked (narrow or large text): the status, the time and the Project
     /// each on a line of their own, so nothing truncates.
     @ViewBuilder
     private func statusAndTime(stacked: Bool) -> some View {
@@ -241,7 +241,7 @@ struct DocumentRow: View {
             : .dateTime.day().month(.abbreviated)
     }
 
-    /// "Settlement agreement, 1 to review, case Settlement agreement".
+    /// "Settlement agreement, 1 to review, Project Settlement agreement".
     private var spoken: String {
         var parts = [document.title, status]
         if let projectSummary {
@@ -285,7 +285,7 @@ private struct DocumentPreview: View {
     }
 }
 
-/// The case as a small tag: its colour dot, and its name when it says
+/// The Project as a small tag: its colour dot, and its name when it says
 /// something the title does not.
 struct ProjectTag: View {
     let summary: ProjectSummary

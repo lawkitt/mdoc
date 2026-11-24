@@ -24,8 +24,8 @@ public enum CoreFailure: Error, Equatable, Sendable {
     case cancelled
     /// A review transition did not apply: the text or mention changed.
     case review(String)
-    /// Reading or writing a case, or a case rule (one case per document).
-    case caseFailed(String)
+    /// Reading or writing a Project, or a Project rule (one Project per document).
+    case project(String)
     /// Verifying or installing a model file.
     case setup(String)
     /// An argument the core does not accept.
@@ -43,7 +43,7 @@ public enum CoreFailure: Error, Equatable, Sendable {
     case nameNotFound
     /// The core refused the change, in its own words.
     case refused(String)
-    /// Reading or writing the document or its case failed.
+    /// Reading or writing the document or its Project failed.
     case storage(String)
 
     /// Anything else, in its own words.
@@ -61,7 +61,7 @@ public enum CoreFailure: Error, Equatable, Sendable {
             case .Detect(let message): .detect(message)
             case .Cancelled: .cancelled
             case .Review(let message): .review(message)
-            case .Case(let message): .caseFailed(message)
+            case .Project(let message): .project(message)
             case .Setup(let message): .setup(message)
             case .Invalid(let message): .invalid(message)
             case .Io(let message): .io(message)

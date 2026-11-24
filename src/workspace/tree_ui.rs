@@ -370,6 +370,10 @@ impl Workspace {
         if documents.is_empty() || self.quit_flow.quitting() {
             return;
         }
+        #[cfg(test)]
+        {
+            self.asked_to_delete.push_back(documents.clone());
+        }
         let title = match documents.as_slice() {
             [one] => {
                 let name = (self.tree_now().documents.into_iter())
@@ -416,6 +420,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if documents.is_empty() || self.quit_flow.quitting() {
+            return;
+        }
         for document in &documents {
             self.moving.insert(document.clone());
         }
@@ -457,7 +464,8 @@ impl Workspace {
                     self.moving.remove(document);
                 }
                 self.notices.post(
-                    "A document moved into a Project before it was deleted, so nothing was                      deleted. Choose again.",
+                    "A document moved into a Project before it was deleted, so nothing was \
+                     deleted. Choose again.",
                 );
                 self.delete_documents(ids, window, cx);
                 cx.notify();
@@ -528,7 +536,7 @@ impl Workspace {
         for row in &now.rows {
             let element = match row {
                 Row::ProjectsLabel => {
-                    let label = self.section_label("Projects");
+                    let label = self.tree_projects_label();
                     if now.projects.is_empty() {
                         elements.push(label);
                         div()
@@ -924,6 +932,45 @@ impl Workspace {
                 }))
         })
         .into_any_element()
+    }
+
+    /// The Projects label, with New Project.
+    fn tree_projects_label(&self) -> AnyElement {
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        div()
+            .id("tree-projects")
+            .when(cfg!(test), |v| v.debug_selector(|| "tree-projects".into()))
+            .flex()
+            .items_center()
+            .gap_1()
+            .px_2()
+            .pt_3()
+            .pb_1()
+            .text_size(px(11.))
+            .text_color(palette.header_muted)
+            .child(div().flex_1().child("Projects"))
+            .child(
+                ui::header_icon_untipped(
+                    "tree-new-project",
+                    "New Project",
+                    ui::Icon::Plus,
+                    theme,
+                    false,
+                )
+                .when(!self.context_menu_open(), |v| {
+                    v.tooltip(style::tooltip(
+                        crate::shortcuts::tip("New Project", &super::NewProject),
+                        theme,
+                    ))
+                })
+                .when(cfg!(test), |v| {
+                    v.debug_selector(|| "tree-new-project".into())
+                })
+                .size(px(22.))
+                .on_click(|_, window, cx| window.dispatch_action(Box::new(super::NewProject), cx)),
+            )
+            .into_any_element()
     }
 
     /// Unfiled's label: a drop target for documents, New, and Delete N…

@@ -177,6 +177,13 @@ impl Workspace {
         let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
             return;
         };
+        #[cfg(test)]
+        if crate::exits::taken_out(crate::exits::Gate::EditorCopyForAi) {
+            // As the cut-over's Copy for AI did: the editor's text, unchecked.
+            let text = view.read(cx).text_for_ai(cx);
+            view.update(cx, |view, cx| view.copy_checked_for_ai(text, cx));
+            return;
+        }
         let outcome = match self.shelf_row(&ShelfKey::Tab(id), cx) {
             Some(row) => match (row.text_for_ai(), row.readiness) {
                 (Some(text), _) => Ok(text.to_owned()),
@@ -209,11 +216,12 @@ impl Workspace {
     }
 
     /// Project `id`'s names in the window are not all in the Vault yet: its
-    /// write waits, runs or failed, or an open member's mapping change
-    /// waits to be folded into it.
-    fn project_unwritten(&self, id: &str, cx: &App) -> bool {
+    /// write waits, runs (on its own or with a member's save) or failed, or
+    /// an open member's mapping change waits to be folded into it.
+    pub(super) fn project_unwritten(&self, id: &str, cx: &App) -> bool {
         self.project_ui.is_unwritten(id)
             || self.document_writer.has(&Target::Project(id.to_string()))
+            || self.projects_saving.contains(id)
             || self.tabs.iter().filter_map(|tab| tab.view()).any(|view| {
                 let view = view.read(cx);
                 view.project_save_pending() && view.project.link().is_some_and(|l| l.id == id)

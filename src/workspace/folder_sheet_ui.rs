@@ -16,6 +16,13 @@ use gpui::{
 use mdoc_vault::NewProject;
 use std::path::{Path, PathBuf};
 
+/// A dropped folder's new Project, waiting for its turn on the writer.
+pub(super) struct FolderProject {
+    sheet: Sheet,
+    /// Its categories, from Settings › Detection.
+    skip: Vec<String>,
+}
+
 /// The sheet's focus: its group, one handle per row, and where focus goes
 /// back when it closes. View state only; the sheet itself is `FolderSheets`.
 pub(super) struct SheetFocus {
@@ -246,9 +253,9 @@ impl Workspace {
             return;
         }
         self.folder_sheets.set_waiting(false);
-        let Some(vault) = self.vault.vault().cloned() else {
+        if self.vault.vault().is_none() {
             return;
-        };
+        }
         let Some(sheet) = self.close_folder_sheet(window, cx) else {
             return;
         };
@@ -257,14 +264,10 @@ impl Workspace {
             .target()
             .filter(|t| self.projects.project(&t.id).is_some())
             .map(|t| t.id.clone());
-        let project = match target {
-            Some(project) => project,
+        match target {
+            Some(project) => self.fill_folder_project(sheet, project, window, cx),
+            // Made by a job on the writer, like every Vault write (ADR 0130).
             None => {
-                let new = NewProject {
-                    name: sheet.name().to_string(),
-                    colour: None,
-                    pinned: false,
-                };
                 let skip = self
                     .preferences
                     .borrow()
@@ -272,26 +275,58 @@ impl Workspace {
                     .as_ref()
                     .map(|p| p.categories.skip.clone())
                     .unwrap_or_default();
-                let made = vault.create_project(new).and_then(|project| {
-                    vault.update_project(&project.id, |project| project.skip = skip)
-                });
-                match made {
-                    Ok(project) => {
-                        let id = project.id.clone();
-                        self.projects.put(project);
-                        id
-                    }
-                    Err(error) => {
-                        self.notices.post(format!(
-                            "“{}” could not become a Project: {error}",
-                            sheet.name()
-                        ));
-                        self.open_ticked(&sheet, None, window, cx);
-                        self.show_next_folder(window, cx);
-                        return;
-                    }
-                }
+                self.next_op += 1;
+                let target = super::document_writer::Target::Op(self.next_op);
+                let write = super::autosave::Write::FolderProject(FolderProject { sheet, skip });
+                self.queue_write(target, write, window, cx);
             }
+        }
+    }
+
+    /// Make a dropped folder's new Project at the head of the writer's
+    /// queue, its categories with it in one write, then fill it.
+    pub(super) fn run_new_project(
+        &mut self,
+        project: FolderProject,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let FolderProject { sheet, skip } = project;
+        let Some(vault) = self.vault.vault().cloned() else {
+            return;
+        };
+        let new = NewProject {
+            name: sheet.name().to_string(),
+            colour: None,
+            pinned: false,
+        };
+        match vault.create_project_with(new, |project| project.skip = skip) {
+            Ok(project) => {
+                let id = project.id.clone();
+                self.projects.put(project);
+                self.fill_folder_project(sheet, id, window, cx);
+            }
+            Err(error) => {
+                self.notices.post(format!(
+                    "“{}” could not become a Project: {error}",
+                    sheet.name()
+                ));
+                self.open_ticked(&sheet, None, window, cx);
+                self.show_next_folder(window, cx);
+            }
+        }
+    }
+
+    /// The sheet's ticked files go into Project `project`.
+    fn fill_folder_project(
+        &mut self,
+        sheet: Sheet,
+        project: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(vault) = self.vault.vault().cloned() else {
+            return;
         };
         // Open Unfiled files move in, once hashed: a file replaced since its
         // tab imported it is new bytes, imported into it with the others.
@@ -539,6 +574,7 @@ impl Workspace {
                             .on_action(|_: &Open, _, _| {})
                             .on_action(|_: &Import, _, _| {})
                             .on_action(|_: &OpenProject, _, _| {})
+                            .on_action(|_: &super::NewProject, _, _| {})
                             .on_action(|_: &Settings, _, _| {})
                             .on_action(|_: &OpenPalette, _, _| {})
                             .on_action(|_: &ShowShortcuts, _, _| {})

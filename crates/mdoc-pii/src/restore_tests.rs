@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn retired_case_aliases_survive_discovery_and_renumber_join_collisions() {
+fn retired_project_aliases_survive_discovery_and_renumber_join_collisions() {
     let mut review = Review::default();
     review.reserve_aliases(&["PERSON_2".into(), "PERSON_7".into(), "RETIRED".into()]);
     review.refresh("Carol");
@@ -374,20 +374,20 @@ fn relinked_alias_tokens_become_restorable_applied_replacements() {
 }
 
 #[test]
-fn joining_takes_case_aliases_and_renumbers_collisions() {
+fn joining_takes_project_aliases_and_renumbers_collisions() {
     let mut anna = identity("PERSON_1", Category::Person, &["Anna Petrova"]);
     anna.previous = vec!["PERSON_3".into()];
-    let case = vec![
+    let project = vec![
         anna,
         identity("ORG_1", Category::Organization, &["Northwind Ltd"]),
     ];
     let document = vec![
-        // Boris collides with the case's PERSON_1.
+        // Boris collides with the Project's PERSON_1.
         (
             10,
             identity("PERSON_1", Category::Person, &["Boris Ivanov"]),
         ),
-        // Anna is already in the case under PERSON_1.
+        // Anna is already in the Project under PERSON_1.
         (
             11,
             identity(
@@ -396,10 +396,10 @@ fn joining_takes_case_aliases_and_renumbers_collisions() {
                 &["A. Petrova", "Anna Petrova"],
             ),
         ),
-        // EMAIL_1 is free in the case and keeps its alias.
+        // EMAIL_1 is free in the Project and keeps its alias.
         (12, identity("EMAIL_1", Category::Email, &["b@x.example"])),
     ];
-    let plan = plan_join(&case, &document, &[]);
+    let plan = plan_join(&project, &document, &[]);
     assert_eq!(
         plan.changes,
         [
@@ -458,18 +458,18 @@ fn reassigning_aliases_swaps_without_collisions_and_corrects_applied_text() {
 
 #[test]
 fn joining_never_hands_out_an_alias_the_document_used_before() {
-    let case = vec![identity("PERSON_1", Category::Person, &["Anna Petrova"])];
+    let project = vec![identity("PERSON_1", Category::Person, &["Anna Petrova"])];
     let mut boris = identity("PERSON_3", Category::Person, &["Boris Ivanov"]);
     boris.previous = vec!["PERSON_2".into()];
     let document = vec![
         (10, boris),
-        // Collides with the case; PERSON_2 and PERSON_3 are this document's.
+        // Collides with the Project; PERSON_2 and PERSON_3 are this document's.
         (
             11,
             identity("PERSON_1", Category::Person, &["Ivan Sidorov"]),
         ),
     ];
-    let plan = plan_join(&case, &document, &[]);
+    let plan = plan_join(&project, &document, &[]);
     assert_eq!(
         plan.changes,
         [(11, "PERSON_4".into(), Category::Person, false)]
@@ -888,7 +888,7 @@ fn withdrawing_a_category_keeps_restored_wordings() {
 
 #[test]
 fn same_as_into_a_shorter_seeded_identity_restores_the_longest_full_form() {
-    // A case knows PERSON_1 only as "Ms Bennett"; this member links the full
+    // A Project knows PERSON_1 only as "Ms Bennett"; this document links the full
     // name to it with Same as…. The pin breaks ties only.
     let source = "Maya Bennett signed. Ms Bennett agreed.";
     let mut review = Review::default();
@@ -922,7 +922,7 @@ fn same_as_into_a_shorter_seeded_identity_restores_the_longest_full_form() {
     assert_eq!(exported[0].wording(), "Maya Bennett");
     let map = RestoreMap::new(exported.clone());
     assert_eq!(apply(&map, "PERSON_1 agreed."), "Maya Bennett agreed.");
-    // Reopening the case keeps it.
+    // Reopening the Project keeps it.
     let mut reopened = Review::default();
     reopened.seed(&exported, source);
     assert_eq!(reopened.export_identities()[0].wording(), "Maya Bennett");
@@ -1079,7 +1079,7 @@ fn saved_raw_originals_survive_reopen_relink_revert_and_join() {
 }
 
 #[test]
-fn an_old_raw_case_keeps_its_alias_on_save() {
+fn an_old_raw_mapping_keeps_its_alias_on_save() {
     for (alias, category, original) in [
         (
             "ADDRESS_1",

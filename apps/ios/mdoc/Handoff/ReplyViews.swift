@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// Type a reply: an AI reply written or edited by hand, restored with this
-/// document's case. A copied reply needs none of it: the bar's Paste
+/// document's Project. A copied reply needs none of it: the bar's Paste
 /// restores it in one tap, HTML tables included.
 struct TypeReplySheet: View {
     let projectName: String?

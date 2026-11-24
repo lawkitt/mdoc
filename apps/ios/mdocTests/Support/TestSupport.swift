@@ -58,7 +58,7 @@ enum Fixture {
             network: FakeNetwork(.wifi), preferences: preferences())
     }
 
-    /// The real core over fresh temporary storage, with a fixed case key.
+    /// The real core over fresh temporary storage, with a fixed Vault key.
     static func core(memory: UInt64 = belowFloor) throws -> (Core, MdocStorage) {
         let storage = try temporaryStorage()
         return (try RealCore.make(storage: storage, keys: FixedVaultKeyStore(), physicalMemory: memory), storage)

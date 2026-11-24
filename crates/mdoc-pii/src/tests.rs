@@ -44,8 +44,8 @@ fn forgetting_an_identity_preserves_another_homonyms_assigned_mention() {
 }
 
 #[test]
-fn forgetting_a_case_alias_also_scrubs_a_pending_document_rename() {
-    for case_alias in ["PERSON_1", "CLIENT"] {
+fn forgetting_a_project_alias_also_scrubs_a_pending_document_rename() {
+    for project_alias in ["PERSON_1", "CLIENT"] {
         let mut review = Review::default();
         let group = review.add_manual("Ann", 0..3, Category::Person).unwrap();
         let id = review.variant_identity(group).unwrap();
@@ -53,10 +53,11 @@ fn forgetting_a_case_alias_also_scrubs_a_pending_document_rename() {
         review.rename_identity(id, "CLIENT").unwrap();
         review.commit_identity_snapshot(0, 1, initial);
         let previous = review.identity_snapshot();
-        // The page can open before the member's debounced save reaches the case.
+        // The page can open before the document's debounced save reaches the
+        // Project.
         review.rename_identity(id, "BUYER").unwrap();
         review.commit_identity_snapshot(1, 2, previous);
-        review.forget_case_identity(&[case_alias], &["Ann".into()]);
+        review.forget_project_identity(&[project_alias], &["Ann".into()]);
         assert!(review.identity(id).is_none());
         assert!(review.export_identities().is_empty());
     }
@@ -2383,7 +2384,7 @@ fn initials_of_the_one_candidate_do_not_block_her_other_forms() {
 }
 
 /// Review of #384: a rescan does not claim a variant the user marked or a
-/// case seeded; only a variant the scan creates takes its recognizer.
+/// Project seeded; only a variant the scan creates takes its recognizer.
 #[test]
 fn a_rescan_keeps_a_marked_or_seeded_variants_recognizer() {
     let source = "Ann met Bob.";
@@ -3013,7 +3014,7 @@ fn an_ordinary_word_name_counts_only_mid_sentence_whoever_proposed_it() {
     assert_eq!(proposed(&review, "Grant").mentions.len(), 3);
 }
 
-/// Review of #440: a case's saved wording keeps every mention, and a mark
+/// Review of #440: a Project's saved wording keeps every mention, and a mark
 /// leaves an existing proposal's mentions as they were, so undo has
 /// nothing to restore.
 #[test]

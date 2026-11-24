@@ -34,8 +34,7 @@ impl Readiness {
     }
 }
 
-/// The fingerprint of a text saved while Ready: SHA-256, hex, as the
-/// desktop's cases kept it.
+/// The fingerprint of a text saved while Ready: SHA-256, hex.
 fn fingerprint(text: &str) -> String {
     sha2::Sha256::digest(text.as_bytes())
         .iter()

@@ -6,11 +6,13 @@ mod export;
 mod moves;
 mod readiness;
 mod replies;
+mod staging;
 
 pub use export::{Exported, ORIGINALS};
 pub use moves::{MoveUndo, Moved, ProjectDocuments};
 pub use readiness::Readiness;
 pub use replies::ReplyHandle;
+pub use staging::StagedImport;
 
 use crate::{
     ObjectKind, VaultError, is_id,
@@ -196,6 +198,7 @@ impl Vault {
             if writes_manifest {
                 sweep_temp_files(&vault.root);
                 sweep_orphans(&vault.root);
+                staging::sweep_staging(&vault.root);
             }
             let (mut manifest, mut opened) =
                 match Manifest::read(&vault.sealer, &vault.manifest_path()) {
@@ -323,6 +326,17 @@ impl Vault {
     pub fn create_project(&self, new: NewProject) -> Result<Project, VaultError> {
         let lock = self.write_lock()?;
         self.create_project_locked(&lock, new, |_| {})
+    }
+
+    /// [`Self::create_project`], set up by `setup` (its categories, say)
+    /// before its first write: one write, so nothing can fail after it.
+    pub fn create_project_with(
+        &self,
+        new: NewProject,
+        setup: impl FnOnce(&mut Project),
+    ) -> Result<Project, VaultError> {
+        let lock = self.write_lock()?;
+        self.create_project_locked(&lock, new, setup)
     }
 
     /// Create a Project from `new`, set up by `setup` before its first
@@ -955,8 +969,7 @@ fn not_found<R: Record>(id: &str) -> VaultError {
     }
 }
 
-/// Remove a sealed file as the case store deletes, overwriting it with
-/// zeros first. It is renamed to a temp name before that, so a reader
+/// Remove a sealed file, overwriting it with zeros first. It is renamed to a temp name before that, so a reader
 /// without the lock sees the whole file or none, and a crash leaves a temp
 /// file the next open sweeps.
 fn remove_sealed(path: &Path) -> io::Result<()> {

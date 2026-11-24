@@ -16,7 +16,7 @@ final class CoreWiringTests: XCTestCase {
     }
 
     /// A decision schedules a save (`SaveScheduler.pause`): saved now, it
-    /// can't fire after the storage is gone and recreate its case lock in
+    /// can't fire after the storage is gone and recreate the Vault lock in
     /// the temporary folder while a later test watches that folder.
     override func tearDown() {
         for core in cores {
@@ -91,7 +91,7 @@ final class CoreWiringTests: XCTestCase {
         // What it says is the core's.
         let info = try XCTUnwrap(session.info)
         XCTAssertEqual(info.title, "Letter")
-        XCTAssertEqual(info.caseId, session.snapshot().projectID?.rawValue)
+        XCTAssertEqual(info.projectId, session.snapshot().projectID?.rawValue)
         XCTAssertNotNil(session.vaultID)
         try core.library.renameDocument(session.id, to: "Reply")
         XCTAssertEqual(session.info?.title, "Reply")
@@ -219,7 +219,7 @@ final class CoreWiringTests: XCTestCase {
             (.detect("x"), .findNamesFailed("x")),
             (.cancelled, .cancelled),
             (.review("x"), .reviewChanged("x")),
-            (.caseFailed("x"), .projectRefused("x")),
+            (.project("x"), .projectRefused("x")),
             (.setup("x"), .setupFailed("x")),
             (.invalid("x"), .invalid("x")),
             (.io("x"), .fileFailed("x")),

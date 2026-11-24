@@ -124,6 +124,7 @@ enum Command {
     CancelConversion,
     ToggleSidebar,
     OpenProject,
+    NewProject,
     Home,
     Settings,
     SettingsCategory(crate::settings_ui::Category),
@@ -169,6 +170,7 @@ impl Command {
             Command::BeforeAfter => Box::new(ToggleCompare),
             Command::ToggleSidebar => Box::new(ToggleSidebar),
             Command::OpenProject => Box::new(OpenProject),
+            Command::NewProject => Box::new(super::NewProject),
             Command::Home => Box::new(ShowHome),
             Command::Settings => Box::new(Settings),
             Command::Shortcuts => Box::new(ShowShortcuts),
@@ -1621,6 +1623,12 @@ impl Workspace {
             },
             Row {
                 section: "Actions",
+                label: "New Project…".into(),
+                detail: None,
+                command: Command::NewProject,
+            },
+            Row {
+                section: "Actions",
                 label: style::theme_switch_label(self.theme_choice.next()).into(),
                 detail: None,
                 command: Command::Theme,
@@ -1858,6 +1866,7 @@ impl Workspace {
             }
             Command::ToggleSidebar => dispatch(window, cx, Box::new(ToggleSidebar)),
             Command::OpenProject => dispatch(window, cx, Box::new(OpenProject)),
+            Command::NewProject => dispatch(window, cx, Box::new(super::NewProject)),
             Command::Home => self.show_home(window, cx),
             Command::Settings => dispatch(window, cx, Box::new(Settings)),
             Command::SettingsCategory(category) => self
@@ -1917,7 +1926,7 @@ impl Workspace {
                 );
             }
             let icon = match &row.command {
-                Command::NewTab | Command::PasteText => ui::Icon::Plus,
+                Command::NewTab | Command::PasteText | Command::NewProject => ui::Icon::Plus,
                 Command::OpenFiles => ui::Icon::Open,
                 Command::Document(_) => ui::Icon::Source,
                 Command::Heading(_) => ui::Icon::ChevronRight,

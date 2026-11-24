@@ -75,7 +75,7 @@ Beside the [spec](../../docs/specs/mobile.md)'s UI and app-structure rules:
 - **Locked phone.** A result or save that comes while locked is saved on
   unlock, because Data Protection Complete blocks writes.
 - **Storage.** Everything lives in the App Group container, excluded from
-  backups; all but models use Data Protection Complete. The case key is in
+  backups; all but models use Data Protection Complete. The Vault key is in
   the Keychain's shared access group, this device only.
 - **Downloads.** "Waiting for Wi-Fi" comes from `NWPathMonitor`, because
   background sessions never call `taskIsWaitingForConnectivity`.

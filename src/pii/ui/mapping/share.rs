@@ -3,7 +3,7 @@
 //! with Copy reply and Open as tab.
 use super::Selection;
 use crate::{
-    document_view::{CopyMarkdown, DocumentView, ExportMarkdown, Inspector},
+    document_view::{DocumentView, Inspector},
     pii::ui::{APPLIED_ID, CopyForAi, KEPT_ID},
     style, ui,
 };
@@ -88,7 +88,7 @@ impl DocumentView {
                 .child(text)
         };
         let status = self.share_status(cx);
-        let case = self.project.link().cloned();
+        let link = self.project.link().cloned();
         // Only a document in the Vault can move into a Project.
         let movable = self.session.document.vault.is_some();
         ui::panel("identity-panel", theme)
@@ -142,24 +142,13 @@ impl DocumentView {
                         })),
                     )
                     .child(note("Adds a short note asking the AI to keep every placeholder exactly.".into()))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap_2()
-                            .child(
-                                ui::primary_button("share-copy-markdown", if copied && !self.copied_for_ai && !self.copied_reply { "Copied" } else { "Copy Markdown" }, theme, true)
-                                    .when(cfg!(test), |v| v.debug_selector(|| "share-copy-markdown".into()))
-                                    .on_click(cx.listener(|this, _, window, cx| this.copy_markdown(&CopyMarkdown, window, cx))),
-                            )
-                            .child(
-                                ui::primary_button("share-export", "Export Markdown…", theme, true)
-                                    .on_click(|_, window, cx| window.dispatch_action(Box::new(ExportMarkdown), cx)),
-                            ),
-                    )
+                    // Only checked exits: Copy Markdown and Export Markdown
+                    // hand the text out as it is, so they stay in the
+                    // header's ⋯ menu, the File menu, their shortcuts and
+                    // the palette (Vault & Projects item 29).
                     .when(aliases || self.reply.exists(), |v| v.children(self.reply_section(cx)))
                     .child(section("Project"))
-                    .child(match &case {
+                    .child(match &link {
                         Some(link) => ui::control("share-project-page", "", theme, true)
                             .when(cfg!(test), |v| v.debug_selector(|| "share-project-page".into()))
                             .aria_label(format!("Open Project {}", link.name))

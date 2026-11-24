@@ -5,8 +5,10 @@ use super::{Driver, HEIGHT, Result, WIDTH};
 use crate::{
     document_view::DocumentView,
     pii::ui::{APPLIED_ID, PiiApplyAll, PiiClosePopup},
+    settings_ui,
 };
 use gpui::{Entity, Focusable};
+use mdoc_import::model_download::Pending;
 use mdoc_store::settings;
 
 /// More menu, review, its focus rings, the word popup and model setup.
@@ -123,11 +125,48 @@ pub(super) fn scenes(
                 .expect("sandbox preferences")
                 .pseudonymization
                 .model = settings::PiiModel::Fp16;
+            cx.notify();
+        })
+    })?;
+    runtime_update(d, view)?;
+    d.change(|_, _, cx| {
+        view.update(cx, |v, cx| {
             v.pii.show_setup(false);
             cx.notify();
         })
     })?;
     Ok(())
+}
+
+/// The setup card on a profile whose model is installed beside an earlier
+/// release's ONNX Runtime (0.4.0-rc.3): an update of the runtime's size.
+/// Only the panel's measured sizes change; no file is written.
+fn runtime_update(d: &mut Driver, view: &Entity<DocumentView>) -> Result<()> {
+    let index = settings_ui::Panel::index(settings::Model::Pii(settings::PiiModel::Fp16));
+    let measured = d.change(|_, _, cx| {
+        view.update(cx, |v, cx| {
+            v.model_panel.update(cx, |panel, cx| {
+                let measured = panel.pending[index];
+                panel.pending[index] = Pending {
+                    model: 0,
+                    runtime: mdoc_import::ocr::onnx_runtime_size(),
+                    replaces_runtime: true,
+                    ..measured
+                };
+                cx.notify();
+                measured
+            })
+        })
+    })?;
+    d.capture("setup-runtime-update")?;
+    d.change(|_, _, cx| {
+        view.update(cx, |v, cx| {
+            v.model_panel.update(cx, |panel, cx| {
+                panel.pending[index] = measured;
+                cx.notify();
+            })
+        })
+    })
 }
 
 /// "Replace · Person ▾" beside a selection, then its category menu open.

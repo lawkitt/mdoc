@@ -1,4 +1,4 @@
-//! The user's lists: a case's from its members' Keeps, the
+//! The user's lists: a Project's from its documents' Keeps, the
 //! user-wide ones of Settings › Detection, and what each document's scans use.
 use super::*;
 use mdoc_pii::Category::{Organization, Person};
@@ -24,7 +24,7 @@ fn keep_all(view: &Entity<DocumentView>, wording: &str, cx: &mut VisualTestConte
     settle(cx);
 }
 
-/// Past the case save's pause.
+/// Past the Project save's pause.
 fn settle(cx: &mut VisualTestContext) {
     cx.executor()
         .advance_clock(std::time::Duration::from_secs(1));
@@ -71,7 +71,7 @@ fn a_keep_in_one_project_stays_out_of_another(cx: &mut TestAppContext) {
         assert!(!second_view.read(cx).scan_lists(cx).never_has("riverside"));
     });
 
-    // Proposed again, as undoing the Keep does: off case A's list.
+    // Proposed again, as undoing the Keep does: off Project A's list.
     first_view.update(cx, |view, cx| {
         let text = view.editor.read(cx).text().to_owned();
         let start = text.find("Riverside").unwrap();
@@ -84,7 +84,7 @@ fn a_keep_in_one_project_stays_out_of_another(cx: &mut TestAppContext) {
     settle(cx);
     assert!(store.project(&a).unwrap().lists.is_empty());
 
-    // Kept again, then removed on the case page.
+    // Kept again, then removed on the Project page.
     first_view.update(cx, |view, cx| {
         let text = view.editor.read(cx).text().to_owned();
         let review = view.pii.review_mut();
@@ -188,7 +188,7 @@ fn one_members_undo_leaves_another_members_keep(cx: &mut TestAppContext) {
     );
     let first_view = active(&tabs, cx);
     new_project(&tabs, cx, first);
-    let case = cx.update(|_, cx| first_view.read(cx).project.link().unwrap().id.clone());
+    let project_id = cx.update(|_, cx| first_view.read(cx).project.link().unwrap().id.clone());
     let second = open_applied(
         &tabs,
         cx,
@@ -198,11 +198,14 @@ fn one_members_undo_leaves_another_members_keep(cx: &mut TestAppContext) {
         &[("Boris Ivanov", Person)],
     );
     let second_view = active(&tabs, cx);
-    move_tab(&tabs, cx, second, Some(&case));
+    move_tab(&tabs, cx, second, Some(&project_id));
     keep_all(&first_view, "Riverside", cx);
     keep_all(&second_view, "Riverside", cx);
     let store = vault(&tabs, cx);
-    assert_eq!(store.project(&case).unwrap().lists.never, ["Riverside"]);
+    assert_eq!(
+        store.project(&project_id).unwrap().lists.never,
+        ["Riverside"]
+    );
     first_view.update(cx, |view, cx| {
         let text = view.editor.read(cx).text().to_owned();
         let start = text.find("Riverside").unwrap();
@@ -213,11 +216,14 @@ fn one_members_undo_leaves_another_members_keep(cx: &mut TestAppContext) {
         view.review_changed(cx);
     });
     settle(cx);
-    assert_eq!(store.project(&case).unwrap().lists.never, ["Riverside"]);
+    assert_eq!(
+        store.project(&project_id).unwrap().lists.never,
+        ["Riverside"]
+    );
 }
 
-/// Not a name on a saved, replaced name: its case save takes the
-/// wording out of the case, alias reserved, and puts it on no list.
+/// Not a name on a saved, replaced name: its Project save takes the
+/// wording out of the Project, alias reserved, and puts it on no list.
 #[gpui::test]
 fn not_a_name_leaves_the_project_and_its_lists(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -276,13 +282,14 @@ fn not_a_name_leaves_the_project_and_its_lists(cx: &mut TestAppContext) {
         "Anna Petrova met staff at Riverside."
     );
     assert!(anna(&store).is_empty(), "the wording left the Project");
-    let case = store.project(&id).unwrap();
+    let record = store.project(&id).unwrap();
     assert!(
-        case.mapping
+        record
+            .mapping
             .reserved_aliases()
             .contains(&"PERSON_1".to_string())
     );
-    assert!(case.lists.is_empty(), "no list entry");
+    assert!(record.lists.is_empty(), "no list entry");
     cx.update(|_, cx| {
         assert_eq!(
             view.read(cx).editor.read(cx).text(),

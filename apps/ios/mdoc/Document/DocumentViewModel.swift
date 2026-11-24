@@ -221,7 +221,7 @@ final class DocumentViewModel {
         switch snapshot.phase {
         case .unscanned where !findsNames:
             // Nothing to find here: marking by selection, then the hand-off.
-            // A case's names can still come in as proposals on import.
+            // A Project's names can still come in as proposals on import.
             return snapshot.pendingCount > 0 ? .replaceAll(snapshot.pendingCount) : .handOff
         case nil where jobs.current != nil, .unscanned where jobs.current != nil:
             return .waiting
@@ -546,7 +546,7 @@ final class DocumentViewModel {
 
     // MARK: Restore
 
-    /// Paste or Type a reply: restores it with this document's case and
+    /// Paste or Type a reply: restores it with this document's Project and
     /// opens it.
     func restore(reply: String) {
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)

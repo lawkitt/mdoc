@@ -229,6 +229,10 @@ struct Runtime {
     name: &'static str,
     library: &'static str,
     library_sha: &'static str,
+    /// Names earlier releases installed this runtime as. One left beside a
+    /// missing `library` makes setup an update ([`onnx_runtime_superseded`]);
+    /// a version bump adds the outgoing name.
+    superseded: &'static [&'static str],
     /// Tried in order; a later source only when an earlier one could not be
     /// downloaded (see [`source_unavailable`]), never after a failed check.
     sources: &'static [Source],
@@ -287,6 +291,7 @@ const MAC_RUNTIMES: &[Runtime] = &[
         name: "pdfium",
         library: "libpdfium.dylib",
         library_sha: "fbdec47c3f2eaa80705ed25cf8bed5ac420998ba0f3e786d4d297b6238749064",
+        superseded: &[],
         sources: &[Source {
             url: "https://github.com/firecrawl/pdfium-rs/releases/download/native-v7988/firecrawl-pdfium-mac-arm64.tgz",
             size: 3_460_583,
@@ -300,6 +305,8 @@ const MAC_RUNTIMES: &[Runtime] = &[
         library: "libonnxruntime.1.32.0.dylib",
         // Signed with Microsoft's Developer ID (team UBF8T346G9).
         library_sha: "21ff304871400e846a30c8a1165d15173add56598afb45f98227e2dfc716a497",
+        // 0.4.0-rc.3 and earlier.
+        superseded: &["libonnxruntime.1.27.0.dylib"],
         sources: &[onnx_runtime_nuget(
             "runtimes/osx-arm64/native/libonnxruntime.dylib",
         )],
@@ -312,6 +319,7 @@ const WINDOWS_RUNTIMES: &[Runtime] = &[
         name: "pdfium",
         library: "pdfium.dll",
         library_sha: "03cc8de22238ea9ffbbf41703f8ef8aae77faeab735583815481f5c2c70a63c7",
+        superseded: &[],
         sources: &[Source {
             url: "https://github.com/firecrawl/pdfium-rs/releases/download/native-v7988/firecrawl-pdfium-win-x64.tgz",
             size: 3_764_191,
@@ -329,6 +337,8 @@ const WINDOWS_RUNTIMES: &[Runtime] = &[
         // by full path.
         library: "onnxruntime.1.32.0.dll",
         library_sha: "348c3d29d6995eee37e3451825eaddb7ea7400be3afda6ca2286b12bc775f042",
+        // 1.27.0, from 0.4.0-rc.3 and earlier.
+        superseded: &["onnxruntime.dll"],
         sources: &[onnx_runtime_nuget(
             "runtimes/win-x64/native/onnxruntime.dll",
         )],
@@ -367,6 +377,7 @@ pub fn pending(
             .filter(|r| root.is_none_or(|root| !root.join(r.library).exists()))
             .map(Runtime::size)
             .sum(),
+        replaces_runtime: onnx_runtime_superseded(root),
     }
 }
 /// Bytes of the shared ONNX Runtime archive.
@@ -381,6 +392,18 @@ pub fn onnx_runtime_pending(root: Option<&Path>) -> u64 {
         Some(root) if root.join(runtime.library).exists() => 0,
         _ => runtime.size(),
     }
+}
+
+/// Whether the shared ONNX Runtime under `root` (the OCR root) is missing
+/// while an earlier release's is installed: its download is an update. The
+/// pinned library is named by its version, so the earlier one is found by
+/// name; nothing is read.
+pub fn onnx_runtime_superseded(root: Option<&Path>) -> bool {
+    let runtime = &RUNTIMES[1];
+    root.is_some_and(|root| {
+        !root.join(runtime.library).exists()
+            && runtime.superseded.iter().any(|old| root.join(old).exists())
+    })
 }
 
 pub fn root() -> Result<PathBuf, SetupError> {
@@ -1364,6 +1387,7 @@ mod tests {
             name: "onnx",
             library: "libonnxruntime.1.32.0.dylib",
             library_sha: sha(b"github build"),
+            superseded: &[],
             sources: Vec::leak(sources),
         }
     }
@@ -1610,6 +1634,28 @@ mod tests {
             RUNTIMES.iter().map(Runtime::size).sum::<u64>()
         );
         assert!(onnx_runtime_in(dir.path()).unwrap_err().is_missing());
+    }
+
+    /// An earlier release's ONNX Runtime in place of the pinned one makes
+    /// its download an update; none, or the pinned one beside it, does not.
+    #[test]
+    fn an_earlier_onnx_runtime_is_superseded() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!onnx_runtime_superseded(None));
+        assert!(!onnx_runtime_superseded(Some(dir.path())));
+        assert!(!pending(Some(dir.path()), OcrModel::Cyrillic).replaces_runtime);
+        for runtime in [&MAC_RUNTIMES[1], &WINDOWS_RUNTIMES[1]] {
+            assert!(!runtime.superseded.is_empty());
+            assert!(!runtime.superseded.contains(&runtime.library));
+            for old in runtime.superseded {
+                fs::write(dir.path().join(old), b"ONNX Runtime 1.27.0").unwrap();
+            }
+        }
+        assert!(onnx_runtime_superseded(Some(dir.path())));
+        assert!(pending(Some(dir.path()), OcrModel::Cyrillic).replaces_runtime);
+        assert_eq!(onnx_runtime_pending(Some(dir.path())), onnx_runtime_size());
+        fs::write(onnx_runtime_path(dir.path()), b"ONNX Runtime 1.32.0").unwrap();
+        assert!(!onnx_runtime_superseded(Some(dir.path())));
     }
 
     /// A version bump changes every ONNX Runtime source and both installed

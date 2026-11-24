@@ -98,7 +98,7 @@ fn an_import_lands_in_unfiled_and_lists_its_counts() {
         .unwrap();
     let saved = session.save_into_vault(vault.clone()).unwrap();
     assert_eq!(saved.project, None);
-    assert_eq!(saved.review.case_id, None);
+    assert_eq!(saved.review.project_id, None);
     assert!(vault.projects().is_empty(), "no import makes a Project");
 
     let unfiled = vault.unfiled();
@@ -201,7 +201,10 @@ fn intake_from_a_project_page_joins_it() {
         "Brief",
     );
     assert_eq!(brief.project.as_ref().unwrap().id, project.id);
-    assert_eq!(brief.review.case_id.as_deref(), Some(project.id.as_str()));
+    assert_eq!(
+        brief.review.project_id.as_deref(),
+        Some(project.id.as_str())
+    );
 
     let memo = session("Bob Hart met Ann Lee.", "Memo");
     let joined = memo
@@ -251,7 +254,7 @@ fn intake_from_a_project_page_joins_it() {
 fn stale_sessions_never_merge_different_people() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let ann = session("Ann Lee signed.", "Ann");
     let bob = session("Bob Hart signed.", "Bob");
     for (session, name) in [(&ann, "Ann Lee"), (&bob, "Bob Hart")] {
@@ -287,7 +290,7 @@ fn stale_sessions_never_merge_different_people() {
 fn pending_changes_save_into_the_vault_and_rejoin() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let (ann, first) = saved(
         &vault,
         Some(&project.id),
@@ -327,7 +330,7 @@ fn pending_changes_save_into_the_vault_and_rejoin() {
 fn a_document_moves_into_a_project_and_back() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     saved(
         &vault,
         Some(&project.id),
@@ -374,7 +377,7 @@ fn a_document_moves_into_a_project_and_back() {
     // Opened again, it is the moved document in the Project.
     let (_, reopened) = reopened(&vault, &memo.id);
     assert_eq!(reopened.text, "PERSON_3 met PERSON_1.");
-    assert_eq!(reopened.case_id.as_deref(), Some(project.id.as_str()));
+    assert_eq!(reopened.project_id.as_deref(), Some(project.id.as_str()));
     assert_eq!((reopened.replaced, reopened.proposed), (2, 0));
 
     let back = vault.undo_move(moved.undo).unwrap();
@@ -409,7 +412,7 @@ fn a_document_moves_into_a_project_and_back() {
 fn undoing_a_move_keeps_names_shared_since() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let (_, brief) = saved(
         &vault,
         Some(&project.id),
@@ -460,7 +463,7 @@ fn documents_and_projects_are_renamed_and_deleted() {
         .rename_document(letter.id.clone(), "Answer".into())
         .unwrap();
     assert_eq!(renamed.title, "Answer");
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let project = vault.rename_project(project.id, " Matter ".into()).unwrap();
     assert_eq!(project.name, "Matter");
     assert!(vault.rename_project(project.id.clone(), "".into()).is_err());
@@ -583,7 +586,7 @@ fn a_save_never_overwrites_a_change_made_elsewhere() {
     session.keep(at(&text, "PERSON_1", 0), Scope::This).unwrap();
     assert!(matches!(
         session.save_into_vault(vault.clone()),
-        Err(CoreError::Case { .. })
+        Err(CoreError::Project { .. })
     ));
     let stored = vault.store().document(&saved.id).unwrap();
     assert_eq!(stored.title, "Renamed elsewhere");
@@ -597,7 +600,7 @@ fn a_save_never_overwrites_a_change_made_elsewhere() {
 fn a_reopened_document_takes_names_renamed_since() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let (_, letter) = saved(
         &vault,
         Some(&project.id),
@@ -631,7 +634,7 @@ fn a_reopened_document_takes_names_renamed_since() {
 fn text_leaves_the_vault_only_when_ready() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let (letter, saved_letter) = saved(
         &vault,
         Some(&project.id),
@@ -687,7 +690,7 @@ fn text_leaves_the_vault_only_when_ready() {
 fn an_alias_retired_by_not_a_name_stays_retired_when_reopened() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     for place in [None, Some(project.id.as_str())] {
         let (session, saved) = saved(
             &vault,
@@ -731,7 +734,7 @@ fn an_alias_retired_by_not_a_name_stays_retired_when_reopened() {
 fn a_moved_ready_document_is_ready_again_after_its_next_save() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     let (_, memo) = saved(&vault, None, "Ann Lee wrote.", &["Ann Lee"], "Memo");
     let ready = crate::vault::Readiness::Ready;
     assert_eq!(vault.readiness(memo.id.clone()).unwrap(), ready);

@@ -101,10 +101,13 @@ pub struct ProposedName {
     pub category: Category,
 }
 
-/// What Copy for AI and Share send.
+/// What Copy for AI and Share need from the session: its refusal while
+/// proposals are pending, and the shared file's name. The text the apps
+/// send is the Vault's checked text (`Vault::text_for_ai`), never `text`.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct HandOff {
-    /// The alias-only note, then the text (`copy_for_ai`).
+    /// The alias-only note, then the session's text (`copy_for_ai`),
+    /// unchecked against the Project's names: not what leaves.
     pub text: String,
     /// The shared `.md` file's name (`share_file_name`).
     pub file_name: String,
@@ -114,7 +117,7 @@ pub struct HandOff {
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct SessionInfo {
     pub title: String,
-    pub case_id: Option<String>,
+    pub project_id: Option<String>,
     pub scanned: bool,
     pub phase: DocumentPhase,
     pub proposed: u64,
@@ -171,11 +174,18 @@ impl DocumentSession {
         Ok(document.snapshot())
     }
 
-    /// Copy for AI and Share: refused while proposals are pending.
+    /// Copy for AI and Share: refused while proposals are pending. The
+    /// apps then send `Vault::text_for_ai`, not `HandOff::text`.
     pub fn hand_off(&self) -> Result<HandOff, ReviewError> {
         let guard = self.lock_document();
         let document = guard.as_ref().ok_or_else(no_document)?;
         let count = document.proposed();
+        #[cfg(test)]
+        let count = if crate::exits::taken_out(crate::exits::Gate::HandOff) {
+            0
+        } else {
+            count
+        };
         if count > 0 {
             return Err(ReviewError::PendingProposals { count });
         }
@@ -241,7 +251,7 @@ impl DocumentSession {
         let proposed = document.proposed();
         Some(SessionInfo {
             title: document.title.clone(),
-            case_id: document.project().map(str::to_owned),
+            project_id: document.project().map(str::to_owned),
             scanned: document.scanned,
             phase: DocumentPhase::of(document.scanned, proposed),
             proposed,
@@ -823,7 +833,7 @@ mod tests {
     fn info_reads_the_session_without_a_snapshot() {
         let scratch = Scratch::new();
         let vault = Vault::open(scratch.path().display().to_string(), vec![3; 32]).unwrap();
-        let project = vault.create_project("Case".into()).unwrap();
+        let project = vault.create_project("Lease".into()).unwrap();
         assert!(DocumentSession::new().info().is_none());
         let (session, start) = session("Ann Lee met Bob Hart.", &["Ann Lee", "Bob Hart"]);
         session
@@ -836,8 +846,8 @@ mod tests {
             })
             .unwrap();
         let info = session.info().unwrap();
-        assert_eq!(info.case_id, replaced.case_id);
-        assert_eq!(info.case_id, Some(project.id));
+        assert_eq!(info.project_id, replaced.project_id);
+        assert_eq!(info.project_id, Some(project.id));
         assert_eq!((info.title.as_str(), info.proposed), ("Letter", 1));
         assert_eq!(info.phase, DocumentPhase::Reviewing);
     }

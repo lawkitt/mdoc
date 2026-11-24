@@ -700,11 +700,11 @@ fn sidebar_project_actions_and_categories_work_without_a_pointer(cx: &mut TestAp
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let case = new_project(&tabs, cx, tab);
+    let project_id = new_project(&tabs, cx, tab);
     tabs.update(cx, |tabs, cx| tabs.dismiss_toast(cx));
     draw(cx);
     let row = tabs.update(cx, |w, cx| {
-        w.tree_focus(&tree::RowKey::Project(case.clone()), cx)
+        w.tree_focus(&tree::RowKey::Project(project_id.clone()), cx)
     });
     cx.update(|window, cx| window.focus(&row, cx));
     key(cx, "shift-f10");
@@ -715,14 +715,14 @@ fn sidebar_project_actions_and_categories_work_without_a_pointer(cx: &mut TestAp
     activate_control(cx);
     cx.update(|window, cx| {
         let w = tabs.read(cx);
-        assert_eq!(w.project_ui.page.as_ref().unwrap().id(), case);
+        assert_eq!(w.project_ui.page.as_ref().unwrap().id(), project_id);
         assert!(w.focus_regions.home().contains_focused(window, cx));
     });
     activate_control(cx);
     assert!(cx.update(|_, cx| {
         tabs.read(cx)
             .projects
-            .project(&case)
+            .project(&project_id)
             .unwrap()
             .skipped()
             .contains(&mdoc_pii::Category::Person)

@@ -299,6 +299,7 @@ pub fn pending(
             + mdoc_import::ocr::onnx_runtime_size(),
         model: missing.iter().sum(),
         runtime: mdoc_import::ocr::onnx_runtime_pending(ocr_root),
+        replaces_runtime: mdoc_import::ocr::onnx_runtime_superseded(ocr_root),
     }
 }
 /// Every file against its pin; an encoder in either layout.
@@ -7208,6 +7209,49 @@ mod tests {
             )
             .is_err()
         );
+    }
+    /// A model installed beside an earlier release's ONNX Runtime (a
+    /// 0.4.0-rc.3 profile) is a runtime update of the runtime's size; the
+    /// pinned runtime, none, or a missing model are not. Only sizes and
+    /// names are read.
+    #[test]
+    fn an_earlier_runtime_beside_the_model_is_an_update() {
+        use mdoc_store::settings::PiiModel;
+        let model = PiiModel::Fp16;
+        let root = tempfile::tempdir().unwrap();
+        let ocr_root = tempfile::tempdir().unwrap();
+        let state = || pending(model, Some(root.path()), Some(ocr_root.path()));
+        // Nothing installed: a first setup.
+        assert!(!state().runtime_update());
+        assert_eq!(state().total(), state().full);
+        // An earlier runtime but no model: still a first setup.
+        for old in ["libonnxruntime.1.27.0.dylib", "onnxruntime.dll"] {
+            fs::write(ocr_root.path().join(old), b"ONNX Runtime 1.27.0").unwrap();
+        }
+        assert!(state().replaces_runtime);
+        assert!(!state().runtime_update());
+        for file in manifest_for(model).files {
+            let path = root.path().join(&file.path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::File::create(path).unwrap().set_len(file.bytes).unwrap();
+        }
+        // The model and an earlier runtime: an update of the runtime.
+        assert!(state().runtime_update());
+        assert_eq!(state().total(), mdoc_import::ocr::onnx_runtime_size());
+        assert_eq!(mdoc_import::model_download::megabytes(state().total()), 185);
+        // The pinned runtime too: nothing to do.
+        fs::write(
+            mdoc_import::ocr::onnx_runtime_path(ocr_root.path()),
+            b"ONNX Runtime 1.32.0",
+        )
+        .unwrap();
+        assert!(!state().runtime_update());
+        assert_eq!(state().total(), 0);
+        // The model alone, with no runtime at all: a runtime still to set up.
+        let bare = tempfile::tempdir().unwrap();
+        let bare = pending(model, Some(root.path()), Some(bare.path()));
+        assert_eq!(bare.runtime, mdoc_import::ocr::onnx_runtime_size());
+        assert!(!bare.runtime_update());
     }
     /// Nothing is left to download with the encoder in either layout, and
     /// both pinned encoders have one (#905). Only sizes are read here.

@@ -5,22 +5,22 @@ use super::{
     vault_state::{Opening, VaultEffect},
 };
 use gpui::{Context, SharedString, Window};
-use mdoc_store::cases::{self, CaseError};
+use mdoc_store::os_key::{self, KeyError};
 use mdoc_vault::Vault;
 
 impl Workspace {
     /// Read the key quietly and open the Vault; off the main thread.
     pub(super) fn open_vault_at_launch() -> Opening {
-        match cases::vault_key(true) {
+        match os_key::vault_key(true) {
             Ok(Some(key)) => Self::open_vault(&key),
             Ok(None) => Opening::MayAsk,
-            Err(error) => key_unreadable(error, cases::vault_dir()),
+            Err(error) => key_unreadable(error, os_key::vault_dir()),
         }
     }
 
     fn open_vault(key: &[u8; 32]) -> Opening {
-        let Some(root) = cases::vault_dir() else {
-            return Opening::Key(CaseError::NoAppData);
+        let Some(root) = os_key::vault_dir() else {
+            return Opening::Key(KeyError::NoAppData);
         };
         match Vault::open(&root, key) {
             Ok(vault) => Opening::Opened(Box::new(vault)),
@@ -95,7 +95,7 @@ impl Workspace {
     ))]
     pub(super) fn vault_unavailable_for_render(&mut self) -> Option<std::sync::Arc<Vault>> {
         let vault = self.vault.vault().cloned();
-        self.vault.opened(Opening::Key(CaseError::NoKeyStore));
+        self.vault.opened(Opening::Key(KeyError::NoKeyStore));
         vault
     }
 
@@ -151,7 +151,7 @@ impl Workspace {
     /// Reading the key at launch would ask (as on a Mac that has not allowed
     /// mdoc yet); the explainer's Continue then yields `open`.
     #[cfg(test)]
-    pub(super) fn stage_vault_key(&mut self, open: Result<Vault, CaseError>) {
+    pub(super) fn stage_vault_key(&mut self, open: Result<Vault, KeyError>) {
         self.vault.opened(Opening::MayAsk);
         self.staged_vault = Some(open);
     }
@@ -163,23 +163,23 @@ impl Workspace {
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Result<(), CaseError> {
+    ) -> Result<(), KeyError> {
         #[cfg(test)]
         let opening = match self.staged_vault.take() {
             Some(Ok(vault)) => Opening::Opened(Box::new(vault)),
             Some(Err(error)) => Opening::Key(error),
-            None => Opening::Key(CaseError::NoKeyStore),
+            None => Opening::Key(KeyError::NoKeyStore),
         };
         #[cfg(not(test))]
-        let opening = match cases::vault_key(false) {
+        let opening = match os_key::vault_key(false) {
             Ok(Some(key)) => Self::open_vault(&key),
             Ok(None) => Opening::MayAsk,
-            Err(error) => key_unreadable(error, cases::vault_dir()),
+            Err(error) => key_unreadable(error, os_key::vault_dir()),
         };
-        let denied = matches!(opening, Opening::Key(CaseError::KeyDenied));
+        let denied = matches!(opening, Opening::Key(KeyError::KeyDenied));
         self.vault_opened(opening, window, cx);
         if denied {
-            Err(CaseError::KeyDenied)
+            Err(KeyError::KeyDenied)
         } else {
             Ok(())
         }
@@ -244,13 +244,13 @@ impl Workspace {
 /// another Windows installation, or damaged) leaves a Vault that holds
 /// documents to its recovery key, which then replaces the slot. Any other
 /// failure leaves the Vault unavailable.
-fn key_unreadable(error: CaseError, root: Option<std::path::PathBuf>) -> Opening {
+fn key_unreadable(error: KeyError, root: Option<std::path::PathBuf>) -> Opening {
     let unreadable = matches!(
         error,
-        CaseError::DataProtection
-            | CaseError::KeyDamaged
-            | CaseError::KeychainDamaged
-            | CaseError::KeyringDamaged
+        KeyError::DataProtection
+            | KeyError::KeyDamaged
+            | KeyError::KeychainDamaged
+            | KeyError::KeyringDamaged
     );
     match root {
         Some(root) if unreadable && holds_objects(&root) => Opening::WrongKey(root),
@@ -275,14 +275,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("vault");
         // No Vault yet: nothing to recover.
-        let opening = key_unreadable(CaseError::DataProtection, Some(root.clone()));
-        assert!(matches!(opening, Opening::Key(CaseError::DataProtection)));
+        let opening = key_unreadable(KeyError::DataProtection, Some(root.clone()));
+        assert!(matches!(opening, Opening::Key(KeyError::DataProtection)));
         let vault = Vault::open(&root, &[1; 32]).unwrap();
         vault
             .create_project(mdoc_vault::NewProject::default())
             .unwrap();
         vault.flush().unwrap();
-        for error in [CaseError::DataProtection, CaseError::KeyDamaged] {
+        for error in [KeyError::DataProtection, KeyError::KeyDamaged] {
             assert!(matches!(
                 key_unreadable(error, Some(root.clone())),
                 Opening::WrongKey(found) if found == root
@@ -290,8 +290,8 @@ mod tests {
         }
         // No key store at all is not a key to recover.
         assert!(matches!(
-            key_unreadable(CaseError::NoKeyStore, Some(root.clone())),
-            Opening::Key(CaseError::NoKeyStore)
+            key_unreadable(KeyError::NoKeyStore, Some(root.clone())),
+            Opening::Key(KeyError::NoKeyStore)
         ));
     }
 }

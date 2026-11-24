@@ -101,7 +101,7 @@ struct RestoreExtensionView: View {
             }
             .accessibilityLabel(Text("\(placeKind(model.selected)): \(model.selectedName ?? "")"))
             .accessibilityHint(Text("Restores the reply with another Project's or document's names."))
-            .accessibilityIdentifier("restore-case-picker")
+            .accessibilityIdentifier("restore-project-picker")
             if let result = model.result {
                 RestoreSummary(result: result)
             }

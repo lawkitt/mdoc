@@ -63,7 +63,7 @@ extension SourceRange {
     }
 }
 
-/// The eight named case swatches (ADR 0077).
+/// The eight named Project swatches (ADR 0077).
 enum ProjectColour: String, CaseIterable, Sendable {
     case red, orange, amber, green, teal, blue, violet, pink
 }
@@ -622,7 +622,7 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
     case findNamesFailed(String)
     /// A review change no longer applies: the text or the mention changed.
     case reviewChanged(String)
-    /// A case rule (one case per document), or the case could not be read.
+    /// A Project rule (one Project per document), or the Project could not be read.
     case projectRefused(String)
     /// A model file could not be verified or installed.
     case setupFailed(String)
@@ -675,7 +675,7 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
             String(localized: "\(alias) is another name's alias.")
         case .nameNotFound:
             String(localized: "That name is no longer in the document.")
-        // Sentences of the core's (a blank title, the case a document is
+        // Sentences of the core's (a blank title, the Project a document is
         // in already, a mention that moved) or of the app's, as they are.
         case .reviewChanged(let reason), .projectRefused(let reason), .invalid(let reason), .refused(let reason),
              .other(let reason):

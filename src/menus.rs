@@ -14,7 +14,7 @@ use crate::{
     search_session::{FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown},
     workspace::{
         AddDocumentToProject, ChangeProjectColour, CheckForUpdates, Close, DeleteProject,
-        ExportProject, Import, New, Open, OpenPalette, OpenProject, PasteAiResponse,
+        ExportProject, Import, New, NewProject, Open, OpenPalette, OpenProject, PasteAiResponse,
         ProjectCategories, PseudonymizeClipboard, Quit, RenameProject, RestoreClipboard, Settings,
         ShowHome, SwitchDocument, SwitchDocumentBack, ToggleSidebar, shortcuts_ui::ShowShortcuts,
     },
@@ -126,6 +126,8 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Close", Close),
         ]),
         Menu::new("Project").items([
+            MenuItem::action("New Project…", NewProject),
+            MenuItem::separator(),
             MenuItem::action("Add Document…", AddDocumentToProject),
             MenuItem::action("Rename Project", RenameProject),
             MenuItem::action("Project Colour", ChangeProjectColour),

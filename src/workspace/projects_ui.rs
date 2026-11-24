@@ -4,7 +4,7 @@
 //! rename, colour, categories, lists and delete; the Open Project list.
 use super::{
     Workspace,
-    autosave::{Op, Write},
+    autosave::{Op, Ran, Write},
     document_writer::Target,
     projects::ProjectLink,
 };
@@ -79,6 +79,11 @@ impl ProjectsState {
     /// failed.
     pub(super) fn is_unwritten(&self, id: &str) -> bool {
         self.unwritten.contains(id)
+    }
+
+    /// A job writes Project `id` now: it no longer waits.
+    pub(super) fn take_unwritten(&mut self, id: &str) -> bool {
+        self.unwritten.remove(id)
     }
 }
 
@@ -598,7 +603,11 @@ impl Workspace {
 
     /// Write the Projects a move reads, as this window has them, before it
     /// runs: a move then never loses a change waiting to be written.
-    fn write_now(&mut self, vault: &Vault, ids: &[Option<String>]) -> Result<(), VaultError> {
+    pub(super) fn write_now(
+        &mut self,
+        vault: &Vault,
+        ids: &[Option<String>],
+    ) -> Result<(), VaultError> {
         for id in ids.iter().flatten() {
             if let Some(project) = self.projects.project(id).cloned() {
                 vault.update_project(id, |stored| keep_fields(stored, &project))?;
@@ -627,7 +636,6 @@ impl Workspace {
         if self.project_of(document.as_str()) == to {
             return;
         }
-        self.project_changed(id, cx);
         self.queue_op(document, Op::Move { to }, window, cx);
     }
 
@@ -671,7 +679,6 @@ impl Workspace {
             .map(|view| view.read(cx).display_name())
             .unwrap_or_default();
         let name = name.strip_suffix(".md").unwrap_or(&name).to_string();
-        self.project_changed(id, cx);
         let skip = self
             .preferences
             .borrow()
@@ -747,20 +754,18 @@ impl Workspace {
         let Some(document) = VaultId::parse(&undo.document) else {
             return;
         };
-        if let Some(tab) = self.find_document(&DocumentId::Vault(document.clone()), None, cx) {
-            self.project_changed(tab, cx);
-        }
         self.queue_op(document, Op::Undo { undo, made }, window, cx);
         cx.notify();
     }
 
-    /// Hold `document`'s autosaves, write what it shows now, then run `op`
-    /// once the writes before it are done.
+    /// Run `op` once the jobs before it are done. What its tab shows is
+    /// read when it runs (ADR 0130); until it has, the document counts as
+    /// moving, so no second move or delete of it is offered. A quit is the
+    /// last job: nothing queues after it.
     fn queue_op(&mut self, document: VaultId, op: Op, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(tab) = self.find_document(&DocumentId::Vault(document.clone()), None, cx) {
-            self.autosave(tab, window, cx);
+        if self.quit_flow.quitting() {
+            return;
         }
-        self.queue_project_writes(window, cx);
         self.moving.insert(document.clone());
         self.next_op += 1;
         let target = Target::Op(self.next_op);
@@ -768,48 +773,60 @@ impl Workspace {
     }
 
     /// Run a move at the head of the writer's queue: nothing else writes
-    /// meanwhile. Its Projects are written first; the moved document's tab
-    /// loads again.
+    /// meanwhile. What its tab shows is written first, its names before its
+    /// text, then its Projects; the moved document's tab loads again, and
+    /// the job ends once it has.
     pub(super) fn run_op(
         &mut self,
         document: VaultId,
         op: Op,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Ran {
         let Some(vault) = self.vault.vault().cloned() else {
             self.moving.remove(&document);
-            return;
+            return Ran::Ended;
         };
         let id = document.as_str();
         // What its tab shows now, typed while the move waited included, is
-        // what moves. A name applied meanwhile joins the source Project's
-        // names first: reconciling an alias the Project retired since
-        // rewrites the text, which is then written as it shows, and
+        // what moves (ADR 0130). A name applied meanwhile joins the source
+        // Project's names first: reconciling an alias the Project retired
+        // since rewrites the text, which is then written as it shows, and
         // `write_now` writes those names before the move reads them. If any
         // of it fails, nothing moves.
         let tab = self.find_document(&DocumentId::Vault(document.clone()), None, cx);
-        if let Some(tab) = tab {
-            let written = self
-                .fold_into_project(tab, cx)
-                .map_err(|error| format!("its names could not be kept. {error}"))
-                .and_then(|()| {
-                    (self.write_tab_now(tab, &vault, cx))
-                        .map_err(|error| format!("its text could not be saved. {error}"))
-                });
-            if let Err(error) = written {
-                self.moving.remove(&document);
-                let title =
-                    (self.tab_view(tab)).map_or_else(String::new, |v| v.read(cx).display_name());
-                self.notices
-                    .post(format!("Could not move \u{201c}{title}\u{201d}: {error}"));
-                cx.notify();
-                return;
-            }
+        if let Some(tab) = tab
+            && !self.broken_order()
+            && let Err(error) = self.write_tab_now(tab, &vault, cx)
+        {
+            self.moving.remove(&document);
+            let title =
+                (self.tab_view(tab)).map_or_else(String::new, |v| v.read(cx).display_name());
+            self.notices
+                .post(format!("Could not move \u{201c}{title}\u{201d}: {error}"));
+            cx.notify();
+            return Ran::Ended;
         }
         let from = self.project_of(id);
         let before = vault.document(id).ok();
         let title = before.as_ref().map(|d| d.title.clone()).unwrap_or_default();
+        // The Projects it writes hold every open member's names, a change
+        // still waiting for its fold included: the move numbers the
+        // document's names against all of them (ADR 0130).
+        let places = match &op {
+            Op::Move { to } => vec![from.clone(), to.clone()],
+            Op::Undo { undo, .. } => vec![from.clone(), undo.project.clone()],
+            _ => vec![from.clone()],
+        };
+        if let Err(error) = self.fold_members(&places, cx) {
+            self.moving.remove(&document);
+            self.notices.post(format!(
+                "Could not move \u{201c}{title}\u{201d}: its Project's names could not be kept. \
+                 {error}"
+            ));
+            cx.notify();
+            return Ran::Ended;
+        }
         let (result, moving, made) = match op {
             Op::Move { to } => (
                 self.write_now(&vault, &[from.clone(), to.clone()])
@@ -864,6 +881,13 @@ impl Workspace {
         };
         match result {
             Ok(moved) => {
+                // The order the rule forbids, for the test that must catch
+                // it: the tab is read after the move read the Vault.
+                if let Some(tab) = tab
+                    && self.broken_order()
+                {
+                    let _ = self.write_tab_now(tab, &vault, cx);
+                }
                 let (names, aliases) = (before.as_ref())
                     .and_then(|before| self.alias_changes(before, &moved))
                     .unwrap_or_default();
@@ -913,6 +937,54 @@ impl Workspace {
         self.refresh_saved_replies(cx);
         self.refresh_reply_page(cx);
         cx.notify();
+        self.hold_for_reloads()
+    }
+
+    /// Fold the names of every open member of `projects` whose change waits
+    /// for its fold, for a job about to write those Projects.
+    pub(super) fn fold_members(
+        &mut self,
+        projects: &[Option<String>],
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let tabs: Vec<u64> = (self.tabs.iter())
+            .filter(|tab| {
+                tab.view().is_some_and(|view| {
+                    let view = view.read(cx);
+                    view.project_save_pending()
+                        && (view.project.link())
+                            .is_some_and(|link| projects.iter().flatten().any(|p| *p == link.id))
+                })
+            })
+            .map(|tab| tab.id())
+            .collect();
+        for tab in tabs {
+            if let Some(view) = self.tab_view(tab) {
+                view.update(cx, |view, _| view.take_project_save());
+            }
+            self.fold_into_project(tab, cx)?;
+        }
+        Ok(())
+    }
+
+    /// A job that started reloads holds the writer until they end: no
+    /// later job reads a view a reload is about to replace (ADR 0130).
+    pub(super) fn hold_for_reloads(&mut self) -> Ran {
+        if self.reloading.is_empty() {
+            return Ran::Ended;
+        }
+        self.reloads_hold_writer = true;
+        Ran::Holds
+    }
+
+    /// Tests only: run moves in the order ADR 0130 forbids, reading the tab
+    /// after the move read the Vault, so the interleaving test can show it
+    /// catches that.
+    fn broken_order(&self) -> bool {
+        #[cfg(test)]
+        return self.broken_order;
+        #[cfg(not(test))]
+        false
     }
 
     /// The Projects a move wrote, in this window.
@@ -1003,8 +1075,14 @@ impl Workspace {
             let (_, effect) = view.project.leave();
             view.carry_out_project_link(Some(effect), cx);
         });
-        self.reloading.insert(document.clone());
-        self.load_document(id, DocumentId::Vault(document), record, window, cx);
+        match self.load_document(id, DocumentId::Vault(document.clone()), record, window, cx) {
+            Some(generation) => {
+                self.reloading.insert(document, generation);
+            }
+            None => {
+                self.moving.remove(&document);
+            }
+        }
     }
 
     fn show_toast(
@@ -1095,6 +1173,10 @@ impl Workspace {
         };
         // What the question asks about: only these may go with it.
         let members = self.project_members(&project_id);
+        #[cfg(test)]
+        {
+            self.asked_to_delete.push_back(members.clone());
+        }
         let count = members.len();
         let answer = if count == 0 {
             window.prompt(
@@ -1164,16 +1246,10 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.vault.vault().is_none() {
+        if self.vault.vault().is_none() || self.quit_flow.quitting() {
             return;
         }
-        // Their last text is written first; then nothing writes them.
-        for member in &members {
-            if let Some(tab) = self.find_document(&DocumentId::Vault(member.clone()), None, cx) {
-                self.project_changed(tab, cx);
-                self.autosave(tab, window, cx);
-            }
-        }
+        // What the members show is read when the delete runs.
         for member in &members {
             self.moving.insert(member.clone());
         }
@@ -1189,7 +1265,8 @@ impl Workspace {
         self.queue_write(target, Write::Op(id, op), window, cx);
     }
 
-    /// Run a Project delete at the head of the writer's queue.
+    /// Run a Project delete at the head of the writer's queue; the job ends
+    /// once its members have loaded again.
     pub(super) fn run_delete(
         &mut self,
         project_id: String,
@@ -1197,10 +1274,25 @@ impl Workspace {
         members: Vec<VaultId>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Ran {
         let Some(vault) = self.vault.vault().cloned() else {
-            return;
+            for member in &members {
+                self.moving.remove(member);
+            }
+            return Ran::Ended;
         };
+        // The Project's documents changed since the question (an import, a
+        // move): nothing is written, and the question comes again. The
+        // Vault checks once more under its lock, for other handles.
+        let mut now: Vec<String> = (self.project_members(&project_id).iter())
+            .map(|id| id.as_str().to_string())
+            .collect();
+        let mut asked: Vec<String> = members.iter().map(|m| m.as_str().to_string()).collect();
+        now.sort();
+        asked.sort();
+        if now != asked {
+            return self.ask_delete_again(project_id, &members, window, cx);
+        }
         // Moved to Unfiled, each open member loads again from the Vault:
         // what it shows now is written first, edits made while the delete
         // waited included. One that can't be written stops the delete
@@ -1214,9 +1306,7 @@ impl Workspace {
                 // A name applied while the delete waited joins the
                 // Project's names, which each member takes to Unfiled; an
                 // alias reconciled on the way is in the text written next.
-                let written = (self.fold_into_project(tab, cx))
-                    .and_then(|()| self.write_tab_now(tab, &vault, cx));
-                if let Err(error) = written {
+                if let Err(error) = self.write_tab_now(tab, &vault, cx) {
                     for member in &members {
                         self.moving.remove(member);
                     }
@@ -1230,7 +1320,7 @@ impl Workspace {
                          saved first, so nothing was moved. {error}"
                     ));
                     cx.notify();
-                    return;
+                    return Ran::Ended;
                 }
             }
             // The Project's names as the window holds them, written before
@@ -1245,7 +1335,7 @@ impl Workspace {
                      nothing was moved. {error}"
                 ));
                 cx.notify();
-                return;
+                return Ran::Ended;
             }
         }
         // Only what was confirmed is deleted: the Vault compares the
@@ -1254,17 +1344,7 @@ impl Workspace {
         let confirmed: Vec<String> = members.iter().map(|m| m.as_str().to_string()).collect();
         let result = vault.delete_project_with(&project_id, documents, &confirmed);
         if let Ok(false) = result {
-            for member in &members {
-                self.moving.remove(member);
-            }
-            self.notices.post(
-                "The Project's documents changed before it was deleted, so nothing was \
-                 deleted. Choose again for them as they are now.",
-            );
-            // Asked again, about the documents it holds now.
-            self.delete_project(project_id, window, cx);
-            cx.notify();
-            return;
+            return self.ask_delete_again(project_id, &members, window, cx);
         }
         let result = result.map(|_| ());
         let tabs: Vec<(u64, VaultId)> = (members.iter())
@@ -1308,7 +1388,22 @@ impl Workspace {
                     self.projects.put(project);
                 }
                 for (tab, member) in tabs {
-                    self.reload_tab(tab, member, window, cx);
+                    match documents {
+                        // Written at the head: the Vault holds what it showed.
+                        ProjectDocuments::MoveToUnfiled => self.reload_tab(tab, member, window, cx),
+                        // Not written first: one still there keeps its view
+                        // and its edits; one gone closes.
+                        ProjectDocuments::Delete => {
+                            self.moving.remove(&member);
+                            let gone = matches!(
+                                vault.document(member.as_str()),
+                                Err(VaultError::NotFound { .. })
+                            );
+                            if gone {
+                                self.remove(tab, window, cx);
+                            }
+                        }
+                    }
                 }
                 for member in &members {
                     if self
@@ -1327,6 +1422,28 @@ impl Workspace {
         self.refresh_saved_replies(cx);
         self.checkpoint(window, cx);
         cx.notify();
+        self.hold_for_reloads()
+    }
+
+    /// A Project delete found other documents than its question named:
+    /// nothing is deleted, and the question comes again for them.
+    fn ask_delete_again(
+        &mut self,
+        project_id: String,
+        members: &[VaultId],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Ran {
+        for member in members {
+            self.moving.remove(member);
+        }
+        self.notices.post(
+            "The Project's documents changed before it was deleted, so nothing was \
+             deleted. Choose again for them as they are now.",
+        );
+        self.delete_project(project_id, window, cx);
+        cx.notify();
+        Ran::Ended
     }
 
     // ---- Rename, categories, lists ----------------------------------------
@@ -1695,8 +1812,8 @@ impl Workspace {
                         .text_size(px(12.))
                         .text_color(palette.header_muted)
                         .child(
-                            "No Projects yet. Right-click a tab, or open Share, and choose \
-                             Move to New Project.",
+                            "No Projects yet. Choose New Project, or right-click a document \
+                             and choose Move to New Project.",
                         ),
                 )
             })

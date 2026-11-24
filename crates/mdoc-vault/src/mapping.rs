@@ -1,7 +1,6 @@
 //! A replacement mapping: the identities a Project's Documents share, or an
-//! Unfiled Document keeps for itself. The case store's rules
-//! (`mdoc_store::cases::Case`), with stable identity ids and Document ids
-//! where a case kept member paths.
+//! Unfiled Document keeps for itself, with stable identity ids and Document
+//! ids, never paths.
 use mdoc_pii::{
     Category,
     restore::{ExportedIdentity, RestoreMap},

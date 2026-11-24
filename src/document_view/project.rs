@@ -49,6 +49,12 @@ impl DocumentView {
         self.project_save.is_some()
     }
 
+    /// A job is folding the mapping now (ADR 0130): the waiting fold is
+    /// done. Returns whether one waited.
+    pub(crate) fn take_project_save(&mut self) -> bool {
+        self.project_save.take().is_some()
+    }
+
     /// Give a member document loaded without its review its Project's
     /// identities. Alias tokens in the text become applied replacements
     /// that can be restored.

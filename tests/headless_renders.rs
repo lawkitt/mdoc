@@ -168,7 +168,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
             "headless-metal"
         }
     );
-    assert_eq!(summary["isolation"]["os_case_keys_disabled"], true);
+    assert_eq!(summary["isolation"]["os_keys_disabled"], true);
     assert_eq!(summary["isolation"]["network_requests_disabled"], true);
     let profile = Path::new(summary["profile_directory"].as_str().unwrap());
     for root in ["data_directory", "cache_directory"] {
@@ -430,6 +430,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                             | "project-page-lists"
                             | "rename-project"
                             | "project-categories"
+                            | "new-project-page"
                     ),
                     "{theme}/{name}"
                 );
@@ -485,7 +486,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     | "settings-detection-end" => Some("Detection"),
                     "settings-recognition" => Some("Recognition"),
                     "settings-spelling" | "dictionary" => Some("Spelling"),
-                    "settings-cases" => Some("Cases"),
+                    "settings-vault" | "settings-vault-recovery-key" => Some("Vault"),
                     "settings-about" => Some("About"),
                     _ => None,
                 };

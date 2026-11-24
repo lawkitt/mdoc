@@ -22,7 +22,7 @@ limit to raise; tests never retry.
 The code is the record of what mdoc does. Read this file and your area's
 spec: [desktop](specs/desktop.md), [mobile](specs/mobile.md),
 [originals](specs/originals.md), [recognition](specs/recognition.md),
-[cases and privacy](specs/cases-and-privacy.md), [CI](specs/ci.md) or
+[projects and privacy](specs/projects-and-privacy.md), [CI](specs/ci.md) or
 [release](specs/release.md). [ROADMAP.md](../ROADMAP.md) holds open work,
 [Issues](https://github.com/lawkitt/mdoc/issues) bugs,
 [CONTEXT.md](../CONTEXT.md) terms, and [adr/](adr/) the few choices that are
@@ -36,7 +36,7 @@ hard to reverse. [privacy.md](privacy.md) is for users.
   stale, so delete it. History lives in git, PRs and issues.
 - **Specs: test or delete.** One rule per bullet, with at most one "because"
   clause, paths only where an agent must go, and no narration. A rule about
-  privacy, data loss or the case key that a test can pin becomes that test
+  privacy, data loss or the Vault key that a test can pin becomes that test
   and leaves the spec; a behaviour the code already shows leaves.
 - **ADRs** record a choice that is hard to reverse, surprising without
   context and the result of a real trade-off. Template: title;
@@ -120,7 +120,7 @@ module's header says what it owns.
 **Dependencies.** `Cargo.toml` is the only place to change a revision:
 `just lint` fails when `Cargo.lock` isn't what cargo resolves from it. An
 exact pin carries its reason in a comment. Bump `dirs`, `aes-gcm` and
-`docxide-pdf` deliberately, one PR each, checking their paths, old cases
+`docxide-pdf` deliberately, one PR each, checking their paths, Vault files
 and the preview corpus. If Cargo's Git fetch cannot authenticate, use
 `CARGO_NET_GIT_FETCH_WITH_CLI=true`; never change global Cargo
 configuration. Never distribute local user-provided fixtures.
@@ -159,8 +159,11 @@ Bash 3.2 compatible for macOS's `/bin/bash`.
 - `wsl` builds only the platform-neutral crates. A lane stops and reports
   before adding a dependency, vendoring code, patching `vendor/` or a GPUI
   platform crate, or editing outside its item.
-- A dev build uses the real profile: copy `~/Library/Application Support/mdoc`
-  aside before a GUI check and restore it after.
+- A GUI check runs a debug build with `MDOC_DEV_PROFILE=<new folder>`
+  (macOS and Windows): the profile and a plain Vault key file live there,
+  the Keychain and DPAPI are never asked, and the title says "dev profile".
+  Release builds ignore it. Without it, a debug build uses the real profile
+  and the one a test run leaves in `target/debug` panics.
 - An integration branch keeps `main`'s required checks. After every two or
   three items merged into it, one cross-provider review of the whole branch
   runs, limited to the privacy and data-loss rules. It never blocks a merge
@@ -187,7 +190,7 @@ gate = ["just lint", "cargo nextest run -p <each changed crate>"]
 merge_queue = true
 checks = ["lint (ubuntu)", "merge-gate"]
 rules = [
-  "Never run the app against the real profile (`~/Library/Application Support/mdoc`, `%LOCALAPPDATA%\\mdoc`) or touch the real Keychain key; tests use injected stores.",
+  "Never run the app against the real profile (`~/Library/Application Support/mdoc`, `%LOCALAPPDATA%\\mdoc`) or touch the real Keychain key; tests use injected stores, and a GUI row runs a debug build with `MDOC_DEV_PROFILE=<new scratch folder>`.",
   "Stop and report to the hub before adding a dependency, vendoring code, patching `vendor/` or a GPUI platform crate, or editing outside the item's area.",
 ]
 

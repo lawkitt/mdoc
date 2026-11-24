@@ -10,7 +10,7 @@
 #   APPLE_PROVISIONING_PROFILE  optional: a Developer ID provisioning profile for
 #                           io.github.lawkitt.mdoc with Keychain sharing. Embedded
 #                           with the Keychain access-group entitlements, so the
-#                           case key uses the data protection keychain.
+#                           Vault key uses the data protection keychain.
 #   Notarization, either:
 #     APPLE_KEYCHAIN_PROFILE  a `xcrun notarytool store-credentials` profile
 #   or the Apple ID with an app-specific password (CI):
@@ -71,9 +71,9 @@ case "$kind" in
         "keychain-access-groups array" "keychain-access-groups:0 string $app_id"; do
         /usr/libexec/PlistBuddy -c "Add :$add" "$entitlements" >/dev/null
       done
-      echo "embedding the provisioning profile: case key in the data protection keychain"
+      echo "embedding the provisioning profile: Vault key in the data protection keychain"
     else
-      echo "no APPLE_PROVISIONING_PROFILE: case key in the login keychain"
+      echo "no APPLE_PROVISIONING_PROFILE: Vault key in the login keychain"
     fi
     # The bundle holds one executable, so signing the bundle covers all code.
     codesign --force --timestamp --options runtime \

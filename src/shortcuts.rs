@@ -366,6 +366,11 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
+        "New Project…",
+        &[on!(App, None, &["mod-shift-n"], workspace::NewProject)],
+    ),
+    row(
+        Everywhere,
         "Open files…",
         &[on!(App, None, &["mod-o"], workspace::Open)],
     ),

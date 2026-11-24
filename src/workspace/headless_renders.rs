@@ -57,6 +57,7 @@ mod home;
 mod import;
 mod narrow;
 mod navigation;
+mod new_project;
 mod notes;
 mod old_cases;
 mod pdf_source;
@@ -400,6 +401,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     tree::scenes(d, &project)?;
     folder_sheet::scenes(d, path, &project)?;
     projects::delete(d, project)?;
+    new_project::scenes(d)?;
     confirm::scenes(d)?;
     comparison::scenes(d, &view)?;
     import::scenes(d)?;
@@ -438,11 +440,11 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     // Exercise both OS-key entry points before building app state. Both must
     // refuse without touching the OS key store or any profile file.
     for result in [
-        mdoc_store::cases::vault_key(true).map(|_| ()),
-        mdoc_store::cases::vault_key(false).map(|_| ()),
+        mdoc_store::os_key::vault_key(true).map(|_| ()),
+        mdoc_store::os_key::vault_key(false).map(|_| ()),
     ] {
-        if !matches!(result, Err(mdoc_store::cases::CaseError::KeysDisabled)) {
-            return Err("OS case-key guard is not active".into());
+        if !matches!(result, Err(mdoc_store::os_key::KeyError::KeysDisabled)) {
+            return Err("OS key guard is not active".into());
         }
     }
     // An earlier build's cases folder, its key and its recents: no path
@@ -569,7 +571,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     let summary = json!({"schema_version": 1, "platform": std::env::consts::OS, "renderer": renderer, "viewport": [WIDTH, HEIGHT],
         "profile_directory": profile.path(), "screens": screens, "focus_rings": focus_rings,
         "isolation": {"data_directory": data_directory, "cache_directory": cache_directory,
-            "os_case_keys_disabled": true, "network_requests_disabled": true},
+            "os_keys_disabled": true, "network_requests_disabled": true},
         "timing_scope": "CPU layout/paint and synchronous GPU raster/readback measured separately; PNG encoding excluded",
         "tab_scope": "Actual Tab dispatch until first repeated focus handle, or 128 presses. Focus IDs are run-local; each step includes a PNG with the focus ring. A cycle can be a local panel loop, not whole-window coverage."});
     std::fs::write(

@@ -12,26 +12,26 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** Where the 32-byte key sealing saved cases comes from. */
-fun interface CaseKeyStore {
+/** Where the 32-byte key that seals the Vault comes from. */
+fun interface VaultKeyStore {
     /** The key, made and stored the first time. */
     fun key(): ByteArray
 }
 
 /**
- * The case key as 32 random bytes wrapped by an Android Keystore AES key:
+ * The Vault key as 32 random bytes wrapped by an Android Keystore AES key:
  * the wrapping key never leaves the Keystore (StrongBox when the
  * phone has one) and needs no fingerprint; the wrapped bytes live in
  * no-backup storage, so a backup or a new phone never has them. From Android
  * 15 it also works only while the phone is unlocked. On Android 12 to 14 that
  * flag cannot be used: those versions delete such keys when the screen lock
- * is removed, which would make every case unreadable, and refuse to make
+ * is removed, which would make the Vault unreadable, and refuse to make
  * one on a phone without a lock.
  */
-class KeystoreCaseKeyStore(
+class KeystoreVaultKeyStore(
     private val file: File,
     private val alias: String = "mdoc-case-key",
-) : CaseKeyStore {
+) : VaultKeyStore {
 
     @Synchronized
     override fun key(): ByteArray {
@@ -40,7 +40,7 @@ class KeystoreCaseKeyStore(
         file.parentFile?.mkdirs()
         val temp = File(file.path + ".new")
         temp.writeBytes(wrap(key))
-        check(temp.renameTo(file)) { "mdoc could not store its case key." }
+        check(temp.renameTo(file)) { "mdoc could not store its Vault key." }
         return key
     }
 
@@ -51,7 +51,7 @@ class KeystoreCaseKeyStore(
     }
 
     private fun unwrap(stored: ByteArray): ByteArray {
-        check(stored.size > IV_BYTES) { "mdoc's stored case key is damaged." }
+        check(stored.size > IV_BYTES) { "mdoc's stored Vault key is damaged." }
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(
             Cipher.DECRYPT_MODE,
@@ -59,7 +59,7 @@ class KeystoreCaseKeyStore(
             GCMParameterSpec(TAG_BITS, stored, 0, IV_BYTES),
         )
         val key = cipher.doFinal(stored, IV_BYTES, stored.size - IV_BYTES)
-        check(key.size == KEY_BYTES) { "mdoc's stored case key is damaged." }
+        check(key.size == KEY_BYTES) { "mdoc's stored Vault key is damaged." }
         return key
     }
 

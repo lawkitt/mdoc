@@ -1,5 +1,6 @@
-//! Quitting: each tab queued is asked in turn, then documents, Projects and
-//! the session are written and the window closes. The workspace view asks,
+//! Quitting: each tab queued is asked in turn, then the quit is the
+//! writer's last job (ADR 0130): documents, Projects and the session are
+//! written and the window closes in one turn. The workspace view asks,
 //! writes and closes the window; this owner decides what comes next.
 
 use std::{cell::Cell, collections::VecDeque, rc::Rc};
@@ -22,8 +23,7 @@ pub(super) enum QuitEffect {
     /// Activate tab `id` and ask about it before the quit goes on.
     Resolve(u64),
     /// Every tab is resolved: activate `restore` (the tab active when the
-    /// quit began), write documents and the session and, once no write
-    /// runs, finish.
+    /// quit began) and queue the quit as the writer's last job.
     Settle { restore: Option<u64> },
 }
 

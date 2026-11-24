@@ -122,7 +122,7 @@ final class AppModel {
 
     /// The model to show once the scene's phase changes. A launch in the
     /// background (a model download finishing) can find the device locked and
-    /// the case key unreadable; once mdoc is in front, it opens again.
+    /// the Vault key unreadable; once mdoc is in front, it opens again.
     func reopened(isActive: Bool, open: () -> AppModel) -> AppModel {
         isActive && startupError != nil ? open() : self
     }
@@ -189,7 +189,7 @@ final class AppModel {
         }
     }
 
-    /// A new document left empty goes when it is left, with its case: no
+    /// A new document left empty goes when it is left, with its Project: no
     /// empty row stays in the lists (ADR 0109). True when it went.
     private func discardIfEmpty(_ id: DocumentID) -> Bool {
         guard documents.model(for: id)?.snapshot.origin == .new else { return false }
@@ -250,7 +250,7 @@ final class AppModel {
     }
 
     /// A save that followed taps ended: the lists show the document as
-    /// saved, and a document whose case changed elsewhere shows its review
+    /// saved, and a document whose Project changed elsewhere shows its review
     /// as joined again. A failure shows on the document, or over whatever
     /// shows once it is closed.
     func saved(_ event: SaveEvent) {
@@ -491,7 +491,7 @@ final class AppModel {
         model.restore(SampleDocument.forLanguages())
     }
 
-    // MARK: Rename and Move to case (ADR 0102)
+    // MARK: Rename and Move to Project (ADR 0102)
 
     func rename(_ id: DocumentID, to title: String) {
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -515,7 +515,7 @@ final class AppModel {
         }
     }
 
-    /// Move to case: the names take the case's aliases; the toast offers
+    /// Move to Project: the names take the Project's aliases; the toast offers
     /// Undo, which moves the document back.
     func move(_ id: DocumentID, to target: ProjectChoice) {
         do {

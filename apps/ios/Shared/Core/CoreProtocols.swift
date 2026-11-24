@@ -2,7 +2,7 @@ import Foundation
 import MdocFFI
 
 // The three coarse objects `crates/mdoc-ffi` exports (ADR 0085). Rust owns
-// document, review, case and restore state; these calls return snapshots.
+// document, review, Project and restore state; these calls return snapshots.
 // Long calls block their thread and report through a `JobObserver`, the one
 // thing the core calls back into the platform for.
 
@@ -88,7 +88,7 @@ protocol Library: AnyObject, Sendable {
 
 /// How a save that followed review taps went (`Library.observeSaves`).
 enum SaveEvent: Sendable {
-    /// Saved. `rejoined`: another document changed the case meanwhile, and
+    /// Saved. `rejoined`: another document changed the Project meanwhile, and
     /// joining it again may have renumbered this one's aliases.
     case saved(DocumentID, rejoined: Bool)
     /// Not saved, and still to save.
@@ -141,7 +141,7 @@ protocol DocumentSession: AnyObject, Sendable {
     func replaceAllPending() throws -> DocumentSnapshot
     /// Copy for AI's text, through the same export path as desktop. The core
     /// refuses while proposals are pending. Records the document as shared
-    /// last. Saves the document first, so the case the Restore extension
+    /// last. Saves the document first, so the Project the Restore extension
     /// reads has every alias the text has.
     func copyForAI() throws -> HandOff
     /// Saves now what review taps left for their save (ADR 0104): before
@@ -220,7 +220,7 @@ protocol DocumentSession: AnyObject, Sendable {
     /// Belongs to…: a contact's or identifier's owner, a person or an
     /// organization; nil clears it.
     func setOwner(_ identity: IdentityID, to owner: IdentityID?) throws -> DocumentSnapshot
-    /// × on a merge hint: hidden from now on, in the case too. Not a step.
+    /// × on a merge hint: hidden from now on, in the Project too. Not a step.
     func dismissHint(_ hint: LinkHint) throws -> DocumentSnapshot
 
     // MARK: Edit mode (ADR 0109)

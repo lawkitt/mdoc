@@ -26,7 +26,7 @@ enum RealCore {
 // MARK: - Conversions
 
 extension ProjectColour {
-    /// The swatch nearest a case's stored hue (ADR 0077).
+    /// The swatch nearest a Project's stored hue (ADR 0077).
     init(hue: UInt32) {
         let hues: [(ProjectColour, Double)] = [
             (.red, 0), (.orange, 30), (.amber, 45), (.green, 130), (.teal, 175), (.blue, 215), (.violet, 270), (.pink, 330),
@@ -80,7 +80,7 @@ extension CoreError {
         case .detect(let message): .findNamesFailed(message)
         case .cancelled: .cancelled
         case .review(let message): .reviewChanged(message)
-        case .caseFailed(let message): .projectRefused(message)
+        case .project(let message): .projectRefused(message)
         case .setup(let message): .setupFailed(message)
         case .invalid(let message): .invalid(message)
         case .io(let message): .fileFailed(message)
@@ -966,7 +966,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// review without the reply or the styling; nil before it is read.
     fileprivate func loadedSummary(updated: Date) -> LibraryDocument? {
         guard let review = try? ffi.snapshot() else { return nil }
-        let projectID = review.caseId ?? chosen.projectID
+        let projectID = review.projectId ?? chosen.projectID
         return LibraryDocument(
             id: id, title: review.title, projectID: projectID.map(ProjectID.init), kind: lock.withLock { kind },
             phase: review.phase, pendingCount: Int(review.proposed), updated: updated,
@@ -1026,7 +1026,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// counts, the kept names, the phase and the ids are the core's.
     private func snapshot(of review: ReviewSnapshot) -> DocumentSnapshot {
         // Before it joins its Project the core has none: the one chosen.
-        let projectID = review.caseId ?? chosen.projectID
+        let projectID = review.projectId ?? chosen.projectID
         let (kind, original) = lock.withLock { (self.kind, self.original) }
         let candidates = review.mentions.map { mention in
             Candidate(
@@ -1405,8 +1405,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 
     /// A review tap in one core call (ADR 0104): the action by mention or
     /// identity id, and the snapshot after it. The change is saved into
-    /// the library and its case right after, off the main thread, as a
-    /// case member autosaves on desktop.
+    /// the library and its Project right after, off the main thread, as a
+    /// Project member autosaves on desktop.
     private func review(_ action: ReviewAction) throws -> DocumentSnapshot {
         reopenIfPending()
         defer { scheduleSave() }
@@ -1466,7 +1466,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         saver.cancel()
         do {
             // A job's save a locked phone held back goes first: it joins
-            // the case chosen at import, and saves the taps too.
+            // the Project chosen at import, and saves the taps too.
             try library.saveDeferred(id)
             try savePendingNow()
         } catch {
