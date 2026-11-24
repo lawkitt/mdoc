@@ -83,6 +83,9 @@ pub struct Pending {
     pub runtime: u64,
     /// The whole bundle's size, model and runtime, with nothing installed.
     pub full: u64,
+    /// An earlier release's ONNX Runtime is installed in place of the pinned
+    /// one (`ocr::onnx_runtime_superseded`).
+    pub replaces_runtime: bool,
 }
 impl Pending {
     pub fn total(self) -> u64 {
@@ -92,6 +95,11 @@ impl Pending {
     /// it finished, or another model installed the shared runtime).
     pub fn resumed(self) -> bool {
         self.total() > 0 && self.total() < self.full
+    }
+    /// The model is installed and only a newer shared runtime is missing,
+    /// with an earlier one in its place: setup updates rather than sets up.
+    pub fn runtime_update(self) -> bool {
+        self.model == 0 && self.runtime > 0 && self.replaces_runtime
     }
     /// How setup cards name the download: "665 MB download" or, after a
     /// cancelled setup, "662 MB left to download".
