@@ -441,12 +441,6 @@ items 33–35 are polish and do not.
     empty Project and opens its page, as both phones do. *Blocked by:* item
     23. *Done when:* workspace tests; headless renders of the header and the
     empty Project page.
-32. **[Android] Move a document to a Project.** *From
-    [#1153](https://github.com/lawkitt/mdoc/issues/1153) and #1091 decision 9.* The
-    app never calls the core's move, so an Unfiled document cannot join a
-    Project. A document's menu and Unfiled rows offer Move to Project, Move
-    to New Project and Move to Unfiled, with Undo, as iOS does. *Done when:*
-    the Android job passes with a move and its Undo.
 35. **[Desktop] An updated runtime says it is an update.** *From
     [#1153](https://github.com/lawkitt/mdoc/issues/1153).* A profile that has the
     detector's files but an older runtime is asked for 185 MB under "Set up
