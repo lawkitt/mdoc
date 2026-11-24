@@ -1220,7 +1220,9 @@ impl Workspace {
                             view.session.replace(document);
                             let mut copy = None;
                             let mut names = None;
+                            let mut source_error = None;
                             if let Some(vault) = vault {
+                                source_error = vault.source_error;
                                 names = vault.names;
                                 view.session.name = Some(vault.title);
                                 view.session.follows_first_line = vault.follows;
@@ -1286,6 +1288,9 @@ impl Workspace {
                                 && let Some(path) = attachment
                             {
                                 view.open_path(path, window, cx);
+                            }
+                            if let Some(error) = source_error {
+                                view.preview.unavailable(error);
                             }
                             if view.active && !dialog {
                                 window.focus(&view.editor.read(cx).focus_handle(cx), cx);
@@ -2825,6 +2830,8 @@ struct VaultLoaded {
     follows: bool,
     /// Its original's viewing copy, when it has a Source to show.
     copy: Option<PathBuf>,
+    /// Why its original didn't open, shown in the Source pane.
+    source_error: Option<String>,
     /// Admitted and not converted yet.
     unconverted: bool,
     warning: Option<String>,
@@ -2853,13 +2860,23 @@ fn load_from_vault(
     let original = (stored.original.as_ref()).filter(|original| {
         intake::needs_conversion(std::path::Path::new(&original.info.file_name))
     });
-    let copy = match (original, viewing) {
-        (Some(original), Some(dir)) => Some(
-            vault
-                .copy_original_to(id.as_str(), &dir, &original.info.file_name)
-                .map_err(|error| format!("Could not open the document's source. {error}"))?,
-        ),
-        _ => None,
+    // A source that doesn't open leaves its saved text and review to show,
+    // with the error where the Source would be; only a document with
+    // nothing else to show fails.
+    let (copy, source_error) = match (original, viewing) {
+        (Some(original), Some(dir)) => {
+            match vault.copy_original_to(id.as_str(), &dir, &original.info.file_name) {
+                Ok(copy) => (Some(copy), None),
+                Err(error) => {
+                    let error = format!("Could not open the document's source. {error}");
+                    if stored.pending_conversion() {
+                        return Err(error);
+                    }
+                    (None, Some(error))
+                }
+            }
+        }
+        _ => (None, None),
     };
     // Admitted and its text never written, though a move may have changed
     // its place: a text emptied by its user stays so.
@@ -2883,6 +2900,7 @@ fn load_from_vault(
             title: stored.title,
             follows: stored.origin == mdoc_vault::DocumentOrigin::New,
             copy,
+            source_error,
             unconverted,
             warning,
             left_out,

@@ -730,6 +730,45 @@ fn a_conversions_warning_comes_back_after_a_restart(cx: &mut TestAppContext) {
     });
 }
 
+/// Review of #1145 (P2-6): a converted document whose original is gone
+/// still opens its saved Markdown and review; the Source pane says why it
+/// has nothing to show.
+#[gpui::test]
+fn a_missing_original_leaves_the_saved_markdown_open(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let docx = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/import/text.docx");
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![docx], cx);
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        let edited = format!("{} Edited.", view.editor.read(cx).text());
+        view.editor
+            .update(cx, |editor, cx| editor.set_text(edited, cx));
+    });
+    wait(cx, 1000);
+    let id = cx.update(|_, cx| tabs.read(cx).tab_document(tabs.read(cx).tabs.active(), cx));
+    let root = vault(&tabs, cx).root().to_path_buf();
+    let session = cx.update(|_, cx| tabs.read(cx).snapshot(cx));
+    let original = root
+        .join("docs")
+        .join(id.unwrap().as_str())
+        .join("original.enc");
+    std::fs::remove_file(&original).unwrap();
+    let (restored, cx) = boot_on(&mut cx.cx, dir.path(), session);
+    active(&restored, cx).read_with(cx, |view, cx| {
+        assert!(!view.lifecycle.unavailable(), "{:?}", view.error);
+        assert!(view.editor.read(cx).text().ends_with(" Edited."));
+        assert!(view.preview.failed());
+        assert!(view.preview.visible());
+        let message = view.preview.message().unwrap();
+        assert!(
+            message.starts_with("Could not open the document's source."),
+            "{message}"
+        );
+    });
+}
+
 #[gpui::test]
 fn a_second_open_of_a_file_still_importing_asks_as_a_repeat(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
