@@ -403,14 +403,6 @@ items 33–35 are polish and do not.
     [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3.* As item
     26. *Blocked by:* items 23, 25. *Done when:* the Android job passes with
     tests of notes and Promote.
-28. **[Desktop] One ordering rule for Vault operations.** *From
-    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* Three review rounds of the
-    cut-over kept finding orderings between the write queue and live edits
-    (quit, move, delete, export, reload), one of them twice. Every
-    Vault-changing desktop operation follows one ordering rule, recorded in an
-    ADR. *Blocked by:* item 23. *Done when:* a randomized test interleaves
-    save, move, delete, export and quit and finds no lost edit and no alias
-    restored to another identity, and it fails on a deliberately broken order.
 29. **[Core] Every way text leaves is checked.** *From
     [#1153](https://github.com/lawkitt/mdoc/issues/1153).* One suite lists each exit:
     Copy for AI and Share on every platform, the menu bar shelf, Export, and
@@ -426,18 +418,6 @@ items 33–35 are polish and do not.
     *Done when:* a test pins that release builds ignore it; an agent runs a
     GUI row on each platform with no OS prompt; `docs/development.md` (Fleet)
     and the fleet profile's rule name it.
-31. **[Desktop] New Project.** *From
-    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* A Project appears only
-    through Move to New Project or an opened folder. A New Project command in
-    the Project menu, the palette and the tree's Projects header creates an
-    empty Project and opens its page, as both phones do. *Blocked by:* item
-    23. *Done when:* workspace tests; headless renders of the header and the
-    empty Project page.
-35. **[Desktop] An updated runtime says it is an update.** *From
-    [#1153](https://github.com/lawkitt/mdoc/issues/1153).* A profile that has the
-    detector's files but an older runtime is asked for 185 MB under "Set up
-    pseudonymization". The card says an update is needed and its size. *Done
-    when:* a headless render of the card in that state.
 
 - **[Desktop] Later: a horizontal tab strip.** Only if the tree proves short
   for working sets; needs no schema change. It would take the existing title
