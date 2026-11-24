@@ -263,6 +263,7 @@ class DocumentViewModel(
         notesScope.launch { runCatching { session.setNotes(notes) }.onFailure(::show) }
         notesSave?.cancel()
         notesSave = notesScope.launch {
+            // timing: typing in Notes pauses this long before its save, as iOS's (ADR 0104, #1091)
             delay(notesPause)
             saveNotesNow()
         }
