@@ -92,6 +92,9 @@ fn main() {
         );
         std::process::exit(1);
     }
+    // After the headless renders, which keep their own sandbox; workers
+    // inherit the variable, so they read the same profile as the app.
+    let dev_profile = mdoc_store::app_paths::use_dev_profile();
     if args.get(1).is_some_and(|arg| arg == "--mdoc-docx-worker") {
         // The document comes on stdin; the PDF goes back on stdout.
         let options = docx_preview::RenderOptions {
@@ -134,6 +137,9 @@ fn main() {
             }
         }
         return;
+    }
+    if let Some(profile) = dev_profile {
+        eprintln!("mdoc: dev profile in {}", profile.display());
     }
     let initial: Vec<_> = args.into_iter().skip(1).map(PathBuf::from).collect();
     // Windows: a second launch hands its paths to the running mdoc.

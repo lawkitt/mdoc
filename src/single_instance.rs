@@ -69,7 +69,18 @@ mod windows {
             .chars()
             .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
             .collect();
-        format!(r"\\.\pipe\io.github.lawkitt.mdoc-{user}-{session}")
+        // A dev profile's mdoc never hands its paths to the user's own, nor
+        // to another dev profile's.
+        let dev = mdoc_store::app_paths::dev_profile()
+            .map(|profile| {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::hash::DefaultHasher::new();
+                // As named, not canonicalized: the folder may not exist yet.
+                profile.hash(&mut hasher);
+                format!("-dev-{:016x}", hasher.finish())
+            })
+            .unwrap_or_default();
+        format!(r"\\.\pipe\io.github.lawkitt.mdoc-{user}-{session}{dev}")
     }
 
     pub fn claim(name: &str, paths: &[PathBuf]) -> Launch {

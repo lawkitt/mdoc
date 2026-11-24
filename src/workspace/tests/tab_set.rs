@@ -429,6 +429,16 @@ fn the_window_title_names_the_document_and_only_mdoc_on_home(cx: &mut TestAppCon
     cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "mdoc"));
 }
 
+#[test]
+fn a_dev_profile_window_says_so_in_its_title() {
+    assert_eq!(window_title("mdoc".into(), true), "mdoc — dev profile");
+    assert_eq!(
+        window_title("a — mdoc".into(), true),
+        "a — mdoc — dev profile"
+    );
+    assert_eq!(window_title("a — mdoc".into(), false), "a — mdoc");
+}
+
 #[gpui::test]
 fn untitled_save_as_starts_in_the_last_used_folder(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();

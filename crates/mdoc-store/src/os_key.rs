@@ -3,7 +3,9 @@
 //! Keychain, Windows data protection). There is no plaintext fallback. The
 //! OS key keeps the names an earlier build gave it for saved cases
 //! (`case-key`, `cases/key.dpapi`): it is read, never moved or rewritten,
-//! and the old cases folder stays untouched (Decision 2).
+//! and the old cases folder stays untouched (Decision 2). A dev profile
+//! (`app_paths::dev_profile`) keeps its Vault key in a plain file there
+//! instead, so it never asks the OS.
 use aes_gcm::aead::Generate;
 use std::{
     io,
@@ -88,6 +90,9 @@ pub fn vault_key(quiet: bool) -> Result<Option<[u8; 32]>, KeyError> {
     if crate::app_paths::isolated() {
         return Err(KeyError::KeysDisabled);
     }
+    if let Some(profile) = crate::app_paths::dev_profile() {
+        return dev_key::load_or_create(&dev_key::file(profile)).map(Some);
+    }
     #[cfg(feature = "deny-os-services")]
     deny_os_service("the Vault key");
     let dir = key_dir().ok_or(KeyError::NoAppData)?;
@@ -105,11 +110,15 @@ pub fn vault_key(quiet: bool) -> Result<Option<[u8; 32]>, KeyError> {
 }
 
 /// Keep `key`, a recovery key that opened the Vault, as the Vault key: in
-/// the Vault key slot of the OS key store, never in a plain file. The OS
-/// key and the old cases folder are left as they are (#1091 Decision 2).
+/// the Vault key slot of the OS key store, never in a plain file outside a
+/// dev profile. The OS key and the old cases folder are left as they are
+/// (#1091 Decision 2).
 pub fn store_vault_key(key: &[u8; 32]) -> Result<(), KeyError> {
     if crate::app_paths::isolated() {
         return Err(KeyError::KeysDisabled);
+    }
+    if let Some(profile) = crate::app_paths::dev_profile() {
+        return dev_key::store(&dev_key::file(profile), key);
     }
     #[cfg(feature = "deny-os-services")]
     deny_os_service("the Vault key, to store it");
@@ -145,6 +154,9 @@ fn slot_first(
 /// Public build label, using the same runtime identity as the Vault key.
 /// This inspects signing metadata only; it never reads the key.
 pub fn build_identity() -> &'static str {
+    if crate::app_paths::dev_profile().is_some() {
+        return "Dev";
+    }
     #[cfg(feature = "deny-os-services")]
     if deny_os_service("the build identity") {
         return "Dev";
@@ -160,6 +172,62 @@ pub fn build_identity() -> &'static str {
         "Dev"
     } else {
         "Release"
+    }
+}
+
+/// A dev profile's Vault key: one plain file in its folder, created on first
+/// use. A kept recovery key replaces it, as the Vault key slot would win.
+mod dev_key {
+    use super::{Generate, KeyError};
+    use std::{
+        io::{self, Write},
+        path::{Path, PathBuf},
+    };
+
+    pub fn file(profile: &Path) -> PathBuf {
+        profile.join("vault.key")
+    }
+
+    pub fn load_or_create(path: &Path) -> Result<[u8; 32], KeyError> {
+        match std::fs::read(path) {
+            Ok(bytes) => bytes.try_into().map_err(|_| KeyError::KeyDamaged),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                let key = <[u8; 32]>::generate();
+                match write(path, &key, false) {
+                    Ok(()) => Ok(key),
+                    // Another mdoc on this profile made one first: use its.
+                    Err(KeyError::KeyWrite(e)) if e.kind() == io::ErrorKind::AlreadyExists => {
+                        std::fs::read(path)
+                            .map_err(KeyError::KeyRead)?
+                            .try_into()
+                            .map_err(|_| KeyError::KeyDamaged)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            Err(e) => Err(KeyError::KeyRead(e)),
+        }
+    }
+
+    pub fn store(path: &Path, key: &[u8; 32]) -> Result<(), KeyError> {
+        write(path, key, true)
+    }
+
+    pub fn write(path: &Path, key: &[u8; 32], replace: bool) -> Result<(), KeyError> {
+        let dir = path.parent().ok_or(KeyError::NoAppData)?;
+        std::fs::create_dir_all(dir)
+            .and_then(|_| {
+                let mut file = tempfile::NamedTempFile::new_in(dir)?;
+                file.write_all(key)?;
+                file.as_file().sync_all()?;
+                if replace {
+                    file.persist(path).map_err(|e| e.error)?;
+                } else {
+                    file.persist_noclobber(path).map_err(|e| e.error)?;
+                }
+                Ok(())
+            })
+            .map_err(KeyError::KeyWrite)
     }
 }
 
@@ -200,6 +268,9 @@ mod key {
 
     #[cfg(target_os = "macos")]
     pub fn keychain() -> Keychain {
+        if crate::app_paths::dev_profile().is_some() {
+            return Keychain::Dev;
+        }
         #[cfg(feature = "deny-os-services")]
         if super::deny_os_service("the build's code signature") {
             return Keychain::Dev;
@@ -232,6 +303,9 @@ mod key {
     /// The key's folder name in app data, as an earlier build named it for
     /// saved cases: dev builds keep their own.
     pub fn folder() -> &'static str {
+        if crate::app_paths::dev_profile().is_some() {
+            return "cases-dev";
+        }
         #[cfg(target_os = "macos")]
         if keychain() == Keychain::Dev {
             return "cases-dev";
@@ -760,6 +834,30 @@ mod tests {
         );
         assert!(matches!(result, Err(KeyError::KeyDamaged)));
         assert!(!read);
+    }
+
+    #[test]
+    fn a_dev_profile_key_file_is_created_once_and_replaced_by_a_kept_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dev_key::file(&dir.path().join("profile"));
+        let first = dev_key::load_or_create(&path).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), first);
+        assert_eq!(dev_key::load_or_create(&path).unwrap(), first);
+        // A second mdoc that found no key keeps the first one's.
+        let other = dir.path().join("other.key");
+        std::fs::write(&other, [3; 32]).unwrap();
+        assert!(matches!(
+            dev_key::write(&other, &[4; 32], false),
+            Err(KeyError::KeyWrite(e)) if e.kind() == std::io::ErrorKind::AlreadyExists
+        ));
+        assert_eq!(dev_key::load_or_create(&other).unwrap(), [3; 32]);
+        dev_key::store(&path, &[7; 32]).unwrap();
+        assert_eq!(dev_key::load_or_create(&path).unwrap(), [7; 32]);
+        std::fs::write(&path, b"short").unwrap();
+        assert!(matches!(
+            dev_key::load_or_create(&path),
+            Err(KeyError::KeyDamaged)
+        ));
     }
 
     /// The guard covers the slot: a test that reaches for the OS Vault key,
