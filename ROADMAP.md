@@ -268,7 +268,9 @@ Maintainer actions list the steps on the maintainer's side.
 10. **[Android] Editing.** *From the mobile editor grill Q2.* The editor
     screen on the editor core ADR 0109 adds, after Android's rendered
     Markdown (#569) and iOS item 23's slice 1. *Done when:* grilled for
-    Compose specifics and built to ADR 0109's rules.
+    Compose specifics and built to ADR 0109's rules, and Done calls
+    `scan_edits` with an instrumented test that a typed new name does not
+    leave unreplaced (Vault & Projects item 44).
 
 ## Mobile CI/CD
 
@@ -493,20 +495,6 @@ or ChatGPT apps themselves are the maintainer's.
    launcher for a binary inside an installed app? The maintainer runs it,
    since the install can restart Claude Desktop. *Done when:* the answer is a
    comment on the issue.
-4. **[Spike] A floating window on Windows.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-   Can GPUI show a small topmost window that takes no keyboard focus when it
-   appears, with a tray icon, a system-wide hotkey and exclusion from screen
-   capture? *Done when:* what worked and what did not is a comment on the
-   issue.
-5. **[Core] Connector service: the AI project and reads.** *From
-   [#1164](https://github.com/lawkitt/mdoc/issues/1164) (ADR 0126).* One service over
-   the Vault holds the AI project (off by default), lists its documents by
-   AI label, size and state, and returns a Ready document's text for AI or
-   its "needs review" state, with an outline and parts above about 60,000
-   characters. *Blocked by:* Vault & Projects item 29. *Done when:* core
-   tests on a temp Vault prove no read reaches another Project or Unfiled,
-   each read re-checks the Project's names, no label comes from a stored
-   title, and the connector is in item 29's list of exits.
 6. **[Core] Deliveries and AI activity.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
    A delivery names the documents it read and is a reply or a new Document
    with a title; one that names a document outside the AI project is refused.
@@ -582,9 +570,6 @@ or ChatGPT apps themselves are the maintainer's.
     reply?" banner restores what the user pastes. *Done when:* the iOS job
     passes with tests of both, and a device check shares to an AI app and
     restores its answer.
-20. **[Android] Ask AI and the reply banner.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-    As item 18. *Blocked by:* item 18. *Done when:* the Android job passes
-    with tests of both.
 21. **[Docs] Words, privacy and release notes.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
     `privacy.md` says what a connected AI app can read and that any process
     running as the user can read the same; the glossary gains the companion
