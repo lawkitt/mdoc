@@ -101,6 +101,19 @@ impl Panel {
         }
     }
 
+    /// "Open deliveries when they arrive" as the page shows it. The window
+    /// opens a delivery only while this and the saved value are both on:
+    /// off at once, before its save lands, and on only once saved.
+    pub(crate) fn opens_deliveries(&self) -> bool {
+        self.draft.ai_connector.open_deliveries
+    }
+
+    /// Tests: hold the next save until `gate` finishes.
+    #[cfg(test)]
+    pub(crate) fn hold_next_save(&mut self, gate: gpui::Task<()>) {
+        self.save_gate = Some(gate);
+    }
+
     /// Why the connector couldn't start, as the page shows it.
     #[cfg(test)]
     pub(crate) fn ai_failed(&self) -> Option<&str> {

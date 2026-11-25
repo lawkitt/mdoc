@@ -853,10 +853,13 @@ fn a_review_request_notifies_once_and_opens_the_review(cx: &mut TestAppContext) 
 fn the_setting_opens_deliveries_in_front(cx: &mut TestAppContext) {
     let fixture = fixture();
     let (tabs, cx, notes) = shared_lease(cx, &fixture);
-    tabs.update(cx, |tabs, _| {
+    tabs.update(cx, |tabs, cx| {
         (tabs.preferences.borrow_mut().current.as_mut().unwrap())
             .ai_connector
             .open_deliveries = true;
+        tabs.settings.update(cx, |panel, cx| {
+            panel.ai_connector_changed(|ai| ai.open_deliveries = true, cx)
+        });
     });
     // Settings up: the delivery waits on the badge, and nothing moves.
     tabs.update_in(cx, |tabs, window, cx| tabs.show_settings(window, cx));
@@ -951,6 +954,33 @@ fn the_settings_switch_opens_deliveries_only_while_on(cx: &mut TestAppContext) {
     assert!(!flip(cx), "the switch saved off");
     let (later, _) = deliver(&tabs, cx, &fixture, Kind::Reply);
     assert_ne!(later, reply);
+    assert!(!window_active(cx));
+    assert_eq!(reply_shown(&tabs, cx).as_deref(), Some(reply.as_str()));
+    // On, with its save held: it opens nothing until the save lands.
+    let hold = |cx: &mut VisualTestContext| {
+        tabs.update(cx, |tabs, cx| {
+            tabs.settings.update(cx, |panel, cx| {
+                let gate = cx
+                    .background_executor()
+                    .timer(std::time::Duration::from_secs(60));
+                panel.hold_next_save(cx.background_executor().spawn(gate));
+            })
+        })
+    };
+    hold(cx);
+    assert!(!flip(cx), "the save is still held");
+    let (held, _) = deliver(&tabs, cx, &fixture, Kind::Reply);
+    assert!(!window_active(cx));
+    assert_eq!(reply_shown(&tabs, cx).as_deref(), Some(reply.as_str()));
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(61));
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| tabs.read(cx).ai_setting().open_deliveries));
+    // Off, with its save held: still saved on, it opens nothing already.
+    hold(cx);
+    assert!(flip(cx), "the save is still held");
+    let (off, _) = deliver(&tabs, cx, &fixture, Kind::Reply);
+    assert_ne!(off, held);
     assert!(!window_active(cx));
     assert_eq!(reply_shown(&tabs, cx).as_deref(), Some(reply.as_str()));
 }
