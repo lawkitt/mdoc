@@ -70,10 +70,12 @@ impl DocumentView {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let aliases = self.has_applied_aliases();
+        // A document scanned with nothing to replace may leave too.
+        let copy_for_ai = self.copy_for_ai_reason().is_none();
         // What Copy for AI needs first shows on the button, the count with
         // it, before the click.
         let step = self.copy_step(cx);
-        let copy_enabled = aliases || step.is_some();
+        let copy_enabled = copy_for_ai || step.is_some();
         let copied = self.copy_feedback.is_some();
         let entities = self.replacement_entity_count(cx);
         let section = |title: &'static str| {
@@ -145,7 +147,7 @@ impl DocumentView {
                         .h(px(32.))
                         .on_click(cx.listener(move |this, _, window, cx| match step {
                             Some(step) => cx.emit(crate::workspace::TabEvent::CopyStep(step)),
-                            None if aliases => this.copy_for_ai(&CopyForAi, window, cx),
+                            None if copy_for_ai => this.copy_for_ai(&CopyForAi, window, cx),
                             None => {}
                         })),
                     )

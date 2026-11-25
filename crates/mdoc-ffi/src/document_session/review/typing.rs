@@ -12,7 +12,7 @@
 //! once it is exported; until then it lives here, its one place.
 use super::{Focus, ReviewText, Step, StepKind};
 use crate::CoreError;
-use mdoc_pii::{DiscoveryInput, DiscoveryResult};
+use mdoc_pii::{Detection, DiscoveryInput, DiscoveryResult, EditedText};
 use std::ops::Range;
 
 /// The typing run the next edit may join, as desktop's `EditKind`.
@@ -203,6 +203,25 @@ impl ReviewText {
     /// the next pause runs it again. Returns whether the review changed.
     pub fn apply_discovery(&mut self, result: DiscoveryResult) -> bool {
         self.review.apply_discovery(result)
+    }
+
+    /// The paragraphs edits changed since they were scanned, to scan at
+    /// Done (`DocumentSession::scan_edits`); `None` when none did.
+    pub fn edited_text(&self) -> Option<EditedText> {
+        self.review.edited_text()
+    }
+
+    /// A scan of `edited`'s text, taken as a fresh scan's finds. False,
+    /// with nothing taken, when the text changed since `edited` was read.
+    pub fn ingest_edited(
+        &mut self,
+        edited: &EditedText,
+        detections: Vec<Detection>,
+    ) -> Result<bool, CoreError> {
+        let text = self.text.clone();
+        (self.review)
+            .ingest_edited(&text, edited, detections)
+            .map_err(CoreError::review)
     }
 }
 

@@ -1016,3 +1016,130 @@ fn an_open_document_moved_to_a_new_project_saves_again() {
     );
     assert_eq!(vault.projects().len(), 1);
 }
+
+/// Types `typed` at the end of the text and saves, as the apps do.
+fn type_and_save(session: &DocumentSession, vault: &Arc<Vault>, typed: &str) {
+    let end = session.snapshot().unwrap().text.len() as u64;
+    let caret = TextRange { start: end, end };
+    session.type_text(caret, typed.into()).unwrap();
+    session.save_pending_into_vault(vault.clone()).unwrap();
+}
+
+/// Q2 (b) of item 44: a save while edits are unscanned records the
+/// document unscanned, so one left mid-edit (the app ended before Done)
+/// reopens Unscanned, owing a scan of all its text, and is not Ready until
+/// Find names; its typed name is found then.
+#[test]
+fn a_document_left_mid_edit_reopens_unscanned() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let (_, saved) = saved(&vault, None, "Ann Lee signed.", &["Ann Lee"], "Letter");
+    let record = |vault: &Arc<Vault>| vault.store().document(&saved.id).unwrap();
+    assert!(record(&vault).scanned);
+    let (session, _) = reopened(&vault, &saved.id);
+    type_and_save(&session, &vault, " Write to bob@example.com.");
+    assert!(
+        !record(&vault).scanned,
+        "saved mid-edit: not all of it scanned"
+    );
+    drop(session);
+
+    let (again, opened) = reopened(&vault, &saved.id);
+    assert!(!opened.scanned && opened.edits_unscanned);
+    assert_eq!(opened.phase, DocumentPhase::Unscanned);
+    again.save_pending_into_vault(vault.clone()).unwrap();
+    assert_eq!(
+        vault.readiness(saved.id.clone()).unwrap(),
+        crate::vault::Readiness::NotReviewed
+    );
+    let scanned = again.scan(None, None).unwrap();
+    assert!(scanned.scanned && !scanned.edits_unscanned);
+    assert_eq!(scanned.proposed, 1, "the typed address");
+    again.replace_all().unwrap();
+    again.save_pending_into_vault(vault.clone()).unwrap();
+    assert!(record(&vault).scanned);
+    let sent = vault.text_for_ai(saved.id).unwrap();
+    assert!(
+        !sent.contains("bob@") && !sent.contains("Ann Lee"),
+        "{sent}"
+    );
+}
+
+/// Below the floor, where nothing is ever scanned, a document reopened
+/// after a save mid-edit owes the rules over all of it before it is Ready.
+#[test]
+fn below_the_floor_a_document_left_mid_edit_owes_the_rules() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let session = session("Ann Lee signed.", "Letter");
+    session.set_no_name_finder(true);
+    let text = session.snapshot().unwrap().text;
+    (session.add_selection(at(&text, "Ann Lee", 0), Some(Category::Person))).unwrap();
+    session.replace_all().unwrap();
+    let id = session.save_into_vault(vault.clone()).unwrap().id;
+    assert_eq!(
+        vault.readiness(id.clone()).unwrap(),
+        crate::vault::Readiness::Ready
+    );
+    type_and_save(&session, &vault, " Write to bob@example.com.");
+    drop(session);
+
+    let (again, opened) = reopened(&vault, &id);
+    again.set_no_name_finder(true);
+    assert!(opened.edits_unscanned);
+    // Its next save runs the rules over all of it first.
+    again.save_pending_into_vault(vault.clone()).unwrap();
+    let saved = again.snapshot().unwrap();
+    assert!(
+        !saved.edits_unscanned && saved.proposed == 1,
+        "the typed address"
+    );
+    assert_ne!(
+        vault.readiness(id.clone()).unwrap(),
+        crate::vault::Readiness::Ready
+    );
+    again.replace_all().unwrap();
+    again.save_pending_into_vault(vault.clone()).unwrap();
+    assert_eq!(vault.readiness(id).unwrap(), crate::vault::Readiness::Ready);
+}
+
+/// Below the floor, a hand review saved with a proposal left (never
+/// edited) reopens owing the rules too, and is Ready once its proposal is
+/// decided: it never stays owed.
+#[test]
+fn below_the_floor_a_hand_review_left_with_a_proposal_is_ready_once_decided() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let session = session("Ann Lee signed.", "Letter");
+    session.set_no_name_finder(true);
+    let text = session.snapshot().unwrap().text;
+    (session.add_selection(at(&text, "Ann Lee", 0), Some(Category::Person))).unwrap();
+    let id = session.save_into_vault(vault.clone()).unwrap().id;
+    drop(session);
+    let (again, opened) = reopened(&vault, &id);
+    assert!(opened.edits_unscanned);
+    again.set_no_name_finder(true);
+    again.replace_all().unwrap();
+    again.save_pending_into_vault(vault.clone()).unwrap();
+    assert_eq!(vault.readiness(id).unwrap(), crate::vault::Readiness::Ready);
+}
+
+/// The scan at Done restores `scanned`: written unscanned during the edit,
+/// the record is scanned and Ready again once it found nothing new.
+#[test]
+fn the_scan_at_done_restores_scanned() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let (session, saved) = saved(&vault, None, "Ann Lee signed.", &["Ann Lee"], "Letter");
+    type_and_save(&session, &vault, " It renews.");
+    let record = || vault.store().document(&saved.id).unwrap();
+    assert!(!record().scanned);
+    session.end_typing();
+    session.scan_edits(None, None).unwrap();
+    session.save_pending_into_vault(vault.clone()).unwrap();
+    assert!(record().scanned);
+    assert_eq!(
+        vault.readiness(saved.id).unwrap(),
+        crate::vault::Readiness::Ready
+    );
+}

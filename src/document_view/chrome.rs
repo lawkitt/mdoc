@@ -453,6 +453,15 @@ impl DocumentView {
         }
     }
 
+    /// Why Copy for AI is off, if it is: as for the alias actions, but a
+    /// document scanned with nothing to replace may leave too, once the
+    /// Vault's check passes.
+    pub(crate) fn copy_for_ai_reason(&self) -> Option<&'static str> {
+        let reason = self.alias_actions_reason()?;
+        let scanned = !self.pii.scans().is_empty() || self.session.document.scanned;
+        (self.lifecycle.source_only() || !self.can_copy_markdown() || !scanned).then_some(reason)
+    }
+
     fn more_menu(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
         let modifier = |mac: &'static str, other: &'static str| {
@@ -466,9 +475,11 @@ impl DocumentView {
         let has_text = copy && !self.editor.read(cx).text().is_empty();
         let alias_reason = self.alias_actions_reason();
         let aliases = copy && alias_reason.is_none();
-        // A refusal with a step is offered, not greyed out: its notice
+        // A document scanned with nothing to replace may leave too, and a
+        // refusal with a step is offered, not greyed out: its notice
         // carries the step.
-        let for_ai = aliases || (copy && self.copy_step(cx).is_some());
+        let copy_reason = self.copy_for_ai_reason();
+        let for_ai = copy && (copy_reason.is_none() || self.copy_step(cx).is_some());
         // Notes live in the Inspector, beside the text.
         let notes = copy && self.notes_available();
         let spelling_on = !self.spelling_control_off() && !self.spelling.off_here();
@@ -589,7 +600,7 @@ impl DocumentView {
                                 None,
                                 theme,
                                 for_ai,
-                                alias_reason.filter(|_| !for_ai).map(Into::into),
+                                copy_reason.filter(|_| !for_ai).map(Into::into),
                             )
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "more-copy-for-ai".into())

@@ -63,6 +63,9 @@ extension DocumentViewModel {
     /// as before.
     func refused(_ error: any Error) {
         if case CoreError.handOffRefused(let why) = error {
+            // The tap scanned an edit Done had not scanned yet: a new name
+            // it proposed shows on the bar, and Replace N and copy counts it.
+            if !isEditing { applyReview(session.snapshot()) }
             refusal = why
             // What the tap found, the bar and the menu show too.
             checkSaved()
