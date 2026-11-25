@@ -235,6 +235,12 @@ final class RealLibrary: Library, @unchecked Sendable {
     var typingPause = SaveScheduler.typingPause
     /// What scans ask about the phone; tests stand in low memory or heat.
     var device = DeviceConditions.live
+    #if DEBUG
+    /// The unit tests never download the name finder: at the detector tier
+    /// an edit's scan then runs the rules in its place, as Try a sample's
+    /// proposals stand in for Find names. A phone never does (`scanEdits`).
+    var rulesStandInForNameFinder = false
+    #endif
     /// Runs once Delete Project has begun listing the Project's documents
     /// and imports, before it has both: a test saves an import there, as
     /// the save queue can (#1140).
@@ -1281,18 +1287,72 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// and the text comes from the Vault, which checks the document is Ready
     /// against its Project's names as they are now. The Vault also notes
     /// the share, so a move's Undo keeps the names a reply may use.
+    /// A refusal is thrown as `CoreError.handOffRefused`, in the app's own
+    /// words: never the core's (#1209).
     func copyForAI() throws -> HandOff {
-        // A tap right after Done can come before Done's discovery has run
-        // off the main thread: run it now, so the save records the edited
-        // text as reviewed, or proposes what it found (#1209 decision 15).
-        _ = try? core { try ffi.discover() }
-        try saveChanges()
-        let handOff = try core { try ffi.handOff(vault: library.vault) }
-        guard let vaultID else { throw CoreError.notFound }
-        let text = try core { try library.vault.textForAi(id: vaultID) }
+        // A tap right after Done can come before Done's work has run off
+        // the main thread: run it now, as Done does, so the hand-off sees
+        // the state Done leaves. The edit scan runs discovery first, then
+        // scans the paragraphs edited: a new name is proposed, and the save
+        // records the edited text as reviewed only once it was scanned
+        // (#1209 decision 15, item 44). It cancels Done's scan if that runs.
+        _ = try? scanEdits()
+        do {
+            try saveChanges()
+        } catch {
+            // The save's own words name the Vault's records: not on screen.
+            throw CoreError.handOffRefused(.failed)
+        }
+        let handOff: MdocFFI.HandOff
+        do {
+            handOff = try core { try ffi.handOff(vault: library.vault) }
+        } catch CoreError.pendingReview(let count) {
+            let names = snapshot().identities.filter { $0.state == .proposed }.count
+            throw CoreError.handOffRefused(.namesToDecide(names: names, proposals: count))
+        } catch {
+            // Not saved into the Vault yet, or its file name unreadable.
+            throw CoreError.handOffRefused(vaultID == nil ? .notRead : .failed)
+        }
+        guard let vaultID else { throw CoreError.handOffRefused(.notRead) }
+        if let refusal = savedReadiness().flatMap(HandOffRefusal.init) {
+            throw CoreError.handOffRefused(refusal)
+        }
+        let text: String
+        do {
+            text = try core { try library.vault.textForAi(id: vaultID) }
+        } catch {
+            // A change between the check and the read: why, as it is now.
+            throw CoreError.handOffRefused(savedReadiness().flatMap(HandOffRefusal.init) ?? .failed)
+        }
         // The Restore extension restores with where it went.
         library.rememberShared(vaultID: vaultID)
         return HandOff(text: text, fileName: handOff.fileName)
+    }
+
+    /// Saves, then opens the document again from the Vault: its names
+    /// lined up with its Project's as they are now, so a name another
+    /// document added since is proposed. Undo starts afresh.
+    func lineUpWithProject() throws -> DocumentSnapshot {
+        try saveChanges()
+        guard let vaultID else { return snapshot() }
+        try holdingSave { try reopen(vaultID: vaultID, kind: nil) }
+        return snapshot()
+    }
+
+    func savedReadiness() -> SavedReadiness? {
+        guard let vaultID else { return nil }
+        #if DEBUG
+        // A UI test's stand-in for a state only a computer makes today.
+        if let readiness = LaunchConfiguration.current.uiReadiness { return readiness }
+        #endif
+        if (try? library.vault.document(id: vaultID))?.excludeFromAi == true { return .excludedFromAI }
+        return switch try? library.vault.readiness(id: vaultID) {
+        case .ready?: .ready
+        case .notReviewed?: .notReviewed
+        case .changedSinceReview?: .changedSinceReview
+        case .namesNotReplaced(let count)?: .namesNotReplaced(Int(count))
+        case nil: nil
+        }
     }
 
     /// Saves `reply` in the Vault as an AI Reply to text shared from this
@@ -1489,9 +1549,13 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 
     func scanEdits() throws -> DocumentSnapshot {
         let paths = library.setup?.detectorPaths()
+        var rules = library.setup?.snapshot().tier == .belowFloor
+        #if DEBUG
+        if library.rulesStandInForNameFinder { rules = true }
+        #endif
         // Without the name finder above the floor the edits stay owed: the
         // rules alone would miss names.
-        guard paths != nil || library.setup?.snapshot().tier == .belowFloor else {
+        guard paths != nil || rules else {
             return try discover()
         }
         let review = try core { try ffi.scanEdits(detector: paths, progress: nil) }
