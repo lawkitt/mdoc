@@ -162,6 +162,7 @@ impl DocumentSession {
         let _saving = self.lock_saving();
         let mut guard = self.lock_document();
         let document = guard.as_mut().ok_or_else(no_document)?;
+        document.run_owed_rules(self.by_hand.load(Ordering::Relaxed));
         document.vault.get_or_insert_with(Place::default);
         loop {
             let mut pending = document.vault_pending();
@@ -199,6 +200,9 @@ impl DocumentSession {
     ) -> Result<Option<SavedVaultChange>, ReviewError> {
         let _saving = self.lock_saving();
         let by_hand = self.by_hand.load(Ordering::Relaxed);
+        if let Some(document) = self.lock_document().as_mut() {
+            document.run_owed_rules(by_hand);
+        }
         loop {
             let mut pending = {
                 let guard = self.lock_document();
@@ -343,9 +347,12 @@ struct Pending {
     kept: Vec<(String, String)>,
     dismissed: Vec<(String, String)>,
     counts: super::Counts,
-    /// Typing took a proposal away and discovery has not run since: the
-    /// counts may miss a name, so it is not Ready.
-    awaiting_discovery: bool,
+    /// A look for names is owed (`owed`): the counts may miss a name, so it
+    /// is not Ready.
+    owed: bool,
+    /// An edit changed paragraphs not scanned since: the record is saved
+    /// unscanned, so a document left mid-edit reopens owing a scan.
+    edits_unscanned: bool,
     scanned: bool,
     /// The phone is below the name finder's floor (`set_no_name_finder`).
     by_hand: bool,
@@ -379,7 +386,8 @@ impl Document {
             kept: self.review.review.kept_pairs(),
             dismissed: self.review.dismissed_pairs(),
             counts: self.review.counts(),
-            awaiting_discovery: self.review.review.awaiting_discovery(),
+            owed: owed(&self.review.review),
+            edits_unscanned: self.review.review.edits_unscanned(),
             scanned: self.scanned,
             by_hand: false,
             review: self.review.saved_review(),
@@ -424,6 +432,23 @@ impl Document {
         self.saved = Some(pending.key);
     }
 
+    /// Below the floor (`by_hand`), a document opened owing a scan of all
+    /// its text gets the rules over it, as a scan at Done would run them:
+    /// there is no name finder to wait for, and a document saved with
+    /// proposals left, never edited, must not stay owed for good.
+    fn run_owed_rules(&mut self, by_hand: bool) {
+        if !(by_hand && std::mem::take(&mut self.rules_owed)) {
+            return;
+        }
+        let Some(edited) = self.review.edited_text() else {
+            return;
+        };
+        if let Ok(mut found) = mdoc_detect::scan_rules(edited.text()) {
+            found.retain(|d| !self.skip.contains(&d.category));
+            let _ = self.review.ingest_edited(&edited, found);
+        }
+    }
+
     /// Saved, it would be Ready now (`by_hand`: below the floor) where its
     /// record is not, or the other way round.
     fn ready_owed(&self, by_hand: bool) -> bool {
@@ -432,7 +457,7 @@ impl Document {
             self.scanned,
             by_hand,
             counts.proposed,
-            self.review.review.awaiting_discovery(),
+            owed(&self.review.review),
         );
         self.vault
             .as_ref()
@@ -512,6 +537,12 @@ impl Document {
         } = from;
         open_review(&mut self.review, &stored, project.as_ref());
         self.scanned = stored.scanned;
+        // Saved unscanned and not Ready: it may have been left mid-edit, so
+        // none of its text counts as scanned.
+        if !stored.scanned && stored.ready_fingerprint.is_none() {
+            self.review.review.owe_whole_text();
+            self.rules_owed = true;
+        }
         self.notes.clone_from(&stored.notes);
         self.from_reply.clone_from(&stored.from_reply);
         if let Some(project) = &project {
@@ -565,10 +596,18 @@ fn open_review(
 }
 
 /// Whether a save records the document Ready: scanned, no proposals left
-/// and no discovery owed; below the floor (`by_hand`), names decided by
-/// hand count as scanned (#1091 Q4: the maintainer's (b)). The one rule.
-fn is_ready(scanned: bool, by_hand: bool, proposed: u64, awaiting_discovery: bool) -> bool {
-    (scanned || by_hand) && proposed == 0 && !awaiting_discovery
+/// and no discovery or scan of edited text owed (`owed`); below the floor
+/// (`by_hand`), names decided by hand count as scanned (#1091 Q4: the
+/// maintainer's (b)). The one rule.
+fn is_ready(scanned: bool, by_hand: bool, proposed: u64, owed: bool) -> bool {
+    (scanned || by_hand) && proposed == 0 && !owed
+}
+
+/// Whether `review` owes a look for names before it can be Ready: typing
+/// took a proposal away and discovery has not run since, or an edit
+/// changed a paragraph not scanned since (`scan_edits`).
+fn owed(review: &mdoc_pii::Review) -> bool {
+    review.awaiting_discovery() || review.edits_unscanned()
 }
 
 /// What a Vault document counts as `open_from_vault` opens it in
@@ -584,18 +623,13 @@ pub(crate) fn vault_counts(
 }
 
 impl Pending {
-    /// Whether the record is Ready: scanned, no proposals left and no
-    /// discovery owed. On a phone below the name finder's floor
+    /// Whether the record is Ready: scanned, no proposals left and no look
+    /// for names owed. On a phone below the name finder's floor
     /// (`set_no_name_finder`), names decided by hand with none left count
     /// too (#1091 Q4: the maintainer's (b)); the record stays unscanned.
     /// This is the one place that decides.
     fn ready(&self) -> bool {
-        is_ready(
-            self.scanned,
-            self.by_hand,
-            self.counts.proposed,
-            self.awaiting_discovery,
-        )
+        is_ready(self.scanned, self.by_hand, self.counts.proposed, self.owed)
     }
 
     /// Store the names and then the record, under the Vault handle's write
@@ -680,7 +714,8 @@ impl Pending {
             if self.source.is_some() {
                 record.unconverted = false;
             }
-            record.scanned = self.scanned;
+            // `scanned`: all of its text was scanned.
+            record.scanned = self.scanned && !self.edits_unscanned;
             record.review = Some(self.review.clone());
             record.counts = Some(self.counts.into());
             if record.project.is_none() {

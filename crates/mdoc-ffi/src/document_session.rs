@@ -14,6 +14,7 @@ mod resume;
 mod review;
 mod saving;
 mod scanning;
+mod selection;
 mod snapshot;
 mod vault;
 
@@ -34,6 +35,7 @@ use review::ReviewText;
 pub use review::{Scope, StepKind};
 pub use scanning::Thermal;
 pub(crate) use scanning::{PhoneScan, check_free_memory};
+pub use selection::{SelectionCheck, SelectionReplaced};
 pub use snapshot::{
     Category, CategoryChoice, DocumentPhase, HistoryStep, IdentityRow, LinkHint, Mention,
     MentionState, ReviewSnapshot,
@@ -162,6 +164,9 @@ struct Document {
     notes_edits: u64,
     /// The AI Reply it was promoted from, as its record says.
     from_reply: Option<String>,
+    /// Opened owing a scan of all its text (`vault`): below the floor its
+    /// next save runs the rules over it first.
+    rules_owed: bool,
 }
 
 /// What a save compares: the review's change key, whether it was scanned,
@@ -694,6 +699,7 @@ impl DocumentSession {
             notes: String::new(),
             notes_edits: 0,
             from_reply: None,
+            rules_owed: false,
         };
         if let Some(opened) = opened {
             document.origin = opened.origin;
