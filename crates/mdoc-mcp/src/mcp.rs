@@ -128,16 +128,27 @@ impl<B: Backend> Server<B> {
     }
 
     /// One message line: the line to write back, if any (notifications and
-    /// responses get none).
+    /// responses get none). A batch, which 2025-03-26 allows, is answered
+    /// as one.
     pub fn handle(&mut self, line: &[u8]) -> Option<String> {
         let Ok(message) = serde_json::from_slice::<Value>(line) else {
-            return Some(reply(
-                Value::Null,
-                Err((-32700, "Parse error".into(), None)),
-            ));
+            let failure = (-32700, "Parse error".into(), None);
+            return Some(reply(Value::Null, Err(failure)).to_string());
         };
+        let answer = match message {
+            Value::Array(batch) if !batch.is_empty() => {
+                let answers: Vec<Value> = batch.iter().filter_map(|m| self.message(m)).collect();
+                (!answers.is_empty()).then_some(Value::Array(answers))
+            }
+            message => self.message(&message),
+        };
+        // serde_json escapes newlines in strings: one line, as stdio needs.
+        answer.map(|answer| answer.to_string())
+    }
+
+    fn message(&mut self, message: &Value) -> Option<Value> {
         let Value::Object(message) = message else {
-            let failure = (-32600, "One JSON-RPC message per line".into(), None);
+            let failure = (-32600, "Invalid Request".into(), None);
             return Some(reply(Value::Null, Err(failure)));
         };
         let id = message.get("id")?.clone();
@@ -176,10 +187,13 @@ impl<B: Backend> Server<B> {
                 return Err((-32600, message, None));
             }
         };
+        // A modern request names its own app; a legacy one, initialize's.
         let client = meta.and_then(|meta| meta.get(CLIENT_KEY));
-        if let Some(name) = client.and_then(|client| client.get("name")?.as_str()) {
-            self.app = Some(name.to_string());
-        }
+        let named = client.and_then(|client| client.get("name")?.as_str());
+        let app = match era {
+            Era::Modern => named.map(str::to_string),
+            Era::Legacy => named.map(str::to_string).or_else(|| self.app.clone()),
+        };
         let mut result = match method {
             "server/discover" => json!({
                 "supportedVersions": supported(),
@@ -188,7 +202,7 @@ impl<B: Backend> Server<B> {
             }),
             "ping" => json!({}),
             "tools/list" => tools(),
-            "tools/call" => self.call_tool(params)?,
+            "tools/call" => self.call_tool(params, app)?,
             "prompts/list" => prompts(),
             "prompts/get" => prompt(params)?,
             _ => return Err((-32601, format!("Method not found: {method}"), None)),
@@ -226,7 +240,7 @@ impl<B: Backend> Server<B> {
         })
     }
 
-    fn call_tool(&mut self, params: &Value) -> Result<Value, Failure> {
+    fn call_tool(&mut self, params: &Value, app: Option<String>) -> Result<Value, Failure> {
         let name = params.get("name").and_then(Value::as_str);
         let name = name.ok_or_else(|| invalid("tools/call needs a tool name"))?;
         let empty = Map::new();
@@ -247,11 +261,14 @@ impl<B: Backend> Server<B> {
         };
         let request = Request {
             v: wire::VERSION,
-            app: self.app.clone().unwrap_or_else(|| "AI app".into()),
+            app: app.unwrap_or_else(|| "AI app".into()),
             call,
         };
         Ok(match self.backend.call(&request) {
             Ok(answer) => result(answer),
+            Err(Unreachable::TimedOut) if matches!(request.call, Call::Deliver { .. }) => {
+                text(DELIVERY_UNKNOWN, true)
+            }
             Err(unreachable) => text(unreachable_text(unreachable), true),
         })
     }
@@ -432,6 +449,9 @@ fn refusal_text(refusal: Refusal) -> String {
     }
 }
 
+/// A delivery mdoc took and didn't answer: it may have landed.
+const DELIVERY_UNKNOWN: &str = "mdoc didn't answer in time, so this answer may or may not have been delivered. Ask the user to check mdoc before you deliver it again.";
+
 fn unreachable_text(unreachable: Unreachable) -> &'static str {
     match unreachable {
         Unreachable::NotRunning => {
@@ -441,11 +461,12 @@ fn unreachable_text(unreachable: Unreachable) -> &'static str {
             "mdoc's connector couldn't be verified as this user's, so nothing was sent."
         }
         Unreachable::Failed => "The call to mdoc failed. Try again.",
+        Unreachable::TimedOut => "mdoc didn't answer in time. Try again.",
     }
 }
 
-fn reply(id: Value, result: Result<Value, Failure>) -> String {
-    let message = match result {
+fn reply(id: Value, result: Result<Value, Failure>) -> Value {
+    match result {
         Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
         Err((code, message, data)) => {
             let mut error = json!({"code": code, "message": message});
@@ -454,9 +475,7 @@ fn reply(id: Value, result: Result<Value, Failure>) -> String {
             }
             json!({"jsonrpc": "2.0", "id": id, "error": error})
         }
-    };
-    // serde_json escapes newlines in strings: one line, as stdio needs.
-    message.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -637,13 +656,61 @@ mod tests {
         );
     }
 
+    /// A delivery mdoc took and didn't answer may have landed: the model
+    /// is told so, not to retry blindly.
     #[test]
-    fn junk_is_a_parse_error_and_a_batch_is_refused() {
+    fn a_delivery_that_timed_out_is_not_retried_blindly() {
+        let mut backend = fake();
+        backend.answer = Err(Unreachable::TimedOut);
+        let mut server = Server::new(&mut backend);
+        let deliver = json!({"name": "deliver_reply", "arguments": {"kind": "reply", "markdown": "x", "read": ["a"]}});
+        let result = send(&mut server, modern("tools/call", deliver))["result"].clone();
+        assert_eq!(result["content"][0]["text"], DELIVERY_UNKNOWN);
+        let list = modern("tools/call", json!({"name": "list_documents"}));
+        let result = send(&mut server, list)["result"].clone();
+        assert_ne!(result["content"][0]["text"], DELIVERY_UNKNOWN);
+    }
+
+    #[test]
+    fn junk_is_a_parse_error_and_a_batch_is_answered_as_one() {
         let mut backend = fake();
         let mut server = Server::new(&mut backend);
         let junk: Value = serde_json::from_str(&server.handle(b"{nope").unwrap()).unwrap();
         assert_eq!(junk["error"]["code"], -32700);
-        let batch = server.handle(b"[]").unwrap();
-        assert!(batch.contains("-32600"));
+        let empty: Value = serde_json::from_str(&server.handle(b"[]").unwrap()).unwrap();
+        assert_eq!(empty["error"]["code"], -32600);
+        let init = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26"}});
+        send(&mut server, init);
+        let batch = json!([
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {"jsonrpc": "2.0", "id": 3, "method": "prompts/list"},
+        ]);
+        let answers = send(&mut server, batch);
+        let answers = answers.as_array().unwrap();
+        assert_eq!(answers.len(), 2, "the notification gets none");
+        assert!(answers[0]["result"]["tools"].is_array());
+        assert_eq!(answers[1]["id"], 3);
+    }
+
+    /// A modern request without its client's name is "AI app", whatever an
+    /// earlier request named.
+    #[test]
+    fn each_modern_request_names_its_own_app() {
+        let mut backend = fake();
+        let mut server = Server::new(&mut backend);
+        send(
+            &mut server,
+            modern("tools/call", json!({"name": "list_documents"})),
+        );
+        let mut unnamed = modern("tools/call", json!({"name": "list_documents"}));
+        unnamed["params"]["_meta"]
+            .as_object_mut()
+            .unwrap()
+            .remove(CLIENT_KEY);
+        send(&mut server, unnamed);
+        drop(server);
+        let apps: Vec<&str> = backend.asked.iter().map(|r| r.app.as_str()).collect();
+        assert_eq!(apps, ["claude-ai", "AI app"]);
     }
 }

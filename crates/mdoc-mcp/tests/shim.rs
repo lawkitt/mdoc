@@ -8,6 +8,10 @@
 //!
 //! Done when: no response carries an original or a real name, and a
 //! delivery naming a document the app was not served is refused.
+//!
+//! A release shim on macOS and Windows takes no dev profile, so it would
+//! reach the user's own mdoc: these tests run in debug builds there.
+#![cfg(any(debug_assertions, not(any(target_os = "macos", target_os = "windows"))))]
 use mdoc_connector::Connector;
 use mdoc_mcp::ipc::{self, Endpoint, Listening};
 use mdoc_pii::{Category, restore::ExportedIdentity};
@@ -47,6 +51,9 @@ struct App {
     draft: String,
     /// A Ready document of another Project.
     elsewhere: String,
+    /// A Ready document of the shared Project over 60,000 characters,
+    /// titled with a real name, with headings naming aliases.
+    long: String,
     _listening: Listening,
 }
 
@@ -93,6 +100,25 @@ impl App {
         let memo = document(&shared, "Memo to Anna Petrova", "PERSON_1 paid.", true);
         let draft = document(&shared, "Draft", "Anna Petrova called.", false);
         let elsewhere = document(&other, "Boris Ivanov", "PERSON_1 wrote.", true);
+        let mut text = String::from(
+            "# PERSON_1's lease
+
+",
+        );
+        for section in 1..=40 {
+            text.push_str(&format!(
+                "## Term {section} for PERSON_1
+
+"
+            ));
+            text.push_str(&"PERSON_1 pays the rent on time. ".repeat(60));
+            text.push_str(
+                "
+
+",
+            );
+        }
+        let long = document(&shared, "Anna Petrova's long lease", &text, true);
         let setting = AiConnectorConfig { preview: true };
         let connector = Arc::new(Connector::start(vault.clone(), &setting).unwrap());
         connector.share(&shared).unwrap();
@@ -107,6 +133,7 @@ impl App {
             memo,
             draft,
             elsewhere,
+            long,
             _listening: listening,
         }
     }
@@ -275,7 +302,7 @@ fn session(era: Era) {
         .unwrap()
         .clone();
     let row = |id: &str| rows.iter().find(|row| row["doc_id"] == id).cloned();
-    assert_eq!(rows.len(), 3);
+    assert_eq!(rows.len(), 4);
     assert_eq!(row(&app.letter).unwrap()["label"], "Lease");
     assert_eq!(row(&app.memo).unwrap()["state"], "ready");
     assert_eq!(row(&app.draft).unwrap()["state"], "needs review");
@@ -289,6 +316,16 @@ fn session(era: Era) {
     let draft = shim.call("get_document", json!({"doc_id": app.draft}));
     assert_eq!(draft["isError"], false);
     assert!(text(&draft).contains("needs review"), "{draft}");
+    // A long one is an outline, then its parts.
+    let outline = shim.call("get_document", json!({"doc_id": app.long}));
+    let outline = text(&outline);
+    assert!(outline.contains("is too long to read at once"), "{outline}");
+    assert!(outline.contains("Part 2 of"), "{outline}");
+    assert!(outline.contains("Term 1 for PERSON_1"), "{outline}");
+    let part = shim.call("get_document", json!({"doc_id": app.long, "part": 2}));
+    assert_eq!(part["isError"], false);
+    assert!(text(&part).starts_with("Part 2 of"), "{part}");
+    assert!(text(&part).contains("PERSON_1 pays the rent"));
     let elsewhere = shim.call("get_document", json!({"doc_id": app.elsewhere}));
     assert_eq!(elsewhere["isError"], true);
 

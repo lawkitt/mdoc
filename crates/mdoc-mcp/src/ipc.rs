@@ -11,6 +11,8 @@ use std::{
 mod unix;
 #[cfg(unix)]
 use unix as sys;
+#[cfg(unix)]
+pub(crate) use unix::euid;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]

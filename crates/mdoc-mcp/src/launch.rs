@@ -23,6 +23,11 @@ pub fn command(shim: &Path, dev_profile: Option<&Path>) -> Option<Command> {
     let folder = shim.parent()?;
     let mut command = match bundle(folder) {
         Some(app) if !cfg!(debug_assertions) => {
+            // A running mdoc is left alone: Launch Services would send it
+            // a reopen, which shows its window.
+            if running() {
+                return None;
+            }
             let mut open = Command::new("/usr/bin/open");
             open.arg("-g")
                 .arg("-a")
@@ -62,6 +67,18 @@ fn bundle(folder: &Path) -> Option<PathBuf> {
     (contents.file_name()? == "Contents" && app.extension()? == "app").then(|| app.to_path_buf())
 }
 
+/// Whether an mdoc of this user runs (macOS: `pgrep`).
+fn running() -> bool {
+    #[cfg(unix)]
+    let uid = crate::ipc::euid().to_string();
+    #[cfg(not(unix))]
+    let uid = String::new();
+    (Command::new("/usr/bin/pgrep").args(["-q", "-x", "-U", &uid, "mdoc"]))
+        .stdin(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
 /// Start `command` apart from the shim, so mdoc outlives it.
 pub fn start(mut command: Command) -> std::io::Result<()> {
     #[cfg(windows)]
@@ -83,7 +100,12 @@ pub fn start(mut command: Command) -> std::io::Result<()> {
     {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
+        // Reaped when it ends (`open` at once), so no zombie is left.
+        let mut child = command.spawn()?;
+        std::thread::spawn(move || child.wait());
+        Ok(())
     }
+    #[cfg(not(unix))]
     command.spawn().map(drop)
 }
 
