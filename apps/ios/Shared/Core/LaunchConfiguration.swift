@@ -37,6 +37,10 @@ struct LaunchConfiguration: Sendable, Equatable {
     /// Project document and an Unfiled document, both reviewed
     /// (`UITestSeed.seedRestorePlaces`).
     var seedsRestorePlaces = false
+    /// `MDOC_UI_READINESS` (`changed` or `excluded`): every saved document
+    /// reads as changed since its review, or excluded from AI. Only a
+    /// computer makes either today, so the refusals' UI tests stand in.
+    var uiReadiness: SavedReadiness?
 
     init() {}
 
@@ -54,6 +58,11 @@ struct LaunchConfiguration: Sendable, Equatable {
         showsTips = environment["MDOC_SHOW_TIPS"] == "1"
         uiNotice = environment["MDOC_UI_NOTICE"]
         seedsRestorePlaces = environment["MDOC_SEED_RESTORE"] == "1"
+        uiReadiness = switch environment["MDOC_UI_READINESS"] {
+        case "changed": .changedSinceReview
+        case "excluded": .excludedFromAI
+        default: nil
+        }
         #endif
     }
 

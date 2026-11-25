@@ -146,6 +146,7 @@ private struct Dialogs: ViewModifier {
             } message: {
                 Text("Your edits to it will be lost.")
             }
+            .modifier(RefusalDialog(app: app))
             .alert(
                 "Something went wrong",
                 isPresented: navigator.isPresenting { if case .error = $0 { true } else { false } },
@@ -155,6 +156,33 @@ private struct Dialogs: ViewModifier {
             } message: { message in
                 Text(message)
             }
+    }
+}
+
+/// A refused Share from a row's menu, in plain words; its step opens the
+/// document and takes it (#1209).
+private struct RefusalDialog: ViewModifier {
+    let app: AppModel
+
+    private var navigator: Navigator { app.navigator }
+
+    private var refusal: (id: DocumentID, refusal: HandOffRefusal)? {
+        if case .refusal(let id, let refusal) = navigator.presentation { (id, refusal) } else { nil }
+    }
+
+    func body(content: Content) -> some View {
+        content.alert(
+            Text(refusal?.refusal.reason ?? ""),
+            isPresented: navigator.isPresenting { if case .refusal = $0 { true } else { false } },
+            presenting: refusal
+        ) { refused in
+            if let step = app.step(for: refused.refusal, of: refused.id) {
+                Button(step.title) { app.take(step, on: refused.id) }
+            }
+            Button("OK", role: .cancel) { navigator.dismiss() }
+        } message: { refused in
+            Text(refused.refusal.detail)
+        }
     }
 }
 
