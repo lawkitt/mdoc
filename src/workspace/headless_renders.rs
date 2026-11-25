@@ -45,6 +45,7 @@
 //! the output stays temporary unless that variable names a new folder. The
 //! images establish neither native input, IME, accessibility nor display
 //! presentation.
+mod ai_ask;
 mod ai_project;
 mod comments;
 mod comparison;
@@ -402,6 +403,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     tree::scenes(d, &project)?;
     folder_sheet::scenes(d, path, &project)?;
     ai_project::scenes(d, &project)?;
+    ai_ask::scenes(d, &project)?;
     projects::delete(d, project)?;
     new_project::scenes(d)?;
     confirm::scenes(d)?;

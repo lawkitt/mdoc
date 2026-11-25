@@ -14,6 +14,7 @@ const CLAUDE: &str = "Claude";
 const ON: AiConnectorConfig = AiConnectorConfig {
     preview: true,
     open_deliveries: false,
+    ask: mdoc_store::settings::AskWith::Claude,
 };
 
 struct Fixture {

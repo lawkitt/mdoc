@@ -436,6 +436,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                             | "ai-delivery-badge"
                             | "project-page-activity"
                             | "ai-project-rail"
+                            | "project-ask-menu"
                     ),
                     "{theme}/{name}"
                 );

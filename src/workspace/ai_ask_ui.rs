@@ -79,11 +79,9 @@ impl Workspace {
         match project {
             Some(project) => self.ask_app(&project, Some(document.as_str()), with, cx),
             // Unfiled never leaves: it moves, then asks (`ask_after_move`).
-            None if move_to_new => {
-                if self.can_move(tab, cx) {
-                    self.ai_ask.after_move(document.as_str(), with);
-                    self.move_to_new_project(tab, window, cx);
-                }
+            None if move_to_new && self.can_move(tab, cx) => {
+                self.ai_ask.after_move(document.as_str(), with);
+                self.move_to_new_project(tab, window, cx);
             }
             None => {}
         }

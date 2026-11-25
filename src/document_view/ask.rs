@@ -85,6 +85,24 @@ impl DocumentView {
         cx.notify();
     }
 
+    /// Renders: the menu open, or the Unfiled card for `unfiled`'s app.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn show_ask(
+        &mut self,
+        unfiled: Option<AskWith>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ask.open = unfiled.is_none();
+        self.ask.unfiled = unfiled;
+        window.focus(&self.ask.focus, cx);
+        cx.notify();
+    }
+
     /// Copy for AI is off where the ⋯ menu's is.
     fn ask_enabled(&self, with: AskWith) -> bool {
         with != AskWith::CopyForAi || self.alias_actions_reason().is_none()
@@ -143,7 +161,8 @@ impl DocumentView {
                             ),
                     ),
                 )
-                .children(popup)
+                // Hung from the button's right edge, so it opens under it.
+                .children(popup.map(|popup| div().absolute().top_0().right_0().child(popup)))
                 .into_any_element(),
         )
     }
@@ -252,7 +271,7 @@ impl DocumentView {
             .ask_panel("ask-unfiled", cx)
             .role(gpui::Role::Group)
             .aria_label(title.clone())
-            .w(px(320.))
+            .w(px(360.))
             .p_4()
             .flex()
             .flex_col()
