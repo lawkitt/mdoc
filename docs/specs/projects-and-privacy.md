@@ -42,6 +42,11 @@ in [CONTEXT.md](../../CONTEXT.md).
   the release Vault.
 - Text leaves (Copy for AI, Share, shelf, MCP) only after a fresh check
   against the Project's names; a stored copy of AI-ready text is never served.
+- A selection the user copies by hand is their own copy, on every platform:
+  never blocked, with no note for the AI, and marked as a restored reply's
+  copy is unless the core finds it clean
+  ([#1209](https://github.com/lawkitt/mdoc/issues/1209)). "Excluded from AI"
+  does not stop it.
 - A saved AI reply restores by the identities its aliases meant when saved,
   whatever a later move or merge did to the aliases.
 - Mobile decrypts an original for viewing into a cache wiped on close and at
@@ -103,6 +108,10 @@ in [CONTEXT.md](../../CONTEXT.md).
   reviewed text and never by stored title. Unfiled documents stay hidden.
   `deliver_reply` restores only inside mdoc, returns no real name, and is
   refused unless it names a document it read from what is served now.
+- A Project's AI activity records each connector read that handed text out
+  and each delivery, with its app and time: ids only, never text, a title
+  or a name. A read whose record can't be written hands nothing out; the
+  activity goes when its Project does.
 - A Personal alias stands for one stored value. mdoc puts it back exactly as
   stored and computes nothing from it
   ([ADR 0129](../adr/0129-personal-documents-restore-only-aliases.md)).

@@ -521,8 +521,8 @@ final class DocumentViewModel {
     /// gets the file either way. The file stays until the next share or
     /// launch: an app such as Telegram reads it after the sheet closes.
     /// As text, the sheet's subject and preview title are the file's
-    /// pseudonymized name without `.md`, as Android's are: never the
-    /// document's title, which holds its names as written (#1188).
+    /// neutral name without `.md`, as Android's are: never the document's
+    /// title, which may hold names as written (#1188, #1205).
     func share(asFile: Bool) {
         do {
             let handOff = try session.copyForAI()

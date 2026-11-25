@@ -19,8 +19,8 @@ final class AskAITests: XCTestCase {
     }
 
     /// Ask AI on a Ready document whose title holds a client's name: the
-    /// sheet gets the Vault's text with aliases, titled by the file's name
-    /// with names replaced; neither carries an original.
+    /// sheet gets the Vault's text with aliases, titled by the file's
+    /// neutral name (#1205); neither carries an original.
     func testAskAISharesTheTextAndTitleWithNamesReplaced() throws {
         let (core, storage) = try Fixture.core()
         let ellison = try Fixture.createProject(Letters.ellisonProject, in: core)
@@ -39,7 +39,8 @@ final class AskAITests: XCTestCase {
         let item = try XCTUnwrap(model.askAIShare?.items.first as? TitledText)
         XCTAssertEqual(model.askAIShare?.items.count, 1)
         XCTAssertTrue(item.text.contains(maya.alias))
-        XCTAssertEqual(item.title, "\(maya.alias) letter")
+        XCTAssertNeutralShareName(item.title)
+        XCTAssertFalse(item.title.lowercased().contains("letter"), "nothing of the title")
         for original in Letters.names.map(\.wording) {
             XCTAssertFalse(item.text.contains(original), original)
             XCTAssertFalse(item.title.contains(original), original)

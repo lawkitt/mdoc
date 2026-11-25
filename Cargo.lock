@@ -4610,6 +4610,7 @@ dependencies = [
  "gpui-pre-platform",
  "gpui-pre-windows",
  "image",
+ "mdoc-connector",
  "mdoc-detect",
  "mdoc-editor",
  "mdoc-import",
@@ -4635,6 +4636,18 @@ dependencies = [
  "windows-sys 0.61.2",
  "zeroize",
  "zip",
+]
+
+[[package]]
+name = "mdoc-connector"
+version = "0.1.0"
+dependencies = [
+ "mdoc-markdown",
+ "mdoc-pii",
+ "mdoc-store",
+ "mdoc-vault",
+ "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

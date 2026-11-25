@@ -22,6 +22,13 @@ pub fn ai_notice(examples: &[&str]) -> String {
 /// Copy for AI's text: `text` after the note naming its first two distinct
 /// `aliases` (in source order), or `text` alone when it has none.
 pub fn for_ai<'a>(text: &str, aliases: impl IntoIterator<Item = &'a str>) -> String {
+    note_for(aliases) + text
+}
+
+/// The note [`for_ai`] puts before a text with these `aliases`; empty when
+/// there are none. The AI connector hands it out apart from the text, so
+/// its labels and parts read the text alone.
+pub fn note_for<'a>(aliases: impl IntoIterator<Item = &'a str>) -> String {
     let mut examples = Vec::new();
     for alias in aliases {
         if !examples.contains(&alias) {
@@ -32,9 +39,9 @@ pub fn for_ai<'a>(text: &str, aliases: impl IntoIterator<Item = &'a str>) -> Str
         }
     }
     if examples.is_empty() {
-        text.to_owned()
+        String::new()
     } else {
-        ai_notice(&examples) + text
+        ai_notice(&examples)
     }
 }
 

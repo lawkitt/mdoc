@@ -334,7 +334,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                     key = current,
                     factory = viewModelFactory {
                         initializer {
-                            DocumentViewModel(documents, session, app.jobs, app.core.models.snapshot().detector != null, createSavedStateHandle())
+                            DocumentViewModel(documents, session, app.jobs, { app.core.models.snapshot().detector != null }, createSavedStateHandle())
                         }
                     },
                 )
