@@ -19,7 +19,7 @@ use super::{Workspace, ai_project::Arrived};
 use crate::{ai_connector, ui};
 use gpui::{AnyElement, App, Context, SharedString, Window, div, prelude::*, px};
 use mdoc_store::document_id::VaultId;
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use std::{rc::Rc, time::Instant};
 
 /// The app's identity for notifications: the packager's identifier
 /// (`[package.metadata.packager]`), the Windows AppUserModelID.
@@ -71,10 +71,13 @@ impl Note {
     }
 }
 
+/// What posts a note.
+type Post = Rc<dyn Fn(&Note, &mut App)>;
+
 /// Where the window's notifications go: the OS, by default.
 #[derive(Clone)]
 pub(super) struct Notifier {
-    post: Rc<dyn Fn(&Note, &mut App)>,
+    post: Post,
     /// The OS's: the app takes its identity when the connector starts.
     system: bool,
 }
@@ -105,8 +108,8 @@ impl Notifier {
             any(target_os = "macos", target_os = "windows")
         )
     ))]
-    pub(super) fn recording() -> (Self, Rc<RefCell<Vec<Note>>>) {
-        let notes = Rc::new(RefCell::new(Vec::new()));
+    pub(super) fn recording() -> (Self, Rc<std::cell::RefCell<Vec<Note>>>) {
+        let notes = Rc::new(std::cell::RefCell::new(Vec::new()));
         let kept = notes.clone();
         let notifier = Self {
             post: Rc::new(move |note, _| kept.borrow_mut().push(note.clone())),
