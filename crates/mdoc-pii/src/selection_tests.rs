@@ -259,7 +259,8 @@ fn a_range_outside_the_text_is_refused() {
             .check_selection(LETTER, len..len + 1, true, &none)
             .is_err()
     );
-    assert!(review.selection_plans(LETTER, 4..2).is_err());
+    let reversed = Range { start: 4, end: 2 };
+    assert!(review.selection_plans(LETTER, reversed).is_err());
     let cyrillic = "Марина";
     assert!(Review::default().selection_plans(cyrillic, 1..2).is_err());
 }
