@@ -202,7 +202,7 @@ class SelectionCopyDetectorTierTest {
     fun neverScannedOffersCopyWithNamesAlone() {
         val text = "Ann Lee signed the lease."
         val memo = core.app.core.documents.importDocument(ImportSource.Text(text), "Memo ${System.nanoTime()}")
-        memo.recognize(Quiet)
+        memo.recognize(QuietJobs)
         compose.recreate()
         compose.openDocument(memo.snapshot().title)
 
@@ -217,7 +217,7 @@ class SelectionCopyDetectorTierTest {
 
 // The screen's review text and its selection menu
 
-private typealias MainRule = AndroidComposeTestRule<ActivityScenarioRule<MainActivity>, MainActivity>
+private typealias SelectionRule = AndroidComposeTestRule<ActivityScenarioRule<MainActivity>, MainActivity>
 
 private const val EMAIL = "ann@example.com"
 private const val STALE = "before"
@@ -225,7 +225,7 @@ private const val STALE = "before"
 /** A Translate or Search item: the system's text-processing apps, which the menu drops. */
 private val PROCESS_TEXT = View.generateViewId()
 
-private object Quiet : JobObserver {
+private object QuietJobs : JobObserver {
     override fun stage(stage: JobStage) = Unit
 
     override fun onCancel(handler: () -> Unit) = Unit
@@ -267,7 +267,7 @@ private class TestMode(private val view: View, private val menu: Menu) : ActionM
 
 private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
-private fun <T> MainRule.onMain(body: () -> T): T {
+private fun <T> SelectionRule.onMain(body: () -> T): T {
     var result: Result<T>? = null
     instrumentation.runOnMainSync { result = runCatching(body) }
     return result!!.getOrThrow()
@@ -280,7 +280,7 @@ private fun find(view: View): SelectionTextView? = when (view) {
 }
 
 /** `body` with the document screen's review text, on the main thread. */
-private fun <T> MainRule.onReviewText(body: (SelectionTextView) -> T): T {
+private fun <T> SelectionRule.onReviewText(body: (SelectionTextView) -> T): T {
     waitUntil(15_000) {
         onMain {
             val activity = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).firstOrNull()
@@ -293,7 +293,7 @@ private fun <T> MainRule.onReviewText(body: (SelectionTextView) -> T): T {
     }
 }
 
-private fun MainRule.reviewText(): String = onReviewText { it.text.toString() }
+private fun SelectionRule.reviewText(): String = onReviewText { it.text.toString() }
 
 private fun SelectionTextView.select(part: String) {
     val start = text.indexOf(part)
@@ -317,7 +317,7 @@ private fun SelectionTextView.pointIn(part: String): Pair<Float, Float> {
  * items first (Copy, Share, Assist, Cut, a Translate, Select all), then
  * the review text's callback, until the core's answer is in.
  */
-private fun MainRule.selectionMenu(part: String): OpenMenu {
+private fun SelectionRule.selectionMenu(part: String): OpenMenu {
     // The text drawn once laid out with its offsets.
     waitUntil(15_000) { reviewText().contains(part) }
     val open = onReviewText { view ->
@@ -346,7 +346,7 @@ private fun OpenMenu.titles(): List<String> {
     return titles
 }
 
-private fun MainRule.tapMenu(open: OpenMenu, title: String) {
+private fun SelectionRule.tapMenu(open: OpenMenu, title: String) {
     onMain {
         val item = (0 until open.menu.size()).map(open.menu::getItem).single { it.title.toString() == title }
         assertTrue(open.callback.onActionItemClicked(open.mode, item))
@@ -373,7 +373,7 @@ private fun clip(): String? {
     return text
 }
 
-private fun MainRule.waitForClip(text: String) {
+private fun SelectionRule.waitForClip(text: String) {
     try {
         waitUntil(10_000) { clip() == text }
     } catch (error: Throwable) {
@@ -392,11 +392,11 @@ private fun sensitive(): Boolean {
 }
 
 /** A note in a new Project, its email proposed as a scan leaves it; the screen recreated to list it. */
-private fun MainRule.note(documents: Documents): Documents.Session {
+private fun SelectionRule.note(documents: Documents): Documents.Session {
     val text = "Write to $EMAIL today."
     val project = documents.createProject("Harbour ${System.nanoTime()}").id
     val session = documents.importDocument(ImportSource.Text(text), "Note ${System.nanoTime()}", project)
-    session.recognize(Quiet)
+    session.recognize(QuietJobs)
     val start = text.indexOf(EMAIL)
     session.seedProposals(
         listOf(Candidate(TextRange(start.toULong(), (start + EMAIL.length).toULong()), uniffi.mdoc_ffi.Category.EMAIL, 0.9f)),
@@ -406,10 +406,10 @@ private fun MainRule.note(documents: Documents): Documents.Session {
 }
 
 /** A Ready letter, its client's name replaced. */
-private fun MainRule.ready(documents: Documents): Documents.Session {
+private fun SelectionRule.ready(documents: Documents): Documents.Session {
     val text = "Dear Maya Bennett, your claim is ready."
     val session = documents.importDocument(ImportSource.Text(text), "Letter ${System.nanoTime()}")
-    session.recognize(Quiet)
+    session.recognize(QuietJobs)
     val start = text.indexOf("Maya Bennett")
     session.addReplacement(SourceRange(start, start + 12), Category.Person)
     recreate()
@@ -417,7 +417,7 @@ private fun MainRule.ready(documents: Documents): Documents.Session {
 }
 
 /** The screen made again, so its lists read the new document. */
-private fun MainRule.recreate() {
+private fun SelectionRule.recreate() {
     activityRule.scenario.onActivity { it.recreate() }
     waitForIdle()
 }
