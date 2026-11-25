@@ -37,7 +37,7 @@ extension DocumentViewModel {
             onChange()
         } catch {
             replyOffer = nil
-            errorMessage = error.localizedDescription
+            refused(error)
         }
     }
 

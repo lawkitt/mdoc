@@ -40,4 +40,6 @@ rules alone, the only such scan, so review needs no model. On a phone the
 seed reads the copy `just ios-device-test` put in the container.
 `MDOC_KEEP_LIBRARY=1` keeps the library across launches; `MDOC_OCR_TESTS=1`
 runs the tests that download the OCR model (with `MDOC_REAL_DOWNLOADS=1`);
-`MDOC_UI_DETECTOR_TIER=1` gives the detector tier.
+`MDOC_UI_DETECTOR_TIER=1` gives the detector tier. `MDOC_UI_READINESS`
+(`changed` or `excluded`) makes every saved document read as changed since
+its review or excluded from AI, states only a computer makes today.

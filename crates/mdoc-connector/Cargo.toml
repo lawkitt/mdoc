@@ -15,6 +15,9 @@ exits-suite = []
 
 [dependencies]
 thiserror = "2"
+serde_json = "1"
+# The wire between the shim and mdoc (`serve`): its types only.
+mdoc-mcp = { path = "../mdoc-mcp" }
 # Headings for labels and parts (`lines::heading_level`).
 mdoc-markdown = { path = "../mdoc-markdown" }
 # The note before a text for AI (`handoff`).

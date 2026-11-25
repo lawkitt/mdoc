@@ -162,6 +162,7 @@ impl DocumentSession {
         let _saving = self.lock_saving();
         let mut guard = self.lock_document();
         let document = guard.as_mut().ok_or_else(no_document)?;
+        document.run_owed_rules(self.by_hand.load(Ordering::Relaxed));
         document.vault.get_or_insert_with(Place::default);
         loop {
             let mut pending = document.vault_pending();
@@ -199,6 +200,9 @@ impl DocumentSession {
     ) -> Result<Option<SavedVaultChange>, ReviewError> {
         let _saving = self.lock_saving();
         let by_hand = self.by_hand.load(Ordering::Relaxed);
+        if let Some(document) = self.lock_document().as_mut() {
+            document.run_owed_rules(by_hand);
+        }
         loop {
             let mut pending = {
                 let guard = self.lock_document();
@@ -428,6 +432,23 @@ impl Document {
         self.saved = Some(pending.key);
     }
 
+    /// Below the floor (`by_hand`), a document opened owing a scan of all
+    /// its text gets the rules over it, as a scan at Done would run them:
+    /// there is no name finder to wait for, and a document saved with
+    /// proposals left, never edited, must not stay owed for good.
+    fn run_owed_rules(&mut self, by_hand: bool) {
+        if !(by_hand && std::mem::take(&mut self.rules_owed)) {
+            return;
+        }
+        let Some(edited) = self.review.edited_text() else {
+            return;
+        };
+        if let Ok(mut found) = mdoc_detect::scan_rules(edited.text()) {
+            found.retain(|d| !self.skip.contains(&d.category));
+            let _ = self.review.ingest_edited(&edited, found);
+        }
+    }
+
     /// Saved, it would be Ready now (`by_hand`: below the floor) where its
     /// record is not, or the other way round.
     fn ready_owed(&self, by_hand: bool) -> bool {
@@ -520,6 +541,7 @@ impl Document {
         // none of its text counts as scanned.
         if !stored.scanned && stored.ready_fingerprint.is_none() {
             self.review.review.owe_whole_text();
+            self.rules_owed = true;
         }
         self.notes.clone_from(&stored.notes);
         self.from_reply.clone_from(&stored.from_reply);

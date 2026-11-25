@@ -249,6 +249,7 @@ impl ShelfView {
                 ShelfRowsEvent::Copied(index) => this.after_copy(index, window, cx),
                 ShelfRowsEvent::Dragged(index) => this.used(index, cx),
                 ShelfRowsEvent::Open(index) => this.open(index, window, cx),
+                ShelfRowsEvent::Step(index, step) => this.run_step(index, step, window, cx),
             });
         // Focus starts on the first row.
         let first = rows.read(cx).first_row().cloned();
@@ -384,7 +385,25 @@ impl ShelfView {
         let key = document.key.clone();
         let ready = document.readiness.is_ready();
         self.in_mdoc(window, cx, move |workspace, window, cx| {
-            workspace.open_from_shelf(&key, ready, window, cx)
+            workspace.open_from_shelf(&key, ready, None, window, cx)
+        });
+    }
+
+    /// A refused row's step, in mdoc: "Replace N and copy" in its tab,
+    /// "Review" or "Find names" in its document once it has opened.
+    pub(crate) fn run_step(
+        &mut self,
+        index: usize,
+        step: crate::refusal::Step,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(document) = self.rows.read(cx).documents().get(index) else {
+            return;
+        };
+        let key = document.key.clone();
+        self.in_mdoc(window, cx, move |workspace, window, cx| {
+            workspace.open_from_shelf(&key, false, Some(step), window, cx)
         });
     }
 
@@ -422,6 +441,19 @@ impl ShelfView {
             cx.background_executor().timer(COPIED_FOR).await;
             let _ = this.update_in(cx, |this, window, cx| this.close(window, cx));
         }));
+    }
+
+    /// The row whose Copy for AI was refused, for tests and renders.
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
+    pub(crate) fn refused(&self, cx: &App) -> Option<usize> {
+        self.rows.read(cx).refused()
     }
 
     /// Drag row `index` out, as a press and move does: [`ShelfRows::drag`].

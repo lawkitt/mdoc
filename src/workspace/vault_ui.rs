@@ -67,6 +67,7 @@ impl Workspace {
         // Its Projects and the user-wide lists come with it.
         if self.vault.vault().is_some() {
             self.load_projects(cx);
+            self.start_ai_connector(window, cx);
         } else if self.vault.unavailable().is_some() {
             self.projects.clear();
         }

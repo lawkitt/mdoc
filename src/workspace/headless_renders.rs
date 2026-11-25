@@ -45,6 +45,7 @@
 //! the output stays temporary unless that variable names a new folder. The
 //! images establish neither native input, IME, accessibility nor display
 //! presentation.
+mod ai_project;
 mod comments;
 mod comparison;
 mod confirm;
@@ -62,6 +63,7 @@ mod notes;
 mod old_cases;
 mod pdf_source;
 mod projects;
+mod refusals;
 mod restore;
 mod review;
 mod search;
@@ -211,7 +213,7 @@ impl Driver {
                         });
                         json!({"open": tab.is_some(), "mentions": mentions})
                     }).collect::<Vec<_>>());
-                json!({
+                let mut state = json!({
                     "home": w.showing_home(cx),
                     "sidebar_expanded": w.sidebar.visible(),
                     "sidebar_width": w.sidebar.width(),
@@ -280,7 +282,13 @@ impl Driver {
                         let v = v.read(cx);
                         v.lifecycle.source_only() && v.import.ocr_required().is_some()
                     }),
-                })
+                });
+                // The "Not copied" notice and its step (#1209).
+                state["copy_refusal"] = json!(w.active_view().and_then(|v| v.read(cx).copy_refusal.clone()).map(|refusal| json!({
+                    "reason": refusal.reason,
+                    "step": refusal.step.map(crate::refusal::Step::label),
+                })));
+                state
             })?
         } else if let Some(stage) = self.window.downcast::<shelf::Stage>() {
             self.cx
@@ -400,6 +408,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     let project = projects::scenes(d)?;
     tree::scenes(d, &project)?;
     folder_sheet::scenes(d, path, &project)?;
+    ai_project::scenes(d, &project)?;
     projects::delete(d, project)?;
     new_project::scenes(d)?;
     confirm::scenes(d)?;
@@ -416,6 +425,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     review::merge_hint(d)?;
     review::long_counts(d)?;
     restore::share_leftover(d)?;
+    refusals::scenes(d)?;
     review::scanning(d)?;
     home::scenes(d)?;
     narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;
