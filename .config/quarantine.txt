@@ -58,3 +58,7 @@ android:io.github.lawkitt.mdoc.AskAiTest#askAiIsHiddenUntilThePreviewIsOn  #1233
 # Dropped #1230 and #1229 from the queue on hosted ci/ios (ui 2), 2026-11-25:
 # the first app launch took 20+ minutes (#1226).
 ios:mdocUITests/AskAIUITests/testAskAIThenPasteTheReplyOnReturn  #1226  2026-12-25
+
+# Dropped #1241 and #1246 from the queue on the PC runner, 2026-11-25; its
+# sibling aPdfShowsItsOriginalPage is quarantined under #537.
+android:io.github.lawkitt.mdoc.OriginalTest#aSavedPdfShowsItsOriginalFromTheVault  #537  2026-12-25
