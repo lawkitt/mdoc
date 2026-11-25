@@ -624,6 +624,8 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
     case notFound
     /// Copy for AI and Share wait until every proposal is replaced or kept.
     case pendingReview(Int)
+    /// Copy for AI or Share refused, in the app's own words (#1209).
+    case handOffRefused(HandOffRefusal)
     case emptySelection
     case noProject
     /// Scanning needs the detector, or recognition needs OCR, and it is not
@@ -667,6 +669,8 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
             String(localized: "This document is no longer in mdoc.")
         case .pendingReview(let count):
             String(localized: "Review \(count) proposals before sharing.")
+        case .handOffRefused(let refusal):
+            "\(refusal.reason). \(refusal.detail)"
         case .emptySelection:
             String(localized: "Select the words to replace first.")
         case .noProject:
