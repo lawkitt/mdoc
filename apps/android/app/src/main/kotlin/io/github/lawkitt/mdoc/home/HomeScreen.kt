@@ -72,6 +72,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -633,6 +634,11 @@ fun PasteFromClipboard(onPaste: (String) -> Unit) {
         it.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) || it.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML)
     } == true
     var hasText by remember { mutableStateOf(holdsText()) }
+    // Android shows the clipboard only to the window with focus: a button
+    // shown before mdoc has it again (on the way back from another app)
+    // looks once it does, for text copied while away.
+    val focused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(focused) { if (focused) hasText = holdsText() }
     // Text copied while the sheet is open turns the button on.
     DisposableEffect(clipboard) {
         val listener = ClipboardManager.OnPrimaryClipChangedListener { hasText = holdsText() }

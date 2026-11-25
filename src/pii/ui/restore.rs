@@ -2,8 +2,10 @@
 //! Response saves the reply to the Vault and shows it restored on its Reply
 //! page (`workspace::saved_replies`); the clipboard actions.
 use crate::{
-    document_view::DocumentView,
-    pii::ui::CopyForAi,
+    document_view::{DocumentView, Inspector},
+    pii::ui::{CopyForAi, KEPT_ID, PiiApplyAll},
+    refusal::{Refusal, Step},
+    shelf::Readiness,
     workspace::{PasteAiResponse, PseudonymizeClipboard, RestoreClipboard},
 };
 use gpui::{App, Context, Window};
@@ -86,14 +88,123 @@ impl DocumentView {
     /// The outbound check passed: `text` is what leaves.
     pub(crate) fn copy_checked_for_ai(&mut self, text: String, cx: &mut Context<Self>) {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+        self.copy_refusal = None;
         self.copied_for_ai = true;
         self.copied_reply = false;
         self.show_copy_feedback(cx);
     }
-    /// The outbound check refused it: nothing is copied, and `why` says so.
-    pub(crate) fn copy_for_ai_refused(&mut self, why: String, cx: &mut Context<Self>) {
-        self.error = Some(why);
+    /// The outbound check refused it: nothing is copied, and the "Not
+    /// copied" notice says why, with the step that resolves it.
+    pub(crate) fn copy_for_ai_refused(&mut self, refusal: Refusal, cx: &mut Context<Self>) {
+        self.copy_refusal = Some(refusal);
         cx.notify();
+    }
+    /// The step Copy for AI would need first, as the Share tab's button
+    /// shows it before the click; `None` when it copies (the Vault's check
+    /// still decides) or can't run yet.
+    pub(crate) fn copy_step(&self, cx: &App) -> Option<Step> {
+        if !self.can_copy_markdown()
+            || self.lifecycle.source_only()
+            || self.pii.scanning()
+            || self.editor.read(cx).text().trim().is_empty()
+        {
+            return None;
+        }
+        let review = &self.pii.review;
+        if review.remaining() > 0 {
+            return Some(Step::ReplaceAndCopy(review.remaining()));
+        }
+        if review.applied().is_empty() {
+            // Every proposal kept as written: nothing to replace, nothing to
+            // find (Vault & Projects item 39).
+            return review.variants().is_empty().then_some(Step::FindNames);
+        }
+        (self.names_not_replaced(cx) > 0).then_some(Step::Review)
+    }
+    /// Why Copy for AI refuses a tab with no applied alias.
+    pub(crate) fn no_alias_refusal(&self) -> Refusal {
+        if self.pii.scanning() {
+            return Refusal::of(Readiness::Checking, true, false);
+        }
+        let review = &self.pii.review;
+        Refusal::nothing_applied(review.remaining(), !review.variants().is_empty())
+    }
+    /// Run a refusal's step. "Replace N and copy" replaces the pending names
+    /// as Apply does, then asks Copy for AI, whose check decides what
+    /// leaves; "Review" opens the review at its first proposal; "Find names"
+    /// scans as Pseudonymize does. Returns whether the step found what it
+    /// shows: "Review" with no proposal yet (a document still loading its
+    /// Project's names) may be asked again.
+    pub(crate) fn run_copy_step(
+        &mut self,
+        step: Step,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        self.copy_refusal = None;
+        let shown = match step {
+            // A button drawn for another count (a notice shown before more
+            // names were marked) replaces nothing: it shows the count now.
+            Step::ReplaceAndCopy(shown) if shown != self.pii.review.remaining() => {
+                let pending = self.pii.review.remaining();
+                self.copy_refusal =
+                    Some(Refusal::of(Readiness::LeftToReview(pending), true, false));
+                true
+            }
+            Step::ReplaceAndCopy(_) => {
+                self.pii.reviewing = true;
+                self.apply_all_pii(&PiiApplyAll, window, cx);
+                self.copy_for_ai(&CopyForAi, window, cx);
+                true
+            }
+            Step::Review => {
+                self.show_review(window, cx);
+                self.select_first_proposal(window, cx) || self.select_first_kept(window, cx)
+            }
+            Step::FindNames => {
+                // Aliases a reopened document relinks as applied are no scan.
+                if !self.pii.scanning() {
+                    self.start_pii_scan(cx);
+                }
+                self.show_review(window, cx);
+                true
+            }
+        };
+        cx.notify();
+        shown
+    }
+    /// Open the popup on the earliest mention of a known name kept as
+    /// written: Replace or Not a name is its way out (a Keep refuses).
+    /// Returns whether there was one.
+    fn select_first_kept(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.pii.reviewing = true;
+        let Some(start) = (self.kept_entries().into_iter())
+            .filter(|(_, _, identity)| identity.is_some())
+            .map(|(range, _, _)| range.start)
+            .min()
+        else {
+            return false;
+        };
+        self.editor
+            .update(cx, |editor, cx| editor.set_cursor(start, cx));
+        self.activate_annotation(KEPT_ID | start as u64, window, cx);
+        self.active_is_kept()
+    }
+    /// A scan was asked for: running, waiting on its model's setup, failed,
+    /// or done. For tests.
+    #[cfg(test)]
+    pub(crate) fn scan_asked(&self) -> bool {
+        self.pii.scanning()
+            || self.pii.setup
+            || self.pii.error.is_some()
+            || !self.pii.review.variants().is_empty()
+    }
+    /// The Inspector open on Review.
+    fn show_review(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.inspector = Inspector::Review;
+        if !self.replacements_open() {
+            self.toggle_replacements_panel(window, cx);
+        }
     }
     /// Replace the clipboard text with this tab's aliases:
     /// the Project's names, or the tab's own mapping. Exact known names only.

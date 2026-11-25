@@ -130,10 +130,10 @@ final class DocumentViewModelTests: XCTestCase {
         model.errorMessage = nil
         model.replaceAllPending()
         model.share(asFile: false)
-        // The text travels with the file's name, without `.md`, as the
-        // share preview.
+        // The text travels with the file's neutral name, without `.md`, as
+        // the share preview.
         let item = try XCTUnwrap(model.share?.items.first as? TitledText)
-        XCTAssertEqual(item.title, "Letter before claim")
+        XCTAssertNeutralShareName(item.title)
         XCTAssertTrue(item.text.contains(maya.alias))
         XCTAssertFalse(item.text.contains("Maya Ellison"))
         // Save to Files gets the same text as a .md file.
@@ -148,7 +148,7 @@ final class DocumentViewModelTests: XCTestCase {
         model.share(asFile: true)
         let items = try XCTUnwrap(model.share)
         let url = try XCTUnwrap(items.items.first as? URL)
-        XCTAssertEqual(url.lastPathComponent, "Letter before claim.md")
+        XCTAssertNeutralShareName(url.lastPathComponent, asFile: true)
         XCTAssertTrue(try String(contentsOf: url, encoding: .utf8).hasPrefix("Note:"))
         // Kept after the sheet closes, since the receiving app may read it
         // later; the next share replaces it.
@@ -159,25 +159,29 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertEqual(files, [url.lastPathComponent])
     }
 
-    /// A title that names someone leaves pseudonymized (#1188): Share as
-    /// text's subject and preview title are the file's name without `.md`,
-    /// and neither they nor Share as file's name, nor a menu's Share, hold
-    /// an original from the document.
+    /// A title that names someone never leaves (#1188, #1205): Share as
+    /// text's subject and preview title are the file's neutral name
+    /// without `.md`, and neither they nor Share as file's name, nor a
+    /// menu's Share, hold an original from the document, an alias, or any
+    /// word of the title, Clara Moss's too, whom no review saw.
     func testShareCarriesNoOriginalInItsSubjectPreviewTitleOrFileName() throws {
         let seeded = try Fixture.seeded()
-        let title = "Maya Ellison v Brightwater Joinery Ltd"
+        let title = "Maya Ellison v Brightwater Joinery Ltd, for Clara Moss"
         let session = try seeded.library.importDocument(.text(Letters.letter), title: title, into: seeded.ellison)
         _ = try session.recognize(observer: TestObserver())
         _ = try session.propose(Letters.names)
         let model = try seeded.model(session.id)
         model.replaceAllPending()
         XCTAssertEqual(model.snapshot.title, title, "the title holds its names as written")
-        let originals = Set(model.snapshot.candidates.map(\.original) + Letters.names.map(\.wording))
-        let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" }?.alias)
-        let joinery = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Brightwater Joinery Ltd" }?.alias)
+        let aliases = model.snapshot.candidates.map(\.alias)
+        let titleWords = title.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        let originals = Set(model.snapshot.candidates.map(\.original) + Letters.names.map(\.wording) + aliases)
         func assertNoOriginal(_ carried: String, _ what: String) {
             for original in originals where carried.contains(original) {
                 XCTFail("\(what) holds \(original): \(carried)")
+            }
+            for word in titleWords where word.contains(where: \.isLetter) && carried.lowercased().contains(word) {
+                XCTFail("\(what) holds \(word) of the title: \(carried)")
             }
         }
 
@@ -186,8 +190,8 @@ final class DocumentViewModelTests: XCTestCase {
         let file = try XCTUnwrap(item.file)
         let controller = UIActivityViewController(activityItems: [item], applicationActivities: nil)
         let preview = try XCTUnwrap(item.activityViewControllerLinkMetadata(controller)?.title)
-        XCTAssertEqual(preview, "\(maya) v \(joinery)")
-        XCTAssertEqual(file.lastPathComponent, "\(maya) v \(joinery).md")
+        XCTAssertNeutralShareName(preview)
+        XCTAssertEqual(file.lastPathComponent, "\(preview).md")
         assertNoOriginal(preview, "the preview title")
         assertNoOriginal(file.lastPathComponent, "the file's name")
         for type: UIActivity.ActivityType? in [nil, .mail, .message, .airDrop, TitledText.saveToFiles] {
@@ -198,6 +202,7 @@ final class DocumentViewModelTests: XCTestCase {
 
         model.share(asFile: true)
         let shared = try XCTUnwrap(model.share?.items.first as? URL)
+        XCTAssertEqual(shared.lastPathComponent, "\(preview).md")
         assertNoOriginal(shared.lastPathComponent, "Share as file's name")
 
         // A row's or the title menu's Share goes through the same share.

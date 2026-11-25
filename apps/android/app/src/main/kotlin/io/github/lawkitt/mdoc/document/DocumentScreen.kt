@@ -35,6 +35,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.Lock
@@ -68,6 +69,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -80,6 +82,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -95,7 +98,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.lawkitt.mdoc.R
 import io.github.lawkitt.mdoc.core.Candidate
@@ -103,6 +108,7 @@ import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.Decision
 import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.DocumentPhase
+import io.github.lawkitt.mdoc.core.HandOffRefusal
 import io.github.lawkitt.mdoc.core.Identity
 import io.github.lawkitt.mdoc.core.PromotedFrom
 import io.github.lawkitt.mdoc.core.MentionState
@@ -148,6 +154,8 @@ fun DocumentScreen(
     moves: Long = 0,
     /** Opens another document in this one's place: one Promote to Document made. */
     onOpenDocument: (DocumentId) -> Unit = {},
+    /** Settings › AI connector (preview): Ask AI and "Paste reply?" (#1164). */
+    aiConnector: Boolean = false,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     val job by model.running.collectAsStateWithLifecycle()
@@ -172,7 +180,57 @@ fun DocumentScreen(
     LaunchedEffect(job) { if (job == null) model.refresh() }
     LifecycleResumeEffect(model) {
         model.resumed()
+        // Back from the AI app Ask AI shared to, "Paste reply?" shows.
+        model.askAiReturned()
         onPauseOrDispose {}
+    }
+    // Ask AI's chooser says when it started an app (the twin of iOS's
+    // completed share sheet); only while the preview is on.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(model, aiConnector) {
+        if (!aiConnector) return@DisposableEffect onDispose {}
+        val app = context.applicationContext
+        val receiver = registerAskAiChosen(app) { model.askAiChosen(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
+        onDispose { app.unregisterReceiver(receiver) }
+    }
+    // The preview turned off: nothing of Ask AI waits on.
+    LaunchedEffect(aiConnector) { if (!aiConnector && state.replyOffer != null) model.dismissReplyBanner() }
+    // The banner shows over the text: on a phone the Original gives way.
+    LaunchedEffect(state.showsReplyBanner) { if (state.showsReplyBanner) showsOriginal = false }
+
+    // The hand-off's ways out, each through Copy for AI's check (#1091
+    // Decision 19); a refusal shows its own words and step (#1209).
+    val refusal = model.handOffRefusal(state)
+    val step = refusal?.let(model::step)
+    // Find names waits while a job holds the one slot, wherever it is offered.
+    val stepWaits = step == HandOffRefusal.Step.FindNames && job != null
+    val resources = LocalResources.current
+    val share: (asFile: Boolean) -> Unit = { asFile ->
+        scope.launch { model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, asFile, context)) } }
+    }
+    val copyForAi: () -> Unit = {
+        scope.launch {
+            model.handOff()?.let {
+                copy(context, it.text)
+                model.notice(R.string.copied_for_ai)
+            }
+        }
+    }
+    val take: (HandOffRefusal.Step) -> Unit = { taken ->
+        when (taken) {
+            is HandOffRefusal.Step.ReplaceAndCopy -> scope.launch {
+                model.replaceAndHandOff()?.let {
+                    copy(context, it.text)
+                    model.notice(R.string.copied_for_ai)
+                }
+            }
+            HandOffRefusal.Step.Review -> model.review()
+            HandOffRefusal.Step.FindNames -> {
+                model.dismissRefusal()
+                beforeJob()
+                model.findNames()
+            }
+        }
     }
 
     Scaffold(
@@ -209,17 +267,42 @@ fun DocumentScreen(
                     }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options)) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        // The hand-off's second way out (a long press on iOS).
-                        if (model.primaryAction(state, job) == PrimaryAction.HandOff && !state.showsReply) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.share_as_file)) },
-                                onClick = {
-                                    menu = false
-                                    scope.launch {
-                                        model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, true, context)) }
-                                    }
-                                },
-                            )
+                        // The hand-off's second way out (a long press on iOS):
+                        // always listed; until the document can leave,
+                        // disabled with why, and the step that resolves it
+                        // after them, as on iOS (#1209); on the Reply pane too,
+                        // as they act on the document (docs/specs/mobile.md).
+                        run {
+                            val goes = refusal == null && model.primaryAction(state, job) == PrimaryAction.HandOff
+                            val why = refusal?.reason(resources)
+                            HandOffMenuItem(R.string.copy_for_ai, why, goes, "menu-copy-for-ai") {
+                                menu = false
+                                copyForAi()
+                            }
+                            HandOffMenuItem(R.string.share, why, goes, "menu-share") {
+                                menu = false
+                                share(false)
+                            }
+                            HandOffMenuItem(R.string.share_as_file, why, goes, "menu-share-file") {
+                                menu = false
+                                share(true)
+                            }
+                            step?.let {
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(it.title(resources))
+                                            if (stepWaits) Text(stringResource(R.string.waiting_for_other), style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    },
+                                    enabled = !stepWaits,
+                                    modifier = Modifier.testTag("menu-hand-off-step"),
+                                    onClick = {
+                                        menu = false
+                                        take(it)
+                                    },
+                                )
+                            }
                         }
                         // The document's own notes, and the reply it was promoted
                         // from (#1091 Decision 3). The core keeps notes with the
@@ -274,42 +357,52 @@ fun DocumentScreen(
             )
         },
         bottomBar = {
-            // The password card's Unlock is the way on while it asks, as on iOS.
-            if (state.passwordPrompt == null || job != null) ActionBar(
-                action = model.primaryAction(state, job),
-                hasReply = snapshot.reply != null,
-                showsReply = state.showsReply,
-                onRecognize = {
-                    beforeJob()
-                    model.recognize()
-                },
-                onFindNames = {
-                    beforeJob()
-                    model.findNames()
-                },
-                onCancel = model::cancelJob,
-                onReplaceAll = model::replaceAll,
-                onShare = { asFile ->
-                    scope.launch { model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, asFile, context)) } }
-                },
-                onCopy = {
-                    scope.launch {
-                        model.handOff()?.let {
-                            copy(context, it.text)
-                            model.notice(R.string.copied_for_ai)
+            Column {
+                // Back from the AI app Ask AI shared to (#1164 decision 11).
+                if (aiConnector && state.showsReplyBanner) {
+                    ReplyBanner(
+                        onPaste = { if (it.isNotBlank()) model.restoreReply(it) },
+                        onType = { model.showReplySheet(true) },
+                        onClose = model::dismissReplyBanner,
+                    )
+                }
+                // The password card's Unlock is the way on while it asks, as on iOS.
+                if (state.passwordPrompt == null || job != null) ActionBar(
+                    action = model.primaryAction(state, job),
+                    refusal = refusal,
+                    step = step,
+                    stepWaits = stepWaits,
+                    onStep = take,
+                    askAi = if (aiConnector) {
+                        { scope.launch { model.askAi()?.let { context.startActivity(askAiIntent(it, context)) } } }
+                    } else {
+                        null
+                    },
+                    hasReply = snapshot.reply != null,
+                    showsReply = state.showsReply,
+                    onRecognize = {
+                        beforeJob()
+                        model.recognize()
+                    },
+                    onFindNames = {
+                        beforeJob()
+                        model.findNames()
+                    },
+                    onCancel = model::cancelJob,
+                    onReplaceAll = model::replaceAll,
+                    onShare = share,
+                    onCopy = copyForAi,
+                    onPasteReply = { model.showReplySheet(true) },
+                    onShareReply = { snapshot.reply?.let { context.startActivity(shareIntent(it.restored.text, null, false, context)) } },
+                    onCopyReply = {
+                        snapshot.reply?.let {
+                            copy(context, it.restored.text, sensitive = true)
+                            model.notice(R.string.copied_reply)
                         }
-                    }
-                },
-                onPasteReply = { model.showReplySheet(true) },
-                onShareReply = { snapshot.reply?.let { context.startActivity(shareIntent(it.restored.text, null, false, context)) } },
-                onCopyReply = {
-                    snapshot.reply?.let {
-                        copy(context, it.restored.text, sensitive = true)
-                        model.notice(R.string.copied_reply)
-                    }
-                },
-                onShowReply = model::showReply,
-            )
+                    },
+                    onShowReply = model::showReply,
+                )
+            }
         },
     ) { padding ->
         // The keyboard takes its height from the screen (edge to edge draws
@@ -505,6 +598,26 @@ fun DocumentScreen(
     state.fromReply?.let { shown ->
         SavedReplySheet(shown, onDismiss = model::hideFromReply, onPromote = { model.promote(shown.reply.id, onOpenDocument) })
     }
+    // Copy for AI, Share or Ask AI refused on a tap: why, and its step (#1209).
+    state.refusal?.let { refused ->
+        // A Find names that would wait for another document's job is not offered here.
+        val resolves = model.step(refused)?.takeUnless { it == HandOffRefusal.Step.FindNames && job != null }
+        val ok: @Composable () -> Unit = { TextButton(onClick = model::dismissRefusal) { Text(stringResource(R.string.ok)) } }
+        AlertDialog(
+            onDismissRequest = model::dismissRefusal,
+            confirmButton = {
+                if (resolves == null) {
+                    ok()
+                } else {
+                    TextButton(onClick = { take(resolves) }, Modifier.testTag("refusal-step")) { Text(resolves.title(resources)) }
+                }
+            },
+            dismissButton = if (resolves == null) null else ok,
+            title = { Text(refused.reason(resources)) },
+            text = { Text(refused.detail(resources)) },
+            modifier = Modifier.testTag("refusal-dialog"),
+        )
+    }
     state.error?.let { message ->
         AlertDialog(
             onDismissRequest = model::dismissError,
@@ -513,6 +626,22 @@ fun DocumentScreen(
             text = { Text(message) },
         )
     }
+}
+
+/** Copy for AI or a Share in the document's menu: always listed, disabled with why until it goes. */
+@Composable
+private fun HandOffMenuItem(label: Int, why: String?, goes: Boolean, tag: String, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Column {
+                Text(stringResource(label))
+                if (why != null) Text(why, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        enabled = goes,
+        modifier = Modifier.testTag(tag),
+        onClick = onClick,
+    )
 }
 
 @Composable
@@ -559,6 +688,14 @@ private fun RecognizingPane(title: Int, body: Int, modifier: Modifier = Modifier
 @Composable
 private fun ActionBar(
     action: PrimaryAction,
+    /** Why the hand-off waits, before a tap; null when it goes. */
+    refusal: HandOffRefusal?,
+    step: HandOffRefusal.Step?,
+    /** The step is Find names and another job holds the slot: it waits. */
+    stepWaits: Boolean,
+    onStep: (HandOffRefusal.Step) -> Unit,
+    /** Ask AI, in Share's place: the AI connector preview is on. */
+    askAi: (() -> Unit)?,
     hasReply: Boolean,
     showsReply: Boolean,
     onRecognize: () -> Unit,
@@ -599,6 +736,34 @@ private fun ActionBar(
                         Triple(onCopyReply, R.string.copy, R.string.copy_reply),
                         Triple(onPasteReply, R.string.paste, R.string.paste_another_reply),
                     )
+                } else if (refusal != null) {
+                    // Every name decided, but the Vault refuses the text as
+                    // saved: a known name written out, changed since its
+                    // review, excluded from AI. Why, and its step in Share's
+                    // place; Paste still restores a reply (#1209).
+                    val resources = LocalResources.current
+                    Text(
+                        refusal.note(resources),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.testTag("hand-off-refusal"),
+                    )
+                    if (stepWaits) Text(stringResource(R.string.waiting_for_other), style = MaterialTheme.typography.bodyMedium)
+                    if (step != null && !stepWaits) {
+                        HandOffButtons(
+                            Triple({ onStep(step) }, step.title(resources), step.title(resources)),
+                            Triple(onPasteReply, resources.getString(R.string.paste), resources.getString(R.string.paste_reply)),
+                        )
+                    } else {
+                        OutlinedButton(onClick = onPasteReply, Modifier.fillMaxWidth().semantics { contentDescription = resources.getString(R.string.paste_reply) }) {
+                            Text(stringResource(R.string.paste))
+                        }
+                    }
+                } else if (askAi != null) {
+                    HandOffRow(
+                        Triple(askAi, R.string.ask_ai, R.string.ask_ai),
+                        Triple(onCopy, R.string.copy, R.string.copy),
+                        Triple(onPasteReply, R.string.paste, R.string.paste_reply),
+                    )
                 } else {
                     HandOffRow(
                         Triple({ onShare(false) }, R.string.share, R.string.share),
@@ -618,12 +783,18 @@ private fun ActionBar(
  */
 @Composable
 private fun HandOffRow(vararg buttons: Triple<() -> Unit, Int, Int>) {
+    val resources = LocalResources.current
+    HandOffButtons(*buttons.map { (onClick, label, spoken) -> Triple(onClick, resources.getString(label), resources.getString(spoken)) }.toTypedArray())
+}
+
+/** [HandOffRow] of labels already in words. */
+@Composable
+private fun HandOffButtons(vararg buttons: Triple<() -> Unit, String, String>) {
     val stacked = LocalDensity.current.fontScale > 1.3f
     val items: @Composable (Modifier) -> Unit = { modifier ->
         buttons.forEachIndexed { index, (onClick, label, spoken) ->
-            val name = stringResource(spoken)
-            val described = modifier.semantics { contentDescription = name }
-            val text: @Composable () -> Unit = { Text(stringResource(label), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            val described = modifier.semantics { contentDescription = spoken }
+            val text: @Composable () -> Unit = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             when (index) {
                 0 -> Button(onClick, described) { text() }
                 1 -> FilledTonalButton(onClick, described) { text() }
@@ -840,6 +1011,43 @@ private fun IdentitiesSheet(
     }
 }
 
+/**
+ * "Paste reply?" over the bar, back from the AI app Ask AI shared to
+ * (#1164 decision 11): Paste restores the answer on the clipboard in one
+ * tap, as the bar's Paste sheet does; Type a reply opens that sheet for one
+ * that is not. × puts it away; the bar's Paste stays.
+ */
+@Composable
+private fun ReplyBanner(onPaste: (String) -> Unit, onType: () -> Unit, onClose: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth().testTag("reply-banner")) {
+        Column(
+            Modifier.wrapContentWidth().widthIn(max = ReadingWidth).padding(16.dp, 4.dp, 4.dp, 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(stringResource(R.string.paste_reply_question)) }
+                        append(" ")
+                        append(stringResource(R.string.paste_reply_banner))
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f).padding(top = 12.dp),
+                )
+                IconButton(onClick = onClose, modifier = Modifier.testTag("reply-banner-close")) {
+                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close))
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(end = 12.dp)) {
+                Box(Modifier.testTag("reply-banner-paste")) { PasteFromClipboard(onPaste = onPaste) }
+                OutlinedButton(onClick = onType, modifier = Modifier.testTag("reply-banner-type")) {
+                    Text(stringResource(R.string.type_a_reply), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
 /** Paste AI reply: restored with this document's names and saved in the Vault as a reply to it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -952,17 +1160,15 @@ private fun ReplyPane(reply: ReplySnapshot, onPromote: (() -> Unit)?, onRemove: 
  * document's own title, which can hold a name the text no longer shows.
  */
 fun shareIntent(text: String, fileName: String?, asFile: Boolean, context: Context): Intent {
-    val title = fileName?.removeSuffix(".md")
-    val send = if (asFile && fileName != null) {
-        val dir = java.io.File(context.cacheDir, "hand-off").apply { deleteRecursively(); mkdirs() }
-        val file = java.io.File(dir, fileName).apply { writeText(text) }
-        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-        Intent(Intent.ACTION_SEND).setType("text/markdown").putExtra(Intent.EXTRA_STREAM, uri)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    } else {
-        Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
-    }
-    title?.let { send.putExtra(Intent.EXTRA_TITLE, it) }
+    // As text: what Ask AI sends too (`AskAi.kt`).
+    if (!asFile || fileName == null) return chooser(SharedText.of(text, fileName))
+    val title = fileName.removeSuffix(".md")
+    val dir = java.io.File(context.cacheDir, "hand-off").apply { deleteRecursively(); mkdirs() }
+    val file = java.io.File(dir, fileName).apply { writeText(text) }
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+    val send = Intent(Intent.ACTION_SEND).setType("text/markdown").putExtra(Intent.EXTRA_STREAM, uri)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        .putExtra(Intent.EXTRA_TITLE, title)
     return Intent.createChooser(send, title)
 }
 

@@ -55,6 +55,7 @@ mod project_page;
 mod projects;
 mod quit_flow;
 mod recovery_key;
+mod refusals;
 mod restore_in_place;
 mod saved_replies;
 mod session_writer;
@@ -517,6 +518,24 @@ fn project(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: &str) -> md
 /// The window's Vault.
 fn vault(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Arc<mdoc_vault::Vault> {
     cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap())
+}
+
+/// The menu bar shelf over this window, as it opens now.
+fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<crate::shelf_ui::ShelfView> {
+    use crate::shelf_ui::{ShelfContent, ShelfView};
+    let workspace = cx.window_handle().downcast::<Workspace>().unwrap();
+    let shelf = cx.cx.update(|cx| {
+        let content = workspace
+            .read(cx)
+            .map(|workspace| ShelfContent::of(workspace, cx))
+            .unwrap();
+        cx.open_window(gpui::WindowOptions::default(), |window, cx| {
+            cx.new(|cx| ShelfView::new(workspace, content, window, cx))
+        })
+        .unwrap()
+    });
+    cx.run_until_parked();
+    shelf
 }
 
 /// A Project to reopen: "Anna Petrova" is PERSON_1, and its one document,

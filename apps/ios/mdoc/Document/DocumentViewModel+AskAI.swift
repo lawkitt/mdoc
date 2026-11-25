@@ -24,8 +24,8 @@ extension DocumentViewModel {
     ]
 
     /// Ask AI: what Share sends, the Vault's text checked against the
-    /// Project's names now, titled by the file's name with names replaced,
-    /// never by the document's own title. Refused, with why, until the
+    /// Project's names now, titled by the file's neutral name, never by
+    /// the document's own title (#1205). Refused, with why, until the
     /// document is Ready.
     func askAI() {
         do {
