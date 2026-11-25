@@ -77,27 +77,28 @@ struct ProjectEntity: AppEntity {
         DisplayRepresentation(title: "\(name)")
     }
 
+    init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+
     init(_ project: ProjectSummary) {
-        id = project.id.rawValue
-        name = project.name
+        self.init(id: project.id.rawValue, name: project.name)
     }
 }
 
 struct ProjectQuery: EntityQuery {
     func entities(for identifiers: [String]) async throws -> [ProjectEntity] {
-        let wanted = Set(identifiers)
-        return Self.projects().filter { wanted.contains($0.id) }
+        ShortcutActions.savedProjects(identifiers, preferences: .shared, store: Self.store)
     }
 
     func suggestedEntities() async throws -> [ProjectEntity] {
-        Self.projects()
+        ShortcutActions.suggestedProjects(preferences: .shared, store: Self.store)
     }
 
-    /// Every Project, read through the Restore extension's read-only
-    /// handle; none while the preview is off.
-    private static func projects() -> [ProjectEntity] {
-        guard Preferences.shared.aiConnectorPreview else { return [] }
-        return ShortcutActions.projects { try CoreFactory.restoreExtension().store }.map(ProjectEntity.init)
+    /// The Restore extension's read-only handle on the Vault.
+    private static func store() throws -> any ReplyStore {
+        try CoreFactory.restoreExtension().store
     }
 }
 

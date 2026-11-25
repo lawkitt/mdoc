@@ -19,8 +19,10 @@ enum ShortcutActions {
     }
 
     /// Restore text: `reply` restored with `project`'s names, or, with no
-    /// Project, with the place Restore with mdoc restores with by default
-    /// (`RestoreViewModel.defaultPlace`). Nothing is saved.
+    /// Project, with the place of the last Copy for AI or Share. Unlike the
+    /// Restore sheet, which shows the place it picked, nothing falls back
+    /// to another Project: two Projects can give one alias to different
+    /// people, and nobody sees which restored. Nothing is saved.
     @MainActor
     static func restore(
         _ reply: String, project: ProjectID?, store: any ReplyStore, sharedLast: RestorePlace?,
@@ -34,19 +36,38 @@ enum ShortcutActions {
             place = .project(project)
             guard places.contains(place) else { throw ShortcutFailure.projectGone }
         } else {
-            guard let found = RestoreViewModel.defaultPlace(sharedLast: sharedLast, in: places) else {
-                throw CoreError.noProject
-            }
-            place = found
+            guard let sharedLast, places.contains(sharedLast) else { throw ShortcutFailure.chooseProject }
+            place = sharedLast
         }
         return try store.restore(reply, with: place).text
     }
 
-    /// The Projects a parameter offers, pinned first, then most recently
-    /// updated, from a read-only handle on the Vault; none while mdoc has
-    /// no Vault yet or it can't be opened.
-    static func projects(_ store: () throws -> any ReplyStore) -> [ProjectSummary] {
-        (try? store().places().projects) ?? []
+    /// The Projects the Project parameter offers, pinned first, then most
+    /// recently updated, from a read-only handle on the Vault; none while
+    /// the preview is off, or mdoc has no Vault yet or it can't be opened.
+    static func suggestedProjects(
+        preferences: Preferences, store: () throws -> any ReplyStore
+    ) -> [ProjectEntity] {
+        guard preferences.aiConnectorPreview else { return [] }
+        return ((try? store().places().projects) ?? []).map(ProjectEntity.init)
+    }
+
+    /// The Projects a saved shortcut names, one for each id: as the Vault
+    /// has it, or kept by its id under a placeholder name when it is no
+    /// longer there, or while the preview is off (the Vault is not read
+    /// then). The action then runs and says why it refuses, rather than
+    /// running with no Project: Unfiled, or the place shared last.
+    static func savedProjects(
+        _ ids: [String], preferences: Preferences, store: () throws -> any ReplyStore
+    ) -> [ProjectEntity] {
+        guard preferences.aiConnectorPreview else {
+            return ids.map { ProjectEntity(id: $0, name: String(localized: "Project")) }
+        }
+        let projects = (try? store().places().projects) ?? []
+        return ids.map { id in
+            projects.first { $0.id.rawValue == id }.map(ProjectEntity.init)
+                ?? ProjectEntity(id: id, name: String(localized: "Project no longer in mdoc"))
+        }
     }
 }
 
@@ -57,8 +78,13 @@ enum ShortcutFailure: Error, Equatable, LocalizedError {
     case noText
     case noReply
     case projectGone
+    /// Restore text with no Project, and no place shared last in mdoc.
+    case chooseProject
     /// The new document is open in mdoc, not yet Ready.
     case needsReview
+    /// The new document is in mdoc, not read yet: another job held the
+    /// one job slot.
+    case notReadYet
 
     var errorDescription: String? {
         switch self {
@@ -70,6 +96,10 @@ enum ShortcutFailure: Error, Equatable, LocalizedError {
             String(localized: "There is no reply to restore.")
         case .projectGone:
             String(localized: "That Project is no longer in mdoc.")
+        case .chooseProject:
+            String(localized: "Choose a Project: mdoc has no document or Project you shared last.")
+        case .notReadYet:
+            String(localized: "The text is in mdoc as a new document, not read yet while mdoc finishes another job. Open it in mdoc to read and review it.")
         case .needsReview:
             String(localized: "The text is in mdoc for review, open as a new document. Once it is reviewed, Copy for AI gives its text with names replaced.")
         }
@@ -96,6 +126,9 @@ extension AppModel {
         if model.snapshot.phase == nil {
             await model.recognize()
         }
+        // Another document's job held the slot: it is in mdoc, unread, and
+        // a second run would add it again.
+        guard model.snapshot.phase != nil else { throw ShortcutFailure.notReadYet }
         throw ShortcutFailure.needsReview
     }
 }

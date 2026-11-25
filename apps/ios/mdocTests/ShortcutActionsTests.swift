@@ -74,6 +74,41 @@ final class ShortcutActionsTests: XCTestCase {
         ) { XCTAssertEqual($0 as? ShortcutFailure, .projectGone) }
     }
 
+    /// With no Project, only the place shared last restores: never the
+    /// first Project instead, whose aliases may name other people.
+    func testRestoreTextWithNoProjectNeedsThePlaceSharedLast() throws {
+        let (seeded, alias) = try seeded()
+        let gone = RestorePlace.document(DocumentID(rawValue: String(repeating: "0", count: 32)))
+        for sharedLast in [nil, gone] {
+            XCTAssertThrowsError(try ShortcutActions.restore(
+                "\(alias) agrees.", project: nil, store: try seeded.replyStore(), sharedLast: sharedLast,
+                preferences: previewOn())
+            ) { XCTAssertEqual($0 as? ShortcutFailure, .chooseProject) }
+        }
+    }
+
+    /// A shortcut saved with a Project keeps it when the Project is gone,
+    /// or while the preview is off, so the action refuses with why instead
+    /// of running with no Project. The picker lists nothing while off.
+    func testASavedProjectStaysNamedWhenGoneOrWhileThePreviewIsOff() throws {
+        let (seeded, _) = try seeded()
+        let store = { try seeded.replyStore() }
+        let gone = String(repeating: "0", count: 32)
+        let ids = [seeded.ellison.rawValue, gone]
+
+        let saved = ShortcutActions.savedProjects(ids, preferences: previewOn(), store: store)
+        XCTAssertEqual(saved.map(\.id), ids)
+        XCTAssertEqual(saved.map(\.name), [Letters.ellisonProject, "Project no longer in mdoc"])
+        let off = ShortcutActions.savedProjects(ids, preferences: Fixture.preferences(), store: store)
+        XCTAssertEqual(off.map(\.id), ids)
+        XCTAssertEqual(off.map(\.name), ["Project", "Project"], "the Vault is not read while off")
+
+        XCTAssertEqual(
+            Set(ShortcutActions.suggestedProjects(preferences: previewOn(), store: store).map(\.name)),
+            [Letters.ellisonProject, Letters.harbourProject])
+        XCTAssertTrue(ShortcutActions.suggestedProjects(preferences: Fixture.preferences(), store: store).isEmpty)
+    }
+
     func testRestoreTextRefusesWhileThePreviewIsOff() throws {
         let (seeded, alias) = try seeded()
         XCTAssertThrowsError(try ShortcutActions.restore(
@@ -141,6 +176,34 @@ final class ShortcutActionsTests: XCTestCase {
         XCTAssertFalse(pseudonymized.contains("ann@example.com"))
         XCTAssertTrue(pseudonymized.contains(alias), "the Project's alias for her")
         XCTAssertEqual(seeded.sharedLast, .project(seeded.ellison), "Restore text restores with it next")
+    }
+
+    /// Another document's job holds the one job slot: the new document is
+    /// in mdoc unread, and the action says so rather than "for review".
+    func testPseudonymizeTextWhileAnotherJobRunsSaysTheTextIsNotReadYet() async throws {
+        let (seeded, _) = try seeded()
+        let app = app(seeded)
+        let gate = TestObserver()
+        let other = Task {
+            await app.jobs.run(.scan, documentID: seeded.letter, title: "other") { observer in
+                while !gate.isCancelled() && !observer.isCancelled() {
+                    Thread.sleep(forTimeInterval: 0.01)
+                }
+                return 1
+            }
+        }
+        while app.jobs.current == nil { await Task.yield() }
+        do {
+            try await app.addForReview(fromShortcut: text, into: seeded.ellison)
+            XCTFail("refused")
+        } catch {
+            XCTAssertEqual(error as? ShortcutFailure, .notReadYet)
+        }
+        gate.cancel()
+        _ = await other.value
+        let opened = try XCTUnwrap(app.navigator.openDocument)
+        XCTAssertNil(app.openModel?.snapshot.phase, "not read")
+        XCTAssertNotEqual(opened, seeded.letter)
     }
 
     func testPseudonymizeTextWithNoProjectMakesAnUnfiledDocument() async throws {
