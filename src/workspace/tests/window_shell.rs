@@ -919,6 +919,7 @@ fn settings_categories_use_one_tab_stop_and_arrow_keys(cx: &mut TestAppContext) 
         settings_ui::Category::Recognition,
         settings_ui::Category::Spelling,
         settings_ui::Category::Vault,
+        settings_ui::Category::AiConnector,
         settings_ui::Category::About,
         settings_ui::Category::General,
     ] {
