@@ -211,6 +211,7 @@ const EXITS: &[Exit] = &[
         name: "Connector › over the pipe, get_document's whole answer",
         gate: Gate::Connector,
         via: Via::ConnectorWire,
+        resolves: false,
     },
 ];
 
@@ -659,7 +660,7 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Handed {
             let request = serde_json::to_vec(&request).unwrap();
             let line = mdoc_connector::serve::answer_line(&connector(fixture), &request);
             match serde_json::from_slice(&line).unwrap() {
-                Answer::Ok(Done::Text { .. }) => out.push(String::from_utf8(line).unwrap()),
+                Answer::Ok(Done::Text { .. }) => out.texts.push(String::from_utf8(line).unwrap()),
                 Answer::Ok(Done::NeedsReview { .. }) => {}
                 answer => panic!("the fixture's document is short and shared: {answer:?}"),
             }
