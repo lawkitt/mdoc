@@ -587,8 +587,7 @@ impl EditorState {
         if !self.selected_range.is_empty() {
             // Ordered items show the numbers written, so the
             // source copies as the screen reads.
-            let text = self.content[self.copy_range()].to_string();
-            self.write_clipboard(text, cx);
+            self.write_clipboard(self.copy_range(), cx);
         }
     }
 
@@ -598,17 +597,31 @@ impl EditorState {
     /// `copy`.
     pub(crate) fn copy_plain(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() {
-            let text = self.content[self.copy_range()].to_string();
-            self.write_clipboard(text, cx);
+            self.write_clipboard(self.copy_range(), cx);
         }
     }
 
-    /// Write a Copy/Cut payload as plain text, with the host's copy metadata.
-    pub(super) fn write_clipboard(&self, text: String, cx: &mut Context<Self>) {
-        cx.write_to_clipboard(match &self.copy_metadata {
-            Some(metadata) => ClipboardItem::new_string_with_metadata(text, metadata.clone()),
+    /// Write `range` of the text as a Copy/Cut payload, plain text with the
+    /// host's copy metadata: its copy check's for that range, when it set
+    /// one, or the fixed metadata.
+    pub(super) fn write_clipboard(&self, range: std::ops::Range<usize>, cx: &mut Context<Self>) {
+        let metadata = match &self.copy_check {
+            Some(check) => check(&self.content, range.clone(), cx).metadata,
+            None => self.copy_metadata.clone(),
+        };
+        let text = self.content[range].to_string();
+        cx.write_to_clipboard(match metadata {
+            Some(metadata) => ClipboardItem::new_string_with_metadata(text, metadata),
             None => ClipboardItem::new_string(text),
         });
+    }
+
+    /// The range a Copy of the selection takes; empty without a selection.
+    pub fn copy_selection_range(&self) -> std::ops::Range<usize> {
+        if self.selected_range.is_empty() {
+            return self.selected_range.clone();
+        }
+        self.copy_range()
     }
 
     /// What a copy takes: the selection — extended back over the first
@@ -642,7 +655,7 @@ impl EditorState {
 
     pub(super) fn cut(&mut self, _: &Cut, window: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() {
-            self.write_clipboard(self.content[self.selected_range.clone()].to_string(), cx);
+            self.write_clipboard(self.selected_range.clone(), cx);
             self.replace_text_in_range(None, "", window, cx);
         }
     }
@@ -1573,6 +1586,35 @@ mod tests {
             editor.select_all(&SelectAll, window, cx);
             editor.copy(&Copy, window, cx);
             assert_eq!(cx.read_from_clipboard().unwrap().metadata(), None);
+        });
+    }
+    #[gpui::test]
+    fn a_copy_check_marks_each_copy_by_the_range_it_takes(cx: &mut gpui::TestAppContext) {
+        const TEXT: &str = "Anna Petrova agreed.";
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update_in(cx, |editor, window, cx| {
+            // Over the fixed metadata: a range holding "Anna" is marked.
+            editor.set_copy_metadata(Some("fixed".into()));
+            editor.on_copy_check(|text, range, _| crate::CopyCheck {
+                metadata: text[range].contains("Anna").then(|| "marked".into()),
+                action: None,
+            });
+            type CopyFn = fn(&mut EditorState, &mut Window, &mut Context<EditorState>);
+            let copies: [CopyFn; 3] = [
+                |e, w, cx| e.copy(&Copy, w, cx),
+                |e, w, cx| e.copy_plain(w, cx),
+                |e, w, cx| e.cut(&Cut, w, cx),
+            ];
+            for copy in copies {
+                for (range, marked) in [(0..12, Some("marked")), (13..19, None)] {
+                    editor.set_text(TEXT, cx);
+                    editor.set_selection(range.clone(), cx);
+                    copy(editor, window, cx);
+                    let item = cx.read_from_clipboard().unwrap();
+                    assert_eq!(item.text().as_deref(), Some(&TEXT[range]));
+                    assert_eq!(item.metadata().map(String::as_str), marked);
+                }
+            }
         });
     }
     #[gpui::test]

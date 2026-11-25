@@ -763,9 +763,8 @@ impl EditorState {
         let Some(range) = table_rules::table_source_range(&self.content, &region) else {
             return;
         };
-        let text = self.content[range].to_string();
         self.table_menu = None;
-        self.write_clipboard(text, cx);
+        self.write_clipboard(range, cx);
         cx.notify();
     }
 

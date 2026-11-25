@@ -46,6 +46,7 @@ mod exits;
 mod export_project;
 mod focus_regions;
 mod folder_sheet;
+mod hand_copies;
 mod home;
 mod import_flow;
 mod menu_bar;

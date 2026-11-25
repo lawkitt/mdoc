@@ -341,6 +341,10 @@ impl DocumentView {
             document_session::DocumentSession::default().directory(),
             cx,
         );
+        let view = cx.weak_entity();
+        editor.update(cx, |editor, _| {
+            crate::pii::ui::check_hand_copies(editor, view, crate::pii::ui::CopyFrom::Editor)
+        });
         window.focus(&editor.read(cx).focus_handle(cx), cx);
         let subscription =
             cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {
@@ -371,6 +375,11 @@ impl DocumentView {
                     this.add_pii_candidate(&PiiAddCandidate, window, cx)
                 }
                 EditorEvent::SelectionActionChoice => this.toggle_selection_menu(window, cx),
+                EditorEvent::CopyAction { range, label } => {
+                    let editor = this.editor.clone();
+                    let from = crate::pii::ui::CopyFrom::Editor;
+                    this.copy_action(from, &editor, range.clone(), label, cx)
+                }
                 // A hovered replacement shows its tooltip.
                 EditorEvent::HoverAnnotation(_) => cx.notify(),
                 EditorEvent::OpenLink(src) => {
@@ -547,8 +556,9 @@ impl DocumentView {
         if !self.can_copy_markdown() {
             return;
         }
-        let text = self.editor.read(cx).text().to_owned();
-        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+        // The whole text, copied by hand: marked unless all of it is clean.
+        let all = 0..self.editor.read(cx).text().len();
+        cx.write_to_clipboard(self.hand_copy_item(all, cx));
         self.copied_for_ai = false;
         self.copied_reply = false;
         self.show_copy_feedback(cx);
