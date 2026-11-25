@@ -43,3 +43,5 @@ runs the tests that download the OCR model (with `MDOC_REAL_DOWNLOADS=1`);
 `MDOC_UI_DETECTOR_TIER=1` gives the detector tier. `MDOC_UI_READINESS`
 (`changed` or `excluded`) makes every saved document read as changed since
 its review or excluded from AI, states only a computer makes today.
+`MDOC_MARKED_LIFETIME` (seconds) makes a marked copy leave the clipboard that
+soon, so a test sees which copies are marked.

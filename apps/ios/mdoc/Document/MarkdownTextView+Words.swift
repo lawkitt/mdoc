@@ -85,6 +85,7 @@ extension MarkdownTextView.Coordinator {
     /// The menu's words are the selection's: a word it reached into shows
     /// whole, and the punctuation at its ends goes. Moving the selection
     /// closes UIKit's menu, so the same menu shows again over the words.
+    /// Copy keeps the reader's own selection (`unsnapped`).
     private func snapSelection(to target: SourceRange, in textView: UITextView) {
         let base = (textView as? CellTextView)?.location ?? 0
         let shown = offsets.nsRange(target)
@@ -93,18 +94,23 @@ extension MarkdownTextView.Coordinator {
               NSMaxRange(local) <= textView.textStorage.length else { return }
         DispatchQueue.main.async { [weak self, weak textView] in
             guard let self, let textView, textView.selectedRange.length > 0 else { return }
+            let own = self.unsnapped?.original(of: textView) ?? textView.selectedRange
+            self.unsnapped = UnsnappedSelection(view: textView, original: own, snapped: local)
             textView.selectedRange = local
-            self.presentMenu(on: textView) { [weak self] view, source in
-                self?.hideMenu(for: source, in: view, at: view.selectedRange)
+            self.presentMenu(on: textView) { [weak self] view, _ in
+                self?.selectionMenu(in: view, at: view.selectedRange, suggested: [])
             }
         }
     }
 
     /// `menu` over the selection of `view`, shown by this view's own
-    /// interaction (`SelectionMenuPresenter`).
-    private func presentMenu(on view: UITextView, menu: @escaping (UITextView, SourceRange) -> UIMenu?) {
+    /// interaction (`SelectionMenuPresenter`), over the part of it on
+    /// screen (Select All reaches past it).
+    func presentMenu(on view: UITextView, menu: @escaping (UITextView, SourceRange) -> UIMenu?) {
         guard let shown = view.selectedTextRange else { return }
-        let rect = view.selectionRects(for: shown).reduce(CGRect.null) { $0.union($1.rect) }
+        let selected = view.selectionRects(for: shown).reduce(CGRect.null) { $0.union($1.rect) }
+        let visible = selected.intersection(view.bounds)
+        let rect = visible.isNull ? selected : visible
         guard !rect.isNull, !rect.isInfinite else { return }
         let presenter = menuPresenter ?? SelectionMenuPresenter(offsets: { [weak self] in self?.offsets })
         menuPresenter = presenter
@@ -347,8 +353,8 @@ private extension CandidateTextView {
 }
 
 
-/// Shows a selection's menu from mdoc's own interaction: Hide name's menu
-/// again once the selection snapped to whole words. UIKit's own edit menu
+/// Shows a selection's menu from mdoc's own interaction: the selection's
+/// menu again once Hide name snapped it to whole words. UIKit's own edit menu
 /// (`editMenuForTextIn`) shows the same menus otherwise.
 @MainActor
 final class SelectionMenuPresenter: NSObject, @preconcurrency UIEditMenuInteractionDelegate {

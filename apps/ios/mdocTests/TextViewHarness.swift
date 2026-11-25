@@ -26,7 +26,7 @@ struct TextViewHarness {
         MarkdownTextView(
             snapshot: model.snapshot, selected: nil, rendered: rendered,
             onCandidate: { _ in }, onReplace: { _ in }, onReviewNext: {},
-            edit: model.isEditing ? EditActions(model) : nil)
+            edit: model.isEditing ? EditActions(model) : nil, selectionCopy: SelectionCopyActions(model))
     }
 }
 

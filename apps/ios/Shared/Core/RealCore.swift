@@ -1444,6 +1444,21 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return try review(.mark(range: range.textRange, category: category))
     }
 
+    /// Off the main thread: the core reads the Vault for the names the
+    /// document's Project knows.
+    func checkSelection(_ range: SourceRange) throws -> SelectionCheck {
+        try core { try ffi.checkSelection(vault: library.vault, range: range.textRange) }
+    }
+
+    func replaceSelection(_ range: SourceRange) throws -> SelectionReplacement {
+        reopenIfPending()
+        defer { scheduleSave() }
+        let replaced = try core { try ffi.replaceSelection(range: range.textRange) }
+        return SelectionReplacement(
+            snapshot: snapshot(of: replaced.snapshot), range: SourceRange(replaced.range),
+            replaced: Int(replaced.replaced))
+    }
+
     func fixWordsDraft(_ candidate: CandidateID) throws -> WordsDraft {
         let draft = try core { try ffi.fixWordsDraft(mention: Self.mention(candidate)) }
         return WordsDraft(

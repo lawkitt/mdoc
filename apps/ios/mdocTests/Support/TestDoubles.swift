@@ -62,6 +62,8 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
     func undo() throws -> DocumentSnapshot { try base.undo() }
     func redo() throws -> DocumentSnapshot { try base.redo() }
     func hideTarget(_ range: SourceRange) throws -> WordsTarget { try base.hideTarget(range) }
+    func checkSelection(_ range: SourceRange) throws -> SelectionCheck { try base.checkSelection(range) }
+    func replaceSelection(_ range: SourceRange) throws -> SelectionReplacement { try base.replaceSelection(range) }
     func markSelection(_ range: SourceRange, as category: mdoc.Category?) throws -> DocumentSnapshot {
         try base.markSelection(range, as: category)
     }
