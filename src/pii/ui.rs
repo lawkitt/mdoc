@@ -6,6 +6,9 @@ mod project_sync;
 pub(crate) use compare::CompareMode;
 pub(crate) use compare::{CompareState, SwitcherRest};
 mod discovery;
+mod edit_scan;
+#[cfg(test)]
+pub(crate) use edit_scan::TEST_SCAN;
 mod mapping;
 mod render;
 mod reply;
@@ -104,6 +107,7 @@ pub(crate) struct ReviewUi {
     scan_started: std::time::Instant,
     discovery_job: Option<discovery::DiscoveryJob>,
     discovery_pending: bool,
+    edit_scan: edit_scan::EditScan,
     scans: Vec<settings::PiiConfig>,
     error: Option<String>,
     /// The panel shows the setup consent card instead of a review.
@@ -150,6 +154,7 @@ impl ReviewUi {
             scan_started: std::time::Instant::now(),
             discovery_job: None,
             discovery_pending: false,
+            edit_scan: Default::default(),
             scans: Vec::new(),
             error: None,
             setup: false,
@@ -172,6 +177,7 @@ impl ReviewUi {
             job.cancel.store(true, Ordering::Relaxed);
         }
         self.discovery_pending = false;
+        self.edit_scan.cancel();
         if let Some(job) = self.job.take() {
             job.cancel.store(true, Ordering::Relaxed);
         }
@@ -259,6 +265,11 @@ impl ReviewUi {
 
     pub(crate) fn scanning(&self) -> bool {
         self.job.is_some()
+    }
+    /// Discovery or the edited paragraphs' scan is waiting or running: the
+    /// review may still gain proposals.
+    pub(crate) fn finding_names(&self) -> bool {
+        self.discovery_job.is_some() || self.discovery_pending || self.edit_scan.pending()
     }
     /// Open a popup, remembering where focus returns when it closes.
     /// Retargeting an open popup (stepping, a click on another mention, a
@@ -399,6 +410,12 @@ impl DocumentView {
             self.pii.error = Some("Document changed; scan cancelled. Rescan when ready.".into());
         }
         self.schedule_pii_discovery(cx);
+        self.schedule_edit_scan(cx);
+    }
+    /// Names may still be found, or a write of them is due: a Copy for AI
+    /// asked now waits for them.
+    pub(crate) fn finding_names(&self) -> bool {
+        self.pii.finding_names() || self.save_scheduled()
     }
     pub(crate) fn sync_pii_theme(&mut self, cx: &mut Context<Self>) {
         self.sync_annotations(cx);

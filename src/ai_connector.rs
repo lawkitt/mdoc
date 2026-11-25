@@ -9,6 +9,8 @@
 //! AI app asked while nothing is shared (the share prompt, item 8), a read
 //! or delivery was recorded (the Project page's AI activity), or a document
 //! it asked for needs review (item 9's notifications).
+pub(crate) mod setup;
+
 use mdoc_connector::Connector;
 use mdoc_mcp::ipc::{self, Endpoint, Listening};
 use mdoc_mcp::wire::{self, Answer, Done, Refusal, Request};
@@ -111,17 +113,30 @@ pub(crate) fn start(
     endpoint: &Endpoint,
 ) -> Option<Running> {
     let mut running = service(vault, setting)?;
-    match ipc::listen(endpoint, running.answer.clone()) {
-        Ok(listening) => {
-            running._listening = Some(listening);
-            Some(running)
-        }
-        Err(error) => {
-            eprintln!("mdoc: the AI connector can't listen at {endpoint}: {error}");
-            None
+    // Turned off and on again quickly (Settings › AI connector), the
+    // listener that just stopped may still hold the name for a moment: try
+    // again a few times before giving up.
+    let mut tries = 1;
+    loop {
+        match ipc::listen(endpoint, running.answer.clone()) {
+            Ok(listening) => {
+                running._listening = Some(listening);
+                return Some(running);
+            }
+            Err(_) if tries < LISTEN_TRIES => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(error) => {
+                eprintln!("mdoc: the AI connector can't listen at {endpoint}: {error}");
+                return None;
+            }
         }
     }
 }
+
+/// How many times [`start`] tries to listen, 50 ms apart.
+const LISTEN_TRIES: u32 = 10;
 
 /// Tests and renders: the connector while `setting` is on, with no
 /// listener.
@@ -254,6 +269,29 @@ mod tests {
             assert!(std::time::Instant::now() < deadline, "still listening");
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+    }
+
+    /// Turned off and on again quickly (Settings › AI connector), the
+    /// listener that just stopped may hold the name a moment longer: the
+    /// new one waits for it rather than giving up.
+    #[test]
+    fn a_name_freed_moments_later_is_taken() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
+        let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
+        let held = ipc::listen(&endpoint, Arc::new(|_: &[u8]| Vec::new())).unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            drop(held);
+        });
+        let on = AiConnectorConfig { preview: true };
+        let running = start(vault, &on, &endpoint);
+        release.join().unwrap();
+        assert!(running.is_some(), "gave up while the old listener stopped");
+        assert_eq!(
+            ask(&endpoint).unwrap(),
+            Answer::Refused(Refusal::NothingShared)
+        );
     }
 
     /// Only a call that found nothing shared asks; a bad request or a

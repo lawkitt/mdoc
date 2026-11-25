@@ -201,6 +201,9 @@ pub struct ReviewSnapshot {
     /// Scanned, or names proposed some other way, even if none were found;
     /// kept with the document.
     pub scanned: bool,
+    /// An edit changed paragraphs not scanned since: the document is not
+    /// Ready, even with nothing proposed, until `DocumentSession::scan_edits`.
+    pub edits_unscanned: bool,
     pub phase: DocumentPhase,
     /// Names kept everywhere: no identity in `identities` any more, but
     /// their kept mentions still name them, so the list shows them as kept.
@@ -423,6 +426,7 @@ pub(super) fn of(
         mentions,
         project_id: project_id.map(str::to_owned),
         scanned,
+        edits_unscanned: review.edits_unscanned(),
         phase: DocumentPhase::of(scanned, proposed),
         kept_identities,
         text_revision: document.text_revision,

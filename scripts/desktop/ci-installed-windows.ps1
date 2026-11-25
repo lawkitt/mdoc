@@ -82,6 +82,10 @@ try {
     if (-not (Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath $uninstaller)) {
         throw 'NSIS did not install mdoc.exe and uninstall.exe.'
     }
+    # The AI connector's shim, beside mdoc.exe, where Settings points AI apps.
+    if (-not (Test-Path -LiteralPath (Join-Path $installDir 'mdoc-mcp.exe'))) {
+        throw 'NSIS did not install mdoc-mcp.exe beside mdoc.exe.'
+    }
     # The DOCX preview's fallback fonts ship beside mdoc.exe with their licences.
     foreach ($font in 'Carlito-Regular.ttf', 'Caladea-Regular.ttf', 'LiberationSans-Regular.ttf', 'Carlito-OFL.txt', 'Caladea-OFL.txt', 'Liberation-LICENSE.txt') {
         if (-not (Test-Path -LiteralPath (Join-Path $installDir "fonts\$font"))) { throw "NSIS did not install fonts\$font." }
@@ -148,6 +152,9 @@ try {
                     Run-Installer $uninstaller "/S _?=$installDir"
                     if (Test-Path -LiteralPath (Join-Path $installDir 'mdoc.exe')) {
                         throw 'Uninstall left mdoc.exe installed.'
+                    }
+                    if (Test-Path -LiteralPath (Join-Path $installDir 'mdoc-mcp.exe')) {
+                        throw 'Uninstall left mdoc-mcp.exe installed.'
                     }
                     if (-not (Test-Path -LiteralPath $vaultKey -PathType Leaf)) {
                         throw 'Uninstall deleted the Vault key (cases/key.dpapi).'

@@ -83,6 +83,8 @@ impl DocumentView {
         if !self.can_copy_markdown() {
             return;
         }
+        // Edited text is scanned before anything leaves; the copy waits.
+        self.scan_edits_now(cx);
         cx.emit(crate::workspace::TabEvent::CopyForAi);
     }
     /// The outbound check passed: `text` is what leaves.
@@ -117,7 +119,9 @@ impl DocumentView {
         if review.applied().is_empty() {
             // Every proposal kept as written: nothing to replace, nothing to
             // find (Vault & Projects item 39).
-            return review.variants().is_empty().then_some(Step::FindNames);
+            // Scanned with nothing found, it may leave as it is.
+            let scanned = !self.pii.scans().is_empty() || self.session.document.scanned;
+            return (review.variants().is_empty() && !scanned).then_some(Step::FindNames);
         }
         (self.names_not_replaced(cx) > 0).then_some(Step::Review)
     }

@@ -236,15 +236,20 @@ enum Scenario {
     /// the stored text: changed since its review, with no known name in it,
     /// so only the review's fingerprint catches it.
     ChangedElsewhere,
+    /// A new name, Dana Rowe, typed into its tab, found by the scan of the
+    /// edited paragraph (Vault & Projects item 44); a stored document gets
+    /// it from another writer.
+    NewNameTyped,
 }
 
 const READY: [Scenario; 2] = [Scenario::Ready, Scenario::UnknownNameInTheTitle];
 
-const NOT_READY: [Scenario; 4] = [
+const NOT_READY: [Scenario; 5] = [
     Scenario::NameFromAnotherDocument,
     Scenario::MappedNameAsWritten,
     Scenario::NameOnlyTheVaultKnows,
     Scenario::ChangedElsewhere,
+    Scenario::NewNameTyped,
 ];
 
 /// The scenarios no step resolves: replacing what the tab proposes leaves
@@ -263,6 +268,7 @@ impl Scenario {
             Scenario::NameFromAnotherDocument | Scenario::NameOnlyTheVaultKnows => {
                 &["Anna Petrova", "Boris Ivanov"]
             }
+            Scenario::NewNameTyped => &["Anna Petrova", "Dana Rowe"],
         }
     }
 
@@ -417,27 +423,19 @@ impl Fixture<'_> {
                 move_tab(&tabs, cx, memo, Some(&self.project));
                 written(cx);
             }
-            Scenario::MappedNameAsWritten => match self.letter {
-                Some(letter) => {
-                    tabs.update_in(cx, |tabs, window, cx| tabs.activate(letter, window, cx));
-                    let view = active(&tabs, cx);
-                    view.update_in(cx, |view, window, cx| {
-                        let end = view.editor.read(cx).text().len();
-                        view.editor
-                            .update(cx, |editor, cx| editor.set_cursor(end, cx));
-                        window.focus(&view.editor.read(cx).focus_handle(cx), cx);
-                    });
-                    cx.simulate_input(" Anna Petrova signed.");
-                    cx.run_until_parked();
-                }
-                None => {
-                    vault(&tabs, cx)
-                        .update_document(self.document.as_str(), |document| {
-                            document.markdown.push_str(" Anna Petrova signed.")
-                        })
-                        .unwrap();
-                }
-            },
+            Scenario::NewNameTyped => {
+                *crate::pii::ui::TEST_SCAN.lock().unwrap() = Some(dana);
+                append(&tabs, cx, self.letter, &self.document, " Dana Rowe signed.");
+            }
+            Scenario::MappedNameAsWritten => {
+                append(
+                    &tabs,
+                    cx,
+                    self.letter,
+                    &self.document,
+                    " Anna Petrova signed.",
+                );
+            }
             Scenario::ChangedElsewhere => {
                 vault(&tabs, cx)
                     .update_document(self.document.as_str(), |document| {
@@ -504,6 +502,50 @@ impl Fixture<'_> {
 struct Handed {
     texts: Vec<String>,
     file_names: Vec<String>,
+}
+
+/// Type `text` at the end of the open tab `letter`, or, stored, have
+/// another writer append it.
+fn append(
+    tabs: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+    letter: Option<u64>,
+    document: &VaultId,
+    text: &str,
+) {
+    match letter {
+        Some(letter) => {
+            tabs.update_in(cx, |tabs, window, cx| tabs.activate(letter, window, cx));
+            let view = active(tabs, cx);
+            view.update_in(cx, |view, window, cx| {
+                let end = view.editor.read(cx).text().len();
+                view.editor
+                    .update(cx, |editor, cx| editor.set_cursor(end, cx));
+                window.focus(&view.editor.read(cx).focus_handle(cx), cx);
+            });
+            cx.simulate_input(text);
+            cx.run_until_parked();
+        }
+        None => {
+            vault(tabs, cx)
+                .update_document(document.as_str(), |document| {
+                    document.markdown.push_str(text)
+                })
+                .unwrap();
+        }
+    }
+}
+
+/// What the name finder finds in edited text: Dana Rowe.
+fn dana(text: &str) -> Vec<mdoc_pii::Detection> {
+    text.match_indices("Dana Rowe")
+        .map(|(start, name)| mdoc_pii::Detection {
+            range: start..start + name.len(),
+            category: Person,
+            score: 0.9,
+            recognizer: mdoc_pii::Recognizer::Model,
+        })
+        .collect()
 }
 
 /// The heading [`Via::ConnectorList`]'s document is given: its label once
@@ -811,6 +853,14 @@ fn no_exit_hands_out_a_mapped_name_as_written(cx: &mut TestAppContext) {
 #[gpui::test]
 fn no_exit_hands_out_a_document_changed_since_review(cx: &mut TestAppContext) {
     let faults = suite(cx, &[Scenario::ChangedElsewhere]);
+    assert!(faults.is_empty(), "{faults:#?}");
+}
+
+/// Done when: no exit hands out a new name typed into a Ready document as
+/// typed (Vault & Projects item 44).
+#[gpui::test]
+fn no_exit_hands_out_a_typed_new_name(cx: &mut TestAppContext) {
+    let faults = suite(cx, &[Scenario::NewNameTyped]);
     assert!(faults.is_empty(), "{faults:#?}");
 }
 

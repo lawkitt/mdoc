@@ -233,6 +233,21 @@ impl DocumentView {
         .detach();
         cx.notify();
     }
+    /// Find names over the whole text, landing `found` as the detector's.
+    #[cfg(test)]
+    pub(crate) fn scan_finding(&mut self, found: Vec<mdoc_pii::Detection>, cx: &mut Context<Self>) {
+        let revision = self.editor.read(cx).revision();
+        let (generation, identity) = (self.pii.generation, self.session.generation);
+        self.pii.reviewing = true;
+        self.pii.job = Some(ScanJob {
+            cancel: Arc::new(AtomicBool::new(false)),
+            revision,
+            generation,
+            config: settings::PiiConfig::default(),
+            progress: Default::default(),
+        });
+        self.complete_pii_scan(generation, identity, revision, Ok(found), cx);
+    }
     pub(super) fn complete_pii_scan(
         &mut self,
         generation: u64,
