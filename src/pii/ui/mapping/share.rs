@@ -144,9 +144,7 @@ impl DocumentView {
                         .when(cfg!(test), |v| v.debug_selector(|| "share-copy-for-ai".into()))
                         .h(px(32.))
                         .on_click(cx.listener(move |this, _, window, cx| match step {
-                            Some(step) => {
-                                this.run_copy_step(step, window, cx);
-                            }
+                            Some(step) => cx.emit(crate::workspace::TabEvent::CopyStep(step)),
                             None if aliases => this.copy_for_ai(&CopyForAi, window, cx),
                             None => {}
                         })),

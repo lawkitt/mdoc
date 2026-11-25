@@ -143,6 +143,14 @@ impl DocumentView {
     ) -> bool {
         self.copy_refusal = None;
         let shown = match step {
+            // A button drawn for another count (a notice shown before more
+            // names were marked) replaces nothing: it shows the count now.
+            Step::ReplaceAndCopy(shown) if shown != self.pii.review.remaining() => {
+                let pending = self.pii.review.remaining();
+                self.copy_refusal =
+                    Some(Refusal::of(Readiness::LeftToReview(pending), true, false));
+                true
+            }
             Step::ReplaceAndCopy(_) => {
                 self.pii.reviewing = true;
                 self.apply_all_pii(&PiiApplyAll, window, cx);
@@ -154,11 +162,8 @@ impl DocumentView {
                 self.select_first_proposal(window, cx) || self.select_first_kept(window, cx)
             }
             Step::FindNames => {
-                let review = &self.pii.review;
-                if !self.pii.reviewing
-                    && review.variants().is_empty()
-                    && review.applied().is_empty()
-                {
+                // Aliases a reopened document relinks as applied are no scan.
+                if !self.pii.scanning() {
                     self.start_pii_scan(cx);
                 }
                 self.show_review(window, cx);
@@ -184,6 +189,15 @@ impl DocumentView {
             .update(cx, |editor, cx| editor.set_cursor(start, cx));
         self.activate_annotation(KEPT_ID | start as u64, window, cx);
         self.active_is_kept()
+    }
+    /// A scan was asked for: running, waiting on its model's setup, failed,
+    /// or done. For tests.
+    #[cfg(test)]
+    pub(crate) fn scan_asked(&self) -> bool {
+        self.pii.scanning()
+            || self.pii.setup
+            || self.pii.error.is_some()
+            || !self.pii.review.variants().is_empty()
     }
     /// The Inspector open on Review.
     fn show_review(&mut self, window: &mut Window, cx: &mut Context<Self>) {

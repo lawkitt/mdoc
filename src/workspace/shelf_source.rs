@@ -207,14 +207,41 @@ impl Workspace {
         });
     }
 
-    /// Why a tab has no shelf row to copy, and what resolves it.
-    fn no_row_refusal(&self, view: &gpui::Entity<DocumentView>, cx: &App) -> Refusal {
-        let excluded = match (self.vault.vault(), view.read(cx).session.document.id()) {
+    /// Run a refused Copy for AI's step in tab `id`, unless its document is
+    /// kept from AI: then nothing changes in it ("Replace N and copy" would
+    /// edit it to copy nothing) and the notice says why. Returns whether the
+    /// step found what it shows (`DocumentView::run_copy_step`).
+    pub(super) fn run_tab_step(
+        &mut self,
+        id: u64,
+        step: Step,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
+            return true;
+        };
+        if self.excluded(&view, cx) {
+            view.update(cx, |view, cx| {
+                view.copy_for_ai_refused(Refusal::excluded(), cx)
+            });
+            return true;
+        }
+        view.update(cx, |view, cx| view.run_copy_step(step, window, cx))
+    }
+
+    /// Whether tab `view`'s Vault document is kept from AI.
+    fn excluded(&self, view: &gpui::Entity<DocumentView>, cx: &App) -> bool {
+        match (self.vault.vault(), view.read(cx).session.document.id()) {
             (Some(vault), Some(DocumentId::Vault(document))) => (vault.documents().iter())
                 .any(|summary| summary.id == document.as_str() && summary.exclude_from_ai),
             _ => false,
-        };
-        if excluded {
+        }
+    }
+
+    /// Why a tab has no shelf row to copy, and what resolves it.
+    fn no_row_refusal(&self, view: &gpui::Entity<DocumentView>, cx: &App) -> Refusal {
+        if self.excluded(view, cx) {
             Refusal::excluded()
         } else {
             view.read(cx).no_alias_refusal()
@@ -448,10 +475,12 @@ impl Workspace {
                         if !view.read(cx).lifecycle.ready() {
                             return false;
                         }
-                        view.update(cx, |view, cx| match step {
-                            Some(step) => view.run_copy_step(step, window, cx),
-                            None => view.select_first_proposal(window, cx),
-                        })
+                        match step {
+                            Some(step) => this.run_tab_step(tab, step, window, cx),
+                            None => {
+                                view.update(cx, |view, cx| view.select_first_proposal(window, cx))
+                            }
+                        }
                     })
                     .unwrap_or(true);
                 if shown {

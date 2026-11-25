@@ -1736,8 +1736,8 @@ impl DocumentView {
                                     .when(cfg!(test), |v| {
                                         v.debug_selector(|| "copy-refusal-step".into())
                                     })
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.run_copy_step(step, window, cx);
+                                    .on_click(cx.listener(move |_, _, _, cx| {
+                                        cx.emit(workspace::TabEvent::CopyStep(step));
                                     })),
                             )
                         },

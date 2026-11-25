@@ -370,7 +370,7 @@ impl ShelfRows {
         let ready = document.readiness.is_ready();
         let copied = self.copied == Some(index);
         let step = document.step().filter(|_| !ready);
-        let refused = self.refused == Some(index) && !ready;
+        let refused = self.refused == Some(index);
         let (title, title_width) = self
             .titles
             .get(index)
@@ -536,6 +536,10 @@ impl ShelfRows {
             .text_size(px(11.))
             .text_color(p.header_muted)
             .whitespace_nowrap()
+            // Listed ready, gone or kept from AI by the time it was asked.
+            .when(ready && refused, |line| {
+                line.child(label("Not copied", theme.proposed()).mr(px(6.)))
+            })
             .when(!ready, |line| {
                 let state = document.readiness.label();
                 let state = if refused {

@@ -130,11 +130,26 @@ fn pending_names_offer_replace_and_copy(cx: &mut TestAppContext) {
     assert_eq!(clipboard(cx), "before");
     draw(cx);
     assert!(cx.debug_bounds("copy-refusal-notice").is_some());
+    // Another name marked since: the shown step replaces nothing and shows
+    // the count now.
+    view.update_in(cx, |view, _, cx| {
+        let start = TEXT.find("lease").unwrap();
+        (view.pii.review_mut())
+            .add_manual(TEXT, start..start + "lease".len(), Person)
+            .unwrap();
+        view.review_changed(cx);
+    });
+    click_toolbar(cx, "copy-refusal-step");
+    view.read_with(cx, |view, cx| {
+        assert_eq!(view.editor.read(cx).text(), TEXT);
+        let refusal = view.copy_refusal.clone().expect("refreshed");
+        assert_eq!(refusal.step, Some(Step::ReplaceAndCopy(3)));
+    });
     click_toolbar(cx, "copy-refusal-step");
     written(cx);
     let copied = clipboard(cx);
     assert!(
-        copied.ends_with("PERSON_1 wrote to PERSON_2 about the lease."),
+        copied.ends_with("PERSON_1 wrote to PERSON_2 about the PERSON_3."),
         "{copied}"
     );
     let document = cx.update(|_, cx| tabs.read(cx).tab_document(tabs.read(cx).tabs.active(), cx));
@@ -326,6 +341,24 @@ fn changed_since_review_offers_review_and_excluded_offers_nothing(cx: &mut TestA
     (vault.update_document(document.as_str(), |d| d.exclude_from_ai = true)).unwrap();
     let refused = copy_for_ai(&view, cx).expect("refused");
     assert_eq!(refused, Refusal::excluded());
+    // With a name proposed, the Share tab offers to replace it; kept from
+    // AI, the click refuses and leaves the text as it was.
+    view.update_in(cx, |view, _, cx| {
+        let text = view.editor.read(cx).text().to_owned();
+        let start = text.find("Boris Ivanov").unwrap();
+        (view.pii.review_mut())
+            .add_manual(&text, start..start + "Boris Ivanov".len(), Person)
+            .unwrap();
+        view.review_changed(cx);
+    });
+    let text = view.read_with(cx, |view, cx| view.editor.read(cx).text().to_owned());
+    show_share(&view, cx);
+    click_toolbar(cx, "share-copy-for-ai");
+    written(cx);
+    view.read_with(cx, |view, cx| {
+        assert_eq!(view.editor.read(cx).text(), text);
+        assert_eq!(view.copy_refusal, Some(Refusal::excluded()));
+    });
     draw(cx);
     assert!(cx.debug_bounds("copy-refusal-notice").is_some());
     assert!(cx.debug_bounds("copy-refusal-step").is_none());
@@ -353,6 +386,10 @@ fn a_document_never_scanned_offers_find_names(cx: &mut TestAppContext) {
     show_share(&view, cx);
     click_toolbar(cx, "share-copy-for-ai");
     assert!(reviewing(&view, cx));
+    assert!(
+        view.read_with(cx, |view, _| view.scan_asked()),
+        "a scan starts"
+    );
 }
 
 /// Done when: shelf rows that are not Ready carry their step: "Replace 1
@@ -495,4 +532,96 @@ fn shelf_rows_that_are_not_ready_carry_their_step(cx: &mut TestAppContext) {
     let shown = cx.update(|_, cx| tabs.read(cx).tab_document(tabs.read(cx).tabs.active(), cx));
     assert_eq!(shown.map(|d| d.as_str().to_owned()), Some(unscanned));
     assert!(reviewing(&view, cx));
+    // Its alias relinks as applied on opening: that is no scan.
+    assert!(
+        view.read_with(cx, |view, _| view.scan_asked()),
+        "a scan starts"
+    );
+
+    // A row listed ready that is gone by its Copy for AI says so too.
+    let shelf = open_shelf(cx);
+    let (index, ready) = shelf
+        .read_with(cx, |view, cx| {
+            let documents = view.content(cx).documents;
+            let at = (documents.iter())
+                .position(|row| row.key == ShelfKey::Tab(note))
+                .unwrap();
+            (at, documents[at].readiness)
+        })
+        .unwrap();
+    assert_eq!(ready, Readiness::Ready);
+    let memo_document = cx.update(|_, cx| tabs.read(cx).tab_document(note, cx).unwrap());
+    (vault.update_document(memo_document.as_str(), |d| d.exclude_from_ai = true)).unwrap();
+    before(cx);
+    shelf
+        .update(cx, |view, window, cx| view.copy(index, window, cx))
+        .unwrap();
+    shelf
+        .read_with(cx, |view, cx| {
+            assert_eq!(view.refused(cx), Some(index));
+            assert_eq!(view.copied(cx), None);
+        })
+        .unwrap();
+    assert_eq!(clipboard(cx), "before");
+}
+
+/// Done when: Copy for AI by key on a shelf row that is not ready (⌘C on
+/// macOS runs this action) copies nothing, focuses the row's step, and
+/// Enter on it replaces the names and copies the checked text.
+#[gpui::test]
+fn the_shelf_keys_reach_a_refused_rows_step(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    cx.update(|_, cx| crate::shelf_ui::bind_keys(cx));
+    open_proposed(&tabs, cx, dir.path(), "lease.md", TEXT, &["Anna Petrova"]);
+    // Listed: one alias applied, one name still proposed.
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.apply_all_pii(&PiiApplyAll, window, cx)
+    });
+    view.update_in(cx, |view, _, cx| {
+        let start = TEXT.find("Boris Ivanov").unwrap();
+        let text = view.editor.read(cx).text().to_owned();
+        let start = text.find("Boris Ivanov").unwrap_or(start);
+        (view.pii.review_mut())
+            .add_manual(&text, start..start + "Boris Ivanov".len(), Person)
+            .unwrap();
+        view.review_changed(cx);
+    });
+    written(cx);
+    let shelf = open_shelf(cx);
+    let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
+    let row = shelf
+        .read_with(&shelf_cx, |view, cx| view.content(cx).documents[0].clone())
+        .unwrap();
+    assert_eq!(row.step(), Some(Step::ReplaceAndCopy(1)));
+    shelf_cx.write_to_clipboard(gpui::ClipboardItem::new_string("before".into()));
+    shelf_cx.dispatch_action(crate::shelf_ui::ShelfCopyForAi);
+    let focused = shelf
+        .update(&mut shelf_cx, |view, window, cx| {
+            assert_eq!(view.refused(cx), Some(0));
+            view.rows().read(cx).step_focused(0, window)
+        })
+        .unwrap();
+    assert!(focused, "focus moves to the step");
+    assert_eq!(clipboard(&mut shelf_cx), "before");
+    // Enter on the focused step; the shelf closes as mdoc runs it.
+    shelf_cx.update(|window, cx| {
+        use gpui::InputEvent;
+        let keystroke = gpui::Keystroke::parse("enter").unwrap();
+        let down = gpui::KeyDownEvent {
+            keystroke: keystroke.clone(),
+            is_held: false,
+            prefer_character_input: false,
+        };
+        window.dispatch_event(down.to_platform_input(), cx);
+        window.dispatch_event(gpui::KeyUpEvent { keystroke }.to_platform_input(), cx);
+    });
+    written(cx);
+    let copied = clipboard(cx);
+    assert!(
+        copied.ends_with("PERSON_1 wrote to PERSON_2 about the lease."),
+        "{copied}"
+    );
 }

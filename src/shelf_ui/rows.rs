@@ -266,6 +266,14 @@ impl ShelfRows {
             .map(|(_, bounds)| bounds.center())
     }
 
+    /// Whether row `index`'s step button has focus, for tests.
+    #[cfg(test)]
+    pub(crate) fn step_focused(&self, index: usize, window: &Window) -> bool {
+        self.steps
+            .get(index)
+            .is_some_and(|step| step.is_focused(window))
+    }
+
     /// The first row's focus handle: where focus starts.
     pub(crate) fn first_row(&self) -> Option<&FocusHandle> {
         self.rows.first()
