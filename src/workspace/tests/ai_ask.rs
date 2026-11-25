@@ -59,6 +59,15 @@ fn shown(cx: &mut VisualTestContext, id: &'static str) -> bool {
     cx.debug_bounds(id).is_some()
 }
 
+/// Close the notices' popover, which a notice opens over the header.
+fn close_notices(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
+    tabs.update(cx, |tabs, cx| {
+        tabs.title.notices_open.set(false);
+        cx.notify();
+    });
+    draw(cx);
+}
+
 fn opened(cx: &mut VisualTestContext) -> Option<String> {
     cx.opened_url()
 }
@@ -330,8 +339,9 @@ fn asking_in_the_shared_project_keeps_a_reply_under_way(cx: &mut TestAppContext)
     let fixture = fixture();
     let (tabs, cx) = boot_fixture(cx, &fixture);
     set_preview(&tabs, cx, true);
-    open_member(&tabs, cx, &fixture.lease_doc);
-    click_toolbar(cx, "header-ask");
+    // From the Project page: no open member scans on entry meanwhile.
+    show_page(&tabs, cx, &fixture.lease);
+    click_toolbar(cx, "project-page-ask");
     assert_eq!(shared(&tabs, cx), Some(fixture.lease.clone()));
     let read = call(
         &tabs,
@@ -343,9 +353,14 @@ fn asking_in_the_shared_project_keeps_a_reply_under_way(cx: &mut TestAppContext)
     );
     assert!(matches!(read, Answer::Ok(Done::Text { .. })), "{read:?}");
     // Ask ChatGPT in the same Project, then Claude delivers.
-    click_toolbar(cx, "header-ask-more");
-    click_toolbar(cx, "ask-chatgpt");
-    asked_about(cx, AskWith::ChatGpt, &fixture.lease_doc);
+    // The notice's popover sits over the button: closed first.
+    close_notices(&tabs, cx);
+    click_toolbar(cx, "project-page-ask-more");
+    click_toolbar(cx, "project-ask-chatgpt");
+    assert_eq!(
+        opened(cx),
+        Some(crate::ai_links::chatgpt(ai_ask::PROJECT_PROMPT))
+    );
     let delivered = call(
         &tabs,
         cx,
@@ -389,7 +404,9 @@ fn a_later_stop_or_another_page_shares_nothing(cx: &mut TestAppContext) {
     assert_eq!(shared(&tabs, cx), None);
     assert_eq!(opened(cx), None);
     // The Project page's menu goes with the page.
+    tabs.update(cx, |tabs, cx| tabs.dismiss_toast(cx));
     show_page(&tabs, cx, &fixture.lease);
+    close_notices(&tabs, cx);
     click_toolbar(cx, "project-page-ask-more");
     assert!(shown(cx, "project-ask-menu"));
     tabs.update_in(cx, |tabs, window, cx| tabs.show_home(window, cx));

@@ -246,6 +246,10 @@ impl Workspace {
     pub(super) fn project_ask_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let (id, position) = self.project_ui.ask_menu.as_ref()?;
         self.ai_connector.as_ref()?;
+        // It belongs to the page it was opened over.
+        if self.project_ui.page.as_ref().map(|page| page.id()) != Some(id.as_str()) {
+            return None;
+        }
         let theme = self.theme.get();
         let last = ai_ask::on_project_page(self.ask_last());
         let close = |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {

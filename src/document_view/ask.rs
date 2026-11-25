@@ -117,19 +117,23 @@ impl DocumentView {
     }
 
     /// Copy for AI is off where the ⋯ menu's is.
-    fn ask_enabled(&self, with: AskWith) -> bool {
-        with != AskWith::CopyForAi || self.alias_actions_reason().is_none()
+    fn ask_enabled(&self, with: AskWith, cx: &App) -> bool {
+        // A refusal with a step is offered, as in the ⋯ menu: its notice
+        // carries the step.
+        with != AskWith::CopyForAi
+            || self.alias_actions_reason().is_none()
+            || self.copy_step(cx).is_some()
     }
 
     /// The split button, with its menu or card when open.
     pub(super) fn ask_button(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let last = self.ask_shown()?;
         let theme = self.theme.get();
-        let enabled = self.ask_enabled(last);
+        let enabled = self.ask_enabled(last, cx);
         let main = ui::control("header-ask", ai_ask::label(last), theme, enabled)
             .when(cfg!(test), |v| v.debug_selector(|| "header-ask".into()))
             .on_click(cx.listener(move |this, _, window, cx| {
-                if this.ask_enabled(last) {
+                if this.ask_enabled(last, cx) {
                     this.ask(last, window, cx)
                 }
             }));
@@ -246,7 +250,7 @@ impl DocumentView {
                 AskWith::ChatGpt => "ask-chatgpt",
                 AskWith::CopyForAi => "ask-copy-for-ai",
             };
-            let enabled = self.ask_enabled(with);
+            let enabled = self.ask_enabled(with, cx);
             if with == AskWith::CopyForAi {
                 menu = menu.child(ui::menu_divider(theme));
             }
