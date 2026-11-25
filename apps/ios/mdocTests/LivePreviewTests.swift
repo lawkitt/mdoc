@@ -256,7 +256,7 @@ final class LivePreviewTests: XCTestCase, TextViewHarnessTests {
         }
     }
 
-    func testVoiceOverDoesNotHearHiddenMarkers() throws {
+    func testVoiceOverDoesNotHearHiddenMarkers() async throws {
         let harness = try harness()
         caret(harness, at: (harness.shown as NSString).length)
         let value = try XCTUnwrap(harness.view.accessibilityValue)
@@ -266,7 +266,12 @@ final class LivePreviewTests: XCTestCase, TextViewHarnessTests {
         // Copy takes the source, not what VoiceOver hears.
         let bold = location(of: "**tenant**", in: harness)
         harness.view.selectedRange = NSRange(location: bold, length: 10)
+        UIPasteboard.general.items = []
         harness.view.copySelection()
+        // The copy is written once the core's check answers.
+        for _ in 0..<300 where EditClipboard.shared.read() == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         XCTAssertEqual(EditClipboard.shared.read(), "**tenant**")
     }
 

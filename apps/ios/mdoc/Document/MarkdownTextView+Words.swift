@@ -85,6 +85,7 @@ extension MarkdownTextView.Coordinator {
     /// The menu's words are the selection's: a word it reached into shows
     /// whole, and the punctuation at its ends goes. Moving the selection
     /// closes UIKit's menu, so the same menu shows again over the words.
+    /// Copy keeps the reader's own selection (`unsnapped`).
     private func snapSelection(to target: SourceRange, in textView: UITextView) {
         let base = (textView as? CellTextView)?.location ?? 0
         let shown = offsets.nsRange(target)
@@ -93,6 +94,8 @@ extension MarkdownTextView.Coordinator {
               NSMaxRange(local) <= textView.textStorage.length else { return }
         DispatchQueue.main.async { [weak self, weak textView] in
             guard let self, let textView, textView.selectedRange.length > 0 else { return }
+            let own = self.unsnapped?.original(of: textView) ?? textView.selectedRange
+            self.unsnapped = UnsnappedSelection(view: textView, original: own, snapped: local)
             textView.selectedRange = local
             self.presentMenu(on: textView) { [weak self] view, _ in
                 self?.selectionMenu(in: view, at: view.selectedRange, suggested: [])

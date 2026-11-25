@@ -11,8 +11,9 @@ struct SelectionChecks {
 
     /// The latest answer; a nil check is a check that failed.
     private(set) var answered: (key: Key, check: SelectionCheck?)?
-    /// The selection asked about now.
-    private(set) var asking: Key?
+    /// The selection asked about now, and that request's number.
+    private(set) var asking: (key: Key, request: Int)?
+    private var requests = 0
 
     /// The answer for `key`, if the core gave it; `.some(nil)` is a check
     /// that failed.
@@ -21,22 +22,45 @@ struct SelectionChecks {
         return .some(answered.check)
     }
 
-    /// Starts asking about `key`: false when that is asked already.
-    mutating func ask(_ key: Key) -> Bool {
-        guard asking != key, answer(for: key) == nil else { return false }
-        asking = key
+    /// Starts asking about `key`: the request's number, nil when that is
+    /// asked or answered already.
+    mutating func ask(_ key: Key) -> Int? {
+        guard asking?.key != key, answer(for: key) == nil else { return nil }
+        requests += 1
+        asking = (key, requests)
+        return requests
+    }
+
+    /// The core answered `request`: kept only while it is the one asked
+    /// now. Returns whether it was kept.
+    @discardableResult
+    mutating func answer(_ request: Int, _ check: SelectionCheck?) -> Bool {
+        guard let asking, asking.request == request else { return false }
+        self.asking = nil
+        answered = (asking.key, check)
         return true
     }
 
-    mutating func answer(_ key: Key, _ check: SelectionCheck?) {
-        if asking == key { asking = nil }
-        answered = (key, check)
-    }
-
     /// The selection went: a later one is asked about afresh, since the
-    /// Project's names may have changed meanwhile.
+    /// Project's names may have changed meanwhile, and an answer still on
+    /// its way is dropped.
     mutating func forget() {
         answered = nil
+        asking = nil
+    }
+}
+
+/// A selection Hide name snapped to whole words, its ends' punctuation
+/// trimmed (ADR 0114): the reader's own, which Copy takes, and the snapped
+/// one shown, while it stays.
+struct UnsnappedSelection {
+    weak var view: UITextView?
+    var original: NSRange
+    var snapped: NSRange
+
+    /// The reader's own selection when `view` shows the snapped one.
+    func original(of view: UITextView) -> NSRange? {
+        self.view === view && view.selectedRange == snapped ? original : nil
     }
 }
 
@@ -49,7 +73,10 @@ extension MarkdownTextView.Coordinator {
     func selectionMenu(in textView: UITextView, at range: NSRange, suggested: [UIMenuElement]) -> UIMenu {
         let base = (textView as? CellTextView)?.location ?? 0
         let source = SelectionCopy.sourceRange(range, base: base, in: offsets)
-        let copy = copyElements(for: source, in: textView, at: range)
+        // The copy items are for the reader's own selection, not the one
+        // Hide name snapped.
+        let own = unsnapped?.original(of: textView) ?? range
+        let copy = copyElements(for: SelectionCopy.sourceRange(own, base: base, in: offsets), in: textView, at: own)
         // A selection in the main text that runs into a folded table holds
         // hidden source: no Hide name (ADR 0096). Cells are their own text
         // views.
@@ -92,7 +119,7 @@ extension MarkdownTextView.Coordinator {
         guard showsCurrentText else { return elements(SelectionCopy.items(for: nil), source, textView, range, revision: nil) }
         let key = SelectionChecks.Key(revision: parent.snapshot.textRevision, range: source)
         guard let check = selectionChecks.answer(for: key) else {
-            if selectionChecks.ask(key) { ask(key, actions, for: textView) }
+            if let request = selectionChecks.ask(key) { ask(key, request, actions, for: textView) }
             return []
         }
         return elements(SelectionCopy.items(for: check), source, textView, range, revision: key.revision)
@@ -119,11 +146,12 @@ extension MarkdownTextView.Coordinator {
 
     /// Asks the core about `key`; once it answers, a menu still over that
     /// selection shows the copy items.
-    private func ask(_ key: SelectionChecks.Key, _ actions: SelectionCopyActions, for textView: UITextView) {
+    private func ask(
+        _ key: SelectionChecks.Key, _ request: Int, _ actions: SelectionCopyActions, for textView: UITextView
+    ) {
         Task { @MainActor [weak self, weak textView] in
             let check = await actions.check(key.range)
-            guard let self else { return }
-            self.selectionChecks.answer(key, check)
+            guard let self, self.selectionChecks.answer(request, check) else { return }
             guard let textView, textView.selectedRange.length > 0, self.showsCurrentText,
                   self.parent.snapshot.textRevision == key.revision,
                   self.sourceRange(of: textView) == key.range else { return }
@@ -131,9 +159,10 @@ extension MarkdownTextView.Coordinator {
         }
     }
 
-    /// The selection of `view` in the shown text's source offsets.
+    /// The reader's selection of `view` in the shown text's source offsets.
     private func sourceRange(of view: UITextView) -> SourceRange {
-        SelectionCopy.sourceRange(view.selectedRange, base: (view as? CellTextView)?.location ?? 0, in: offsets)
+        let own = unsnapped?.original(of: view) ?? view.selectedRange
+        return SelectionCopy.sourceRange(own, base: (view as? CellTextView)?.location ?? 0, in: offsets)
     }
 
     /// Builds the menu showing over `view`'s selection again: UIKit's own,
@@ -150,7 +179,7 @@ extension MarkdownTextView.Coordinator {
     /// with names: the selection as written, marked unless the core finds
     /// it clean now.
     func copyAsWritten(_ view: UITextView) {
-        let range = view.selectedRange
+        let range = unsnapped?.original(of: view) ?? view.selectedRange
         guard range.length > 0, NSMaxRange(range) <= view.textStorage.length else { return }
         let text = (view as? CellTextView)?.source(in: range) ?? (view.textStorage.string as NSString).substring(with: range)
         guard let actions = parent.selectionCopy else { return SelectionCopy.write(text, marked: true) }

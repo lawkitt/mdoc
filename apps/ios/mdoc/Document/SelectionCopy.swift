@@ -79,6 +79,29 @@ enum SelectionCopy {
         return String(markdown.unicodeScalars[start..<end])
     }
 
+    /// A copy asked for now, written once its check answers: only while no
+    /// later copy was asked for and nothing else reached the clipboard (a
+    /// Cut, a copy in another app), so a slow check never overwrites a
+    /// newer clipboard.
+    @MainActor
+    struct Request {
+        private static var latest = 0
+        private let id: Int
+        private let changeCount: Int
+        private let pasteboard: UIPasteboard
+
+        init(pasteboard: UIPasteboard = .general) {
+            Self.latest += 1
+            id = Self.latest
+            self.pasteboard = pasteboard
+            changeCount = pasteboard.changeCount
+        }
+
+        var isLatest: Bool {
+            id == Self.latest && pasteboard.changeCount == changeCount
+        }
+    }
+
     /// Puts a hand copy on `pasteboard`: an ordinary copy when clean, else
     /// marked, on this device only and for ten minutes.
     @MainActor

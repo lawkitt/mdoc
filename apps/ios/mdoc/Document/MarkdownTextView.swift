@@ -197,6 +197,9 @@ struct MarkdownTextView: UIViewRepresentable {
         var menuPresenter: SelectionMenuPresenter?
         /// The core's answers for the selection menu's copy items (#1209).
         var selectionChecks = SelectionChecks()
+        /// The selection as the reader made it, while Hide name shows it
+        /// snapped to whole words: a copy takes the reader's own.
+        var unsnapped: UnsnappedSelection?
         /// A name's long-press menu is closing: UIKit carries the name it
         /// lifted back into the text and keeps its picture there until the
         /// menu is gone. Adjust Words chosen there shows its draft then

@@ -310,6 +310,7 @@ extension MarkdownTextView.Coordinator {
         if !textView.isEditable {
             fixSelection.selectionChanged(textView)
             if textView.selectedRange.length == 0 { selectionChecks.forget() }
+            if let unsnapped, unsnapped.original(of: textView) == nil { self.unsnapped = nil }
         }
         guard textView.isEditable, let view = textView as? CandidateTextView else { return }
         let moved = !bridge.isChanging && view.markedTextRange == nil

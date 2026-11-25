@@ -191,6 +191,55 @@ final class SelectionCopyTests: XCTestCase {
         XCTAssertEqual(written.copies.last?.marked, true)
     }
 
+    /// The check is about the bytes copied: text the core no longer holds
+    /// there (edit mode's typing, an undo) copies marked.
+    func testACopyOfOtherTextThanTheCoresIsMarked() async throws {
+        let model = try model()
+        let tiles = try range(of: "Two tiles are cracked.", in: model)
+        let written = Written()
+        await model.copySelection("Two tales are cracked.", at: tiles, write: written.write).value
+        XCTAssertEqual(written.copies.last?.marked, true)
+    }
+
+    /// A newer copy wins over one still being checked.
+    func testOnlyTheLatestCopyIsWritten() async throws {
+        let model = try model()
+        let tiles = try range(of: "Two tiles are cracked.", in: model)
+        let written = Written()
+        let first = model.copySelection("Two tiles are cracked.", at: tiles, write: written.write)
+        let second = model.copySelection("Two tiles", at: nil, write: written.write)
+        await first.value
+        await second.value
+        XCTAssertEqual(written.copies.map(\.text), ["Two tiles"])
+    }
+
+    /// Anything else on the clipboard meanwhile (a Cut) wins too.
+    func testAClipboardChangeWinsOverACopyBeingChecked() throws {
+        let pasteboard = try XCTUnwrap(UIPasteboard(name: UIPasteboard.Name("mdoc-tests-\(UUID().uuidString)"), create: true))
+        defer { UIPasteboard.remove(withName: pasteboard.name) }
+        let first = SelectionCopy.Request(pasteboard: pasteboard)
+        XCTAssertTrue(first.isLatest)
+        let second = SelectionCopy.Request(pasteboard: pasteboard)
+        XCTAssertFalse(first.isLatest, "a later copy")
+        XCTAssertTrue(second.isLatest)
+        pasteboard.string = "cut"
+        XCTAssertFalse(second.isLatest, "a cut meanwhile")
+    }
+
+    /// A check answered after its selection went is dropped.
+    func testAnAnswerForASelectionGoneIsDropped() throws {
+        var checks = SelectionChecks()
+        let key = SelectionChecks.Key(revision: 1, range: SourceRange(start: 0, end: 4))
+        let request = try XCTUnwrap(checks.ask(key))
+        XCTAssertNil(checks.ask(key), "asked already")
+        checks.forget()
+        XCTAssertFalse(checks.answer(request, .clean))
+        XCTAssertNil(checks.answer(for: key))
+        let again = try XCTUnwrap(checks.ask(key))
+        XCTAssertTrue(checks.answer(again, .neverScanned))
+        XCTAssertEqual(checks.answer(for: key), .some(.neverScanned))
+    }
+
     func testACopyWithNoRangeIsMarkedUnchecked() async throws {
         let model = try model()
         let written = Written()
@@ -312,6 +361,26 @@ final class SelectionMenuTests: XCTestCase, TextViewHarnessTests {
         let harness = try harness()
         let menu = try await menu(over: "Write to ann.baker@example.com", in: harness)
         XCTAssertEqual(menu.after, ["Replace 1 and copy", "Copy with names", "Hide name", "Select All"])
+    }
+
+    /// Hide name snaps a selection to whole words without its ends'
+    /// punctuation; Copy takes the reader's own, the full stop included.
+    func testCopyKeepsTheSelectionHideNameSnapped() async throws {
+        let harness = try harness()
+        let own = harness.string.range(of: "Two tiles are cracked.")
+        let snapped = NSRange(location: own.location, length: own.length - 1)
+        harness.coordinator.unsnapped = UnsnappedSelection(view: harness.view, original: own, snapped: snapped)
+        harness.view.selectedRange = snapped
+        XCTAssertNotNil(harness.coordinator.unsnapped, "the snap itself keeps it")
+        UIPasteboard.general.items = []
+        harness.view.copy(nil)
+        for _ in 0..<300 where UIPasteboard.general.string == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(UIPasteboard.general.string, "Two tiles are cracked.")
+        // Another selection: the reader's own is forgotten.
+        harness.view.selectedRange = NSRange(location: 0, length: 3)
+        XCTAssertNil(harness.coordinator.unsnapped)
     }
 
     /// A new selection is asked about afresh once the old one went.

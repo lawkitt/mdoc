@@ -20,16 +20,33 @@ extension DocumentViewModel {
     /// marked. Tests pass their own.
     typealias CopyWriter = @MainActor (String, Bool) -> Void
 
+    /// The core's check of `range`, made for a copy of `text`: nil unless
+    /// the core's text there is `text` both before and after the check, so
+    /// the answer is about the bytes copied (edit mode's typing moves the
+    /// text on without a new snapshot here).
+    private func checkCopy(_ text: String, at range: SourceRange) async -> SelectionCheck? {
+        let session = session
+        return await Task.detached(priority: .userInitiated) {
+            let holds = { SelectionCopy.text(range, in: session.snapshot().markdown) == text }
+            guard holds(), let check = try? session.checkSelection(range), holds() else { return nil }
+            return check
+        }.value
+    }
+
     /// Copy, Copy with names, ⌘C and VoiceOver's Copy: `text`, the
     /// selection as written, at `range` of the text. It is marked unless a
     /// check made now finds `range` clean; nil `range` (a selection not of
-    /// the text the core holds) copies marked with no check.
+    /// the text the core holds) copies marked with no check. A newer copy,
+    /// or anything else put on the clipboard meanwhile, wins: this one is
+    /// then not written.
     @discardableResult
     func copySelection(
         _ text: String, at range: SourceRange?, write: @escaping CopyWriter = { SelectionCopy.write($0, marked: $1) }
     ) -> Task<Void, Never> {
-        Task { [weak self] in
-            let check: SelectionCheck? = if let range, let self { await self.checkSelection(range) } else { nil }
+        let request = SelectionCopy.Request()
+        return Task { [weak self] in
+            let check: SelectionCheck? = if let range, let self { await self.checkCopy(text, at: range) } else { nil }
+            guard request.isLatest else { return }
             write(text, SelectionCopy.marked(check))
         }
     }
