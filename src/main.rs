@@ -3,7 +3,9 @@
     all(target_os = "windows", not(debug_assertions)),
     windows_subsystem = "windows"
 )]
+mod ai_ask;
 mod ai_connector;
+mod ai_links;
 mod comment_rail;
 mod companion;
 mod comparison;

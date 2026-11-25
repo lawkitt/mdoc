@@ -49,6 +49,18 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         });
     })?;
     d.capture("settings-ai-connector")?;
+    // A start that failed (#1220): another mdoc holds the name.
+    d.change(|w, _, cx| {
+        w.settings.update(cx, |p, cx| {
+            let held = std::io::Error::from(std::io::ErrorKind::AddrInUse);
+            p.ai_connector_failed(Some(crate::ai_connector::failed_start(&held)), cx)
+        });
+    })?;
+    d.capture("settings-ai-connector-failed")?;
+    d.change(|w, _, cx| {
+        w.settings
+            .update(cx, |p, cx| p.ai_connector_failed(None, cx))
+    })?;
     for (host, name) in [
         (Host::Claude, "settings-ai-connector-consent"),
         (Host::ChatGpt, "settings-ai-connector-consent-chatgpt"),

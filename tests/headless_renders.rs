@@ -458,6 +458,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                             | "ai-delivery-badge"
                             | "project-page-activity"
                             | "ai-project-rail"
+                            | "project-ask-menu"
                     ),
                     "{theme}/{name}"
                 );
@@ -517,6 +518,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     "settings-about" => Some("About"),
                     "settings-ai-connector-off"
                     | "settings-ai-connector"
+                    | "settings-ai-connector-failed"
                     | "settings-ai-connector-consent"
                     | "settings-ai-connector-consent-chatgpt" => Some("AI connector"),
                     _ => None,

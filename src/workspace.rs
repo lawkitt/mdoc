@@ -32,6 +32,7 @@ use std::{
     time::Duration,
 };
 
+mod ai_ask_ui;
 mod ai_companion;
 pub(crate) use ai_companion::CompanionContent;
 mod ai_deliveries;
@@ -139,6 +140,12 @@ pub(super) enum TabEvent {
     /// Copy for AI, from the Share tab, the menu or its shortcut: the
     /// window checks it as the shelf does before anything is copied.
     CopyForAi,
+    /// The header's Ask (Milestone 2 item 10): `with`, and for an Unfiled
+    /// document, whether it moves to a new Project first.
+    Ask {
+        with: mdoc_store::settings::AskWith,
+        move_to_new: bool,
+    },
     /// Discovery or the edited paragraphs' scan finished: a Copy for AI
     /// waiting for it is checked again.
     NamesFound,
@@ -369,6 +376,8 @@ pub(super) struct Workspace {
     /// Where deliveries' and review requests' notifications go: the OS's,
     /// or a recorder in tests and renders.
     notifier: ai_deliveries::Notifier,
+    /// An Ask waiting for its Unfiled document's move (item 10).
+    ai_ask: crate::ai_ask::Waiting,
     /// Settings › Vault's key, the first-Project nudge and the wrong-key
     /// screen.
     recovery: recovery_key::Recovery,
@@ -631,6 +640,7 @@ impl Workspace {
             ai: Default::default(),
             ai_poll: None,
             notifier: Default::default(),
+            ai_ask: Default::default(),
             recovery: Default::default(),
             document_writer: Default::default(),
             admitted_from: Default::default(),
@@ -668,71 +678,76 @@ impl Workspace {
             }));
         this.theme
             .set(style::resolve(this.theme_choice, window.appearance()));
-        this.settings_subscription =
-            Some(
-                cx.subscribe_in(&panel, window, |this, _, event, window, cx| match event {
-                    settings_ui::Event::ThemeSelected(choice) => {
-                        this.select_theme(*choice, window, cx);
+        this.settings_subscription = Some(cx.subscribe_in(
+            &panel,
+            window,
+            |this, _, event, window, cx| match event {
+                settings_ui::Event::ThemeSelected(choice) => {
+                    this.select_theme(*choice, window, cx);
+                }
+                settings_ui::Event::Applied | settings_ui::Event::Checked => {
+                    this.refresh_model_settings(cx);
+                    crate::menu_bar::set_enabled(this.menu_bar_setting(), cx);
+                    // "AI connector (preview)" starts or stops at once; a
+                    // model now set up lets entering documents scan.
+                    this.refresh_ai_connector(window, cx);
+                    this.scan_on_entry(cx);
+                    // Spelling choices apply at once; views re-read them on render.
+                    for view in this.tabs.iter().filter_map(|tab| tab.view()) {
+                        view.update(cx, |_, cx| cx.notify());
                     }
-                    settings_ui::Event::Applied | settings_ui::Event::Checked => {
-                        this.refresh_model_settings(cx);
-                        crate::menu_bar::set_enabled(this.menu_bar_setting(), cx);
-                        // "AI connector (preview)" starts or stops at once; a
-                        // model now set up lets entering documents scan.
-                        this.refresh_ai_connector(window, cx);
-                        this.scan_on_entry(cx);
-                        // Spelling choices apply at once; views re-read them on render.
-                        for view in this.tabs.iter().filter_map(|tab| tab.view()) {
-                            view.update(cx, |_, cx| cx.notify());
-                        }
+                }
+                // Off stops before its save lands; a failed save
+                // starts it again (#1220).
+                settings_ui::Event::AiConnectorShown(false) => this.stop_ai_connector(cx),
+                settings_ui::Event::AiConnectorShown(true) => this.refresh_ai_connector(window, cx),
+                settings_ui::Event::Finished(settings::Model::Ocr(model), result) => {
+                    let selected = this.preferences.borrow().snapshot().map(|p| p.ocr);
+                    if let Ok(config) = selected
+                        && config.model == *model
+                    {
+                        let state = match result {
+                            Ok(Some(installed)) => {
+                                let mut installed = installed.clone();
+                                installed.config = config;
+                                OcrState::Ready(installed)
+                            }
+                            Ok(None) => OcrState::Missing,
+                            Err(e) => OcrState::Failed(e.clone()),
+                        };
+                        this.set_ocr(state, cx);
+                    } else if matches!(this.ocr_state, OcrState::Installing) {
+                        // A tab's setup of a model Settings no longer
+                        // selects ended; the tab may be gone.
+                        let state = known_ocr_state(&this.preferences, this.settings.read(cx));
+                        this.set_ocr(state, cx);
                     }
-                    settings_ui::Event::Finished(settings::Model::Ocr(model), result) => {
-                        let selected = this.preferences.borrow().snapshot().map(|p| p.ocr);
-                        if let Ok(config) = selected
-                            && config.model == *model
-                        {
-                            let state = match result {
-                                Ok(Some(installed)) => {
-                                    let mut installed = installed.clone();
-                                    installed.config = config;
-                                    OcrState::Ready(installed)
-                                }
-                                Ok(None) => OcrState::Missing,
-                                Err(e) => OcrState::Failed(e.clone()),
-                            };
-                            this.set_ocr(state, cx);
-                        } else if matches!(this.ocr_state, OcrState::Installing) {
-                            // A tab's setup of a model Settings no longer
-                            // selects ended; the tab may be gone.
-                            let state = known_ocr_state(&this.preferences, this.settings.read(cx));
-                            this.set_ocr(state, cx);
-                        }
+                }
+                // The detection model set up: AI project members that
+                // waited for it scan now.
+                settings_ui::Event::Finished(settings::Model::Pii(_), Ok(_)) => {
+                    this.scan_on_entry(cx);
+                }
+                settings_ui::Event::Finished(_, _) => {}
+                settings_ui::Event::Compare(model) => {
+                    this.open_comparison(*model, window, cx);
+                }
+                settings_ui::Event::RestartToUpdate => this.restart_to_update(window, cx),
+                settings_ui::Event::Shortcuts => this.toggle_shortcuts(window, cx),
+                settings_ui::Event::UserListsChanged(lists) => {
+                    this.save_user_lists(lists.clone(), window, cx)
+                }
+                settings_ui::Event::UnlockLists => this.unlock_projects(window, cx),
+                settings_ui::Event::ShowRecoveryKey => this.show_recovery_key(cx),
+                settings_ui::Event::CategoriesUnticked(categories) => {
+                    for view in this.tabs.iter().filter_map(|tab| tab.view().cloned()) {
+                        view.update(cx, |view, cx| {
+                            view.default_categories_unticked(categories, cx)
+                        });
                     }
-                    // The detection model set up: AI project members that
-                    // waited for it scan now.
-                    settings_ui::Event::Finished(settings::Model::Pii(_), Ok(_)) => {
-                        this.scan_on_entry(cx);
-                    }
-                    settings_ui::Event::Finished(_, _) => {}
-                    settings_ui::Event::Compare(model) => {
-                        this.open_comparison(*model, window, cx);
-                    }
-                    settings_ui::Event::RestartToUpdate => this.restart_to_update(window, cx),
-                    settings_ui::Event::Shortcuts => this.toggle_shortcuts(window, cx),
-                    settings_ui::Event::UserListsChanged(lists) => {
-                        this.save_user_lists(lists.clone(), window, cx)
-                    }
-                    settings_ui::Event::UnlockLists => this.unlock_projects(window, cx),
-                    settings_ui::Event::ShowRecoveryKey => this.show_recovery_key(cx),
-                    settings_ui::Event::CategoriesUnticked(categories) => {
-                        for view in this.tabs.iter().filter_map(|tab| tab.view().cloned()) {
-                            view.update(cx, |view, cx| {
-                                view.default_categories_unticked(categories, cx)
-                            });
-                        }
-                    }
-                }),
-            );
+                }
+            },
+        ));
         this
     }
 
@@ -1734,6 +1749,9 @@ impl Workspace {
             }
             TabEvent::Project(ProjectEvent::MoveToNew) => self.move_to_new_project(id, window, cx),
             TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
+            TabEvent::Ask { with, move_to_new } => {
+                self.ask_from_tab(id, *with, *move_to_new, window, cx)
+            }
             TabEvent::NamesFound => self.copy_for_ai_after_write(cx),
             TabEvent::CopyStep(step) => {
                 self.run_tab_step(id, *step, window, cx);
@@ -3492,6 +3510,7 @@ impl Render for Workspace {
             .children(self.move_toast(cx))
             .children(self.ai_prompt_view(window, cx))
             .children(self.project_header_menu(cx))
+            .children(self.project_ask_menu(cx))
             .children(self.folder_sheet_view(window, cx))
             .children(self.new_project_view(window, cx))
             .children(self.keychain_explainer(window, cx))
