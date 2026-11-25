@@ -5,19 +5,43 @@ import XCTest
 /// Two behaviours #1209 decision 15 asked to confirm (Vault & Projects
 /// item 39, iOS): a document scanned with nothing to replace is Ready and
 /// Copy for AI takes it; an edit that adds no new name leaves it Ready with
-/// no click, once discovery and the save that follow typing have run. An
-/// edit that adds a name does not, so the check means something.
+/// no click. Each runs on a phone that finds names, where Ready rests on
+/// the scan, and below the floor, where names are decided by hand. An edit
+/// that writes out a name under review again is not Ready, so the checks
+/// mean something.
 final class ReadyChecksTests: XCTestCase {
-    /// Imported and scanned with the structured rules, as the phone's own
-    /// scan runs below the floor; saved.
-    private func scanned(_ text: String) throws -> (RealSession, RealLibrary) {
-        let (core, _) = try Fixture.core()
+    private static let email = "ann.baker@example.com"
+    private static let report = "# Site visit\n\nTwo tiles on the north side are cracked."
+    private static let letter = "# Site visit\n\nWrite to \(email) about the roof."
+
+    /// The two tiers: at the detector tier the scan stands in as Try a
+    /// sample's does (the tests have no name finder), with the email as
+    /// the one name it finds; below the floor it is the structured rules'.
+    private static let tiers = [Fixture.detectorTier, Fixture.belowFloor]
+
+    /// Imported, scanned and saved on a phone with `memory`.
+    private func scanned(_ text: String, memory: UInt64) throws -> (RealSession, RealLibrary) {
+        let (core, _) = try Fixture.core(memory: memory)
         let library = try XCTUnwrap(core.library as? RealLibrary)
         let session = try XCTUnwrap(
             core.library.importDocument(.text(text), title: "Site visit", into: nil) as? RealSession)
         _ = try session.recognize(observer: TestObserver())
-        _ = try session.scan(observer: TestObserver())
+        if memory == Fixture.detectorTier {
+            _ = try session.propose([.init(wording: Self.email, category: .email)])
+        } else {
+            _ = try session.scan(observer: TestObserver())
+        }
         try session.saveChanges()
+        return (session, library)
+    }
+
+    /// `letter` scanned, its email replaced, saved: Ready.
+    private func reviewedLetter(memory: UInt64) throws -> (RealSession, RealLibrary) {
+        let (session, library) = try scanned(Self.letter, memory: memory)
+        XCTAssertEqual(session.snapshot().pendingCount, 1, "memory \(memory)")
+        _ = try session.replaceAllPending()
+        try session.saveChanges()
+        XCTAssertEqual(try readiness(session, in: library), .ready, "memory \(memory)")
         return (session, library)
     }
 
@@ -25,55 +49,74 @@ final class ReadyChecksTests: XCTestCase {
         try library.vault.readiness(id: try XCTUnwrap(session.vaultID))
     }
 
-    /// Typed at the end of the text, as edit mode types it; then Done:
-    /// discovery, and the save.
-    private func typeAtEnd(_ text: String, in session: RealSession) throws -> DocumentSnapshot {
+    /// Typed at the end of the text, as edit mode types it, and Done; with
+    /// `discovering`, Done's discovery and save run before anything else.
+    @discardableResult
+    private func typeAtEnd(_ text: String, in session: RealSession, discovering: Bool = true) throws -> DocumentSnapshot {
         let end = session.snapshot().markdown.utf8.count
         _ = try session.type(SourceRange(start: end, end: end), text)
         session.endTyping()
+        guard discovering else { return session.snapshot() }
         let found = try session.discover()
         try session.saveChanges()
         return found
     }
 
     func testAScannedDocumentWithNothingToReplaceIsReady() throws {
-        let (session, library) = try scanned("# Site visit\n\nTwo tiles on the north side are cracked.")
-        let snapshot = session.snapshot()
-        XCTAssertTrue(snapshot.candidates.isEmpty)
-        XCTAssertEqual(snapshot.phase, .ready)
-        XCTAssertEqual(try readiness(session, in: library), .ready)
-        let handOff = try session.copyForAI()
-        XCTAssertTrue(handOff.text.contains("Two tiles on the north side are cracked."))
+        for memory in Self.tiers {
+            let (session, library) = try scanned(Self.report, memory: memory)
+            let snapshot = session.snapshot()
+            XCTAssertTrue(snapshot.candidates.isEmpty, "memory \(memory)")
+            XCTAssertEqual(snapshot.phase, .ready, "memory \(memory)")
+            XCTAssertEqual(try readiness(session, in: library), .ready, "memory \(memory)")
+            let handOff = try session.copyForAI()
+            XCTAssertTrue(handOff.text.contains("Two tiles on the north side are cracked."), "memory \(memory)")
+        }
     }
 
     func testAnEditWithNoNewNameStaysReady() throws {
-        let (session, library) = try scanned("# Site visit\n\nWrite to ann.baker@example.com about the roof.")
-        _ = try session.replaceAllPending()
-        try session.saveChanges()
-        XCTAssertEqual(try readiness(session, in: library), .ready)
+        for memory in Self.tiers {
+            let (session, library) = try reviewedLetter(memory: memory)
 
-        let edited = try typeAtEnd("\n\nThe ladder stays in the shed.", in: session)
+            let edited = try typeAtEnd("\n\nThe ladder stays in the shed.", in: session)
 
-        XCTAssertEqual(edited.phase, .ready)
-        XCTAssertEqual(edited.pendingCount, 0)
-        XCTAssertEqual(try readiness(session, in: library), .ready, "the edit needs a click")
-        let handOff = try session.copyForAI()
-        XCTAssertTrue(handOff.text.contains("The ladder stays in the shed."))
-        XCTAssertFalse(handOff.text.contains("ann.baker@example.com"))
+            XCTAssertEqual(edited.phase, .ready, "memory \(memory)")
+            XCTAssertEqual(edited.pendingCount, 0, "memory \(memory)")
+            XCTAssertEqual(try readiness(session, in: library), .ready, "the edit needs a click: memory \(memory)")
+            let handOff = try session.copyForAI()
+            XCTAssertTrue(handOff.text.contains("The ladder stays in the shed."), "memory \(memory)")
+            XCTAssertFalse(handOff.text.contains(Self.email), "memory \(memory)")
+        }
+    }
+
+    /// Copy for AI tapped as Done is tapped, before Done's discovery has
+    /// run off the main thread: the hand-off runs it first, so the edit
+    /// goes then too (the Vault refused it as not reviewed before).
+    func testCopyRightAfterAnEditRunsDiscoveryFirst() throws {
+        for memory in Self.tiers {
+            let (session, library) = try reviewedLetter(memory: memory)
+            try typeAtEnd("\n\nThe ladder stays in the shed.", in: session, discovering: false)
+
+            let handOff = try session.copyForAI()
+
+            XCTAssertTrue(handOff.text.contains("The ladder stays in the shed."), "memory \(memory)")
+            XCTAssertEqual(try readiness(session, in: library), .ready, "memory \(memory)")
+        }
     }
 
     /// The control: an edit that writes out a name under review again
-    /// waits for its review. (Discovery looks for the names under review;
-    /// a name new to the document waits for Find names again.)
+    /// waits for its review, Done's discovery run or not. (Discovery looks
+    /// for the names under review; a name new to the document waits for
+    /// Find names again.)
     func testAnEditWithANameUnderReviewIsNotReady() throws {
-        let (session, library) = try scanned("# Site visit\n\nWrite to ann.baker@example.com about the roof.")
-        _ = try session.replaceAllPending()
-        try session.saveChanges()
-        XCTAssertEqual(try readiness(session, in: library), .ready)
+        for memory in Self.tiers {
+            for discovering in [true, false] {
+                let (session, library) = try reviewedLetter(memory: memory)
+                try typeAtEnd("\n\nCopy \(Self.email) in.", in: session, discovering: discovering)
 
-        let edited = try typeAtEnd("\n\nCopy ann.baker@example.com in.", in: session)
-
-        XCTAssertNotEqual(try readiness(session, in: library), .ready, "\(edited.candidates.map(\.state))")
-        XCTAssertThrowsError(try session.copyForAI())
+                XCTAssertThrowsError(try session.copyForAI(), "memory \(memory), discovering \(discovering)")
+                XCTAssertNotEqual(try readiness(session, in: library), .ready, "memory \(memory)")
+            }
+        }
     }
 }

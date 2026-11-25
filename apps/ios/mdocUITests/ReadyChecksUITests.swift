@@ -16,9 +16,14 @@ final class ReadyChecksUITests: XCTestCase {
 
     /// Copy on the bar, with the clipboard emptied first: Paste lights up
     /// once the text is on it, and no alert shows. (The "Copied for AI"
-    /// notice can be gone by the time a tap returns.)
+    /// notice can be gone by the time a tap returns.) Then Paste restores
+    /// what was copied as a reply, which shows it holds `expected`, and
+    /// `restored` values when names went out replaced.
     @MainActor
-    private func copyForAI(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    private func copyForAI(
+        _ app: XCUIApplication, holding expected: String, restored: Int,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
         UIPasteboard.general.items = []
         let copy = app.buttons["copy-for-ai"].firstMatch
         XCTAssertTrue(copy.waitForExistence(timeout: MdocUITest.timeout), "no Copy on the bar", file: file, line: line)
@@ -28,6 +33,17 @@ final class ReadyChecksUITests: XCTestCase {
             paste.wait(until: NSPredicate(format: "isEnabled == true"), timeout: MdocUITest.timeout), "nothing copied",
             file: file, line: line)
         XCTAssertFalse(app.alerts.firstMatch.exists, "an alert: \(app.alerts.firstMatch.label)", file: file, line: line)
+
+        paste.tap()
+        let reply = app.textViews["restored-text"]
+        XCTAssertTrue(reply.waitForExistence(timeout: MdocUITest.timeout), "the copy did not paste", file: file, line: line)
+        XCTAssertTrue(
+            reply.wait(until: NSPredicate(format: "value CONTAINS %@", expected), timeout: MdocUITest.timeout),
+            "the copy lacks “\(expected)”", file: file, line: line)
+        let summary = app.staticTexts["restore-summary"]
+        if restored > 0 {
+            XCTAssertTrue(summary.label.contains("\(restored) value"), summary.label, file: file, line: line)
+        }
     }
 
     /// Scanned, nothing found: Share and Copy straight away.
@@ -41,7 +57,7 @@ final class ReadyChecksUITests: XCTestCase {
         let primary = app.buttons["primary-action"]
         XCTAssertTrue(primary.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(primary.label.hasPrefix("Share"), primary.label)
-        copyForAI(app)
+        copyForAI(app, holding: "the gutter above the porch", restored: 0)
     }
 
     /// The agreement reviewed, then a sentence typed in edit mode: after
@@ -72,6 +88,7 @@ final class ReadyChecksUITests: XCTestCase {
 
         XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(primary.wait(until: NSPredicate(format: "label BEGINSWITH 'Share'"), timeout: MdocUITest.timeout))
-        copyForAI(app)
+        // The edit went out, and the email with it as its alias.
+        copyForAI(app, holding: "The ladder stays in the shed.", restored: 1)
     }
 }
