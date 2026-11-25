@@ -315,6 +315,20 @@ craft-offcrypto = { workspace = true }
 # check out.
 mdoc-connector = { path = "crates/mdoc-connector", features = ["exits-suite"] }
 
+# examples/floating_window_spike.rs (Milestone 2 item 4): the spike reaches
+# the GPUI window's HWND and calls the hotkey, tray and capture APIs itself.
+# Example-only, so the shipping build gains no features.
+[target.'cfg(windows)'.dev-dependencies]
+raw-window-handle = "0.6"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 # PDF rasterization is CPU-heavy. Keep application/editor code debuggable while
 # avoiding unoptimized pixel/vector loops during `cargo run` and tests.
 [profile.dev.package.gpui-pdf]

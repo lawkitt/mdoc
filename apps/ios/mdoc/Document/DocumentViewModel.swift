@@ -126,6 +126,15 @@ final class DocumentViewModel {
     /// Notes: the sheet with the document's private notes.
     var showsNotes = false
     var share: ShareItems?
+    /// Ask AI's share sheet, apart from Share's: its end starts the wait
+    /// for the AI app's answer (`+AskAI`).
+    var askAIShare: ShareItems?
+    /// Where Ask AI's wait for the answer stands; nil when nothing waits.
+    /// Changed only by the `+AskAI` intents.
+    var replyOffer: ReplyOffer?
+    /// mdoc went to the background since Ask AI's sheet opened: the user
+    /// has been in another app.
+    @ObservationIgnored var leftSinceAsk = false
     var errorMessage: String?
     /// A short confirmation such as "Copied for AI".
     private(set) var notice: String?
@@ -557,11 +566,13 @@ final class DocumentViewModel {
     func restore(reply: String) {
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        perform { try session.restoreReply(reply) }
-        if snapshot.reply != nil {
-            showsReplySheet = false
-            show(.reply)
-        }
+        // A restore that fails keeps the sheet's text and the banner, even
+        // with an earlier reply to show.
+        guard perform({ try session.restoreReply(reply) }), snapshot.reply != nil else { return }
+        showsReplySheet = false
+        // The answer Ask AI waited for is in, however it came.
+        replyOffer = nil
+        show(.reply)
     }
 
     /// The restored reply, as the hand-off bar copies it on the Reply tab.

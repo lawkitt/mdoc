@@ -6,6 +6,7 @@ import UIKit
 /// Cancel, Replace N, then Share, Copy and Paste (a reply).
 struct ActionBar: View {
     @Bindable var model: DocumentViewModel
+    @Environment(\.preferences) private var preferences
 
     var body: some View {
         if model.barActsOnReply {
@@ -125,28 +126,16 @@ struct ActionBar: View {
         }
     }
 
-    /// Share, Copy and Paste once every name is decided.
+    /// Share, Copy and Paste once every name is decided; with the AI
+    /// connector preview, Ask AI in Share's place, and Share a long press
+    /// away (#1164).
     private var handOffButtons: some View {
             layout {
-                // One tap shares the text; the file is a long press away.
-                Button {
-                    model.share(asFile: false)
-                } label: {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
+                if preferences.aiConnectorPreview {
+                    askAI
+                } else {
+                    share
                 }
-                .primaryAction()
-                .contextMenu {
-                    Button {
-                        model.share(asFile: true)
-                    } label: {
-                        Label("Share as Markdown file", systemImage: "doc")
-                    }
-                }
-                .accessibilityAction(named: Text("Share as Markdown file")) {
-                    model.share(asFile: true)
-                }
-                .accessibilityIdentifier("primary-action")
                 Button {
                     model.copyForAI { UIPasteboard.general.string = $0 }
                 } label: {
@@ -158,6 +147,60 @@ struct ActionBar: View {
                 .accessibilityIdentifier("copy-for-ai")
                 pasteReply(accessibilityLabel: "Paste reply")
             }
+    }
+
+    /// Ask AI: the text to an AI app through the share sheet; back in
+    /// mdoc, "Paste reply?" offers to restore its answer.
+    private var askAI: some View {
+        Button {
+            model.askAI()
+        } label: {
+            Label("Ask AI", systemImage: "sparkles")
+                .frame(maxWidth: .infinity)
+        }
+        .primaryAction()
+        .contextMenu {
+            Button {
+                model.share(asFile: false)
+            } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            Button {
+                model.share(asFile: true)
+            } label: {
+                Label("Share as Markdown file", systemImage: "doc")
+            }
+        }
+        .accessibilityHint(Text("Shares the text, names replaced, with an AI app. Back in mdoc, paste its answer."))
+        .accessibilityAction(named: Text("Share")) {
+            model.share(asFile: false)
+        }
+        .accessibilityAction(named: Text("Share as Markdown file")) {
+            model.share(asFile: true)
+        }
+        .accessibilityIdentifier("ask-ai")
+    }
+
+    /// One tap shares the text; the file is a long press away.
+    private var share: some View {
+        Button {
+            model.share(asFile: false)
+        } label: {
+            Label("Share", systemImage: "square.and.arrow.up")
+                .frame(maxWidth: .infinity)
+        }
+        .primaryAction()
+        .contextMenu {
+            Button {
+                model.share(asFile: true)
+            } label: {
+                Label("Share as Markdown file", systemImage: "doc")
+            }
+        }
+        .accessibilityAction(named: Text("Share as Markdown file")) {
+            model.share(asFile: true)
+        }
+        .accessibilityIdentifier("primary-action")
     }
 
     /// Type a reply: small, above Paste, for a reply that is not on the

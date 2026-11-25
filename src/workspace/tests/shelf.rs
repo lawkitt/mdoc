@@ -236,8 +236,8 @@ fn a_name_another_document_adds_takes_a_row_off_ready(cx: &mut TestAppContext) {
     assert_eq!(listed(cx).readiness, Readiness::Ready);
     let shelf = open_shelf(cx);
     let index = shelf
-        .read_with(cx, |view, _| {
-            let documents = &view.content().documents;
+        .read_with(cx, |view, cx| {
+            let documents = &view.content(cx).documents;
             documents.iter().position(|d| d.key == key).unwrap()
         })
         .unwrap();
@@ -281,10 +281,10 @@ fn a_name_another_document_adds_takes_a_row_off_ready(cx: &mut TestAppContext) {
         .update(cx, |view, window, cx| {
             view.copy(index, window, cx);
             view.drag(index, window, cx);
-            assert!(view.dragged.is_none());
-            assert_eq!(view.copied(), None);
+            assert!(view.rows().read(cx).dragged.is_none());
+            assert_eq!(view.copied(cx), None);
             assert_eq!(
-                view.content().documents[index].readiness,
+                view.content(cx).documents[index].readiness,
                 Readiness::NamesNotReplaced(1)
             );
         })
@@ -746,8 +746,8 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
     let shelf = open_shelf(cx);
     let index = |key: ShelfKey, cx: &mut VisualTestContext| {
         shelf
-            .read_with(cx, |view, _| {
-                view.content()
+            .read_with(cx, |view, cx| {
+                view.content(cx)
                     .documents
                     .iter()
                     .position(|d| d.key == key)
@@ -758,8 +758,8 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
     let ready_row = index(ShelfKey::Tab(ready), cx);
     let pending_row = index(ShelfKey::Tab(pending), cx);
     let label = shelf
-        .read_with(cx, |view, _| {
-            crate::shelf_ui::row_label(&view.content().documents[pending_row])
+        .read_with(cx, |view, cx| {
+            crate::shelf_ui::row_label(&view.content(cx).documents[pending_row])
         })
         .unwrap();
     // The Project is named after its first document: masked too.
@@ -775,7 +775,7 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
         .update(cx, |view, window, cx| {
             view.copy(pending_row, window, cx);
             view.drag(pending_row, window, cx);
-            assert!(view.dragged.is_none());
+            assert!(view.rows().read(cx).dragged.is_none());
         })
         .unwrap();
     assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "before");
@@ -792,7 +792,7 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
         editor_copy
     );
     let (dragged, file) = shelf
-        .read_with(cx, |view, _| view.dragged.clone().unwrap())
+        .read_with(cx, |view, cx| view.rows().read(cx).dragged.clone().unwrap())
         .unwrap();
     assert_eq!(dragged, editor_copy);
     assert_eq!(std::fs::read_to_string(&file).unwrap(), editor_copy);
@@ -921,7 +921,7 @@ fn the_shelf_is_reachable_by_keyboard_and_the_picker_keeps_focus(cx: &mut TestAp
     assert_ne!(focus(&mut shelf_cx), back);
     assert!(
         shelf
-            .read_with(&shelf_cx, |view, _| view.content().source.is_some())
+            .read_with(&shelf_cx, |view, cx| view.content(cx).source.is_some())
             .unwrap()
     );
 }
@@ -963,8 +963,8 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
         })
     };
     let (second, hint) = shelf
-        .read_with(cx, |view, _| {
-            let content = view.content();
+        .read_with(cx, |view, cx| {
+            let content = view.content(cx);
             assert!(content.documents.iter().all(|d| d.preview.is_some()));
             (
                 content.documents[1].text_for_ai().unwrap().to_string(),
@@ -975,7 +975,7 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
     assert!(hint, "the hint shows before the first drag");
     // A document without a Project is named without `.md` (GUI run of #280).
     let sources = shelf
-        .read_with(cx, |view, _| view.content().sources.clone())
+        .read_with(cx, |view, cx| view.content(cx).sources.clone())
         .unwrap();
     assert!(
         sources.iter().any(
@@ -1000,7 +1000,9 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
         second
     );
     assert_eq!(
-        shelf.read_with(&shelf_cx, |view, _| view.copied()).unwrap(),
+        shelf
+            .read_with(&shelf_cx, |view, cx| view.copied(cx))
+            .unwrap(),
         Some(1)
     );
     assert!(open(shelf, cx), "Copied shows first");
@@ -1041,19 +1043,21 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
     let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
     copy_row(9, &mut shelf_cx);
     assert_eq!(
-        shelf.read_with(&shelf_cx, |view, _| view.copied()).unwrap(),
+        shelf
+            .read_with(&shelf_cx, |view, cx| view.copied(cx))
+            .unwrap(),
         None
     );
     let hint = |cx: &mut VisualTestContext| {
         shelf
-            .read_with(cx, |view, _| view.content().drag_hint)
+            .read_with(cx, |view, cx| view.content(cx).drag_hint)
             .unwrap()
     };
     shelf
         .update(cx, |view, window, cx| {
             view.drag(0, window, cx);
-            let card = view.dragged_card.clone().unwrap();
-            assert_eq!(Some(card), view.content().documents[0].drag_card());
+            let card = view.rows().read(cx).dragged_card.clone().unwrap();
+            assert_eq!(Some(card), view.content(cx).documents[0].drag_card());
             view.drag_ended(false, cx);
         })
         .unwrap();
@@ -1065,7 +1069,7 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
     shelf
         .update(cx, |view, window, cx| {
             view.drag(0, window, cx);
-            view.dropped_on_shelf();
+            view.dropped_on_shelf(cx);
             view.drag_ended(true, cx);
         })
         .unwrap();
@@ -1085,7 +1089,7 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
     let again = open_shelf(cx);
     assert!(
         !again
-            .read_with(cx, |view, _| view.content().drag_hint)
+            .read_with(cx, |view, cx| view.content(cx).drag_hint)
             .unwrap()
     );
 }
@@ -1116,8 +1120,8 @@ fn the_shelf_popup_follows_its_content_height(cx: &mut TestAppContext) {
     written(cx);
     let shelf = open_shelf(cx);
     let estimate = shelf
-        .update(cx, |view, _, _| {
-            let estimate = view.content().height();
+        .update(cx, |view, _, cx| {
+            let estimate = view.content(cx).height();
             view.fit_to_screen(estimate, 10_000.);
             estimate
         })
