@@ -1284,7 +1284,12 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// A refusal is thrown as `CoreError.handOffRefused`, in the app's own
     /// words: never the core's (#1209).
     func copyForAI() throws -> HandOff {
-        try saveChanges()
+        do {
+            try saveChanges()
+        } catch {
+            // The save's own words name the Vault's records: not on screen.
+            throw CoreError.handOffRefused(.failed)
+        }
         let handOff: MdocFFI.HandOff
         do {
             handOff = try core { try ffi.handOff(vault: library.vault) }
@@ -1309,6 +1314,16 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         // The Restore extension restores with where it went.
         library.rememberShared(vaultID: vaultID)
         return HandOff(text: text, fileName: handOff.fileName)
+    }
+
+    /// Saves, then opens the document again from the Vault: its names
+    /// lined up with its Project's as they are now, so a name another
+    /// document added since is proposed. Undo starts afresh.
+    func lineUpWithProject() throws -> DocumentSnapshot {
+        try saveChanges()
+        guard let vaultID else { return snapshot() }
+        try holdingSave { try reopen(vaultID: vaultID, kind: nil) }
+        return snapshot()
     }
 
     func savedReadiness() -> SavedReadiness? {

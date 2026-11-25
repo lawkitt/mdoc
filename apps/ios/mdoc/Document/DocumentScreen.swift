@@ -609,11 +609,16 @@ struct DocumentScreen: View {
                 DocumentShareButton(app: app, document: document, blockedReason: blocked, alwaysListed: true)
             }
             if let refusal, let step = model.step(for: refusal) {
+                let waits = step == .findNames ? model.findNamesAgainBlockedReason : nil
                 Button {
                     model.take(step)
                 } label: {
                     Label(step.title, systemImage: step.systemImage)
+                    if let waits {
+                        Text(waits)
+                    }
                 }
+                .disabled(waits != nil)
                 .accessibilityIdentifier("hand-off-step")
             }
         }

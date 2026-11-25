@@ -26,7 +26,11 @@ extension DocumentViewModel {
         case nil:
             return .notRead
         }
-        return savedReadiness.flatMap(HandOffRefusal.init)
+        // A record not saved Ready while the session is done is one the
+        // tap's save brings up to date (a phone fallen below the floor
+        // since); where it can't, the tap says why.
+        guard let saved = savedReadiness, saved != .notReviewed else { return nil }
+        return HandOffRefusal(saved)
     }
 
     /// Under Copy for AI and Share in the document's menu (ADR 0115).
@@ -83,6 +87,13 @@ extension DocumentViewModel {
             } else if let kept = snapshot.candidates.first(where: { $0.state == .kept }) {
                 // A known name written out: a mention kept as written.
                 open(kept.id)
+            } else if perform(undoable: false, { try session.lineUpWithProject() }) {
+                // Opened again, its history starts afresh: so does the window's.
+                systemUndo?.removeAllActions(withTarget: self)
+                systemUndoSteps = 0
+                // A name another document added to the Project since this
+                // review began is proposed now.
+                if snapshot.pendingCount > 0 { beginReview() } else { showIdentities(true) }
             } else {
                 showIdentities(true)
             }

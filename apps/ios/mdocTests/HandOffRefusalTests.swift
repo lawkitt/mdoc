@@ -127,6 +127,47 @@ final class HandOffRefusalTests: XCTestCase {
         XCTAssertEqual(detector.step(for: .notScanned), .findNames)
     }
 
+    /// A name another document of the Project replaced after this review
+    /// began: the open review lacks it, so Review opens the document again
+    /// from the Vault, which proposes it, and the bar opens on it.
+    func testReviewProposesANameAnotherDocumentAddedSince() async throws {
+        let (core, storage) = try Fixture.core()
+        let ellison = try Fixture.createProject(Letters.ellisonProject, in: core)
+        let note = try core.library.importDocument(.text("# Note\n\nCall Zara Quinn on Monday."), title: "Note", into: ellison)
+        _ = try note.recognize(observer: TestObserver())
+        let jobs = LongJobRunner(background: NoBackgroundContinuation())
+        let model = DocumentViewModel(session: note, jobs: jobs, storage: storage, findsNames: false)
+        try note.saveChanges()
+        await model.checkSaved().value
+        XCTAssertNil(model.handOffRefusal, "nothing to replace, decided by hand")
+
+        let other = try core.library.importDocument(.text("Zara Quinn signed."), title: "Other", into: ellison)
+        _ = try other.recognize(observer: TestObserver())
+        _ = try other.propose([.init(wording: "Zara Quinn", category: .person)])
+        _ = try other.replaceAllPending()
+        try other.saveChanges()
+
+        await model.checkSaved().value
+        XCTAssertEqual(model.handOffRefusal, .namesWrittenOut(1))
+        XCTAssertTrue(model.snapshot.candidates.isEmpty, "the open review lacks it")
+        model.take(.review)
+        XCTAssertEqual(model.snapshot.pendingCount, 1)
+        XCTAssertEqual(model.review.reviewedCandidate?.original, "Zara Quinn")
+    }
+
+    /// A save that fails before the hand-off refuses in the app's words,
+    /// not the save's, which name the Vault's records.
+    func testAFailedSaveIsRefusedInPlainWords() throws {
+        let seeded = try Fixture.seeded()
+        let model = try seeded.model(seeded.letter)
+        model.replaceAllPending()
+        try Fixture.setVault(seeded.storage, writable: false)
+        defer { try? Fixture.setVault(seeded.storage, writable: true) }
+        XCTAssertThrowsError(try model.session.copyForAI()) { error in
+            XCTAssertEqual(error as? CoreError, .handOffRefused(.failed))
+        }
+    }
+
     /// Each refusal reads in its own words, none the core's, with its step.
     func testEachRefusalHasItsOwnSentenceAndStep() {
         let refusals: [HandOffRefusal] = [

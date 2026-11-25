@@ -102,11 +102,15 @@ struct ActionBar: View {
 
     /// Every name decided, but the Vault refuses the text as saved: a
     /// known name written out, changed since its review, excluded from AI.
-    /// Why, and its step in Share's place; Paste still restores a reply
-    /// (#1209).
+    /// Why, and its step in Share's place; Type a reply and Paste still
+    /// restore a reply (#1209).
     private func refused(_ refusal: HandOffRefusal) -> some View {
         VStack(spacing: Space.xs) {
             ActionNote(text: "\(refusal.reason). \(refusal.detail)", identifier: "hand-off-refusal")
+            HStack {
+                Spacer(minLength: 0)
+                typeReply
+            }
             layout {
                 if let step = model.step(for: refusal) {
                     primary(LocalizedStringKey(step.title), systemImage: step.systemImage) {

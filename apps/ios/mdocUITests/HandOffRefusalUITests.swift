@@ -89,6 +89,28 @@ final class HandOffRefusalUITests: XCTestCase {
         UIPasteboard.general.items = []
     }
 
+    /// A new document typed by hand with no names in it, out of edit mode;
+    /// `detectorTier`: on a phone that finds names.
+    @MainActor
+    private func typedDocument(detectorTier: Bool = false) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mdoc-ui-testing"]
+        if detectorTier { app.launchEnvironment["MDOC_UI_DETECTOR_TIER"] = "1" }
+        app.launch()
+        MdocUITest.revealSidebar(app)
+        app.buttons["new-menu"].firstMatch.tap()
+        let item = app.collectionViews.buttons["New document"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: MdocUITest.timeout))
+        item.tap()
+        let done = app.buttons["done-editing"]
+        XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: MdocUITest.timeout))
+        text.typeText("Lunch notes\nThe park is lovely today.")
+        done.tap()
+        return app
+    }
+
     /// The bar's refusal note.
     @MainActor
     private func refusalNote(_ app: XCUIApplication) -> XCUIElement {
@@ -184,20 +206,7 @@ final class HandOffRefusalUITests: XCTestCase {
     /// it said "Find names first" before (#1209).
     @MainActor
     func testBelowTheFloorTheMenuAgreesWithTheBar() throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["-mdoc-ui-testing"]
-        app.launch()
-        MdocUITest.revealSidebar(app)
-        app.buttons["new-menu"].firstMatch.tap()
-        let item = app.collectionViews.buttons["New document"].firstMatch
-        XCTAssertTrue(item.waitForExistence(timeout: MdocUITest.timeout))
-        item.tap()
-        let done = app.buttons["done-editing"]
-        XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
-        let text = app.textViews["document-text"]
-        XCTAssertTrue(text.waitForExistence(timeout: MdocUITest.timeout))
-        text.typeText("Lunch notes\nThe park is lovely today.")
-        done.tap()
+        let app = typedDocument()
 
         XCTAssertTrue(
             app.descendants(matching: .any)["below-floor-note"].firstMatch.waitForExistence(timeout: MdocUITest.timeout),
@@ -214,5 +223,50 @@ final class HandOffRefusalUITests: XCTestCase {
         copy.tap()
         expectCopied(app)
         expectNoCoreText(app)
+    }
+
+    /// On a phone that finds names, a document never scanned waits for
+    /// Find names: the bar offers it, and the menu lists it after Copy for
+    /// AI and Share, which are off.
+    @MainActor
+    func testNotScannedOffersFindNames() throws {
+        let app = typedDocument(detectorTier: true)
+        let primary = app.buttons["primary-action"]
+        XCTAssertTrue(
+            primary.wait(until: NSPredicate(format: "label == 'Find names'"), timeout: MdocUITest.timeout),
+            "the bar offers no Find names")
+        openMenu(app)
+        expectRefused(app)
+        let step = MdocUITest.menuItem("Find names", app)
+        XCTAssertTrue(step.exists, "no Find names in the menu")
+        XCTAssertTrue(step.isEnabled)
+        closeMenu(app)
+        expectNoCoreText(app)
+    }
+
+    /// Share from a document's row refuses with why and the step: Review
+    /// opens the document on the name kept as written.
+    @MainActor
+    func testARowsShareRefusesWithItsStep() throws {
+        let app = openAgreement()
+        reviewEmail(app)
+        let keep = app.buttons["review-keep"]
+        XCTAssertTrue(keep.waitForExistence(timeout: MdocUITest.timeout))
+        keep.tap()
+        if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
+        XCTAssertTrue(refusalNote(app).waitForExistence(timeout: MdocUITest.timeout))
+
+        let row = MdocUITest.listedRow(app, title: MdocUITest.title)
+        XCTAssertTrue(row.waitForExistence(timeout: MdocUITest.timeout))
+        row.press(forDuration: 1.0)
+        let share = app.buttons["Share"].firstMatch
+        XCTAssertTrue(share.waitForExistence(timeout: MdocUITest.timeout), "no Share in the row's menu")
+        share.tap()
+
+        let alert = app.alerts["1 known name is written out"]
+        XCTAssertTrue(alert.waitForExistence(timeout: MdocUITest.timeout), "no refusal")
+        expectNoCoreText(app)
+        alert.buttons["Review"].tap()
+        XCTAssertTrue(app.buttons["review-replace"].waitForExistence(timeout: MdocUITest.timeout), "Review opens no bar")
     }
 }
