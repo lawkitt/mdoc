@@ -228,7 +228,7 @@ fn the_share_does_not_follow_the_view(cx: &mut TestAppContext) {
         panic!("the shared Project is listed");
     };
     let ids: Vec<_> = documents.into_iter().map(|row| row.doc_id).collect();
-    assert_eq!(ids, [fixture.estate_doc.clone()]);
+    assert_eq!(ids, std::slice::from_ref(&fixture.estate_doc));
     // After Stop sharing, the Project viewed since is offered first, and
     // the one chosen is shared, not the one in view.
     tabs.update(cx, |tabs, cx| tabs.stop_sharing_with_ai(cx));
@@ -344,6 +344,16 @@ fn a_document_entering_the_ai_project_is_scanned_not_replaced(cx: &mut TestAppCo
         scanning(cx, waiting),
         "a member that waited for the model scans"
     );
+    // Its scan fails: later loads and shares don't start it again.
+    let view = cx.update(|_, cx| tabs.read(cx).tab_view(waiting).unwrap());
+    view.update(cx, |view, cx| {
+        view.finish_scan(Err("The model failed.".into()), cx)
+    });
+    tabs.update(cx, |tabs, cx| tabs.scan_on_entry(cx));
+    assert!(
+        !scanning(cx, waiting),
+        "a failed entry scan does not repeat"
+    );
     // Into the AI project: its tab scans.
     let entering = open(cx);
     move_tab(&tabs, cx, entering, Some(&fixture.lease));
@@ -360,12 +370,12 @@ fn a_document_entering_the_ai_project_is_scanned_not_replaced(cx: &mut TestAppCo
         let source = view.editor.read(cx).text().to_owned();
         let start = source.find("Maria Lopez").unwrap();
         view.finish_scan(
-            vec![mdoc_pii::Detection {
+            Ok(vec![mdoc_pii::Detection {
                 range: start..start + "Maria Lopez".len(),
                 category: mdoc_pii::Category::Person,
                 score: 0.9,
                 recognizer: mdoc_pii::Recognizer::Model,
-            }],
+            }]),
             cx,
         );
     });

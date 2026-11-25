@@ -152,18 +152,18 @@ impl DocumentView {
         HOLD_SCANS.set(hold);
     }
 
-    /// Tests: the running scan ends with `detections`, as the detector
-    /// would end it.
+    /// Tests: the running scan ends with `result`, as the detector would
+    /// end it.
     #[cfg(test)]
     pub(crate) fn finish_scan(
         &mut self,
-        detections: Vec<mdoc_pii::Detection>,
+        result: Result<Vec<mdoc_pii::Detection>, String>,
         cx: &mut Context<Self>,
     ) {
         let job = self.pii.job.as_ref().expect("a scan runs");
         let (generation, revision) = (job.generation, job.revision);
         let identity = self.session.generation;
-        self.complete_pii_scan(generation, identity, revision, Ok(detections), cx);
+        self.complete_pii_scan(generation, identity, revision, result, cx);
     }
 
     pub(crate) fn start_pii_scan(&mut self, cx: &mut Context<Self>) {

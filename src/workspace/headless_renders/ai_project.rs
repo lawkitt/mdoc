@@ -22,6 +22,12 @@ fn call(d: &mut Driver, app: &str, call: Call) -> Result<Answer> {
     })?
 }
 
+/// Captured with no control focused, so no focus ring shows.
+fn capture(d: &mut Driver, name: &str) -> Result<()> {
+    d.change(|w, window, cx| window.focus(&w.focus, cx))?;
+    d.capture(name)
+}
+
 fn preview(d: &mut Driver, on: bool) -> Result<()> {
     d.change(|w, window, cx| {
         if let Some(preferences) = w.preferences.borrow_mut().current.as_mut() {
@@ -33,6 +39,8 @@ fn preview(d: &mut Driver, on: bool) -> Result<()> {
 }
 
 pub(super) fn scenes(d: &mut Driver, project: &str) -> Result<()> {
+    // Where the window was, to go back there after.
+    let was = d.change(|w, _, cx| (w.project_ui.page.is_some(), w.showing_home(cx)))?;
     let sidebar = d.change(|w, window, cx| {
         let shown = w.sidebar.visible();
         w.sidebar.restore(true, Some(true));
@@ -57,13 +65,13 @@ pub(super) fn scenes(d: &mut Driver, project: &str) -> Result<()> {
     })??;
     // Claude asks with nothing shared: the prompt, this Project first.
     call(d, "claude-ai", Call::ListDocuments)?;
-    d.capture("ai-share-prompt")?;
+    capture(d, "ai-share-prompt")?;
     d.change(|w, _, cx| {
         if let Some(project) = w.ai.take_choice() {
             w.share_with_ai(&project, cx);
         }
     })?;
-    d.capture("ai-project-shared")?;
+    capture(d, "ai-project-shared")?;
     // Reads and a delivery, then the page's AI activity.
     let read = || Call::GetDocument {
         doc_id: witness.clone(),
@@ -82,12 +90,12 @@ pub(super) fn scenes(d: &mut Driver, project: &str) -> Result<()> {
     )?;
     call(d, "openai-chatgpt", read())?;
     d.change(|w, _, cx| w.show_project_segment(Segment::Activity, cx))?;
-    d.capture("project-page-activity")?;
+    capture(d, "project-page-activity")?;
     d.change(|w, _, cx| {
         w.sidebar.restore(false, Some(false));
         cx.notify();
     })?;
-    d.capture("ai-project-rail")?;
+    capture(d, "ai-project-rail")?;
     // As it was: the delivered reply gone, the member not Ready, the
     // setting off and the sidebar as it was.
     d.change(|w, _, cx| -> Result<()> {
@@ -105,5 +113,10 @@ pub(super) fn scenes(d: &mut Driver, project: &str) -> Result<()> {
         w.sidebar.restore(sidebar, Some(sidebar));
         Ok(())
     })??;
+    d.change(|w, window, cx| match was {
+        (true, _) => {}
+        (false, true) => w.show_home(window, cx),
+        (false, false) => w.activate(w.tabs.active(), window, cx),
+    })?;
     preview(d, false)
 }

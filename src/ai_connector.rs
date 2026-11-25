@@ -142,7 +142,13 @@ fn event_of(app: String, answer: &Answer) -> Option<Event> {
 /// itself (`clientInfo.name`) mapped to its product's, else as sent. A
 /// screen detail: activity and replies keep the name as sent.
 pub(crate) fn display_name(app: &str) -> String {
-    let app = app.trim();
+    // As sent, over the pipe: one line of at most 64 characters, as the
+    // activity keeps it.
+    let line: String = (app.chars())
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let line: String = line.trim().chars().take(64).collect();
+    let app = line.trim_end();
     match app.to_ascii_lowercase().as_str() {
         "" | "ai app" => "An AI app".into(),
         "claude-ai" | "claude" => "Claude".into(),
@@ -245,6 +251,9 @@ mod tests {
         assert_eq!(display_name("AI app"), "An AI app");
         assert_eq!(display_name(""), "An AI app");
         assert_eq!(display_name("Zed"), "Zed");
+        assert_eq!(display_name(" Claude-AI\n"), "Claude");
+        assert_eq!(display_name("a\nb"), "a b");
+        assert_eq!(display_name(&"x".repeat(100)).chars().count(), 64);
     }
 
     /// The shim reads the dev profile as mdoc does.
