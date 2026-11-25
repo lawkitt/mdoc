@@ -1,8 +1,8 @@
 package io.github.lawkitt.mdoc
 
+import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.performClick
@@ -59,14 +59,19 @@ class NothingToReplaceTest {
         val memo = scannedWithNothing(app.core.documents)
         assertEquals(DocumentPhase.Ready, memo.snapshot().phase)
         assertEquals(Readiness.Ready, app.core.vault.readiness(memo.vaultId!!))
+        // Made again, so its lists read the memo; openDocument finds it on a phone or a wide screen.
         compose.activityRule.scenario.onActivity { it.recreate() }
-        compose.waitForShown(hasContentDescription("Show sidebar"))
+        compose.waitForIdle()
 
         compose.openDocument(memo.snapshot().title)
         compose.waitForShown(hasText("Copy") and hasClickAction())
         assertFalse("nothing to find again", compose.exists(hasText("Find names") and onScreen))
-        // Only the app with window focus reads the clipboard (#545).
+        // Only the app with window focus reads the clipboard (#545); a
+        // stale copy of the same text can't pass for this one.
         awaitWindowFocus()
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            app.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("test", "before"))
+        }
         compose.shown(hasText("Copy") and hasClickAction()).performClick()
         compose.waitForText("Copied for AI")
         awaitWindowFocus()
