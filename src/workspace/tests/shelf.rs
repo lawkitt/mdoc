@@ -81,6 +81,9 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
         &[("Ivan Ivanov", Person)],
     );
     move_tab(&tabs, cx, changed, Some(&project));
+    // Its Project's names applied, so it is written ready: left proposed,
+    // it was never reviewed, which the shelf once read as changed (#1209).
+    apply_all(&tabs, cx);
     written(cx);
     let changed_document = cx.update(|_, cx| tabs.read(cx).tab_document(changed, cx).unwrap());
     close(&tabs, changed, cx);
@@ -342,10 +345,11 @@ fn copy_for_ai_in_the_editor_is_checked_against_the_projects_names(cx: &mut Test
     copy(cx);
     assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "before");
     view.read_with(cx, |view, _| {
-        let why = view.error.as_deref().unwrap_or_default();
+        let why = view.copy_refusal.as_ref().expect("a refusal");
         // Its review proposes the Project's new name, as the shelf's row
-        // says.
-        assert_eq!(why, "Not copied: 1 proposal is left to review.");
+        // says, and the notice offers to replace it.
+        assert_eq!(why.reason, "1 proposal is left to review.");
+        assert_eq!(why.step, Some(crate::refusal::Step::ReplaceAndCopy(1)));
     });
     // The shortcut and the menu dispatch the same action.
     cx.update(|window, cx| window.focus(&view.read(cx).editor.read(cx).focus_handle(cx), cx));
@@ -429,7 +433,7 @@ fn a_stored_document_that_is_not_ready_opens_at_its_first_proposal(cx: &mut Test
         .unwrap();
     assert_eq!(row.readiness, Readiness::NamesNotReplaced(1));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_from_shelf(&row.key, false, window, cx)
+        tabs.open_from_shelf(&row.key, false, None, window, cx)
     });
     for _ in 0..20 {
         wait(cx, 100);
@@ -686,23 +690,6 @@ fn row_of(
             .find(|row| row.key == ShelfKey::Tab(id))
             .unwrap()
     })
-}
-
-fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<crate::shelf_ui::ShelfView> {
-    use crate::shelf_ui::{ShelfContent, ShelfView};
-    let workspace = cx.window_handle().downcast::<Workspace>().unwrap();
-    let shelf = cx.cx.update(|cx| {
-        let content = workspace
-            .read(cx)
-            .map(|workspace| ShelfContent::of(workspace, cx))
-            .unwrap();
-        cx.open_window(gpui::WindowOptions::default(), |window, cx| {
-            cx.new(|cx| ShelfView::new(workspace, content, window, cx))
-        })
-        .unwrap()
-    });
-    cx.run_until_parked();
-    shelf
 }
 
 /// The shelf's own controls: Copy for AI and a drag carry the

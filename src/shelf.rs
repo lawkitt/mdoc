@@ -56,6 +56,9 @@ pub(crate) enum Readiness {
     NamesNotReplaced(usize),
     /// A document whose stored text is not the text it saved while ready.
     ChangedSinceReview,
+    /// A document never saved while ready: never scanned, or saved with
+    /// proposals left.
+    NotReviewed,
 }
 
 impl Readiness {
@@ -70,6 +73,7 @@ impl Readiness {
             Self::LeftToReview(n) => format!("{n} left to review"),
             Self::Checking => "Checking names".into(),
             Self::ChangedSinceReview => "Changed since review".into(),
+            Self::NotReviewed => "Not reviewed".into(),
             Self::NamesNotReplaced(1) => "1 name not replaced".into(),
             Self::NamesNotReplaced(n) => format!("{n} names not replaced"),
         }
@@ -92,11 +96,10 @@ pub(crate) type Outbound = Result<String, mdoc_vault::Readiness>;
 fn refused(readiness: mdoc_vault::Readiness) -> Readiness {
     match readiness {
         mdoc_vault::Readiness::NamesNotReplaced(n) => Readiness::NamesNotReplaced(n),
-        // Never saved while ready, or changed since: as a Project's document with
-        // no or another fingerprint showed.
-        mdoc_vault::Readiness::Ready
-        | mdoc_vault::Readiness::NotReviewed
-        | mdoc_vault::Readiness::ChangedSinceReview => Readiness::ChangedSinceReview,
+        mdoc_vault::Readiness::ChangedSinceReview => Readiness::ChangedSinceReview,
+        // The check refuses only what is not Ready; a refusal it can't name
+        // (an unreadable document) has no review to show.
+        mdoc_vault::Readiness::Ready | mdoc_vault::Readiness::NotReviewed => Readiness::NotReviewed,
     }
 }
 
@@ -123,6 +126,9 @@ pub(crate) struct ShelfDocument {
     /// names the document knows: a Project is often named after a person.
     pub project_label: Option<String>,
     pub readiness: Readiness,
+    /// Names were looked for: a document never saved ready has a review to
+    /// finish, not names to find.
+    pub scanned: bool,
     pub edited: SystemTime,
     pub words: usize,
     /// Only a ready document with prose has one.
@@ -212,6 +218,8 @@ pub(crate) struct StoredDocument<'a> {
     pub project: Option<ProjectLink>,
     /// When it was last written.
     pub edited: SystemTime,
+    /// Names were looked for in it: scanned, or saved with a review.
+    pub scanned: bool,
     /// `None` while a move of it, or a change to its Project's names, is
     /// not written yet.
     pub outbound: Option<Outbound>,
@@ -239,7 +247,8 @@ impl ShelfDocument {
             tab.text,
             &names,
             tab.project,
-            readiness,
+            // An open tab with an applied alias has a review to open.
+            (readiness, true),
             tab.edited,
             for_ai,
         ))
@@ -265,7 +274,7 @@ impl ShelfDocument {
             document.text,
             &names,
             document.project,
-            readiness,
+            (readiness, document.scanned),
             document.edited,
             for_ai,
         ))
@@ -278,7 +287,7 @@ impl ShelfDocument {
         text: &str,
         names: &RestoreMap,
         project: Option<ProjectLink>,
-        readiness: Readiness,
+        (readiness, scanned): (Readiness, bool),
         edited: SystemTime,
         for_ai: Option<String>,
     ) -> Self {
@@ -293,6 +302,7 @@ impl ShelfDocument {
             project_label: (project.as_ref()).map(|project| names.pseudonymize(&project.name).0),
             project,
             readiness,
+            scanned,
             edited,
             words: text
                 .split_whitespace()
@@ -314,6 +324,12 @@ impl ShelfDocument {
             .map_or(&self.title, |ext| {
                 &self.title[..self.title.len() - ext.len()]
             })
+    }
+
+    /// What resolves the row's refusal: "Replace 2 and copy", "Review" or
+    /// "Find names"; `None` while ready or still checking.
+    pub(crate) fn step(&self) -> Option<crate::refusal::Step> {
+        crate::refusal::Step::of(self.readiness, self.scanned)
     }
 
     /// The card a drag shows under the pointer: the title as the

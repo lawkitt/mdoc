@@ -1,4 +1,5 @@
 use super::*;
+use crate::refusal::Step;
 use mdoc_pii::Category;
 use std::time::Duration;
 
@@ -51,6 +52,7 @@ fn stored<'a>(n: u8, title: &'a str, text: &'a str, outbound: Outbound) -> Store
         names: names(),
         project: None,
         edited: at(n.into()),
+        scanned: true,
         outbound: Some(outbound),
     }
 }
@@ -101,6 +103,7 @@ fn a_tab_without_aliases_is_not_listed_and_one_with_proposals_is_not_ready() {
     let row = ShelfDocument::of_tab(pending).unwrap();
     assert_eq!(row.readiness, Readiness::LeftToReview(2));
     assert_eq!(row.readiness.label(), "2 left to review");
+    assert_eq!(row.step(), Some(Step::ReplaceAndCopy(2)));
     assert_eq!(row.title, "PERSON_2.md");
     assert_eq!(row.text_for_ai(), None);
     assert!(row.preview.is_none(), "no text of a document not ready");
@@ -206,13 +209,26 @@ fn a_stored_document_is_ready_only_when_the_outbound_check_passes() {
     assert_eq!(changed.text_for_ai(), None);
     assert!(changed.preview.is_none());
     assert_eq!(changed.drag_card(), None);
-    // Never saved while ready: as a Project's document with no fingerprint was.
+    assert_eq!(changed.step(), Some(Step::Review));
+    // Never saved while ready: its own state, not "Changed since review"
+    // (#1209). Scanned, its review is to finish; never scanned, its names
+    // are to find.
     let never = refused(mdoc_vault::Readiness::NotReviewed);
-    assert_eq!(never.readiness, Readiness::ChangedSinceReview);
+    assert_eq!(never.readiness, Readiness::NotReviewed);
+    assert_eq!(never.readiness.label(), "Not reviewed");
+    assert_eq!(never.step(), Some(Step::Review));
+    let unscanned = ShelfDocument::of_stored(StoredDocument {
+        scanned: false,
+        ..stored(7, "b", text, Err(mdoc_vault::Readiness::NotReviewed))
+    })
+    .unwrap();
+    assert_eq!(unscanned.readiness.label(), "Not reviewed");
+    assert_eq!(unscanned.step(), Some(Step::FindNames));
     let missed = refused(mdoc_vault::Readiness::NamesNotReplaced(2));
     assert_eq!(missed.readiness, Readiness::NamesNotReplaced(2));
     assert_eq!(missed.readiness.label(), "2 names not replaced");
     assert_eq!(missed.text_for_ai(), None);
+    assert_eq!(missed.step(), Some(Step::Review));
     // Its Project's names, or a move of it, not written yet: not asked.
     let mut waiting = stored(7, "a", text, Ok(sent));
     waiting.outbound = None;
