@@ -258,6 +258,11 @@ protocol DocumentSession: AnyObject, Sendable {
     /// After a typing pause: the names under review found again in what
     /// was typed. Safe off the main thread; typing goes on meanwhile.
     func discover() throws -> DocumentSnapshot
+    /// At Done: the paragraphs edited since they were scanned, scanned for
+    /// new names as a fresh document is (the name finder, or the rules
+    /// below the floor); a new name is a proposal. Until it runs, the
+    /// document is not Ready. Safe off the main thread.
+    func scanEdits() throws -> DocumentSnapshot
     /// A new document's title follows its first line until the user
     /// renames it (ADR 0109): the title it took, or nil when nothing
     /// changed. Safe off the main thread.

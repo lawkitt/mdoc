@@ -71,7 +71,8 @@ extension DocumentViewModel {
     }
 
     /// Done: back to review. Discovery runs now rather than after the
-    /// pause, and the typing is saved then rather than after it.
+    /// pause, then the scan of the paragraphs edited (a new name becomes a
+    /// proposal), and the typing is saved then rather than after it.
     func doneEditing() {
         guard isEditing else { return }
         linkDraft = nil
@@ -87,6 +88,11 @@ extension DocumentViewModel {
         typing.discovery = nil
         Task {
             await discoverNow()
+            let session = session
+            let scanned = await Task.detached(priority: .userInitiated) {
+                try? session.scanEdits()
+            }.value
+            if let scanned { applyReview(scanned) }
             do {
                 try session.saveChanges()
             } catch {

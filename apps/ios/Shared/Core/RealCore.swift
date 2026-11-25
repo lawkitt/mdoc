@@ -1483,6 +1483,17 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return snapshot(of: review)
     }
 
+    func scanEdits() throws -> DocumentSnapshot {
+        let paths = library.setup?.detectorPaths()
+        // Without the name finder above the floor the edits stay owed: the
+        // rules alone would miss names.
+        guard paths != nil || library.setup?.snapshot().tier == .belowFloor else {
+            return try discover()
+        }
+        let review = try core { try ffi.scanEdits(detector: paths, progress: nil) }
+        return snapshot(of: review)
+    }
+
     /// The taps' save, once they pause (`SaveScheduler`). Told to the app:
     /// a failure shows as "could not save this change" and stays to save.
     private func scheduleSave(pause: DispatchTimeInterval? = nil) {
