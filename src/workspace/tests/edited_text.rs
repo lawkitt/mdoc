@@ -44,17 +44,20 @@ fn type_at_end(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: u64, ty
     cx.simulate_input(typed);
 }
 
-/// Copy for AI in the editor; what the clipboard holds after, and why
-/// nothing was copied if so.
+/// Copy for AI in the editor; what the clipboard holds after, and the
+/// refusal's reason if nothing was copied.
 fn copy(view: &Entity<DocumentView>, cx: &mut VisualTestContext) -> (String, Option<String>) {
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("before".into()));
     view.update_in(cx, |view, window, cx| {
-        view.error = None;
+        view.copy_refusal = None;
         view.copy_for_ai(&CopyForAi, window, cx)
     });
     paused(cx);
     let clipboard = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
-    (clipboard, view.read_with(cx, |view, _| view.error.clone()))
+    let why = view.read_with(cx, |view, _| {
+        (view.copy_refusal.as_ref()).map(|why| why.reason.clone())
+    });
+    (clipboard, why)
 }
 
 fn readiness(
@@ -152,10 +155,7 @@ fn a_typed_name_in_a_document_with_no_alias_does_not_leave(cx: &mut TestAppConte
     type_at_end(&tabs, cx, id, " Clara Moss agreed.");
     let (copied, why) = copy(&view, cx);
     assert_eq!(copied, "before");
-    assert_eq!(
-        why.as_deref(),
-        Some("Not copied: 1 proposal is left to review.")
-    );
+    assert_eq!(why.as_deref(), Some("1 proposal is left to review."));
     view.update_in(cx, |view, window, cx| {
         view.apply_all_pii(&PiiApplyAll, window, cx)
     });
@@ -222,10 +222,7 @@ fn a_typed_new_name_does_not_leave_unreplaced(cx: &mut TestAppContext) {
     let view = active(&tabs, cx);
     let (copied, why) = copy(&view, cx);
     assert_eq!(copied, "before");
-    assert_eq!(
-        why.as_deref(),
-        Some("Not copied: 1 proposal is left to review.")
-    );
+    assert_eq!(why.as_deref(), Some("1 proposal is left to review."));
     assert_ne!(readiness(&tabs, id, cx), mdoc_vault::Readiness::Ready);
 
     view.update_in(cx, |view, window, cx| {
@@ -282,10 +279,7 @@ fn a_document_left_mid_edit_reopens_owing_a_scan(cx: &mut TestAppContext) {
     assert!(view.read_with(cx, |view, _| view.pii.review().edits_unscanned()));
     let (copied, why) = copy(&view, cx);
     assert_eq!(copied, "before");
-    assert_eq!(
-        why.as_deref(),
-        Some("Not copied: 1 proposal is left to review.")
-    );
+    assert_eq!(why.as_deref(), Some("1 proposal is left to review."));
     view.update_in(cx, |view, window, cx| {
         view.apply_all_pii(&PiiApplyAll, window, cx)
     });
@@ -372,8 +366,5 @@ fn a_document_moved_after_a_save_mid_edit_owes_a_scan(cx: &mut TestAppContext) {
     let view = active(&tabs, cx);
     let (copied, why) = copy(&view, cx);
     assert_eq!(copied, "before");
-    assert_eq!(
-        why.as_deref(),
-        Some("Not copied: 1 proposal is left to review.")
-    );
+    assert_eq!(why.as_deref(), Some("1 proposal is left to review."));
 }

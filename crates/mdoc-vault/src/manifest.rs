@@ -447,6 +447,11 @@ pub(crate) fn reply_path(root: &Path, id: &str) -> PathBuf {
     root.join("replies").join(format!("{id}.enc"))
 }
 
+/// A Project's AI activity, by the Project's id.
+pub(crate) fn activity_path(root: &Path, project: &str) -> PathBuf {
+    root.join("activity").join(format!("{project}.enc"))
+}
+
 /// `projects/<id>.enc`, by id.
 fn project_files(root: &Path) -> io::Result<Vec<(String, PathBuf)>> {
     sealed_files(&root.join("projects"))
@@ -488,6 +493,7 @@ pub(crate) fn write_dirs(root: &Path) -> Vec<PathBuf> {
         root.to_path_buf(),
         root.join("projects"),
         root.join("replies"),
+        root.join("activity"),
     ];
     if let Ok(entries) = std::fs::read_dir(root.join("docs")) {
         dirs.extend(

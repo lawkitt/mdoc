@@ -137,6 +137,9 @@ pub(super) enum TabEvent {
     /// Discovery or the edited paragraphs' scan finished: a Copy for AI
     /// waiting for it is checked again.
     NamesFound,
+    /// A refused Copy for AI's step, from its notice or the Share tab: the
+    /// window runs it unless the document is kept from AI.
+    CopyStep(crate::refusal::Step),
     ToggleTheme,
     /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
     /// Source follows and Settings keeps it.
@@ -1701,6 +1704,9 @@ impl Workspace {
             TabEvent::Project(ProjectEvent::MoveToNew) => self.move_to_new_project(id, window, cx),
             TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
             TabEvent::NamesFound => self.copy_for_ai_after_write(cx),
+            TabEvent::CopyStep(step) => {
+                self.run_tab_step(id, *step, window, cx);
+            }
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
             TabEvent::SourceDisplay(display) => {
                 let display = *display;
