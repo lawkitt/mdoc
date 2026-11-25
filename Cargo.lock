@@ -4615,6 +4615,7 @@ dependencies = [
  "mdoc-editor",
  "mdoc-import",
  "mdoc-markdown",
+ "mdoc-mcp",
  "mdoc-pii",
  "mdoc-spell",
  "mdoc-store",
@@ -4643,9 +4644,11 @@ name = "mdoc-connector"
 version = "0.1.0"
 dependencies = [
  "mdoc-markdown",
+ "mdoc-mcp",
  "mdoc-pii",
  "mdoc-store",
  "mdoc-vault",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
 ]
@@ -4757,6 +4760,22 @@ version = "0.1.0"
 dependencies = [
  "entities",
  "html5ever",
+]
+
+[[package]]
+name = "mdoc-mcp"
+version = "0.1.0"
+dependencies = [
+ "dirs 7.0.0",
+ "libc",
+ "mdoc-connector",
+ "mdoc-pii",
+ "mdoc-store",
+ "mdoc-vault",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

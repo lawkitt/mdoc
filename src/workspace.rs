@@ -350,6 +350,9 @@ pub(super) struct Workspace {
     window_handle: gpui::AnyWindowHandle,
     /// The Vault, once the key opened it.
     vault: vault_state::VaultState,
+    /// The AI connector and its listener, while "AI connector (preview)"
+    /// is on and the Vault is open.
+    ai_connector: Option<crate::ai_connector::Running>,
     /// Settings › Vault's key, the first-Project nudge and the wrong-key
     /// screen.
     recovery: recovery_key::Recovery,
@@ -608,6 +611,7 @@ impl Workspace {
             next_op: 0,
             window_handle: window.window_handle(),
             vault: Default::default(),
+            ai_connector: None,
             recovery: Default::default(),
             document_writer: Default::default(),
             admitted_from: Default::default(),
