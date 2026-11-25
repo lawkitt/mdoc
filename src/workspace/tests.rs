@@ -34,6 +34,7 @@ use std::{
     },
 };
 
+mod ai_project;
 mod comment_rail;
 mod decision_history;
 mod default_categories;
