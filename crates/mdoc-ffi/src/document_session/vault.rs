@@ -343,9 +343,9 @@ struct Pending {
     kept: Vec<(String, String)>,
     dismissed: Vec<(String, String)>,
     counts: super::Counts,
-    /// Typing took a proposal away and discovery has not run since: the
-    /// counts may miss a name, so it is not Ready.
-    awaiting_discovery: bool,
+    /// A look for names is owed (`owed`): the counts may miss a name, so it
+    /// is not Ready.
+    owed: bool,
     scanned: bool,
     /// The phone is below the name finder's floor (`set_no_name_finder`).
     by_hand: bool,
@@ -379,7 +379,7 @@ impl Document {
             kept: self.review.review.kept_pairs(),
             dismissed: self.review.dismissed_pairs(),
             counts: self.review.counts(),
-            awaiting_discovery: self.review.review.awaiting_discovery(),
+            owed: owed(&self.review.review),
             scanned: self.scanned,
             by_hand: false,
             review: self.review.saved_review(),
@@ -432,7 +432,7 @@ impl Document {
             self.scanned,
             by_hand,
             counts.proposed,
-            self.review.review.awaiting_discovery(),
+            owed(&self.review.review),
         );
         self.vault
             .as_ref()
@@ -565,10 +565,18 @@ fn open_review(
 }
 
 /// Whether a save records the document Ready: scanned, no proposals left
-/// and no discovery owed; below the floor (`by_hand`), names decided by
-/// hand count as scanned (#1091 Q4: the maintainer's (b)). The one rule.
-fn is_ready(scanned: bool, by_hand: bool, proposed: u64, awaiting_discovery: bool) -> bool {
-    (scanned || by_hand) && proposed == 0 && !awaiting_discovery
+/// and no discovery or scan of edited text owed (`owed`); below the floor
+/// (`by_hand`), names decided by hand count as scanned (#1091 Q4: the
+/// maintainer's (b)). The one rule.
+fn is_ready(scanned: bool, by_hand: bool, proposed: u64, owed: bool) -> bool {
+    (scanned || by_hand) && proposed == 0 && !owed
+}
+
+/// Whether `review` owes a look for names before it can be Ready: typing
+/// took a proposal away and discovery has not run since, or an edit
+/// changed a paragraph not scanned since (`scan_edits`).
+fn owed(review: &mdoc_pii::Review) -> bool {
+    review.awaiting_discovery() || review.edits_unscanned()
 }
 
 /// What a Vault document counts as `open_from_vault` opens it in
@@ -584,18 +592,13 @@ pub(crate) fn vault_counts(
 }
 
 impl Pending {
-    /// Whether the record is Ready: scanned, no proposals left and no
-    /// discovery owed. On a phone below the name finder's floor
+    /// Whether the record is Ready: scanned, no proposals left and no look
+    /// for names owed. On a phone below the name finder's floor
     /// (`set_no_name_finder`), names decided by hand with none left count
     /// too (#1091 Q4: the maintainer's (b)); the record stays unscanned.
     /// This is the one place that decides.
     fn ready(&self) -> bool {
-        is_ready(
-            self.scanned,
-            self.by_hand,
-            self.counts.proposed,
-            self.awaiting_discovery,
-        )
+        is_ready(self.scanned, self.by_hand, self.counts.proposed, self.owed)
     }
 
     /// Store the names and then the record, under the Vault handle's write
