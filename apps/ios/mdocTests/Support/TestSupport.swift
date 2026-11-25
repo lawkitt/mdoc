@@ -253,3 +253,11 @@ final class TestObserver: JobObserver, @unchecked Sendable {
         return cancelled
     }
 }
+
+/// Fails unless `name` is the core's neutral share name, "Document 3 –
+/// 2026-11-25", with `.md` when it names a file: nothing of the stored
+/// title leaves with a share (#1205).
+func XCTAssertNeutralShareName(_ name: String, asFile: Bool = false, file: StaticString = #filePath, line: UInt = #line) {
+    let pattern = "^Document [0-9]+ – [0-9]{4}-[0-9]{2}-[0-9]{2}" + (asFile ? "\\.md$" : "$")
+    XCTAssertNotNil(name.range(of: pattern, options: .regularExpression), "not a neutral share name: \(name)", file: file, line: line)
+}

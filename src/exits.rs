@@ -20,12 +20,19 @@ pub(crate) enum Gate {
     ShelfCopy,
     /// The shelf's drag: its text and its `.md` file (`ShelfRows::drag`).
     ShelfDrag,
-    // Milestone 2: the connector joins here, with a gate at its one
-    // `Vault::text_for_ai` call and its exit in the suite's table.
+    /// The AI connector's reads (Milestone 2): its one
+    /// `Vault::text_for_ai_in` call (`mdoc_connector::Connector::checked`),
+    /// taken out through `mdoc_connector::exits`.
+    Connector,
 }
 
 impl Gate {
-    pub(crate) const ALL: [Gate; 3] = [Gate::EditorCopyForAi, Gate::ShelfCopy, Gate::ShelfDrag];
+    pub(crate) const ALL: [Gate; 4] = [
+        Gate::EditorCopyForAi,
+        Gate::ShelfCopy,
+        Gate::ShelfDrag,
+        Gate::Connector,
+    ];
 }
 
 thread_local! {
@@ -41,11 +48,16 @@ pub(crate) fn taken_out(gate: Gate) -> bool {
 /// Take `gate`'s check out until the guard drops.
 pub(crate) fn take_out(gate: Gate) -> TakenOut {
     TAKEN_OUT.with(|taken| taken.set(Some(gate)));
-    TakenOut
+    // The connector's check lives in its own crate, with its own switch.
+    TakenOut {
+        _connector: (gate == Gate::Connector).then(mdoc_connector::exits::take_out),
+    }
 }
 
 /// Puts a taken-out check back when dropped.
-pub(crate) struct TakenOut;
+pub(crate) struct TakenOut {
+    _connector: Option<mdoc_connector::exits::TakenOut>,
+}
 
 impl Drop for TakenOut {
     fn drop(&mut self) {

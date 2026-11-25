@@ -573,9 +573,6 @@ or ChatGPT apps themselves are the maintainer's.
     reply?" banner restores what the user pastes. *Done when:* the iOS job
     passes with tests of both, and a device check shares to an AI app and
     restores its answer.
-19. **[iOS] Shortcuts actions.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-    Pseudonymize text and Restore text as Shortcuts actions. *Done when:* the
-    iOS job passes with tests of each action's result.
 20. **[Android] Ask AI and the reply banner.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
     As item 18. *Blocked by:* item 18. *Done when:* the Android job passes
     with tests of both.

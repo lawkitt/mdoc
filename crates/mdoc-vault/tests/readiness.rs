@@ -384,12 +384,82 @@ fn a_fingerprint_saved_without_a_scan_reads_ready_until_the_text_changes() {
     assert!(vault.text_for_ai(&letter).is_err());
 }
 
-/// The title leaves masked with every name its Project knows, as the
-/// desktop shelf shows it: Boris Ivanov is a name only another document
-/// holds, and the letter's text never mentions him, so the letter is Ready
-/// and its title, which does, leaves as PERSON_2's (#1192).
+/// The AI connector's read (ADR 0126): `text_for_ai_in` hands out a
+/// Document of the named Project only, and says nothing of one elsewhere,
+/// not even that it is not Ready.
 #[test]
-fn a_title_leaves_masked_with_every_name_its_project_knows() {
+fn text_for_ai_in_refuses_a_document_of_another_project_or_unfiled() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let shared = project_with(&vault, &[person("PERSON_1", &["Anna Petrova"])]);
+    let other = project_with(&vault, &[person("PERSON_1", &["Boris Ivanov"])]);
+    let letter = document(&vault, Some(&shared), "PERSON_1 signed.");
+    let elsewhere = document(&vault, Some(&other), "PERSON_1 wrote.");
+    let unfiled = document(&vault, None, "PERSON_1 called.");
+    let draft = document(&vault, Some(&other), "Not reviewed.");
+    for id in [&letter, &elsewhere, &unfiled] {
+        save_ready(&vault, id);
+    }
+
+    let read = vault.text_for_ai_in(&shared, &letter).unwrap();
+    let checked = read.checked.unwrap();
+    assert_eq!(
+        checked.note.clone() + &checked.markdown,
+        vault.text_for_ai(&letter).unwrap()
+    );
+    assert_eq!((read.chars, read.words), (16, 2));
+    let draft_here = document(&vault, Some(&shared), "Not reviewed yet.");
+    let read = vault.text_for_ai_in(&shared, &draft_here).unwrap();
+    assert_eq!(read.checked, Err(Readiness::NotReviewed));
+    assert_eq!((read.chars, read.words), (17, 3));
+    for id in [&elsewhere, &unfiled, &draft] {
+        assert!(vault.text_for_ai(id).is_ok() || id == &draft);
+        assert!(
+            matches!(
+                vault.text_for_ai_in(&shared, id),
+                Err(VaultError::NotFound { .. })
+            ),
+            "{id}"
+        );
+    }
+    vault.move_document(&letter, Some(&other)).unwrap();
+    assert!(matches!(
+        vault.text_for_ai_in(&shared, &letter),
+        Err(VaultError::NotFound { .. })
+    ));
+}
+
+/// Every word of `title` with a letter in it, lowercased; a bare number
+/// may meet the share's own number or date.
+fn words(title: &str) -> Vec<String> {
+    (title.split(|c: char| !c.is_alphanumeric()))
+        .filter(|word| word.chars().any(char::is_alphabetic))
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// "Document <n> – <yyyy-mm-dd>", and its number.
+fn share_number(name: &str) -> usize {
+    let rest = name.strip_prefix("Document ").expect(name);
+    let (number, date) = rest.split_once(" – ").expect(name);
+    assert_eq!(date.len(), 10, "{name}");
+    assert!(
+        (date.bytes().enumerate()).all(|(i, b)| if i == 4 || i == 7 {
+            b == b'-'
+        } else {
+            b.is_ascii_digit()
+        }),
+        "{name}"
+    );
+    number.parse().expect(name)
+}
+
+/// A share's name holds nothing of the stored title (#1205): not a name
+/// the Project knows, not one only another document gave it, not a real
+/// name nobody reviewed (Clara Moss), not an alias, not an ordinary word.
+/// The letter's text never mentions any of them, so it is Ready.
+#[test]
+fn a_share_name_holds_nothing_of_the_stored_title() {
     let folder = Folder::new();
     let vault = folder.open();
     let project = project_with(
@@ -400,38 +470,74 @@ fn a_title_leaves_masked_with_every_name_its_project_knows() {
         ],
     );
     let letter = document(&vault, Some(&project), "PERSON_1 signed.");
-    vault
-        .update_document(&letter, |d| {
-            d.title = "Boris Ivanov: Anna Petrova lease".into()
-        })
-        .unwrap();
-    save_ready(&vault, &letter);
-
-    assert_eq!(vault.readiness(&letter).unwrap(), Readiness::Ready);
-    assert_eq!(
-        vault.title_for_ai(&letter).unwrap(),
-        "PERSON_2: PERSON_1 lease"
-    );
-}
-
-/// An Unfiled document's title is masked with its own mapping, its whole
-/// name list; a Project's names say nothing about it.
-#[test]
-fn an_unfiled_title_is_masked_with_its_own_names() {
-    let folder = Folder::new();
-    let vault = folder.open();
-    project_with(&vault, &[person("PERSON_1", &["Boris Ivanov"])]);
     let note = document(&vault, None, "PERSON_1 signed.");
     vault
         .update_document(&note, |d| {
             let mut mapping = Mapping::default();
             mapping.merge(&[person("PERSON_1", &["Anna Petrova"])]);
             d.mapping = mapping;
-            d.title = "Anna Petrova and Boris Ivanov".into();
         })
         .unwrap();
-    assert_eq!(
-        vault.title_for_ai(&note).unwrap(),
-        "PERSON_1 and Boris Ivanov"
-    );
+    let titles = [
+        "Boris Ivanov: Anna Petrova lease",
+        "Clara Moss v Brightwater Joinery Ltd",
+        "PERSON_1 lease",
+        "Письмо Марине Соколовой",
+    ];
+    for id in [&letter, &note] {
+        for title in titles {
+            vault
+                .update_document(id, |d| d.title = title.into())
+                .unwrap();
+            save_ready(&vault, id);
+            assert_eq!(vault.readiness(id).unwrap(), Readiness::Ready);
+            let name = vault.share_name(id).unwrap();
+            share_number(&name);
+            let lower = name.to_lowercase();
+            for word in words(title) {
+                assert!(!lower.contains(&word), "{word:?} of {title:?} in {name:?}");
+            }
+        }
+    }
+}
+
+/// A share's number is the Document's place in the Vault by creation:
+/// each has its own, a rename or a move keeps it, and only deleting an
+/// older Document moves the newer ones down.
+#[test]
+fn a_share_number_is_the_documents_place_in_the_vault() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let project = project_with(&vault, &[]);
+    let ids = [
+        document(&vault, Some(&project), "One."),
+        document(&vault, None, "Two."),
+        document(&vault, Some(&project), "Three."),
+    ];
+    let numbers = |vault: &Vault| -> Vec<usize> {
+        (ids.iter())
+            .filter(|id| vault.document(id).is_ok())
+            .map(|id| share_number(&vault.share_name(id).unwrap()))
+            .collect()
+    };
+    let before = numbers(&vault);
+    let mut sorted = before.clone();
+    sorted.sort();
+    assert_eq!(sorted, [1, 2, 3]);
+
+    vault
+        .update_document(&ids[0], |d| d.title = "Renamed".into())
+        .unwrap();
+    vault.move_document(&ids[1], Some(&project)).unwrap();
+    vault.move_document(&ids[2], None).unwrap();
+    assert_eq!(numbers(&folder.open()), before, "kept across a reopen too");
+
+    let oldest = (0..3).find(|&i| before[i] == 1).unwrap();
+    vault.delete_document(&ids[oldest]).unwrap();
+    let after = numbers(&vault);
+    let expected: Vec<usize> = (before.iter())
+        .filter(|&&n| n != 1)
+        .map(|n| n - 1)
+        .collect();
+    assert_eq!(after, expected);
 }

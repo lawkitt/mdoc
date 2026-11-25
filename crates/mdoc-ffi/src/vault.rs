@@ -461,17 +461,19 @@ impl Vault {
     }
 
     /// The name of the `.md` file Share sends for document `id`, and so of
-    /// the share sheet's subject and preview title: its title as saved,
-    /// masked with every name its Project knows now (its own mapping while
-    /// Unfiled), as the desktop shelf masks titles (#1192). It goes with
-    /// [`Self::text_for_ai`]'s text, which decides whether anything leaves.
+    /// the share sheet's subject and preview title: a neutral name,
+    /// "Document 3 – 2026-11-25.md" (`mdoc_vault::Vault::share_name`), with
+    /// nothing of its stored title, which may hold a name nobody reviewed
+    /// (#1205). It goes with [`Self::text_for_ai`]'s text, which decides
+    /// whether anything leaves.
     pub fn share_file_name(&self, id: String) -> Result<String, CoreError> {
         #[cfg(test)]
         if crate::exits::taken_out(crate::exits::Gate::ShareFileName) {
-            // A test of the exits suite took the mask out: the title as saved.
+            // A test of the exits suite took the neutral name out: the
+            // title as saved.
             return Ok(md_file_name(&self.store.document(&id)?.title));
         }
-        Ok(md_file_name(&self.store.title_for_ai(&id)?))
+        Ok(md_file_name(&self.store.share_name(&id)?))
     }
 }
 

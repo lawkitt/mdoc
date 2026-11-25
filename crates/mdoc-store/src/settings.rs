@@ -340,6 +340,20 @@ impl GeneralConfig {
         *self == Self::default()
     }
 }
+/// "AI connector (preview)": Milestone 2's local MCP connector (ADR 0126).
+/// Off by default until 0.5.0; while off nothing of the connector runs or
+/// shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AiConnectorConfig {
+    #[serde(default)]
+    pub preview: bool,
+}
+impl AiConnectorConfig {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
 /// Settings › Detection › Categories to detect: scans of
 /// documents outside a Project skip these, and a new Project's list starts
 /// here.
@@ -397,6 +411,10 @@ pub struct Preferences {
     /// default file stay as they were.
     #[serde(default, skip_serializing_if = "GeneralConfig::is_default")]
     pub general: GeneralConfig,
+    /// Absent while the connector is off, so older files and the default
+    /// file stay as they were.
+    #[serde(default, skip_serializing_if = "AiConnectorConfig::is_default")]
+    pub ai_connector: AiConnectorConfig,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -409,6 +427,7 @@ impl Default for Preferences {
             retired_close: RetiredCloseConfig::default(),
             categories: CategoriesConfig::default(),
             general: GeneralConfig::default(),
+            ai_connector: AiConnectorConfig::default(),
         }
     }
 }
@@ -729,6 +748,20 @@ mod tests {
         assert_eq!(load(&path).unwrap(), prefs);
         prefs.spelling.english = false;
         assert_eq!(prefs.spelling.options(), None);
+    }
+    /// "AI connector (preview)" is off by default and absent from the file
+    /// until it is turned on (#1164 Further Notes).
+    #[test]
+    fn the_ai_connector_is_off_by_default_and_written_only_when_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        assert!(!Preferences::default().ai_connector.preview);
+        let defaults = serde_json::to_value(Preferences::default()).unwrap();
+        assert!(defaults.get("ai_connector").is_none(), "{defaults}");
+        let mut prefs = Preferences::default();
+        prefs.ai_connector.preview = true;
+        save(&path, &prefs).unwrap();
+        assert_eq!(load(&path).unwrap(), prefs);
     }
     #[test]
     fn default_categories_detect_everything_and_unticked_ones_roundtrip() {
