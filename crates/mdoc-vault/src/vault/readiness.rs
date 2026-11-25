@@ -407,7 +407,7 @@ mod tests {
             p.mapping.merge(&[person("PERSON_1", "Anna Petrova")])
         }))
         .unwrap();
-        let new =|project: Option<String>| {
+        let new = |project: Option<String>| {
             (vault.create_document(NewDocument {
                 project,
                 title: "Letter".into(),
