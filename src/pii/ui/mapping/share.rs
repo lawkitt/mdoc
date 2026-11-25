@@ -70,6 +70,10 @@ impl DocumentView {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let aliases = self.has_applied_aliases();
+        // What Copy for AI needs first shows on the button, the count with
+        // it, before the click.
+        let step = self.copy_step(cx);
+        let copy_enabled = aliases || step.is_some();
         let copied = self.copy_feedback.is_some();
         let entities = self.replacement_entity_count(cx);
         let section = |title: &'static str| {
@@ -129,16 +133,20 @@ impl DocumentView {
                     .child(
                         ui::filled_button(
                             "share-copy-for-ai",
-                            if copied && self.copied_for_ai { "Copied" } else { "Copy for AI" },
+                            match step {
+                                Some(step) => step.label(),
+                                None if copied && self.copied_for_ai => "Copied".into(),
+                                None => "Copy for AI".into(),
+                            },
                             theme,
-                            aliases,
+                            copy_enabled,
                         )
                         .when(cfg!(test), |v| v.debug_selector(|| "share-copy-for-ai".into()))
                         .h(px(32.))
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            if aliases {
-                                this.copy_for_ai(&CopyForAi, window, cx)
-                            }
+                        .on_click(cx.listener(move |this, _, window, cx| match step {
+                            Some(step) => cx.emit(crate::workspace::TabEvent::CopyStep(step)),
+                            None if aliases => this.copy_for_ai(&CopyForAi, window, cx),
+                            None => {}
                         })),
                     )
                     .child(note("Adds a short note asking the AI to keep every placeholder exactly.".into()))

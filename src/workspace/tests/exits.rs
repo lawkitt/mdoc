@@ -9,11 +9,19 @@
 //! then makes it not Ready, and every exit is asked to hand it out. An
 //! exit must refuse, and nothing it hands out may hold a name the Project
 //! knows as written. A Ready control proves that each exit does hand
-//! text out, so a broken exit cannot pass by handing out nothing.
+//! text out, so a broken exit cannot pass by handing out nothing. No file
+//! an exit names holds a word of the document's title, which may hold a
+//! real name nobody reviewed (#1208).
 //!
 //! Taking the check out of any one exit fails the suite: the `taking_*`
 //! tests take each gate's check out (`crate::exits`) and assert that its
 //! exits then fail and every other exit still passes.
+//!
+//! A refusal's step (#1209) is an exit too: "Replace N and copy" on the
+//! Share tab, in the "Not copied" notice and on a shelf row replaces the
+//! pending names and then asks Copy for AI. Such an exit `resolves`: in a
+//! scenario its step fixes, it may hand out text, but only what the
+//! Vault's check gives for the document then.
 //!
 //! To add an exit, add its row to [`EXITS`] and its [`Via`]. The match in
 //! [`hand_out`] then needs its driver, and if it has a check of its own,
@@ -49,6 +57,7 @@ use super::*;
 use crate::{
     exits::{Gate, take_out},
     pii::ui::CopyForAi,
+    refusal::Step,
     shelf::{Readiness, ShelfKey},
     shelf_ui::ShelfView,
 };
@@ -65,6 +74,8 @@ struct Exit {
     /// Where its text is checked.
     gate: Gate,
     via: Via,
+    /// It may make the document Ready first (a refusal's step).
+    resolves: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,6 +95,11 @@ enum Via {
     ShelfCopy(Placement),
     /// A drag from the shelf: its text and its `.md` file, name and all.
     ShelfDrag(Placement),
+    /// Copy for AI refused in the editor, then the "Not copied" notice's
+    /// step.
+    NoticeStep,
+    /// A shelf row's "Replace N and copy", run in its open tab.
+    ShelfStep,
     /// The AI connector's `get_document` (Milestone 2), the Project shared.
     Connector(Placement),
     /// The AI connector's `list_documents`: the document's label, from a
@@ -110,61 +126,86 @@ const EXITS: &[Exit] = &[
         name: "Share tab › Copy for AI",
         gate: Gate::EditorCopyForAi,
         via: Via::ShareButton,
+        // Its button shows "Replace N and copy" while names are pending.
+        resolves: true,
     },
     Exit {
         name: "⋯ › Copy for AI",
         gate: Gate::EditorCopyForAi,
         via: Via::MoreMenu,
+        resolves: false,
     },
     Exit {
         name: "File › Copy for AI",
         gate: Gate::EditorCopyForAi,
         via: Via::FileMenu,
+        resolves: false,
     },
     Exit {
         name: "Copy for AI shortcut",
         gate: Gate::EditorCopyForAi,
         via: Via::Shortcut,
+        resolves: false,
     },
     Exit {
         name: "Palette › Copy for AI",
         gate: Gate::EditorCopyForAi,
         via: Via::Palette,
+        resolves: false,
+    },
+    Exit {
+        name: "Not copied notice › its step",
+        gate: Gate::EditorCopyForAi,
+        via: Via::NoticeStep,
+        resolves: true,
     },
     Exit {
         name: "Shelf › Copy for AI, open document",
         gate: Gate::ShelfCopy,
         via: Via::ShelfCopy(Placement::Open),
+        resolves: false,
     },
     Exit {
         name: "Shelf › Copy for AI, stored document",
         gate: Gate::ShelfCopy,
         via: Via::ShelfCopy(Placement::Stored),
+        resolves: false,
+    },
+    Exit {
+        name: "Shelf › Replace N and copy, open document",
+        gate: Gate::EditorCopyForAi,
+        via: Via::ShelfStep,
+        resolves: true,
     },
     Exit {
         name: "Shelf › drag, open document",
         gate: Gate::ShelfDrag,
         via: Via::ShelfDrag(Placement::Open),
+        resolves: false,
     },
     Exit {
         name: "Shelf › drag, stored document",
         gate: Gate::ShelfDrag,
         via: Via::ShelfDrag(Placement::Stored),
+        resolves: false,
     },
     Exit {
         name: "Connector › get_document, open document",
         gate: Gate::Connector,
         via: Via::Connector(Placement::Open),
+        resolves: false,
     },
     Exit {
         name: "Connector › get_document, stored document",
         gate: Gate::Connector,
         via: Via::Connector(Placement::Stored),
+        resolves: false,
     },
     Exit {
         name: "Connector › list_documents, the document's label",
         gate: Gate::Connector,
         via: Via::ConnectorList,
+        resolves: false,
     },
     Exit {
         name: "Connector › over the pipe, get_document's whole answer",
@@ -178,6 +219,9 @@ const EXITS: &[Exit] = &[
 enum Scenario {
     /// Ready: every exit hands out its checked text.
     Ready,
+    /// Ready, and titled "Clara Moss, Brightwater lease": a real name no
+    /// review saw and the Project doesn't know, so nothing masks it.
+    UnknownNameInTheTitle,
     /// Another document names Boris Ivanov and joins the Project through
     /// the window: this one still holds him as written.
     NameFromAnotherDocument,
@@ -193,6 +237,8 @@ enum Scenario {
     ChangedElsewhere,
 }
 
+const READY: [Scenario; 2] = [Scenario::Ready, Scenario::UnknownNameInTheTitle];
+
 const NOT_READY: [Scenario; 4] = [
     Scenario::NameFromAnotherDocument,
     Scenario::MappedNameAsWritten,
@@ -200,17 +246,30 @@ const NOT_READY: [Scenario; 4] = [
     Scenario::ChangedElsewhere,
 ];
 
+/// The scenarios no step resolves: replacing what the tab proposes leaves
+/// the document not Ready, so an exit that resolves must still refuse.
+const UNRESOLVED: [Scenario; 2] = [Scenario::NameOnlyTheVaultKnows, Scenario::ChangedElsewhere];
+
 impl Scenario {
     /// The names its Project knows once it has happened: none of them may
     /// leave as written.
     fn known_names(self) -> &'static [&'static str] {
         match self {
-            Scenario::Ready | Scenario::MappedNameAsWritten | Scenario::ChangedElsewhere => {
-                &["Anna Petrova"]
-            }
+            Scenario::Ready
+            | Scenario::UnknownNameInTheTitle
+            | Scenario::MappedNameAsWritten
+            | Scenario::ChangedElsewhere => &["Anna Petrova"],
             Scenario::NameFromAnotherDocument | Scenario::NameOnlyTheVaultKnows => {
                 &["Anna Petrova", "Boris Ivanov"]
             }
+        }
+    }
+
+    /// The file the document is opened from, which titles it.
+    fn file(self) -> &'static str {
+        match self {
+            Scenario::UnknownNameInTheTitle => "Clara Moss, Brightwater lease.md",
+            _ => "Anna Petrova lease.md",
         }
     }
 }
@@ -227,7 +286,7 @@ impl Via {
     }
 
     fn on_shelf(self) -> bool {
-        matches!(self, Via::ShelfCopy(_) | Via::ShelfDrag(_))
+        matches!(self, Via::ShelfCopy(_) | Via::ShelfDrag(_) | Via::ShelfStep)
     }
 }
 
@@ -252,23 +311,6 @@ fn written(cx: &mut VisualTestContext) {
     wait(cx, 800);
 }
 
-fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<ShelfView> {
-    use crate::shelf_ui::ShelfContent;
-    let workspace = cx.window_handle().downcast::<Workspace>().unwrap();
-    let shelf = cx.cx.update(|cx| {
-        let content = workspace
-            .read(cx)
-            .map(|workspace| ShelfContent::of(workspace, cx))
-            .unwrap();
-        cx.open_window(gpui::WindowOptions::default(), |window, cx| {
-            cx.new(|cx| ShelfView::new(workspace, content, window, cx))
-        })
-        .unwrap()
-    });
-    cx.run_until_parked();
-    shelf
-}
-
 fn clipboard(cx: &mut VisualTestContext) -> String {
     cx.update(|_, cx| clipboard_of(cx))
 }
@@ -279,9 +321,9 @@ fn clipboard_of(cx: &gpui::App) -> String {
         .unwrap_or_default()
 }
 
-/// The Ready document, open or stored as `via` needs it, with the shelf
-/// listing it when `via` is the shelf's.
-fn ready(cx: &mut TestAppContext, via: Via) -> Fixture<'_> {
+/// The Ready document, titled as `scenario` has it, open or stored as `via`
+/// needs it, with the shelf listing it when `via` is the shelf's.
+fn ready(cx: &mut TestAppContext, via: Via, scenario: Scenario) -> Fixture<'_> {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
@@ -291,7 +333,7 @@ fn ready(cx: &mut TestAppContext, via: Via) -> Fixture<'_> {
         &tabs,
         cx,
         dir.path(),
-        "Anna Petrova lease.md",
+        scenario.file(),
         TEXT,
         &[("Anna Petrova", Person)],
     );
@@ -361,7 +403,7 @@ impl Fixture<'_> {
         let tabs = self.tabs.clone();
         let cx = &mut *self.cx;
         match scenario {
-            Scenario::Ready => {}
+            Scenario::Ready | Scenario::UnknownNameInTheTitle => {}
             Scenario::NameFromAnotherDocument => {
                 let memo = open_applied(
                     &tabs,
@@ -422,7 +464,7 @@ impl Fixture<'_> {
             }
         }
         // An open tab's change may still be on its way to the Vault.
-        if scenario != Scenario::Ready && self.letter.is_none() {
+        if !READY.contains(&scenario) && self.letter.is_none() {
             let readiness = vault(&tabs, cx).readiness(self.document.as_str());
             assert!(!readiness.unwrap().is_ready(), "{scenario:?}");
         }
@@ -440,6 +482,27 @@ impl Fixture<'_> {
             .update(|window, cx| window.focus(&view.read(cx).editor.read(cx).focus_handle(cx), cx));
         draw(self.cx);
     }
+
+    /// The document's titles: as stored, and as its tab shows it.
+    fn titles(&mut self) -> Vec<String> {
+        let tabs = self.tabs.clone();
+        let stored = vault(&tabs, self.cx).document(self.document.as_str());
+        let mut titles = vec![stored.unwrap().title];
+        if let Some(letter) = self.letter {
+            titles.push(self.cx.update(|_, cx| {
+                let view = tabs.read(cx).tabs.get(letter).unwrap().view().unwrap();
+                view.read(cx).display_name()
+            }));
+        }
+        titles
+    }
+}
+
+/// What an exit handed out: text, and the names of the files it carried.
+#[derive(Debug, Default)]
+struct Handed {
+    texts: Vec<String>,
+    file_names: Vec<String>,
 }
 
 /// The heading [`Via::ConnectorList`]'s document is given: its label once
@@ -458,11 +521,11 @@ fn connector(fixture: &mut Fixture<'_>) -> mdoc_connector::Connector {
 /// Ask `via` for the document's text: everything it handed out.
 const BEFORE: &str = "the clipboard before";
 
-fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Vec<String> {
+fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Handed {
     fixture
         .cx
         .write_to_clipboard(gpui::ClipboardItem::new_string(BEFORE.into()));
-    let mut out = Vec::new();
+    let mut out = Handed::default();
     match via {
         Via::ShareButton => {
             fixture.focus_letter();
@@ -472,15 +535,17 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Vec<String> {
                     view.toggle_replacements_panel(window, cx);
                 }
                 view.inspector = crate::document_view::Inspector::Share;
-                view.error = None;
+                view.copy_refusal = None;
                 cx.notify();
             });
             click_toolbar(fixture.cx, "share-copy-for-ai");
             written(fixture.cx);
             let reached = fixture.cx.update(|_, cx| {
-                let refused =
-                    (view.read(cx).error.as_deref()).is_some_and(|e| e.starts_with("Not copied"));
-                refused || clipboard_of(cx) != BEFORE
+                let view = view.read(cx);
+                // A step that opens the review hands nothing out.
+                let reviewing = view.replacements_open()
+                    && view.inspector == crate::document_view::Inspector::Review;
+                view.copy_refusal.is_some() || reviewing || clipboard_of(cx) != BEFORE
             });
             if !reached {
                 // While a proposal is pending, GPUI's test window drops this
@@ -522,6 +587,40 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Vec<String> {
                 .update(fixture.cx, |view, window, cx| view.copy(index, window, cx))
                 .unwrap();
         }
+        Via::NoticeStep => {
+            fixture.focus_letter();
+            fixture.cx.dispatch_action(CopyForAi);
+            written(fixture.cx);
+            let view = active(&fixture.tabs, fixture.cx);
+            let step = view.read_with(fixture.cx, |view, _| {
+                view.copy_refusal.as_ref().and_then(|refusal| refusal.step)
+            });
+            if step.is_some() {
+                click_toolbar(fixture.cx, "copy-refusal-step");
+            }
+        }
+        Via::ShelfStep => {
+            // The row as the shelf lists it now, its "Replace N and copy"
+            // run as its button runs it. It is driven in every scenario, so
+            // the path to Copy for AI is asked even where the row offers
+            // Review.
+            let key = fixture.key();
+            let shelf = open_shelf(fixture.cx);
+            let index = shelf
+                .read_with(fixture.cx, |view, cx| {
+                    (view.content(cx).documents.iter()).position(|row| row.key == key)
+                })
+                .unwrap()
+                .expect("the shelf lists it");
+            let view = active(&fixture.tabs, fixture.cx);
+            let pending = view.read_with(fixture.cx, |view, _| view.pii.review().remaining());
+            shelf
+                .update(fixture.cx, |view, window, cx| {
+                    view.run_step(index, Step::ReplaceAndCopy(pending), window, cx)
+                })
+                .unwrap();
+            fixture.cx.run_until_parked();
+        }
         Via::ShelfDrag(_) => {
             let (shelf, index) = fixture.shelf.expect("the shelf is open");
             let dragged = shelf
@@ -531,9 +630,10 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Vec<String> {
                 })
                 .unwrap();
             if let Some((text, file)) = dragged {
-                out.push(text);
-                out.push(file.file_name().unwrap().to_string_lossy().into_owned());
-                out.push(std::fs::read_to_string(&file).unwrap());
+                out.texts.push(text);
+                let name = file.file_name().unwrap().to_string_lossy();
+                out.file_names.push(name.into_owned());
+                out.texts.push(std::fs::read_to_string(&file).unwrap());
             }
         }
         Via::Connector(_) => {
@@ -541,7 +641,7 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Vec<String> {
             written(fixture.cx);
             let connector = connector(fixture);
             match connector.get_document("Claude", fixture.document.as_str(), None) {
-                Ok(mdoc_connector::Read::Text { text, .. }) => out.push(text),
+                Ok(mdoc_connector::Read::Text { text, .. }) => out.texts.push(text),
                 Ok(mdoc_connector::Read::NeedsReview { .. }) => {}
                 read => panic!("the fixture's document is short and shared: {read:?}"),
             }
@@ -573,7 +673,7 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Vec<String> {
             let fallback = (row.label.strip_prefix("Document "))
                 .is_some_and(|n| n.bytes().all(|b| b.is_ascii_digit()));
             if row.state == mdoc_connector::State::Ready || !fallback {
-                out.push(row.label);
+                out.texts.push(row.label);
             }
         }
     }
@@ -581,21 +681,35 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Vec<String> {
     written(fixture.cx);
     let copied = clipboard(fixture.cx);
     if copied != BEFORE {
-        out.push(copied);
+        out.texts.push(copied);
     }
     out
 }
 
-/// What is wrong with what `exit` handed out in `scenario`; empty when
-/// nothing is.
-fn faults(exit: &Exit, scenario: Scenario, out: &[String]) -> Vec<String> {
+/// What is wrong with what `exit` handed out in `scenario` for the
+/// document titled `titles`; empty when nothing is. `now`: what the
+/// Vault's check gives for the document once the exit has run.
+fn faults(
+    exit: &Exit,
+    scenario: Scenario,
+    titles: &[String],
+    out: &Handed,
+    now: Option<&str>,
+) -> Vec<String> {
     let mut faults = Vec::new();
+    let ready = READY.contains(&scenario);
     match scenario {
-        Scenario::Ready if !out.iter().any(|text| text.contains("PERSON_1")) => {
+        _ if ready && !out.texts.iter().any(|text| text.contains("PERSON_1")) => {
             faults.push(format!("{}: handed out nothing Ready: {out:?}", exit.name));
         }
-        Scenario::Ready => {}
-        _ if !out.is_empty() => {
+        _ if ready => {}
+        // Its step made the document Ready: what it handed out is the
+        // check's text now, with no file.
+        _ if exit.resolves
+            && !out.texts.is_empty()
+            && out.file_names.is_empty()
+            && out.texts.iter().all(|text| Some(text.as_str()) == now) => {}
+        _ if !out.texts.is_empty() || !out.file_names.is_empty() => {
             faults.push(format!(
                 "{}: handed out a document not Ready ({scenario:?}): {out:?}",
                 exit.name
@@ -603,11 +717,27 @@ fn faults(exit: &Exit, scenario: Scenario, out: &[String]) -> Vec<String> {
         }
         _ => {}
     }
-    for text in out {
+    for text in out.texts.iter().chain(&out.file_names) {
         for original in scenario.known_names() {
             if text.contains(original) {
                 faults.push(format!(
                     "{}: {original} left as written ({scenario:?}) in {text:?}",
+                    exit.name
+                ));
+            }
+        }
+    }
+    // A file's name holds no word of the title, masked or not (#1208).
+    for name in &out.file_names {
+        let lower = name.to_lowercase();
+        for title in titles {
+            let title = title.to_lowercase();
+            let title = title.strip_suffix(".md").unwrap_or(&title);
+            let words = (title.split(|c: char| !c.is_alphanumeric()))
+                .filter(|word| word.chars().any(char::is_alphabetic));
+            for word in words.filter(|word| lower.contains(word)) {
+                faults.push(format!(
+                    "{}: {word:?} of the title {title:?} left ({scenario:?}) in {name:?}",
                     exit.name
                 ));
             }
@@ -618,11 +748,15 @@ fn faults(exit: &Exit, scenario: Scenario, out: &[String]) -> Vec<String> {
 
 /// Run `exit` in `scenario` in a window of its own: its faults.
 fn run(cx: &mut TestAppContext, exit: &Exit, scenario: Scenario) -> Vec<String> {
-    let mut fixture = ready(cx, exit.via);
+    let mut fixture = ready(cx, exit.via, scenario);
     fixture.change(scenario);
+    let titles = fixture.titles();
     let out = hand_out(exit.via, &mut fixture);
-    let mut faults = faults(exit, scenario, &out);
-    if fixture.missed_click && scenario == Scenario::Ready {
+    let now = (vault(&fixture.tabs, fixture.cx))
+        .text_for_ai(fixture.document.as_str())
+        .ok();
+    let mut faults = faults(exit, scenario, &titles, &out, now.as_deref());
+    if fixture.missed_click && READY.contains(&scenario) {
         faults.push(format!(
             "{}: the click never reached Copy for AI",
             exit.name
@@ -643,10 +777,12 @@ fn suite(cx: &mut TestAppContext, scenarios: &[Scenario]) -> Vec<String> {
 }
 
 /// Done when: each exit hands out its checked text for a Ready document,
-/// with no original in it. The control for the scenarios below.
+/// with no original in it, and no word of its title in a file's name, not
+/// even a real name nobody reviewed (#1208). The control for the scenarios
+/// below.
 #[gpui::test]
 fn every_exit_hands_out_a_ready_document_pseudonymized(cx: &mut TestAppContext) {
-    let faults = suite(cx, &[Scenario::Ready]);
+    let faults = suite(cx, &READY);
     assert!(faults.is_empty(), "{faults:#?}");
 }
 
@@ -689,7 +825,9 @@ fn taken_out_fails_only(cx: &mut TestAppContext, gate: Gate) {
     for exit in EXITS {
         // The others are run once, in the scenario only the Vault's check
         // catches.
-        let scenarios: &[Scenario] = if exit.gate == gate {
+        let scenarios: &[Scenario] = if exit.gate == gate && exit.resolves {
+            &UNRESOLVED
+        } else if exit.gate == gate {
             &NOT_READY
         } else {
             &[Scenario::NameOnlyTheVaultKnows]
@@ -736,4 +874,26 @@ fn taking_the_shelf_drags_check_out_fails_it(cx: &mut TestAppContext) {
 #[gpui::test]
 fn taking_the_connectors_check_out_fails_it(cx: &mut TestAppContext) {
     taken_out_fails_only(cx, Gate::Connector);
+}
+
+/// Done when (#1208): with the drag's neutral file name taken out, both
+/// drags fail for a Ready document, its file named after its title, and
+/// every other exit still passes.
+#[gpui::test]
+fn taking_the_shelf_drags_neutral_name_out_fails_it(cx: &mut TestAppContext) {
+    let _taken = take_out(Gate::ShelfFileName);
+    for exit in EXITS {
+        for scenario in READY {
+            let faults = run(cx, exit, scenario);
+            if matches!(exit.via, Via::ShelfDrag(_)) {
+                assert!(
+                    !faults.is_empty(),
+                    "{} passed with its neutral name taken out ({scenario:?})",
+                    exit.name
+                );
+            } else {
+                assert!(faults.is_empty(), "{faults:#?}");
+            }
+        }
+    }
 }

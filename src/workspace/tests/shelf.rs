@@ -81,6 +81,9 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
         &[("Ivan Ivanov", Person)],
     );
     move_tab(&tabs, cx, changed, Some(&project));
+    // Its Project's names applied, so it is written ready: left proposed,
+    // it was never reviewed, which the shelf once read as changed (#1209).
+    apply_all(&tabs, cx);
     written(cx);
     let changed_document = cx.update(|_, cx| tabs.read(cx).tab_document(changed, cx).unwrap());
     close(&tabs, changed, cx);
@@ -161,6 +164,11 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
     let mut handed = Vec::new();
     for row in &rows {
         let copied = row.text_for_ai().map(str::to_owned);
+        // Named as a drag names it, as it leaves.
+        let mut row = row.clone();
+        let name = cx.update(|_, cx| tabs.read(cx).shelf_share_name(&row.key, cx));
+        row.set_share_name(name);
+        let row = &row;
         let dragged = exports.export(row).unwrap();
         assert_eq!(copied.is_some(), row.readiness.is_ready(), "{:?}", row.key);
         assert_eq!(dragged.is_some(), row.readiness.is_ready(), "{:?}", row.key);
@@ -185,7 +193,13 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
         handed.extend(card.into_iter().flat_map(|(title, line)| [title, line]));
         handed.extend(copied);
     }
-    assert!(handed.iter().any(|h| h == "PERSON_1 contract.md"));
+    // Exports leave under the Vault's neutral names, nothing of a title
+    // (#1208).
+    let ready_document = cx.update(|_, cx| tabs.read(cx).tab_document(ready, cx).unwrap());
+    for document in [&ready_document, &closed_document] {
+        let name = format!("{}.md", vault.share_name(document.as_str()).unwrap());
+        assert!(handed.contains(&name), "{name} in {handed:?}");
+    }
     for original in ORIGINALS {
         for text in &handed {
             assert!(
@@ -342,10 +356,11 @@ fn copy_for_ai_in_the_editor_is_checked_against_the_projects_names(cx: &mut Test
     copy(cx);
     assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "before");
     view.read_with(cx, |view, _| {
-        let why = view.error.as_deref().unwrap_or_default();
+        let why = view.copy_refusal.as_ref().expect("a refusal");
         // Its review proposes the Project's new name, as the shelf's row
-        // says.
-        assert_eq!(why, "Not copied: 1 proposal is left to review.");
+        // says, and the notice offers to replace it.
+        assert_eq!(why.reason, "1 proposal is left to review.");
+        assert_eq!(why.step, Some(crate::refusal::Step::ReplaceAndCopy(1)));
     });
     // The shortcut and the menu dispatch the same action.
     cx.update(|window, cx| window.focus(&view.read(cx).editor.read(cx).focus_handle(cx), cx));
@@ -429,7 +444,7 @@ fn a_stored_document_that_is_not_ready_opens_at_its_first_proposal(cx: &mut Test
         .unwrap();
     assert_eq!(row.readiness, Readiness::NamesNotReplaced(1));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_from_shelf(&row.key, false, window, cx)
+        tabs.open_from_shelf(&row.key, false, None, window, cx)
     });
     for _ in 0..20 {
         wait(cx, 100);
@@ -688,23 +703,6 @@ fn row_of(
     })
 }
 
-fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<crate::shelf_ui::ShelfView> {
-    use crate::shelf_ui::{ShelfContent, ShelfView};
-    let workspace = cx.window_handle().downcast::<Workspace>().unwrap();
-    let shelf = cx.cx.update(|cx| {
-        let content = workspace
-            .read(cx)
-            .map(|workspace| ShelfContent::of(workspace, cx))
-            .unwrap();
-        cx.open_window(gpui::WindowOptions::default(), |window, cx| {
-            cx.new(|cx| ShelfView::new(workspace, content, window, cx))
-        })
-        .unwrap()
-    });
-    cx.run_until_parked();
-    shelf
-}
-
 /// The shelf's own controls: Copy for AI and a drag carry the
 /// editor's bytes for a ready row and nothing for one that is not; Restore
 /// Clipboard uses the current Project; a click brings the document forward.
@@ -796,7 +794,19 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
         .unwrap();
     assert_eq!(dragged, editor_copy);
     assert_eq!(std::fs::read_to_string(&file).unwrap(), editor_copy);
-    assert_eq!(file.file_name().unwrap(), "PERSON_1 contract.md");
+    // Its file leaves under the Vault's neutral name, nothing of its title
+    // (#1208).
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(ready, cx).unwrap());
+    let share_name = vault(&tabs, cx).share_name(document.as_str()).unwrap();
+    assert!(share_name.starts_with("Document "), "{share_name}");
+    let name = file.file_name().unwrap().to_string_lossy().to_lowercase();
+    for word in ["anna", "petrova", "contract"] {
+        assert!(!name.contains(word), "{word} of the title left in {name}");
+    }
+    assert_eq!(
+        file.file_name().unwrap().to_string_lossy(),
+        format!("{share_name}.md")
+    );
 
     // Restore Clipboard with the Project of the document used last.
     cx.write_to_clipboard(gpui::ClipboardItem::new_string(
