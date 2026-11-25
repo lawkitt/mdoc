@@ -673,7 +673,9 @@ impl CommentRail {
             .on_key_down(cx.listener(move |_, event: &KeyDownEvent, _, cx| {
                 let keys = &event.keystroke;
                 if keys.key == "c" && keys.modifiers.secondary(cx) {
-                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy.clone()));
+                    // The original's comment text is never scanned: a hand
+                    // copy not known to be clean, so marked (#1209).
+                    cx.write_to_clipboard(crate::restored_clipboard::item(copy.clone()));
                     cx.stop_propagation();
                 }
             }))

@@ -7,8 +7,10 @@ pub(crate) use compare::CompareMode;
 pub(crate) use compare::{CompareState, SwitcherRest};
 mod discovery;
 mod edit_scan;
+mod hand_copy;
 #[cfg(test)]
 pub(crate) use edit_scan::TEST_SCAN;
+pub(crate) use hand_copy::{CopyFrom, check_hand_copies};
 mod mapping;
 mod render;
 mod reply;

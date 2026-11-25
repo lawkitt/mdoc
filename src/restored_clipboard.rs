@@ -5,7 +5,9 @@
 //! Transient types; on Windows out of clipboard history, cloud sync and
 //! clipboard monitors. The tag is ordinary clipboard metadata, so test and
 //! headless platforms keep it without any OS call. Copy for AI and
-//! Pseudonymize Clipboard copy aliases and stay normal copies.
+//! Pseudonymize Clipboard copy aliases and stay normal copies. A hand copy
+//! of a document's text not known to be clean carries the same tag
+//! (`pii::ui::hand_copy`, #1209).
 use gpui::ClipboardItem;
 
 #[cfg(target_os = "macos")]

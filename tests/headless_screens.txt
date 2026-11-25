@@ -12,6 +12,7 @@ merge-hint
 mention-popup
 selection-pill
 selection-category-menu
+copy-menu-replace
 setup-consent
 setup-consent-fp32
 setup-runtime-update
