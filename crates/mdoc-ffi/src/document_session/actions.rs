@@ -111,8 +111,8 @@ pub struct HandOff {
     /// The alias-only note, then the session's text (`copy_for_ai`),
     /// unchecked against the Project's names: not what leaves.
     pub text: String,
-    /// The shared `.md` file's name (`Vault::share_file_name`): the title
-    /// masked with every name its Project knows.
+    /// The shared `.md` file's name (`Vault::share_file_name`): a neutral
+    /// "Document 3 – 2026-11-25.md", nothing of the title.
     pub file_name: String,
 }
 
@@ -689,7 +689,12 @@ mod tests {
         let saved = session.save_into_vault(vault.clone()).unwrap();
         let hand_off = session.hand_off(vault.clone()).unwrap();
         assert_eq!(hand_off.text, session.copy_for_ai().unwrap());
-        assert_eq!(hand_off.file_name, "Letter.md");
+        assert!(
+            (hand_off.file_name.strip_prefix("Document 1 – "))
+                .is_some_and(|date| date.len() == "2026-11-25.md".len() && date.ends_with(".md")),
+            "{}",
+            hand_off.file_name
+        );
         assert_eq!(hand_off.file_name, vault.share_file_name(saved.id).unwrap());
     }
 

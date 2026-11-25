@@ -1,6 +1,6 @@
 # Mobile Markdown editor
 
-Status: Accepted, 2026-11-09.
+Status: Accepted, 2026-11-09; amended 2026-11-25 ([#1209](https://github.com/lawkitt/mdoc/issues/1209)).
 
 ## Why
 
@@ -15,8 +15,9 @@ over the edits. The text view's string is the source, saved bytes are the
 text as typed, and candidate offsets are the core's UTF-8 offsets. Editing
 autosaves with no Save button or version history, and typing joins the
 review decisions in one undo history; replies and Restore with mdoc stay
-read-only. Plain text leaves only through Copy for AI and Share; Cut and
-Copy use a pasteboard only mdoc reads.
+read-only. Copy for AI and Share send only a whole Ready document. A
+selection copied by hand is the user's own: never blocked, labelled for
+what it holds, marked sensitive unless clean.
 
 ## Rejected
 
@@ -25,6 +26,8 @@ Copy use a pasteboard only mdoc reads.
 - **Rules written in Swift**: they break ADR 0085's rule that the core
   decides.
 - **Tags, wikilinks or a vault**: mdoc edits documents, not notes.
+- **No plain Copy on a phone** (the first version): it protected nothing
+  once a document was Ready, and stopped a user taking one clause.
 
 ## Revisit when
 

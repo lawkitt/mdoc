@@ -87,10 +87,21 @@ in `apps/ios/README.md`.
   filtered Documents list.
 - New imports default to **Unfiled** (or the open Project when added from inside
   one); iPhone keeps single-active-document navigation with no tab strip.
-- Document text leaves the app only through Copy for AI, Share, or a device
-  transfer the user starts ([ADR 0127](../adr/0127-cross-device-p2p-vault-transfer.md)):
-  no plain Copy, Share, Look Up, Translate, Search Web or Writing Tools on it,
-  in edit mode too, where Copy writes a pasteboard only mdoc reads.
+- The app itself sends a document only through Copy for AI, Share, or a
+  device transfer the user starts ([ADR 0127](../adr/0127-cross-device-p2p-vault-transfer.md)):
+  the whole document, and only a Ready one.
+- A selection copied by hand is the user's own copy and is never blocked
+  ([#1209](https://github.com/lawkitt/mdoc/issues/1209)). Its menu says what
+  it holds: **Copy** for a clean selection; **Replace N and copy**, then
+  **Copy with names**, when names in it are not replaced; **Copy with names**
+  alone in a document never scanned. A hardware Copy key copies as written,
+  and edit mode uses the system clipboard.
+- A selection is clean when the document was scanned and that text has not
+  changed since, no proposal is pending inside it, and no name its Project
+  knows is written out inside it. The core decides.
+- A hand copy not known to be clean is marked as a restored reply's copy is.
+- No Share, Look Up, Translate, Search Web, Writing Tools or drag on a
+  selection: they send text on without saying so.
 - Copy for AI and Share are always in the title menu; until the document is
   ready they are off, with the reason under the title.
 - With more than one pane, a pinned row under the bar switches Text,
