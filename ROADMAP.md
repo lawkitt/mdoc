@@ -398,15 +398,9 @@ of real use by the maintainer on the landed build gate its next candidate;
 items 33–35 are polish and do not. Items 36–39 and 44 gate it too; items
 40–43 follow them and gate nothing ([#1209](https://github.com/lawkitt/mdoc/issues/1209)).
 
-41. **[iOS] Copy a selection.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
-    The selection menu of `docs/specs/mobile.md`: Copy, or "Replace N and
-    copy" with "Copy with names". Table cells and edit mode copy to the
-    system clipboard, marked unless clean; a hardware ⌘C copies as written.
-    *Done when:* UI tests cover the three menu states, the marking and a
-    Ready document's plain Copy, and replace the tests that pin "no Copy".
-    *Blocked by 40.*
 42. **[Android] Copy a selection.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
-    The same menu and marking as item 41 in place of `NoCopyTextView`'s
+    The same menu and marking as iOS has
+    ([#1241](https://github.com/lawkitt/mdoc/pull/1241)) in place of `NoCopyTextView`'s
     refusals; Share and Assist on a selection stay off. *Done when:*
     instrumented tests cover the three menu states and the marking. *Blocked
     by 40.*
