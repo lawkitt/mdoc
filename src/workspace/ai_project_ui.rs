@@ -11,6 +11,9 @@
 //!   path Pseudonymize takes: proposals only, never applied;
 //! - the Project page lists its AI activity.
 //!
+//! Notifications, the badge and where a delivery lands are
+//! `ai_deliveries.rs` (item 9).
+//!
 //! The share lives in the connector, in memory only; nothing here writes
 //! the Vault.
 use super::{Workspace, ai_project::Asked, navigation::Stop, project_page::Place};
@@ -28,7 +31,7 @@ pub(super) const ACTIVITY_SHOWN: usize = 100;
 
 impl Workspace {
     /// "AI connector (preview)" as Settings holds it.
-    fn ai_setting(&self) -> AiConnectorConfig {
+    pub(super) fn ai_setting(&self) -> AiConnectorConfig {
         (self.preferences.borrow().current.as_ref())
             .map(|preferences| preferences.ai_connector)
             .unwrap_or_default()
@@ -85,6 +88,7 @@ impl Workspace {
             return;
         };
         self.ai_connector = Some(running);
+        self.listen_for_notifications(cx);
         self.ai_poll = Some(cx.spawn_in(window, async move |this, cx| {
             loop {
                 cx.background_executor().timer(POLL).await;
@@ -141,6 +145,19 @@ impl Workspace {
             match event {
                 ai_connector::Event::Asked { app } => self.ai_app_asked(app, window, cx),
                 ai_connector::Event::Activity => activity = true,
+                ai_connector::Event::Delivered {
+                    app,
+                    reply,
+                    document,
+                } => {
+                    activity = true;
+                    self.ai_delivered(&app, reply, document, window, cx);
+                }
+                ai_connector::Event::NeedsReview {
+                    app,
+                    document,
+                    label,
+                } => self.ai_review_requested(&app, document, &label, cx),
             }
         }
         if activity {
@@ -198,6 +215,7 @@ impl Workspace {
         if let Some(running) = &self.ai_connector {
             running.connector.stop_sharing();
         }
+        self.ai.sharing_stopped();
         cx.notify();
     }
 
@@ -227,6 +245,11 @@ impl Workspace {
             Stop::Home | Stop::Tab(_) => None,
         };
         self.ai.viewed(project);
+        match stop {
+            Stop::Reply(id) => self.ai.seen(Some(id), None),
+            Stop::Document(document) => self.ai.seen(None, Some(document.as_str())),
+            Stop::Project(_) | Stop::Home | Stop::Tab(_) => {}
+        }
     }
 
     /// Scan the open members of the AI project that entered it (#1164
@@ -310,11 +333,19 @@ impl Workspace {
             .border_color(p.border)
             .child(
                 div()
-                    .px_1()
-                    .text_size(px(10.))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(p.header_muted)
-                    .child("SHARED WITH AI APPS"),
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_1()
+                    .child(
+                        div()
+                            .px_1()
+                            .text_size(px(10.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(p.header_muted)
+                            .child("SHARED WITH AI APPS"),
+                    )
+                    .children(self.ai_badge(cx)),
             );
         let card = match shared {
             Some(project) => {
@@ -380,6 +411,12 @@ impl Workspace {
             None => "No Project shared with AI apps".to_string(),
         };
         let open = shared.as_ref().map(|project| project.id.clone());
+        let badge = self.ai_rail_badge();
+        let label = match self.ai.unseen().len() {
+            0 => label,
+            count => format!("{label}. {count} new, open the newest"),
+        };
+        let counts = badge.is_some();
         Some(
             div()
                 .relative()
@@ -390,12 +427,15 @@ impl Workspace {
                         })
                         .size(px(32.))
                         .on_click(cx.listener(move |this, _, window, cx| {
-                            if let Some(id) = &open {
+                            if counts {
+                                this.open_newest(window, cx);
+                            } else if let Some(id) = &open {
                                 this.show_project_page(id, Place::Header, window, cx);
                             }
                         })),
                 )
-                .when_some(shared, |v, project| {
+                .children(badge)
+                .when_some(shared.filter(|_| !counts), |v, project| {
                     v.child(
                         div()
                             .absolute()
@@ -424,12 +464,7 @@ impl Workspace {
     ) -> Option<AnyElement> {
         self.ai_connector.as_ref()?;
         let prompt = self.ai.prompt()?;
-        if self.settings.read(cx).open
-            || window.has_active_prompt()
-            || self.new_project.is_some()
-            || self.folder_sheets.open()
-            || self.project_ui.explainer
-        {
+        if self.modal_up(window, cx) {
             return None;
         }
         let theme = self.theme.get();

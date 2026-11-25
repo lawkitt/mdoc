@@ -11,7 +11,10 @@ use std::sync::Arc;
 
 const KEY: [u8; 32] = [7; 32];
 const CLAUDE: &str = "Claude";
-const ON: AiConnectorConfig = AiConnectorConfig { preview: true };
+const ON: AiConnectorConfig = AiConnectorConfig {
+    preview: true,
+    open_deliveries: false,
+};
 
 struct Fixture {
     _temp: tempfile::TempDir,

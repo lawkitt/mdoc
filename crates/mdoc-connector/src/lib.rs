@@ -607,7 +607,14 @@ mod tests {
         };
         let letter = vault.create_document(new).unwrap().id;
         (vault.update_document(&letter, |d| d.set_ready(true))).unwrap();
-        let connector = Connector::start(vault, &AiConnectorConfig { preview: true }).unwrap();
+        let connector = Connector::start(
+            vault,
+            &AiConnectorConfig {
+                preview: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         connector.share(&case).unwrap();
         (temp, connector, other, letter)
     }
