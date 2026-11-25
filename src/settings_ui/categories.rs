@@ -18,15 +18,17 @@ pub(crate) enum Category {
     Recognition,
     Spelling,
     Vault,
+    AiConnector,
     About,
 }
 impl Category {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::General,
         Self::Detection,
         Self::Recognition,
         Self::Spelling,
         Self::Vault,
+        Self::AiConnector,
         Self::About,
     ];
     pub fn label(self) -> &'static str {
@@ -36,6 +38,7 @@ impl Category {
             Self::Recognition => "Recognition",
             Self::Spelling => "Spelling",
             Self::Vault => "Vault",
+            Self::AiConnector => "AI connector",
             Self::About => "About",
         }
     }
@@ -76,6 +79,10 @@ impl Panel {
         self.category = category;
         self.dictionary = None;
         self.recovery.forget();
+        self.ai.forget();
+        if category == Category::AiConnector {
+            self.refresh_ai(cx);
+        }
         self.scroll.set_offset(gpui::point(px(0.), px(0.)));
         window.focus(&self.category_focus, cx);
         cx.notify();
@@ -483,11 +490,16 @@ impl Panel {
             },
             Category::Spelling => div().child(self.spelling_section(theme, cx)),
             Category::Vault => div().child(self.vault_section(theme, cx)),
+            Category::AiConnector => div().child(self.ai_connector_section(theme, cx)),
             Category::About => div().child(self.about_section(theme, cx)),
         };
-        // About and Vault have no preferences, so nothing to reset.
+        // About and Vault have no preferences, so nothing to reset; the AI
+        // connector's one switch is its own reset.
         body.when(
-            !matches!(self.category, Category::About | Category::Vault),
+            !matches!(
+                self.category,
+                Category::About | Category::Vault | Category::AiConnector
+            ),
             |v| {
                 v.child(
                     self.setting_row(

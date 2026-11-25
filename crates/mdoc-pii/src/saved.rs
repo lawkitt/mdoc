@@ -316,7 +316,11 @@ impl Review {
             manual_priority: saved.manual_priority,
             revision: Default::default(),
             awaiting_discovery: saved.awaiting_discovery,
+            scanned: Default::default(),
         };
+        // Saved from this text: it counts as scanned, unless the caller
+        // knows it may not be (`Review::owe_whole_text`).
+        review.mark_scanned();
         if review.awaiting_discovery {
             review.refresh(source);
         }

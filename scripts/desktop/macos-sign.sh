@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Usage: scripts/desktop/macos-sign.sh app <mdoc.app> | dmg <file.dmg>
 # Developer ID signing and notarization for the macOS release.
-#   app  signs the bundle with the hardened runtime and the entitlements, then
+#   app  signs the AI connector's shim (Contents/MacOS/mdoc-mcp), then the
+#        bundle with the hardened runtime and the entitlements, then
 #        notarizes and staples it, so a copy outside the .dmg opens offline.
 #   dmg  signs, notarizes and staples the disk image.
 # Environment:
@@ -75,11 +76,20 @@ case "$kind" in
     else
       echo "no APPLE_PROVISIONING_PROFILE: Vault key in the login keychain"
     fi
-    # The bundle holds one executable, so signing the bundle covers all code.
+    # The AI connector's shim (ADR 0126) is a second executable in
+    # Contents/MacOS: nested code is signed first, inside out, with the
+    # hardened runtime and a timestamp, as notarization requires. It loads
+    # no downloaded library and uses no keychain, so it gets no entitlements.
+    shim="$target/Contents/MacOS/mdoc-mcp"
+    [ -f "$shim" ] || die "$shim not found; the bundle must ship the AI connector's shim"
+    codesign --force --timestamp --options runtime \
+      --identifier io.github.lawkitt.mdoc.mcp \
+      --sign "$APPLE_SIGNING_IDENTITY" "$shim"
+    # Signing the bundle then covers the main executable and seals the shim.
     codesign --force --timestamp --options runtime \
       --entitlements "$entitlements" \
       --sign "$APPLE_SIGNING_IDENTITY" "$target"
-    codesign --verify --strict --verbose=2 "$target"
+    codesign --verify --strict --deep --verbose=2 "$target"
     zip="$(mktemp -d)/mdoc.zip"
     ditto -c -k --keepParent "$target" "$zip"
     notarize "$zip"

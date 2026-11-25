@@ -35,12 +35,14 @@ use std::{
 };
 
 mod ai_ask;
+mod ai_connector_setting;
 mod ai_project;
 mod comment_rail;
 mod decision_history;
 mod default_categories;
 mod document_notes;
 mod docx_queue;
+mod edited_text;
 mod exits;
 mod export_project;
 mod focus_regions;

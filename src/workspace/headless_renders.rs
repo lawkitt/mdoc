@@ -46,6 +46,7 @@
 //! images establish neither native input, IME, accessibility nor display
 //! presentation.
 mod ai_ask;
+mod ai_connector;
 mod ai_project;
 mod comments;
 mod comparison;
@@ -399,6 +400,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     let view = navigation::scenes(d, path)?;
     review::scenes(d, &view, detections)?;
     settings::scenes(d)?;
+    ai_connector::scenes(d)?;
     shell::scenes(d)?;
     search::scenes(d, &view)?;
     review::before_after(d, &view)?;

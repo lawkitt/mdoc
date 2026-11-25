@@ -144,6 +144,9 @@ pub(super) enum TabEvent {
         with: mdoc_store::settings::AskWith,
         move_to_new: bool,
     },
+    /// Discovery or the edited paragraphs' scan finished: a Copy for AI
+    /// waiting for it is checked again.
+    NamesFound,
     /// A refused Copy for AI's step, from its notice or the Share tab: the
     /// window runs it unless the document is kept from AI.
     CopyStep(crate::refusal::Step),
@@ -1343,6 +1346,7 @@ impl Workspace {
                                 view.open_names(&names.identities, &names.reserved, cx);
                                 view.pii.review_mut().leave_off(&names.not_names);
                             }
+                            view.owe_if_left_mid_edit(cx);
                             view.replace_images(view.save_directory(), window, cx);
                             view.scroll
                                 .set_offset(gpui::point(px(0.), px(record.scroll_y.min(0.))));
@@ -1741,6 +1745,7 @@ impl Workspace {
             TabEvent::Ask { with, move_to_new } => {
                 self.ask_from_tab(id, *with, *move_to_new, window, cx)
             }
+            TabEvent::NamesFound => self.copy_for_ai_after_write(cx),
             TabEvent::CopyStep(step) => {
                 self.run_tab_step(id, *step, window, cx);
             }
@@ -3140,6 +3145,8 @@ fn load_from_vault(
     });
     let mut document = Document::in_vault(id, stored.markdown);
     document.review = stored.review;
+    document.ready = stored.ready_fingerprint.is_some();
+    document.scanned = stored.scanned;
     Ok(Loaded {
         document,
         vault: Some(VaultLoaded {

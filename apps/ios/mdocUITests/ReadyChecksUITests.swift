@@ -91,4 +91,40 @@ final class ReadyChecksUITests: XCTestCase {
         // The edit went out, and the email with it as its alias.
         copyForAI(app, holding: "The ladder stays in the shed.", restored: 1)
     }
+
+    /// Item 44: the agreement reviewed, then a new email typed in edit
+    /// mode: at Done it is proposed, so Replace comes back before Share,
+    /// and the copy holds it replaced: Paste restores two values.
+    @MainActor
+    func testANewNameTypedIsProposedAtDone() throws {
+        let app = MdocUITest.launch()
+        let row = MdocUITest.documentRow(app)
+        XCTAssertTrue(row.waitForExistence(timeout: 60))
+        row.tap()
+        let primary = app.buttons["primary-action"]
+        XCTAssertTrue(primary.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(primary.label.hasPrefix("Replace"), primary.label)
+        primary.tap()
+        XCTAssertTrue(primary.wait(until: NSPredicate(format: "label BEGINSWITH 'Share'"), timeout: MdocUITest.timeout))
+
+        let edit = app.buttons["edit-button"]
+        XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
+        edit.tap()
+        let done = app.buttons["done-editing"]
+        XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
+        MdocUITest.tapIntoText(app)
+        let sentence = " Copy bob.stone@example.com in."
+        app.typeText(sentence)
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", sentence), timeout: MdocUITest.timeout))
+        done.tap()
+
+        XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(
+            primary.wait(until: NSPredicate(format: "label BEGINSWITH 'Replace'"), timeout: MdocUITest.timeout),
+            primary.label)
+        primary.tap()
+        XCTAssertTrue(primary.wait(until: NSPredicate(format: "label BEGINSWITH 'Share'"), timeout: MdocUITest.timeout))
+        copyForAI(app, holding: "Copy bob.stone@example.com in.", restored: 2)
+    }
 }

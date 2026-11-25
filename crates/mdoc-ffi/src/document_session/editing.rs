@@ -1,12 +1,13 @@
 //! Edit mode: typed edits from the phone's text view, as
-//! "Typing" steps in the one undo line (`review/typing.rs`), and discovery
-//! once the typing pauses. Each edit returns a small `Typed`, never the
+//! "Typing" steps in the one undo line (`review/typing.rs`), discovery
+//! once the typing pauses, and at Done a scan of the paragraphs the edits
+//! changed (`mdoc_pii` `edited`). Each edit returns a small `Typed`, never the
 //! whole snapshot: the view already shows the text. The save that follows
 //! is `save_pending`'s, as after a review tap.
 pub use super::review::Typed;
-use super::{DocumentSession, ReviewSnapshot, no_document, span};
-use crate::{CoreError, editor::EditorEdit, text::TextRange};
-use std::sync::atomic::AtomicBool;
+use super::{DocumentSession, JobProgress, JobStage, ReviewSnapshot, no_document, span};
+use crate::{CoreError, editor::EditorEdit, setup::DetectorPaths, text::TextRange};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[uniffi::export]
 impl DocumentSession {
@@ -63,12 +64,73 @@ impl DocumentSession {
         }
         Ok(document.snapshot())
     }
+
+    /// At Done, after `end_typing`, and before Copy for AI or Share if the
+    /// snapshot's `edits_unscanned` says so: discovery, then the paragraphs
+    /// edits changed since they were scanned, scanned as a fresh document
+    /// is: by the name finder with `detector` (its memory check and pause
+    /// for heat as `scan`'s), or by the rules alone without one, below the
+    /// floor. A new name becomes a proposal, so the document is Ready again
+    /// only once it is decided; an edit with no new name is Ready again with
+    /// no click. Nothing owed returns the snapshot as it is. The text
+    /// changing meanwhile leaves the paragraphs owed, for the next call.
+    pub fn scan_edits(
+        &self,
+        detector: Option<DetectorPaths>,
+        progress: Option<Box<dyn JobProgress>>,
+    ) -> Result<ReviewSnapshot, CoreError> {
+        let snapshot = self.discover()?;
+        let (edited, generation) = {
+            let guard = self.lock_document();
+            let document = guard.as_ref().ok_or_else(no_document)?;
+            match document.review.edited_text() {
+                Some(edited) => (edited, document.generation),
+                None => return Ok(snapshot),
+            }
+        };
+        let cancel = self.start_job();
+        let progress = progress.as_deref();
+        if let Some(progress) = progress {
+            progress.stage(JobStage::Scanning);
+        }
+        let mut detections = match &detector {
+            Some(paths) => {
+                super::scanning::check_free_memory(progress)?;
+                mdoc_detect::scan_at(
+                    edited.text(),
+                    &cancel,
+                    std::path::Path::new(&paths.model),
+                    std::path::Path::new(&paths.onnx),
+                    &mdoc_store::settings::PiiConfig::default(),
+                    mdoc_detect::ScanLimit::PHONE,
+                    &super::scanning::PhoneScan::new(progress, paths.speed),
+                )?
+                .0
+            }
+            None => mdoc_detect::scan_rules(edited.text())?,
+        };
+        if cancel.load(Ordering::Relaxed) {
+            return Err(CoreError::Cancelled);
+        }
+        self.with_document(|document| {
+            if document.generation == generation {
+                detections.retain(|d| !document.skip.contains(&d.category));
+                document.review.ingest_edited(&edited, detections)?;
+            }
+            Ok(())
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{document_session::ReviewAction, test_support::Scratch, vault::Vault};
+    use crate::{
+        document_session::{MentionState, ReviewAction},
+        test_support::Scratch,
+        vault::{Readiness, Vault},
+    };
+    use std::sync::Arc;
 
     fn at(text: &str, needle: &str) -> TextRange {
         let start = text.find(needle).unwrap() as u64;
@@ -156,6 +218,95 @@ mod tests {
         assert_eq!(snapshot.text, "**due** now");
         assert_eq!(snapshot.undo_step.unwrap().label, "Formatting");
         assert_eq!(session.review(ReviewAction::Undo).unwrap().text, "due now");
+    }
+
+    /// A document Ready after its scan, its one name replaced, and its Vault.
+    fn ready_letter(scratch: &Scratch) -> (Arc<DocumentSession>, Arc<Vault>, String) {
+        let vault = Vault::open(scratch.path().display().to_string(), vec![3; 32]).unwrap();
+        let session = DocumentSession::new();
+        let text = "Ann Lee signed the lease.\n\nThe term ends in May.";
+        session.import_text(text.into(), "Lease".into()).unwrap();
+        session
+            .add_candidates(vec![super::super::Candidate {
+                range: at(text, "Ann Lee"),
+                category: super::super::Category::Person,
+                score: 0.9,
+            }])
+            .unwrap();
+        session.replace_all().unwrap();
+        let id = session.save_into_vault(vault.clone()).unwrap().id;
+        assert_eq!(vault.readiness(id.clone()).unwrap(), Readiness::Ready);
+        (session, vault, id)
+    }
+
+    /// Types `typed` at the end of the text, a character at a time, and
+    /// saves as the apps do after each keystroke.
+    fn type_at_end(session: &DocumentSession, vault: &Arc<Vault>, typed: &str) {
+        for c in typed.chars() {
+            let end = session.snapshot().unwrap().text.len();
+            session.type_text(caret(end), c.to_string()).unwrap();
+        }
+        session.save_pending_into_vault(vault.clone()).unwrap();
+    }
+
+    /// Below the floor, a new name typed into a Ready document is found at
+    /// Done by the rules, as a fresh document's would be: a proposal, and
+    /// the document not Ready until it is decided. Until Done it is not
+    /// Ready either, and nothing leaves with the name as typed.
+    #[test]
+    fn a_typed_new_name_is_proposed_at_done() {
+        let scratch = Scratch::new();
+        let (session, vault, id) = ready_letter(&scratch);
+        session.set_no_name_finder(true);
+        type_at_end(&session, &vault, " Write to bob@example.com.");
+        let typed = session.discover().unwrap();
+        assert!(typed.edits_unscanned && typed.proposed == 0);
+        assert_eq!(vault.readiness(id.clone()).unwrap(), Readiness::NotReviewed);
+        assert!(vault.text_for_ai(id.clone()).is_err());
+
+        session.end_typing();
+        let done = session.scan_edits(None, None).unwrap();
+        assert!(!done.edits_unscanned);
+        let proposed: Vec<_> = (done.mentions.iter())
+            .filter(|m| m.state == MentionState::Proposed)
+            .map(|m| m.original.as_str())
+            .collect();
+        assert_eq!(proposed, ["bob@example.com"]);
+        session.save_pending_into_vault(vault.clone()).unwrap();
+        assert_eq!(vault.readiness(id.clone()).unwrap(), Readiness::NotReviewed);
+
+        session.replace_all().unwrap();
+        session.save_pending_into_vault(vault.clone()).unwrap();
+        let sent = vault.text_for_ai(id).unwrap();
+        assert!(sent.contains("EMAIL_1") && !sent.contains("bob@"), "{sent}");
+        assert!(!sent.contains("Ann Lee"));
+    }
+
+    /// An edit that adds no name is Ready again at Done, with no click.
+    #[test]
+    fn an_edit_with_no_new_name_is_ready_again_at_done() {
+        let scratch = Scratch::new();
+        let (session, vault, id) = ready_letter(&scratch);
+        type_at_end(&session, &vault, " It renews.");
+        assert_ne!(vault.readiness(id.clone()).unwrap(), Readiness::Ready);
+        session.end_typing();
+        let done = session.scan_edits(None, None).unwrap();
+        assert!(!done.edits_unscanned && done.proposed == 0);
+        assert!(
+            session
+                .save_pending_into_vault(vault.clone())
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(vault.readiness(id.clone()).unwrap(), Readiness::Ready);
+        assert!(
+            vault
+                .text_for_ai(id)
+                .unwrap()
+                .ends_with("in May. It renews.")
+        );
+        // Nothing owed: the snapshot as it is.
+        assert_eq!(session.scan_edits(None, None).unwrap(), done);
     }
 
     #[test]

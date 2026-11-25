@@ -235,6 +235,12 @@ final class RealLibrary: Library, @unchecked Sendable {
     var typingPause = SaveScheduler.typingPause
     /// What scans ask about the phone; tests stand in low memory or heat.
     var device = DeviceConditions.live
+    #if DEBUG
+    /// The unit tests never download the name finder: at the detector tier
+    /// an edit's scan then runs the rules in its place, as Try a sample's
+    /// proposals stand in for Find names. A phone never does (`scanEdits`).
+    var rulesStandInForNameFinder = false
+    #endif
     /// Runs once Delete Project has begun listing the Project's documents
     /// and imports, before it has both: a test saves an import there, as
     /// the save queue can (#1140).
@@ -1284,10 +1290,13 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// A refusal is thrown as `CoreError.handOffRefused`, in the app's own
     /// words: never the core's (#1209).
     func copyForAI() throws -> HandOff {
-        // A tap right after Done can come before Done's discovery has run
-        // off the main thread: run it now, so the save records the edited
-        // text as reviewed, or proposes what it found (#1209 decision 15).
-        _ = try? core { try ffi.discover() }
+        // A tap right after Done can come before Done's work has run off
+        // the main thread: run it now, as Done does, so the hand-off sees
+        // the state Done leaves. The edit scan runs discovery first, then
+        // scans the paragraphs edited: a new name is proposed, and the save
+        // records the edited text as reviewed only once it was scanned
+        // (#1209 decision 15, item 44). It cancels Done's scan if that runs.
+        _ = try? scanEdits()
         do {
             try saveChanges()
         } catch {
@@ -1535,6 +1544,21 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 
     func discover() throws -> DocumentSnapshot {
         let review = try core { try ffi.discover() }
+        return snapshot(of: review)
+    }
+
+    func scanEdits() throws -> DocumentSnapshot {
+        let paths = library.setup?.detectorPaths()
+        var rules = library.setup?.snapshot().tier == .belowFloor
+        #if DEBUG
+        if library.rulesStandInForNameFinder { rules = true }
+        #endif
+        // Without the name finder above the floor the edits stay owed: the
+        // rules alone would miss names.
+        guard paths != nil || rules else {
+            return try discover()
+        }
+        let review = try core { try ffi.scanEdits(detector: paths, progress: nil) }
         return snapshot(of: review)
     }
 

@@ -23,6 +23,7 @@ use mdoc_store::settings::{
 };
 use std::{cell::Cell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
+mod ai_connector;
 mod categories;
 pub(crate) mod dictionary;
 pub(crate) mod lists;
@@ -180,6 +181,8 @@ pub struct Panel {
     user_lists: lists::UserListsUi,
     /// Settings › Vault's recovery key, while it shows.
     recovery: vault::RecoveryUi,
+    /// Settings › AI connector's Claude Desktop state and consent card.
+    ai: ai_connector::AiConnectorUi,
 }
 impl gpui::EventEmitter<Event> for Panel {}
 pub fn bind_keys(cx: &mut App) {
@@ -367,6 +370,7 @@ impl Panel {
             dictionary: None,
             user_lists,
             recovery: vault::RecoveryUi::default(),
+            ai: ai_connector::AiConnectorUi::default(),
         }
     }
     /// A Settings › General choice changed and saved outside the panel (the
@@ -408,6 +412,7 @@ impl Panel {
         self.category = Category::General;
         self.dictionary = None;
         self.recovery.forget();
+        self.ai.forget();
         self.number_errors = [None, None];
         self.scroll.set_offset(gpui::point(px(0.), px(0.)));
         self.error = self
@@ -635,6 +640,7 @@ impl Panel {
         self.open = false;
         self.dictionary = None;
         self.recovery.forget();
+        self.ai.forget();
         self.commit_visible_number(cx);
         if let Some(focus) = self.previous.take() {
             window.focus(&focus, cx);
@@ -850,7 +856,7 @@ impl Panel {
                 self.number_errors[1] = None;
             }
             Category::Spelling => self.draft.spelling = defaults.spelling,
-            Category::About | Category::Vault => return,
+            Category::About | Category::Vault | Category::AiConnector => return,
         }
         if self.category == Category::General {
             self.reset_theme = Some(self.theme_revision);
@@ -859,6 +865,10 @@ impl Panel {
     }
     /// Atomically save `draft`. A failure restores the previous choices.
     fn persist(&mut self, cx: &mut Context<Self>) {
+        // The AI connector switch shows or hides Claude Desktop's state at once.
+        if self.category == Category::AiConnector {
+            self.refresh_ai(cx);
+        }
         if self.applying {
             self.save_pending = true;
             return;
@@ -949,6 +959,9 @@ impl Panel {
                         this.save_pending = false;
                         this.draft = this.shared.borrow().current.clone().unwrap_or_default();
                         this.update_fields(cx);
+                        if this.category == Category::AiConnector {
+                            this.refresh_ai(cx);
+                        }
                         this.error = Some(format!(
                             "Could not save settings: {e}. Previous defaults remain active."
                         ));

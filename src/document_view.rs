@@ -511,6 +511,11 @@ impl DocumentView {
         }));
     }
 
+    /// An autosave waits for typing to pause.
+    pub(crate) fn save_scheduled(&self) -> bool {
+        self.autosave.is_some()
+    }
+
     /// Save: write now instead of after the pause.
     pub(crate) fn save_now(&mut self, cx: &mut Context<Self>) {
         self.autosave = None;

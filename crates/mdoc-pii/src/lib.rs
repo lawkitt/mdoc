@@ -5,6 +5,7 @@ mod candidates;
 pub mod columns;
 pub mod decisions;
 mod discovery;
+mod edited;
 pub mod fix_words;
 pub mod handoff;
 mod identities;
@@ -22,6 +23,7 @@ pub mod view;
 pub mod web;
 use candidates::Candidates;
 pub use discovery::{DiscoveryInput, DiscoveryResult};
+pub use edited::EditedText;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     ops::Range,
@@ -205,6 +207,8 @@ pub struct Review {
     /// An edit cleared the pending mentions; discovery has not found them
     /// again yet, so `remaining` may undercount.
     awaiting_discovery: bool,
+    /// The paragraphs as last scanned (`edited`).
+    scanned: edited::Scanned,
 }
 
 /// Advanced by every `&mut` method, so data derived from a review can be keyed
@@ -391,6 +395,7 @@ fn overlaps(a: &Range<usize>, b: &Range<usize>) -> bool {
 impl Review {
     pub fn on_transaction(&mut self, transaction: &mdoc_history::EditorTransaction, source: &str) {
         self.revision.advance();
+        self.settle_scanned();
         let unchanged_source = self.source.as_ref() == source;
         if self.tracking.on_transaction(transaction) {
             self.identities.on_transaction(transaction);
@@ -668,6 +673,7 @@ impl Review {
             });
             self.source = source.into();
         }
+        self.settle_scanned();
         self.discovery_version += 1;
         if let Some(result) = self
             .discovery_input()
@@ -1040,6 +1046,7 @@ impl Review {
         self.propagate(source, false);
         mark_detected(self);
         self.refresh(source);
+        self.mark_scanned();
         Ok(())
     }
     /// The recognizer of variant `id` when this scan created it (its id
