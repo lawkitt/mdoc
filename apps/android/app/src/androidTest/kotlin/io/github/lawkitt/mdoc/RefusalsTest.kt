@@ -24,6 +24,7 @@ import io.github.lawkitt.mdoc.core.SavedReadiness
 import io.github.lawkitt.mdoc.core.Scope
 import io.github.lawkitt.mdoc.core.SourceRange
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -214,6 +215,13 @@ class RefusalsDetectorTierTest {
     val compose = createAndroidComposeRule<MainActivity>()
 
     private val app get() = core.app
+
+    /** Find names asks for the notification first: granted, so its dialog never covers the screen. */
+    @Before
+    fun grantNotifications() {
+        InstrumentationRegistry.getInstrumentation().uiAutomation
+            .grantRuntimePermission(app.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
+    }
 
     @After
     fun noStandIn() {
