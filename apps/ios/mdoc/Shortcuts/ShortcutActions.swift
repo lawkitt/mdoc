@@ -6,9 +6,9 @@ import Foundation
 /// refuses, and no App Shortcut offers them.
 ///
 /// - Pseudonymize text saves the text as a new document in a Project, or
-///   in Unfiled, and opens it in mdoc for review. It returns the document's
-///   text for AI, the Vault's Ready check passed, and nothing otherwise: no
-///   action hides names without review.
+///   in Unfiled, and opens it in mdoc for review. It returns no text: the
+///   document it made is not reviewed yet, and no action hides names
+///   without review.
 /// - Restore text restores an AI reply with a Project's names, or with the
 ///   place of the last Copy for AI or Share, as Restore with mdoc does. It
 ///   saves nothing; the restored text goes wherever the shortcut sends it.
@@ -71,20 +71,21 @@ enum ShortcutFailure: Error, Equatable, LocalizedError {
         case .projectGone:
             String(localized: "That Project is no longer in mdoc.")
         case .needsReview:
-            String(localized: "The text needs review in mdoc. It is open there as a new document; once it is reviewed, Copy for AI gives its text.")
+            String(localized: "The text is in mdoc for review, open as a new document. Once it is reviewed, Copy for AI gives its text with names replaced.")
         }
     }
 }
 
 extension AppModel {
     /// Pseudonymize text from Shortcuts: `text` becomes a new document in
-    /// `project`, or Unfiled for nil, opens and is read as a paste is. Its
-    /// text for AI comes back only through Copy for AI's checks (the
-    /// session's pending proposals, then the Vault's Ready check), and the
-    /// place becomes the one Restore restores with; a new document is
-    /// rarely Ready, so this mostly throws `needsReview` with the document
-    /// open for review.
-    func pseudonymize(fromShortcut text: String, into project: ProjectID?) async throws -> String {
+    /// `project`, or Unfiled for nil, opens and is read as a paste is, and
+    /// waits there for review. Once it is open this throws `needsReview`,
+    /// which stops the shortcut: nothing comes back on the run that made
+    /// it, even when the Vault would count it Ready (below the name
+    /// finder's floor, a document with no names marked by hand is), since
+    /// nobody has read it yet and no action hides names without review.
+    /// Once reviewed, Copy for AI and Ask AI give its text.
+    func addForReview(fromShortcut text: String, into project: ProjectID?) async throws {
         try ShortcutActions.checkPreview(preferences)
         guard let pending = Importer.text(text) else { throw ShortcutFailure.noText }
         if let project, library.project(project) == nil { throw ShortcutFailure.projectGone }
@@ -95,20 +96,6 @@ extension AppModel {
         if model.snapshot.phase == nil {
             await model.recognize()
         }
-        return try model.textForShortcut()
-    }
-}
-
-extension DocumentViewModel {
-    /// Copy for AI's text for a shortcut, or `needsReview` while the
-    /// document is not Ready: proposals left, or not reviewed.
-    func textForShortcut() throws -> String {
-        do {
-            let handOff = try session.copyForAI()
-            onChange()
-            return handOff.text
-        } catch CoreError.pendingReview, CoreError.projectRefused {
-            throw ShortcutFailure.needsReview
-        }
+        throw ShortcutFailure.needsReview
     }
 }

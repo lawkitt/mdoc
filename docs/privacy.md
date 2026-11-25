@@ -53,10 +53,10 @@ Not Collected", and this section is its privacy policy.
 - **Sharing:** text leaves mdoc only when you share or copy it, and then
   with aliases in place of the names you replaced.
 - **Shortcuts (preview):** with Settings › AI connector (preview) on,
-  Pseudonymize text adds its text as a new document for review and returns
-  it, names replaced, only once that document is Ready. Restore text saves
-  nothing; its output, with the real names, goes wherever the shortcut
-  sends it next.
+  Pseudonymize text adds its text as a new document and opens it for
+  review; it returns no text, so nothing leaves that you have not
+  reviewed. Restore text saves nothing; its output, with the real names,
+  goes wherever the shortcut sends it next.
 - **Crash reports** stay on the phone and show at the next launch. Beta
   testers may also send crash reports and feedback through Apple's
   TestFlight, under TestFlight's terms; never attach client documents.

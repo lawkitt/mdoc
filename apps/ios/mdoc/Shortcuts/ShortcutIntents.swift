@@ -7,11 +7,11 @@ import Foundation
 // off each refuses.
 
 /// Pseudonymize text: the text becomes a new document in mdoc, opened for
-/// review; its text for AI comes back only once it is Ready.
+/// review; its text for AI is Copy for AI's once it is reviewed.
 struct PseudonymizeTextIntent: AppIntent {
     static let title: LocalizedStringResource = "Pseudonymize text"
     static let description = IntentDescription(
-        "Adds the text to mdoc as a new document in a Project, or in Unfiled when no Project is chosen, and opens it for review. Its text with names replaced comes back only once it is reviewed.")
+        "Adds the text to mdoc as a new document in a Project, or in Unfiled when no Project is chosen, and opens it for review. Once it is reviewed, Copy for AI in mdoc gives its text with names replaced.")
     /// It opens the document in mdoc.
     static let supportedModes: IntentModes = .foreground
 
@@ -25,12 +25,15 @@ struct PseudonymizeTextIntent: AppIntent {
         Summary("Pseudonymize \(\.$text) in \(\.$project)")
     }
 
+    /// Adds the text for review and stops the shortcut, saying so
+    /// (`AppModel.addForReview` throws once the document is open): what
+    /// follows gets nothing to send.
     @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+    func perform() async throws -> some IntentResult {
         try ShortcutActions.checkPreview(.shared)
         let app = await ShortcutsHost.shared.app()
-        let pseudonymized = try await app.pseudonymize(fromShortcut: text, into: project.map { ProjectID(rawValue: $0.id) })
-        return .result(value: pseudonymized)
+        try await app.addForReview(fromShortcut: text, into: project.map { ProjectID(rawValue: $0.id) })
+        return .result()
     }
 }
 

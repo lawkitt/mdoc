@@ -94,7 +94,7 @@ final class ShortcutActionsTests: XCTestCase {
         let app = app(seeded)
         let before = Set(app.library.documents.map(\.id))
 
-        await assertNeedsReview { try await app.pseudonymize(fromShortcut: self.text, into: seeded.ellison) }
+        await assertNeedsReview { try await app.addForReview(fromShortcut: self.text, into: seeded.ellison) }
         let opened = try XCTUnwrap(app.navigator.openDocument)
         XCTAssertFalse(before.contains(opened), "a new document")
         let model = try XCTUnwrap(app.openModel)
@@ -103,29 +103,50 @@ final class ShortcutActionsTests: XCTestCase {
         XCTAssertTrue(model.snapshot.markdown.contains("Maya Ellison"), "nothing replaced without review")
     }
 
-    /// Done-when: once the document is Ready, what the action returns has
-    /// no original, and the Project becomes the place Restore uses.
-    func testPseudonymizedTextHasNoOriginalOnceReviewed() async throws {
+    /// Done-when: the action's output never holds an original, even where
+    /// the Vault counts the new document Ready: below the name finder's
+    /// floor, an Unfiled paste with no names marked by hand is. Once the
+    /// user reviews it, Copy for AI's text, which the message points to,
+    /// has aliases in place of the names.
+    func testPseudonymizeTextReturnsNoOriginalEvenWhenTheVaultCountsItReady() async throws {
+        let (seeded, _) = try seeded()
+        let app = app(seeded)
+        await assertNeedsReview { try await app.addForReview(fromShortcut: self.text, into: nil) }
+        let model = try XCTUnwrap(app.openModel)
+        XCTAssertNil(model.snapshot.projectID)
+        let session = try seeded.session(model.id)
+        XCTAssertEqual(try session.copyForAI().text, text, "Ready below the floor, as the user has read it in mdoc")
+
+        _ = try session.scan(observer: TestObserver())
+        _ = try session.propose([SampleDocument.Name(wording: "Maya Ellison", category: .person)])
+        let reviewed = try session.replaceAllPending()
+        XCTAssertEqual(reviewed.pendingCount, 0)
+        let pseudonymized = try session.copyForAI().text
+        XCTAssertFalse(pseudonymized.contains("Maya Ellison"))
+        XCTAssertFalse(pseudonymized.contains("ann@example.com"))
+    }
+
+    /// In a Project, its names are proposed in the new document, and Copy
+    /// for AI gives the Project's aliases once they are replaced.
+    func testPseudonymizedTextTakesTheProjectsAliasesOnceReviewed() async throws {
         let (seeded, alias) = try seeded()
         let app = app(seeded)
-        await assertNeedsReview { try await app.pseudonymize(fromShortcut: self.text, into: seeded.ellison) }
-        let model = try XCTUnwrap(app.openModel)
-        let session = try seeded.session(model.id)
+        await assertNeedsReview { try await app.addForReview(fromShortcut: self.text, into: seeded.ellison) }
+        let session = try seeded.session(try XCTUnwrap(app.navigator.openDocument))
+        XCTAssertThrowsError(try session.copyForAI(), "the Project's names are proposed: not Ready")
         _ = try session.scan(observer: TestObserver())
         _ = try session.replaceAllPending()
-        model.refresh()
-
-        let pseudonymized = try model.textForShortcut()
+        let pseudonymized = try session.copyForAI().text
         XCTAssertFalse(pseudonymized.contains("Maya Ellison"))
         XCTAssertFalse(pseudonymized.contains("ann@example.com"))
         XCTAssertTrue(pseudonymized.contains(alias), "the Project's alias for her")
-        XCTAssertEqual(seeded.sharedLast, .project(seeded.ellison))
+        XCTAssertEqual(seeded.sharedLast, .project(seeded.ellison), "Restore text restores with it next")
     }
 
     func testPseudonymizeTextWithNoProjectMakesAnUnfiledDocument() async throws {
         let (seeded, _) = try seeded()
         let app = app(seeded)
-        await assertNeedsReview { try await app.pseudonymize(fromShortcut: self.text, into: nil) }
+        await assertNeedsReview { try await app.addForReview(fromShortcut: self.text, into: nil) }
         let opened = try XCTUnwrap(app.navigator.openDocument)
         XCTAssertNotNil(app.library.document(opened))
         XCTAssertNil(app.library.document(opened)?.projectID)
@@ -136,7 +157,7 @@ final class ShortcutActionsTests: XCTestCase {
         let app = app(seeded, preview: false)
         let before = app.library.documents.map(\.id)
         do {
-            _ = try await app.pseudonymize(fromShortcut: text, into: seeded.ellison)
+            try await app.addForReview(fromShortcut: text, into: seeded.ellison)
             XCTFail("refused")
         } catch {
             XCTAssertEqual(error as? ShortcutFailure, .previewOff)
@@ -154,7 +175,7 @@ final class ShortcutActionsTests: XCTestCase {
             (text, ProjectID(rawValue: String(repeating: "0", count: 32)), .projectGone),
         ] {
             do {
-                _ = try await app.pseudonymize(fromShortcut: input, into: project)
+                try await app.addForReview(fromShortcut: input, into: project)
                 XCTFail("refused")
             } catch {
                 XCTAssertEqual(error as? ShortcutFailure, failure)
@@ -164,11 +185,11 @@ final class ShortcutActionsTests: XCTestCase {
     }
 
     private func assertNeedsReview(
-        _ call: () async throws -> String, file: StaticString = #filePath, line: UInt = #line
+        _ call: () async throws -> Void, file: StaticString = #filePath, line: UInt = #line
     ) async {
         do {
-            let text = try await call()
-            XCTFail("returned \(text.count) characters before review", file: file, line: line)
+            try await call()
+            XCTFail("the shortcut went on before review", file: file, line: line)
         } catch {
             XCTAssertEqual(error as? ShortcutFailure, .needsReview, "\(error)", file: file, line: line)
         }
