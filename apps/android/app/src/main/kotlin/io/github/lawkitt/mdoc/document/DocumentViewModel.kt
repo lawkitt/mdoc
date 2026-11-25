@@ -25,6 +25,7 @@ import io.github.lawkitt.mdoc.jobs.JobKind
 import io.github.lawkitt.mdoc.jobs.JobOutcome
 import io.github.lawkitt.mdoc.jobs.Jobs
 import io.github.lawkitt.mdoc.jobs.RunningJob
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -107,11 +108,19 @@ class DocumentViewModel(
     private val documents: Documents,
     private val session: Documents.Session,
     private val jobs: Jobs,
-    /** Above the detector floor; below it there is no Find names. */
-    val findsNames: Boolean,
+    /** Above the detector floor, as setup reads it now; below it there is no Find names. */
+    private val detectorTier: () -> Boolean,
     /** Keeps Ask AI's wait when Android ends mdoc while the AI app is in front. */
     private val savedState: SavedStateHandle = SavedStateHandle(),
 ) : ViewModel() {
+    /**
+     * Above the detector floor; below it there is no Find names. Read
+     * again after each scan and on resume: a scan's first timing of the
+     * name finder can put the phone below the floor.
+     */
+    @Volatile var findsNames: Boolean = detectorTier()
+        private set
+
     private val mutable = MutableStateFlow(
         DocumentState(session.snapshot(), replyOffer = savedState.get<String>(REPLY_OFFER)?.let(ReplyOffer::valueOf)),
     )
@@ -193,6 +202,7 @@ class DocumentViewModel(
     fun cancelJob() = jobs.cancel(CancelReason.User)
 
     private fun finish(kind: JobKind, outcome: JobOutcome<DocumentSnapshot>) {
+        if (kind == JobKind.Scan) findsNames = detectorTier()
         when (outcome) {
             is JobOutcome.Finished -> mutable.update { it.copy(snapshot = outcome.value) }
             is JobOutcome.Failed -> when (outcome.error) {
@@ -255,6 +265,9 @@ class DocumentViewModel(
     /** The step that resolves `refusal` on this phone. */
     fun step(refusal: HandOffRefusal): HandOffRefusal.Step? = refusal.step(findsNames)
 
+    /** Readiness checks started, the latest last; before [init], which starts one at once. */
+    private val checks = AtomicInteger()
+
     init {
         // Each new snapshot (a save, a scan, a move, a refresh): what the
         // Vault says of it now. A name another document added to the
@@ -267,10 +280,15 @@ class DocumentViewModel(
         }
     }
 
-    /** Asks the Vault, off the main thread, about `snapshot`; kept while it is still the one shown. */
+    /**
+     * Asks the Vault, off the main thread, about `snapshot`; kept while it
+     * is still the one shown, and only from the latest check: one started
+     * earlier and answered later says nothing of the Project as it is now.
+     */
     private suspend fun checkSaved(snapshot: DocumentSnapshot = mutable.value.snapshot) {
+        val check = checks.incrementAndGet()
         val saved = withContext(Dispatchers.IO) { session.savedReadiness() }
-        mutable.update { if (it.snapshot == snapshot) it.copy(saved = saved) else it }
+        mutable.update { if (it.snapshot == snapshot && check == checks.get()) it.copy(saved = saved) else it }
     }
 
     /** A hand-off that failed: a refusal shows with its step; anything else as before. */
@@ -290,8 +308,9 @@ class DocumentViewModel(
      */
     suspend fun replaceAndHandOff(): HandOff? {
         mutable.update { it.copy(refusal = null) }
+        // A failed replace or save is a refusal in plain words too, never the core's.
         val replaced = withContext(Dispatchers.IO) { runCatching { session.replaceAllPending() } }
-            .onFailure(::show).getOrNull() ?: return null
+            .onFailure { refused(AppError.HandOffRefused(HandOffRefusal.Failed)) }.getOrNull() ?: return null
         mutable.update { it.copy(snapshot = replaced) }
         return handOff()
     }
@@ -307,10 +326,12 @@ class DocumentViewModel(
         val snapshot = mutable.value.snapshot
         val open = firstProposal(snapshot) ?: snapshot.candidates.filter { it.state == MentionState.Kept }.minByOrNull { it.range.start }?.id
         if (open != null) return open(open)
-        change {
-            val lined = session.lineUpWithProject()
-            val first = firstProposal(lined)
-            mutable.update { it.copy(snapshot = lined, reviewing = first, showsIdentities = first == null && lined.identities.isNotEmpty()) }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val lined = session.lineUpWithProject()
+                val first = firstProposal(lined)
+                mutable.update { it.copy(snapshot = lined, reviewing = first, showsIdentities = first == null && lined.identities.isNotEmpty()) }
+            }.onFailure { refused(it as? AppError.HandOffRefused ?: AppError.HandOffRefused(HandOffRefusal.Failed)) }
         }
     }
 
@@ -449,6 +470,7 @@ class DocumentViewModel(
      */
     fun resumed() = viewModelScope.launch(Dispatchers.IO) {
         documents.refresh()
+        findsNames = detectorTier()
         runCatching { session.snapshot() }.onSuccess { snapshot -> mutable.update { it.copy(snapshot = snapshot) } }
         // Another document may have changed the Project's names meanwhile.
         checkSaved()

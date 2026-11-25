@@ -67,6 +67,10 @@ class RefusalsTest {
         compose.waitForShown(hasText("Replace 1") and hasClickAction())
 
         compose.menuShowsRefused("1 name left to decide")
+        // A stale clipboard can't pass for the copy.
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            app.getSystemService(ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("test", "before"))
+        }
         compose.tapStep("Replace 1 and copy")
         compose.waitForText("Copied for AI")
         compose.waitForShown(hasText("Copy") and hasClickAction())
@@ -153,6 +157,62 @@ class RefusalsTest {
         compose.waitForText("Excluded from AI. This document is set to stay out of AI apps. Only mdoc on a computer changes that.")
         compose.menuShowsRefused("Excluded from AI")
         assertFalse("no step", compose.exists(hasTestTag("menu-hand-off-step")))
+    }
+
+    /**
+     * Done when: a record the tap's save can't bring up to date shows "The
+     * new text isn't checked yet" at the tap, with no step below the floor.
+     */
+    @Test
+    fun aRecordStillNotCheckedAtTheTapSaysSo() {
+        val letter = compose.ready(app.core.documents)
+        compose.openDocument(letter.snapshot().title)
+        compose.waitForShown(hasText("Copy") and hasClickAction())
+
+        app.core.documents.readiness = { SavedReadiness.NotReviewed }
+        tap("Copy")
+        compose.waitForShown(hasTestTag("refusal-dialog"))
+        compose.waitForText("The new text isn't checked yet")
+        compose.waitForText("Names in the edited text are looked for first.")
+        assertFalse("no step below the floor", compose.exists(hasTestTag("refusal-step")))
+        compose.noCoreText()
+    }
+
+    /**
+     * Done when: a read that fails where the Vault saw nothing wrong shows
+     * "The text couldn't be prepared", with no step and none of the core's
+     * words. The stand-in says Ready over a kept known name the Vault refuses.
+     */
+    @Test
+    fun aTextThatCannotBePreparedSaysSo() {
+        val note = compose.note(app.core.documents, "Note ${System.nanoTime()}")
+        note.decide(note.snapshot().candidates.single().id, Decision.Keep, Scope.AllOccurrences)
+        app.core.documents.readiness = { SavedReadiness.Ready }
+        compose.openDocument(note.snapshot().title)
+        compose.waitForShown(hasText("Copy") and hasClickAction())
+
+        tap("Copy")
+        compose.waitForShown(hasTestTag("refusal-dialog"))
+        compose.waitForText("The text couldn't be prepared")
+        compose.waitForText("Try again.")
+        assertFalse("no step", compose.exists(hasTestTag("refusal-step")))
+        compose.noCoreText()
+    }
+
+    /** Done when: an import not read yet lists Copy for AI and Share disabled with "The document isn't ready yet". */
+    @Test
+    fun anImportNotReadYetListsWhy() {
+        val documents = app.core.documents
+        val title = "Memo ${System.nanoTime()}"
+        documents.importDocument(ImportSource.Text("Ann Lee signed."), title)
+        compose.activityRule.scenario.onActivity { it.recreate() }
+        compose.openDocument(title)
+        compose.waitForShown(hasText("Finish import") and hasClickAction())
+
+        compose.menuShowsRefused("The document isn't ready yet")
+        assertFalse("no step", compose.exists(hasTestTag("menu-hand-off-step")))
+        compose.menuClose()
+        compose.noCoreText()
     }
 
     /** Done when: changed since its review says so in Share's place, with no step below the floor. */
@@ -313,9 +373,10 @@ private fun MainRule.ready(documents: Documents): Documents.Session {
     return session
 }
 
+/** The screen made again, so its lists read the new document; [openDocument] then finds it on a phone or a wide screen. */
 private fun MainRule.recreate() {
     activityRule.scenario.onActivity { it.recreate() }
-    waitForShown(hasContentDescription("Show sidebar"))
+    waitForIdle()
 }
 
 private fun ComposeTestRule.openMenu() {

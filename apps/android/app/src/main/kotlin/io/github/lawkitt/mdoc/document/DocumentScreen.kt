@@ -202,6 +202,8 @@ fun DocumentScreen(
     // Decision 19); a refusal shows its own words and step (#1209).
     val refusal = model.handOffRefusal(state)
     val step = refusal?.let(model::step)
+    // Find names waits while a job holds the one slot, wherever it is offered.
+    val stepWaits = step == HandOffRefusal.Step.FindNames && job != null
     val resources = LocalResources.current
     val share: (asFile: Boolean) -> Unit = { asFile ->
         scope.launch { model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, asFile, context)) } }
@@ -268,8 +270,9 @@ fun DocumentScreen(
                         // The hand-off's second way out (a long press on iOS):
                         // always listed; until the document can leave,
                         // disabled with why, and the step that resolves it
-                        // after them, as on iOS (#1209).
-                        if (!state.showsReply) {
+                        // after them, as on iOS (#1209); on the Reply pane too,
+                        // as they act on the document (docs/specs/mobile.md).
+                        run {
                             val goes = refusal == null && model.primaryAction(state, job) == PrimaryAction.HandOff
                             val why = refusal?.reason(resources)
                             HandOffMenuItem(R.string.copy_for_ai, why, goes, "menu-copy-for-ai") {
@@ -286,9 +289,13 @@ fun DocumentScreen(
                             }
                             step?.let {
                                 DropdownMenuItem(
-                                    text = { Text(it.title(resources)) },
-                                    // Find names waits while a job runs, as the bar does.
-                                    enabled = it != HandOffRefusal.Step.FindNames || job == null,
+                                    text = {
+                                        Column {
+                                            Text(it.title(resources))
+                                            if (stepWaits) Text(stringResource(R.string.waiting_for_other), style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    },
+                                    enabled = !stepWaits,
                                     modifier = Modifier.testTag("menu-hand-off-step"),
                                     onClick = {
                                         menu = false
@@ -364,6 +371,7 @@ fun DocumentScreen(
                     action = model.primaryAction(state, job),
                     refusal = refusal,
                     step = step,
+                    stepWaits = stepWaits,
                     onStep = take,
                     askAi = if (aiConnector) {
                         { scope.launch { model.askAi()?.let { context.startActivity(askAiIntent(it, context)) } } }
@@ -592,7 +600,8 @@ fun DocumentScreen(
     }
     // Copy for AI, Share or Ask AI refused on a tap: why, and its step (#1209).
     state.refusal?.let { refused ->
-        val resolves = model.step(refused)
+        // A Find names that would wait for another document's job is not offered here.
+        val resolves = model.step(refused)?.takeUnless { it == HandOffRefusal.Step.FindNames && job != null }
         val ok: @Composable () -> Unit = { TextButton(onClick = model::dismissRefusal) { Text(stringResource(R.string.ok)) } }
         AlertDialog(
             onDismissRequest = model::dismissRefusal,
@@ -682,6 +691,8 @@ private fun ActionBar(
     /** Why the hand-off waits, before a tap; null when it goes. */
     refusal: HandOffRefusal?,
     step: HandOffRefusal.Step?,
+    /** The step is Find names and another job holds the slot: it waits. */
+    stepWaits: Boolean,
     onStep: (HandOffRefusal.Step) -> Unit,
     /** Ask AI, in Share's place: the AI connector preview is on. */
     askAi: (() -> Unit)?,
@@ -736,7 +747,8 @@ private fun ActionBar(
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.testTag("hand-off-refusal"),
                     )
-                    if (step != null) {
+                    if (stepWaits) Text(stringResource(R.string.waiting_for_other), style = MaterialTheme.typography.bodyMedium)
+                    if (step != null && !stepWaits) {
                         HandOffButtons(
                             Triple({ onStep(step) }, step.title(resources), step.title(resources)),
                             Triple(onPasteReply, resources.getString(R.string.paste), resources.getString(R.string.paste_reply)),

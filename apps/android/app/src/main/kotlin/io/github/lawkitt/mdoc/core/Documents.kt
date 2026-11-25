@@ -926,10 +926,14 @@ class Documents(
          * Opens the document again from the Vault, its names lined up with
          * its Project's as they are now: a name another document added
          * since this session opened it is proposed (Review's way to it).
+         * Saved first, under the same lock, so no decision a failed save
+         * left only in the session is lost; when that save fails, the
+         * session stays as it is and the refusal says so.
          */
         fun lineUpWithProject(): DocumentSnapshot {
             holdingSave {
                 val vaultId = vaultId ?: return@holdingSave
+                runCatching { saveHeld() }.onFailure { throw AppError.HandOffRefused(HandOffRefusal.Failed) }
                 reopen(vaultId, core { vault.document(vaultId) })
             }
             return snapshot()

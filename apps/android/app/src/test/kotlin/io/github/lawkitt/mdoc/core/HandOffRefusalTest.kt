@@ -175,6 +175,32 @@ class HandOffRefusalTest {
     }
 
     /**
+     * Done when: a record the tap's save can't bring up to date refuses as
+     * not checked yet, and a read that fails where the Vault saw nothing
+     * wrong refuses as "couldn't be prepared"; neither has a step below
+     * the floor, and neither carries the core's words.
+     */
+    @Test
+    fun theTapsOwnRefusalsAreInPlainWordsToo() {
+        val letter = documents.importDocument(ImportSource.Text("Dear Maya Bennett, your claim is ready."), "Letter", null)
+        letter.recognize(Quiet)
+        letter.addReplacement(SourceRange(5, 17), Category.Person)
+
+        documents.readiness = { SavedReadiness.NotReviewed }
+        assertNull("no refusal before the tap below the floor", HandOffRefusal.before(letter.snapshot(), false, letter.savedReadiness()))
+        assertEquals(HandOffRefusal.NotChecked, letter.refusal())
+        assertNull(HandOffRefusal.NotChecked.step(findsNames = false))
+
+        // The Vault refuses a kept known name; the stand-in says Ready.
+        val note = noteWithProposal(documents.createProject("Harbour").id)
+        note.decide(note.snapshot().candidates.single().id, Decision.Keep, Scope.AllOccurrences)
+        documents.readiness = { SavedReadiness.Ready }
+        assertEquals(HandOffRefusal.Failed, note.refusal())
+        assertNull(HandOffRefusal.Failed.step(findsNames = true))
+        documents.readiness = null
+    }
+
+    /**
      * Done when: a saved "not reviewed" while the review is done is no
      * refusal before the tap; at the detector tier a document never
      * scanned waits for Find names, and below the floor the bar and the
