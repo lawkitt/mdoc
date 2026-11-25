@@ -3,6 +3,7 @@
     all(target_os = "windows", not(debug_assertions)),
     windows_subsystem = "windows"
 )]
+mod ai_connector;
 mod comment_rail;
 mod comparison;
 mod comparison_ui;
@@ -143,9 +144,18 @@ fn main() {
     if let Some(profile) = dev_profile {
         eprintln!("mdoc: dev profile in {}", profile.display());
     }
-    let initial: Vec<_> = args.into_iter().skip(1).map(PathBuf::from).collect();
-    // Windows: a second launch hands its paths to the running mdoc.
-    let single_instance::Launch::Primary(later_launches) = single_instance::claim(&initial) else {
+    // Started by the AI connector's shim (mdoc_mcp::launch): nothing to
+    // open, and mdoc stays in the background, already running or not.
+    let for_connector = args.iter().any(|arg| arg == mdoc_mcp::launch::LAUNCH_FLAG);
+    let initial: Vec<_> = (args.into_iter().skip(1))
+        .filter(|arg| arg != mdoc_mcp::launch::LAUNCH_FLAG)
+        .map(PathBuf::from)
+        .collect();
+    // Windows: a second launch hands its paths to the running mdoc; one for
+    // the connector leaves it alone.
+    let single_instance::Launch::Primary(later_launches) =
+        single_instance::claim(&initial, for_connector)
+    else {
         return;
     };
     // The app itself, not its worker modes, records panics.
@@ -228,6 +238,7 @@ fn main() {
                     }),
                     window_decorations: Some(gpui::WindowDecorations::Client),
                     window_min_size: Some(size(px(720.), px(480.))),
+                    focus: !for_connector,
                     ..Default::default()
                 },
                 |window, cx| {
@@ -300,7 +311,9 @@ fn main() {
             }
         })
         .detach();
-        cx.activate(true);
+        if !for_connector {
+            cx.activate(true);
+        }
     });
 }
 

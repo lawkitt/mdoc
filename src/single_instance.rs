@@ -17,13 +17,15 @@ pub enum Launch {
     Primary(Option<Receiver<Vec<PathBuf>>>),
 }
 
+/// `quiet`: a launch for the AI connector, which leaves a running mdoc
+/// alone instead of bringing it forward.
 #[cfg(windows)]
-pub fn claim(paths: &[PathBuf]) -> Launch {
-    windows::claim(&windows::pipe_name(), paths)
+pub fn claim(paths: &[PathBuf], quiet: bool) -> Launch {
+    windows::claim(&windows::pipe_name(), paths, quiet)
 }
 
 #[cfg(not(windows))]
-pub fn claim(_: &[PathBuf]) -> Launch {
+pub fn claim(_: &[PathBuf], _: bool) -> Launch {
     Launch::Primary(None)
 }
 
@@ -83,11 +85,17 @@ mod windows {
         format!(r"\\.\pipe\io.github.lawkitt.mdoc-{user}-{session}{dev}")
     }
 
-    pub fn claim(name: &str, paths: &[PathBuf]) -> Launch {
+    pub fn claim(name: &str, paths: &[PathBuf], quiet: bool) -> Launch {
         // Two tries: a launch racing another one may find the pipe gone
         // between "nobody serves it" and "someone just created it".
         for _ in 0..2 {
-            match send(name, paths) {
+            // Probed, not connected to: a connection asks for the window.
+            let sent = if quiet {
+                running(name)
+            } else {
+                send(name, paths)
+            };
+            match sent {
                 Ok(()) => return Launch::Forwarded,
                 Err(error) if error.raw_os_error() == Some(ERROR_FILE_NOT_FOUND) => {}
                 // The owner exists but cannot be reached: run on our own.
@@ -98,6 +106,21 @@ mod windows {
             }
         }
         Launch::Primary(None)
+    }
+
+    /// Whether an mdoc owns the pipe, asked without connecting.
+    fn running(name: &str) -> std::io::Result<()> {
+        let wide = wide(OsStr::new(name));
+        // SAFETY: `wide` is NUL-terminated and outlives the call. A busy
+        // pipe times out: it still exists.
+        if unsafe { WaitNamedPipeW(wide.as_ptr(), 1) } != 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        match error.raw_os_error() {
+            Some(ERROR_FILE_NOT_FOUND) => Err(error),
+            _ => Ok(()),
+        }
     }
 
     /// Hand `paths` to the running mdoc.
@@ -241,16 +264,29 @@ mod windows {
             assert!(decode(&[]).is_empty());
         }
 
+        /// Done when: a launch for the AI connector finds the running mdoc
+        /// and exits, asking nothing of it, and is the first otherwise.
+        #[test]
+        fn a_launch_for_the_connector_leaves_the_running_mdoc_alone() {
+            let name = format!(r"\\.\pipe\mdoc-test-quiet-{}", std::process::id());
+            let Launch::Primary(Some(rx)) = claim(&name, &[], true) else {
+                panic!("nothing runs yet: this launch is the first");
+            };
+            assert!(matches!(claim(&name, &[], true), Launch::Forwarded));
+            let asked = rx.recv_timeout(Duration::from_millis(500));
+            assert!(asked.is_err(), "the window was asked for: {asked:?}");
+        }
+
         #[test]
         fn a_second_launch_forwards_its_paths_to_the_first() {
             let name = format!(r"\\.\pipe\mdoc-test-{}", std::process::id());
-            let Launch::Primary(Some(rx)) = claim(&name, &[]) else {
+            let Launch::Primary(Some(rx)) = claim(&name, &[], false) else {
                 panic!("the first launch owns the pipe");
             };
             for round in 0..3 {
                 let path = PathBuf::from(format!(r"C:\documents\{round}.pdf"));
                 assert!(matches!(
-                    claim(&name, std::slice::from_ref(&path)),
+                    claim(&name, std::slice::from_ref(&path), false),
                     Launch::Forwarded
                 ));
                 let got = rx.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -259,7 +295,7 @@ mod windows {
             // A bare launch only asks for the window; quick ones in a row
             // close their end before the listener reaches them.
             for _ in 0..20 {
-                assert!(matches!(claim(&name, &[]), Launch::Forwarded));
+                assert!(matches!(claim(&name, &[], false), Launch::Forwarded));
             }
             for _ in 0..20 {
                 assert!(rx.recv_timeout(Duration::from_secs(5)).unwrap().is_empty());

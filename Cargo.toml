@@ -11,7 +11,7 @@ publish = false
 [workspace]
 # Upstream code with one Linux glyph-offset correction; not a workspace crate.
 exclude = ["vendor"]
-members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-editor-core", "crates/mdoc-history", "crates/mdoc-markdown", "crates/mdoc-pii", "crates/gpui-pdf", "crates/mdoc-spell", "crates/mdoc-store", "crates/mdoc-vault", "crates/mdoc-connector", "crates/mdoc-import", "crates/mdoc-detect", "crates/mdoc-ffi"]
+members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-editor-core", "crates/mdoc-history", "crates/mdoc-markdown", "crates/mdoc-pii", "crates/gpui-pdf", "crates/mdoc-spell", "crates/mdoc-store", "crates/mdoc-vault", "crates/mdoc-connector", "crates/mdoc-mcp", "crates/mdoc-import", "crates/mdoc-detect", "crates/mdoc-ffi"]
 resolver = "2"
 
 # Module dependencies stay visible (ADR 0069): every workspace crate denies
@@ -81,6 +81,10 @@ mdoc-spell = { path = "crates/mdoc-spell" }
 mdoc-store = { path = "crates/mdoc-store" }
 # Documents live in the Vault and save themselves (ADR 0125).
 mdoc-vault = { path = "crates/mdoc-vault" }
+# The AI connector (ADR 0126): the service, and the owner-only listener
+# the `mdoc-mcp` shim calls (src/ai_connector.rs).
+mdoc-connector = { path = "crates/mdoc-connector" }
+mdoc-mcp = { path = "crates/mdoc-mcp" }
 mdoc-import = { path = "crates/mdoc-import" }
 mdoc-detect = { path = "crates/mdoc-detect" }
 gpui-pdf = { path = "crates/gpui-pdf" }
@@ -310,9 +314,7 @@ roxmltree = "0.21"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 # Locks fixtures for the password card's tests.
 craft-offcrypto = { workspace = true }
-# The AI connector's service (Milestone 2): only the exits suite reaches it
-# until the listener lands (item 7); `exits-suite` lets that suite take its
-# check out.
+# `exits-suite` lets the exits suite take the AI connector's check out.
 mdoc-connector = { path = "crates/mdoc-connector", features = ["exits-suite"] }
 
 # PDF rasterization is CPU-heavy. Keep application/editor code debuggable while
