@@ -105,6 +105,10 @@ enum Via {
     /// The AI connector's `list_documents`: the document's label, from a
     /// heading the stored document is given.
     ConnectorList,
+    /// The shim's wire (`mdoc_connector::serve`): `get_document`'s answer
+    /// line as it crosses the pipe, label and all, for the stored document
+    /// with that heading.
+    ConnectorWire,
 }
 
 /// Where the shelf's row comes from.
@@ -203,6 +207,12 @@ const EXITS: &[Exit] = &[
         via: Via::ConnectorList,
         resolves: false,
     },
+    Exit {
+        name: "Connector › over the pipe, get_document's whole answer",
+        gate: Gate::Connector,
+        via: Via::ConnectorWire,
+        resolves: false,
+    },
 ];
 
 /// How the document stands when its text is asked for.
@@ -277,7 +287,7 @@ impl Via {
             Via::ShelfCopy(placement) | Via::ShelfDrag(placement) | Via::Connector(placement) => {
                 placement
             }
-            Via::ConnectorList => Placement::Stored,
+            Via::ConnectorList | Via::ConnectorWire => Placement::Stored,
             _ => Placement::Open,
         }
     }
@@ -346,7 +356,7 @@ fn ready(cx: &mut TestAppContext, via: Via, scenario: Scenario) -> Fixture<'_> {
             None
         }
     };
-    if via == Via::ConnectorList {
+    if matches!(via, Via::ConnectorList | Via::ConnectorWire) {
         // A heading, reviewed with the rest, names the document to an AI.
         let store = vault(&tabs, cx);
         (store.update_document(document.as_str(), |document| {
@@ -677,6 +687,24 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Handed {
                 Ok(mdoc_connector::Read::Text { text, .. }) => out.texts.push(text),
                 Ok(mdoc_connector::Read::NeedsReview { .. }) => {}
                 read => panic!("the fixture's document is short and shared: {read:?}"),
+            }
+        }
+        Via::ConnectorWire => {
+            use mdoc_mcp::wire::{Answer, Call, Done, Request, VERSION};
+            let request = Request {
+                v: VERSION,
+                app: "claude-ai".into(),
+                call: Call::GetDocument {
+                    doc_id: fixture.document.as_str().into(),
+                    part: None,
+                },
+            };
+            let request = serde_json::to_vec(&request).unwrap();
+            let line = mdoc_connector::serve::answer_line(&connector(fixture), &request);
+            match serde_json::from_slice(&line).unwrap() {
+                Answer::Ok(Done::Text { .. }) => out.texts.push(String::from_utf8(line).unwrap()),
+                Answer::Ok(Done::NeedsReview { .. }) => {}
+                answer => panic!("the fixture's document is short and shared: {answer:?}"),
             }
         }
         Via::ConnectorList => {

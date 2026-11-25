@@ -1,6 +1,7 @@
 //! The AI connector's service over the Vault (ADR 0126; #1164 Decisions
 //! 2-4, 23 and 24; Milestone 2 item 5). A plain interface, no socket and no
-//! MCP: the shim and mdoc's listener (item 7) call it.
+//! MCP: mdoc's listener answers the `mdoc-mcp` shim through [`serve`]
+//! (item 7), which only calls it.
 //!
 //! - It serves one **AI project**, none until mdoc shares one, and kept in
 //!   memory only: every start begins with nothing shared. Unfiled has no
@@ -35,6 +36,7 @@
 pub mod exits;
 mod label;
 mod parts;
+pub mod serve;
 
 pub use mdoc_vault::{AiActivity, AiEvent, Delivered, Readiness};
 pub use parts::{Heading, LONG, MAX_OUTLINE_HEADINGS, MAX_PART_HEADINGS, PART_MAX, PartInfo};
