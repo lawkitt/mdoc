@@ -130,6 +130,7 @@ import io.github.lawkitt.mdoc.ui.Palette
 import io.github.lawkitt.mdoc.ui.RestoredText
 import io.github.lawkitt.mdoc.ui.ReviewText
 import io.github.lawkitt.mdoc.ui.ScanTime
+import io.github.lawkitt.mdoc.ui.copyOrSay
 import kotlinx.coroutines.launch
 import uniffi.mdoc_ffi.JobStage
 
@@ -535,7 +536,7 @@ fun DocumentScreen(
                         // A hand copy (#1209): marked sensitive unless the core finds it clean.
                         selectionMenu = model::selectionMenu,
                         onCopySelection = { range, shown, action ->
-                            scope.launch { model.copySelection(range, shown, action)?.let { copy(context, it.text, sensitive = it.marked) } }
+                            scope.launch { model.copySelection(range, shown, action)?.let { copyOrSay(context, it.text, sensitive = it.marked) } }
                         },
                     )
                 }
