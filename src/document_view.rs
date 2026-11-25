@@ -31,6 +31,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
+mod ask;
 pub(crate) mod notes;
 mod project;
 mod project_link;
@@ -169,6 +170,8 @@ pub(crate) struct DocumentView {
     pub(crate) copy_feedback: Option<gpui::Task<()>>,
     /// The header's ⋯ menu.
     pub(crate) more_open: bool,
+    /// The header's Ask menu and its Unfiled card (Milestone 2 item 10).
+    pub(crate) ask: ask::AskHeader,
     /// The header's What you did popover.
     pub(crate) history: decision_history::HistoryPopover,
     /// Text zoom of this document's Markdown, not saved.
@@ -424,6 +427,7 @@ impl DocumentView {
             error: None,
             copy_feedback: None,
             more_open: false,
+            ask: ask::AskHeader::new(cx),
             history: decision_history::HistoryPopover::new(cx),
             zoom: 1.,
             inspector: Inspector::Review,

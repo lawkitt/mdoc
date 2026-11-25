@@ -7,15 +7,15 @@ use mdoc_mcp::wire::{self, Answer, Call, Done, Kind, Refusal, Request};
 
 /// Two Projects in a Vault in `dir`, "Lease" (pinned) and "Estate", each
 /// with one Ready document: their ids and the documents'.
-struct Fixture {
-    dir: tempfile::TempDir,
-    lease: String,
-    lease_doc: String,
-    estate: String,
-    estate_doc: String,
+pub(super) struct Fixture {
+    pub(super) dir: tempfile::TempDir,
+    pub(super) lease: String,
+    pub(super) lease_doc: String,
+    pub(super) estate: String,
+    pub(super) estate_doc: String,
 }
 
-fn fixture() -> Fixture {
+pub(super) fn fixture() -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let vault = mdoc_vault::Vault::open(dir.path().join("vault"), &[3; 32]).unwrap();
     let mut made = Vec::new();
@@ -59,7 +59,7 @@ fn fixture() -> Fixture {
     }
 }
 
-fn boot_fixture<'a>(
+pub(super) fn boot_fixture<'a>(
     cx: &'a mut TestAppContext,
     fixture: &Fixture,
 ) -> (Entity<Workspace>, &'a mut VisualTestContext) {
@@ -71,7 +71,7 @@ fn boot_fixture<'a>(
 }
 
 /// Turn "AI connector (preview)" on or off, as Settings applying it does.
-fn set_preview(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, on: bool) {
+pub(super) fn set_preview(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, on: bool) {
     tabs.update_in(cx, |tabs, window, cx| {
         (tabs.preferences.borrow_mut().current.as_mut().unwrap())
             .ai_connector
@@ -102,7 +102,7 @@ fn list(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Answer {
     call(tabs, cx, Call::ListDocuments)
 }
 
-fn shared(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<String> {
+pub(super) fn shared(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<String> {
     cx.update(|_, cx| tabs.read(cx).ai_connector.as_ref()?.connector.ai_project())
 }
 
@@ -141,7 +141,7 @@ fn pii_model(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, ready: bool) 
     });
 }
 
-fn show_page(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: &str) {
+pub(super) fn show_page(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: &str) {
     let id = id.to_string();
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.show_project_page(
@@ -155,7 +155,7 @@ fn show_page(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: &str) {
     draw(cx);
 }
 
-fn open_member(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: &str) {
+pub(super) fn open_member(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: &str) {
     let id = mdoc_store::document_id::VaultId::parse(id).unwrap();
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.open_vault_document(id, window, cx)

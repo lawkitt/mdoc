@@ -32,6 +32,7 @@ use std::{
     time::Duration,
 };
 
+mod ai_ask_ui;
 mod ai_deliveries;
 mod ai_project;
 mod ai_project_ui;
@@ -137,6 +138,12 @@ pub(super) enum TabEvent {
     /// Copy for AI, from the Share tab, the menu or its shortcut: the
     /// window checks it as the shelf does before anything is copied.
     CopyForAi,
+    /// The header's Ask (Milestone 2 item 10): `with`, and for an Unfiled
+    /// document, whether it moves to a new Project first.
+    Ask {
+        with: mdoc_store::settings::AskWith,
+        move_to_new: bool,
+    },
     ToggleTheme,
     /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
     /// Source follows and Settings keeps it.
@@ -361,6 +368,8 @@ pub(super) struct Workspace {
     /// Where deliveries' and review requests' notifications go: the OS's,
     /// or a recorder in tests and renders.
     notifier: ai_deliveries::Notifier,
+    /// An Ask waiting for its Unfiled document's move (item 10).
+    ai_ask: crate::ai_ask::Waiting,
     /// Settings › Vault's key, the first-Project nudge and the wrong-key
     /// screen.
     recovery: recovery_key::Recovery,
@@ -623,6 +632,7 @@ impl Workspace {
             ai: Default::default(),
             ai_poll: None,
             notifier: Default::default(),
+            ai_ask: Default::default(),
             recovery: Default::default(),
             document_writer: Default::default(),
             admitted_from: Default::default(),
@@ -1725,6 +1735,9 @@ impl Workspace {
             }
             TabEvent::Project(ProjectEvent::MoveToNew) => self.move_to_new_project(id, window, cx),
             TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
+            TabEvent::Ask { with, move_to_new } => {
+                self.ask_from_tab(id, *with, *move_to_new, window, cx)
+            }
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
             TabEvent::SourceDisplay(display) => {
                 let display = *display;
@@ -3477,6 +3490,7 @@ impl Render for Workspace {
             .children(self.move_toast(cx))
             .children(self.ai_prompt_view(window, cx))
             .children(self.project_header_menu(cx))
+            .children(self.project_ask_menu(cx))
             .children(self.folder_sheet_view(window, cx))
             .children(self.new_project_view(window, cx))
             .children(self.keychain_explainer(window, cx))

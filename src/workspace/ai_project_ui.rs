@@ -166,22 +166,27 @@ impl Workspace {
         }
     }
 
-    /// The prompt's Share: Project `project` is the AI project from now
-    /// on, in place of any other, and its members not yet scanned scan.
-    pub(super) fn share_with_ai(&mut self, project: &str, cx: &mut Context<Self>) {
+    /// The prompt's Share, and Ask's: Project `project` is the AI project
+    /// from now on, in place of any other, and its members not yet scanned
+    /// scan. `false` when it could not be shared, which a notice says.
+    pub(super) fn share_with_ai(&mut self, project: &str, cx: &mut Context<Self>) -> bool {
         let Some(running) = &self.ai_connector else {
-            return;
+            return false;
         };
-        match running.connector.share(project) {
+        let shared = match running.connector.share(project) {
             Ok(()) => {
                 self.ai.shared();
                 self.scan_on_entry(cx);
+                true
             }
-            Err(error) => self
-                .notices
-                .post(format!("Could not share the Project with AI apps. {error}")),
-        }
+            Err(error) => {
+                self.notices
+                    .post(format!("Could not share the Project with AI apps. {error}"));
+                false
+            }
+        };
         cx.notify();
+        shared
     }
 
     /// Stop sharing: AI apps read nothing until a Project is shared again.

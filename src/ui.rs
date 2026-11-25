@@ -371,6 +371,37 @@ pub fn menu_row_because(
         })
 }
 
+/// A split button: `main` repeats the last choice, `more` opens the menu
+/// of every choice. Both are 28 px high, in one outline.
+pub fn split_button(
+    main: Control,
+    more_id: impl Into<gpui::ElementId>,
+    more_label: impl Into<gpui::SharedString>,
+    open: bool,
+    theme: Theme,
+) -> (gpui::Div, Control) {
+    let p = theme.pdf_style();
+    let more = header_menu_icon(more_id, more_label, Icon::ChevronDown, theme, open)
+        .w(px(22.))
+        .h(px(26.));
+    let frame = div()
+        .flex()
+        .flex_shrink_0()
+        .items_center()
+        .h(px(28.))
+        .rounded_md()
+        .border_1()
+        .border_color(p.border)
+        .child(
+            main.h(px(26.))
+                .flex()
+                .items_center()
+                .font_weight(gpui::FontWeight::MEDIUM),
+        )
+        .child(div().w(px(1.)).h(px(16.)).bg(p.border));
+    (frame, more)
+}
+
 /// A thin divider between menu groups.
 pub fn menu_divider(theme: Theme) -> gpui::Div {
     div().my_1().h(px(1.)).mx_2().bg(theme.pdf_style().border)

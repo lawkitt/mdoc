@@ -109,7 +109,10 @@ fn header_control(id: &str) -> bool {
         || id.starts_with("project-swatch-")
         || matches!(
             id,
-            "project-page-rename" | "project-page-add-document" | "project-page-menu"
+            "project-page-rename"
+                | "project-page-add-document"
+                | "project-page-menu"
+                | "project-page-ask"
         )
 }
 
@@ -802,6 +805,7 @@ impl Workspace {
                             })),
                     )
                     .child(name)
+                    .children(self.project_ask_button(&project.id, cx))
                     .child(
                         self.page_control("project-page-add-document", "Add document", cx)
                             .flex_shrink_0()
