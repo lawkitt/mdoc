@@ -532,6 +532,11 @@ fun DocumentScreen(
                         onSelectedTop = { top ->
                             scope.launch { reviewScroll.animateScrollTo((top - reviewScroll.viewportSize / 6).coerceAtLeast(0)) }
                         },
+                        // A hand copy (#1209): marked sensitive unless the core finds it clean.
+                        selectionMenu = model::selectionMenu,
+                        onCopySelection = { range, shown, action ->
+                            scope.launch { model.copySelection(range, shown, action)?.let { copy(context, it.text, sensitive = it.marked) } }
+                        },
                     )
                 }
             }

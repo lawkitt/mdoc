@@ -1,12 +1,8 @@
 package io.github.lawkitt.mdoc
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.Color
 import android.text.Spanned
-import android.view.accessibility.AccessibilityNodeInfo
-import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.lawkitt.mdoc.core.AppError
@@ -19,8 +15,8 @@ import io.github.lawkitt.mdoc.document.shareIntent
 import io.github.lawkitt.mdoc.jobs.JobKind
 import io.github.lawkitt.mdoc.jobs.JobOutcome
 import io.github.lawkitt.mdoc.ui.CandidateSpan
-import io.github.lawkitt.mdoc.ui.NoCopyTextView
 import io.github.lawkitt.mdoc.ui.ReviewColours
+import io.github.lawkitt.mdoc.ui.SelectionTextView
 import io.github.lawkitt.mdoc.ui.styledReviewText
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.CoroutineScope
@@ -56,30 +52,6 @@ class ReviewFixesTest {
     }
 
     @Test
-    fun theReviewTextNeverCopies() = ActivityScenario.launch(MainActivity::class.java).use {
-        // On screen: Android shows the clipboard only to the app in front.
-        awaitWindowFocus()
-        val clipboard = context.getSystemService(ClipboardManager::class.java)
-        instrumentation.runOnMainSync {
-            clipboard.setPrimaryClip(ClipData.newPlainText("test", "untouched"))
-            val view = NoCopyTextView(context).apply {
-                setTextIsSelectable(true)
-                text = "Dear Maya Bennett"
-            }
-            android.text.Selection.setSelection(view.text as android.text.Spannable, 5, 17)
-            // A keyboard's Ctrl+C and the menu both arrive here.
-            view.onTextContextMenuItem(android.R.id.copy)
-            view.onTextContextMenuItem(android.R.id.cut)
-            assertFalse(view.performAccessibilityAction(AccessibilityNodeInfo.ACTION_COPY, null))
-            val info = AccessibilityNodeInfo.obtain()
-            view.onInitializeAccessibilityNodeInfo(info)
-            assertFalse(info.actionList.contains(AccessibilityNodeInfo.AccessibilityAction.ACTION_COPY))
-            assertEquals("untouched", clipboard.primaryClip?.getItemAt(0)?.text)
-            assertEquals("Dear Maya Bennett", view.text.toString())
-        }
-    }
-
-    @Test
     fun sharingNeverCarriesTheOriginalTitle() {
         val title = "Maya Bennett ${System.nanoTime()}"
         val text = "Letter to Maya Bennett."
@@ -110,7 +82,7 @@ class ReviewFixesTest {
             val text = styledReviewText(context, snapshot.markdown, snapshot.styling, snapshot.candidates, null, colours) { opened = it }
             val span = (text as Spanned).getSpans(0, text.length, CandidateSpan::class.java).single()
             // What TalkBack's activation calls.
-            span.onClick(NoCopyTextView(context))
+            span.onClick(SelectionTextView(context))
         }
         assertEquals(snapshot.candidates.single().id, opened)
     }

@@ -33,7 +33,9 @@
 //! item 29 they stay in the bindings, documented as unchecked. A selection
 //! copied by hand is the user's own copy, never blocked (#1209):
 //! `DocumentSession::check_selection` only says what it holds and
-//! `replace_selection` changes the review, so neither is an exit.
+//! `replace_selection` changes the review, so neither is an exit. Android's
+//! selection menu, Ctrl+C and TalkBack's Copy (`ReviewText.kt`) are the
+//! user's own copies through them, marked unless clean.
 //!
 //! To add an exit (Milestone 2's connector), add its row to [`EXITS`] and,
 //! if it has a check of its own, a [`Gate`].

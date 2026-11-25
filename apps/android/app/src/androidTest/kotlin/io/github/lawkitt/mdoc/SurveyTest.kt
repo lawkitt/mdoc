@@ -25,7 +25,7 @@ import io.github.lawkitt.mdoc.core.SourceKind
 import io.github.lawkitt.mdoc.restore.RestoreActivity
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import io.github.lawkitt.mdoc.ui.CandidateSpan
-import io.github.lawkitt.mdoc.ui.NoCopyTextView
+import io.github.lawkitt.mdoc.ui.SelectionTextView
 import java.io.File
 import org.json.JSONArray
 import org.junit.Assume.assumeTrue
@@ -276,8 +276,8 @@ class SurveyTest {
         compose.waitForIdle()
     }
 
-    private fun find(view: View): NoCopyTextView? = when (view) {
-        is NoCopyTextView -> view
+    private fun find(view: View): SelectionTextView? = when (view) {
+        is SelectionTextView -> view
         is ViewGroup -> (0 until view.childCount).firstNotNullOfOrNull { find(view.getChildAt(it)) }
         else -> null
     }
