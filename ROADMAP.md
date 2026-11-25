@@ -398,18 +398,6 @@ of real use by the maintainer on the landed build gate its next candidate;
 items 33–35 are polish and do not. Items 36–39 and 44 gate it too; items
 40–43 follow them and gate nothing ([#1209](https://github.com/lawkitt/mdoc/issues/1209)).
 
-39. **[Check] Nothing to replace, and an edit with no new name.** *From
-    [#1209](https://github.com/lawkitt/mdoc/issues/1209).* Two behaviours to
-    confirm in running builds and fix where they fail: a scanned document with
-    nothing to replace is Ready and can use Copy for AI; an edit that adds no
-    new name returns to Ready without a click. *Done when:* a test pins both
-    on desktop, iOS and Android.
-40. **[Core] The clean-selection check.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209)
-    (ADR 0109, amended).* One call answers, for a range of a document: clean,
-    N names not replaced, or never scanned; a second accepts the proposals
-    inside a range as the review does, in one undoable step. Both reach the
-    mobile bindings. *Done when:* core tests cover each answer, text changed
-    since its scan, and a known name written out. *Blocks 41–43.*
 41. **[iOS] Copy a selection.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
     The selection menu of `docs/specs/mobile.md`: Copy, or "Replace N and
     copy" with "Copy with names". Table cells and edit mode copy to the
@@ -429,15 +417,6 @@ items 33–35 are polish and do not. Items 36–39 and 44 gate it too; items
     restored reply's copy is; ⌘C stays silent. *Done when:* workspace tests
     cover the menu item and the marking in Edit, Original and Side by side.
     *Blocked by 40.*
-44. **[Core] An edit's new text is scanned.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091) (the maintainer,
-    2026-11-25).* At Done, the paragraphs an edit changed are scanned for
-    names as a fresh document is, by the name finder or below the floor by
-    the rules; a new name becomes a proposal and the document is not Ready
-    until it is decided. Only the changed paragraphs are scanned. *Done
-    when:* core tests pin a typed new name as a proposal and an edit with no
-    new name staying Ready, and desktop, iOS and Android each have a test of
-    a typed name that does not leave unreplaced.
 
 - **[Mobile] Later: drag a selection out.** It follows the copy menu's three
   states once those have been used for a while. *From
@@ -478,22 +457,6 @@ or ChatGPT apps themselves are the maintainer's.
    launcher for a binary inside an installed app? The maintainer runs it,
    since the install can restart Claude Desktop. *Done when:* the answer is a
    comment on the issue.
-7. **[Desktop] The shim and local IPC.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
-   (ADR 0126); promotes Later's Agent access item.* mdoc listens on an
-   owner-only socket or pipe. The `mdoc-mcp` shim, shipped in the app, speaks
-   MCP on stdio in both protocol eras: three tools with their annotations, a
-   "restore" prompt, and instructions asking the model to show its answer and
-   deliver it. It may start mdoc. *Blocked by:* items 5, 6. *Done when:* a
-   test client drives the shim over stdio in both eras against a fake app,
-   and no response carries an original or a real name.
-8. **[Desktop] The share prompt and the AI project in the window.** *From
-   [#1164](https://github.com/lawkitt/mdoc/issues/1164).* The AI project is always
-   shown, with Stop sharing. When an AI app asks and nothing is shared, mdoc
-   asks to share the last-viewed Project; the share never follows the view.
-   A document entering the AI project is scanned, never replaced, by itself.
-   The Project page lists AI activity. *Blocked by:* items 6, 7. *Done when:*
-   workspace tests and headless renders of the prompt, the indicator and the
-   activity list.
 9. **[Desktop] Notifications and where a reply lands.** *From
    [#1164](https://github.com/lawkitt/mdoc/issues/1164).* A delivery and a request for
    an unreviewed document each raise an OS notification that opens the Reply
@@ -508,12 +471,6 @@ or ChatGPT apps themselves are the maintainer's.
     opens the AI app with a prompt naming the document by its AI label.
     *Blocked by:* items 1, 2, 8. *Done when:* workspace tests of each path
     and of the prompt's text; headless renders of the menu.
-11. **[Desktop] Settings › AI connector.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-    The preview setting; Add to Claude Desktop (a launcher bundle, or the
-    config file with consent, as item 3 found); Add to ChatGPT; Test
-    connection, which opens the AI app with a first prompt. *Blocked by:*
-    items 3, 7. *Done when:* tests of what each button writes, against temp
-    folders; headless renders of the page.
 12. **[Check] A real model end to end.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
     A script runs the Claude command-line app with a throwaway config and
     the dev profile against the built shim: the model lists, reads, shows its
