@@ -7,7 +7,9 @@
 //! in here.
 //!
 //! Only ready documents copy or drag; previews and exports hold
-//! pseudonymized text only (the menu bar shows in screen shares).
+//! pseudonymized text only (the menu bar shows in screen shares). A row
+//! that is not ready carries the step that resolves it ("Replace 2 and
+//! copy", "Review", "Find names"), and a Copy for AI on it says why.
 
 mod row;
 
@@ -15,6 +17,7 @@ mod row;
 pub(crate) use row::row_label;
 
 use crate::{
+    refusal::Step,
     shelf::{self, ShelfDocument, ShelfExports},
     style::Theme,
     workspace::Workspace,
@@ -93,6 +96,8 @@ pub(crate) enum ShelfRowsEvent {
     Dragged(usize),
     /// A click on the row: open it in mdoc.
     Open(usize),
+    /// A refused row's step: run it in mdoc.
+    Step(usize, Step),
 }
 
 pub(crate) struct ShelfRows {
@@ -103,6 +108,9 @@ pub(crate) struct ShelfRows {
     drag_hint: bool,
     /// One focus handle per document row, for ↑↓ and the focus ring.
     rows: Vec<FocusHandle>,
+    /// One per row for its step's button, where a Copy for AI it refused
+    /// sends focus.
+    steps: Vec<FocusHandle>,
     /// Each row's preview as it fits two lines, and its title as it fits
     /// with its width, measured once.
     fitted: Vec<Option<shelf::Preview>>,
@@ -111,6 +119,8 @@ pub(crate) struct ShelfRows {
     press: Option<(usize, Point<Pixels>)>,
     /// The row whose Copy for AI just ran.
     copied: Option<usize>,
+    /// The row whose Copy for AI was refused: its meta line says so.
+    refused: Option<usize>,
     /// The running drag was dropped on the host itself: not a drop.
     dropped_here: bool,
     /// Where each row's "N replaced" was painted, so a render can hover it.
@@ -146,6 +156,10 @@ impl ShelfRows {
             .iter()
             .map(|_| cx.focus_handle().tab_stop(true))
             .collect();
+        let steps = documents
+            .iter()
+            .map(|_| cx.focus_handle().tab_stop(true))
+            .collect();
         let fitted = documents
             .iter()
             .map(|document| {
@@ -165,10 +179,12 @@ impl ShelfRows {
             documents,
             drag_hint,
             rows,
+            steps,
             fitted,
             titles,
             press: None,
             copied: None,
+            refused: None,
             dropped_here: false,
             #[cfg(all(
                 debug_assertions,
@@ -212,6 +228,19 @@ impl ShelfRows {
         self.copied
     }
 
+    /// The row whose Copy for AI was refused, for tests and renders.
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
+    pub(crate) fn refused(&self) -> Option<usize> {
+        self.refused
+    }
+
     /// Show "Copied" on `index` without copying, for renders.
     #[cfg(all(
         debug_assertions,
@@ -235,6 +264,14 @@ impl ShelfRows {
             .iter()
             .find(|(row, _)| *row == index)
             .map(|(_, bounds)| bounds.center())
+    }
+
+    /// Whether row `index`'s step button has focus, for tests.
+    #[cfg(test)]
+    pub(crate) fn step_focused(&self, index: usize, window: &Window) -> bool {
+        self.steps
+            .get(index)
+            .is_some_and(|step| step.is_focused(window))
     }
 
     /// The first row's focus handle: where focus starts.
@@ -289,6 +326,9 @@ impl ShelfRows {
     }
 
     /// Copy for AI on a ready row: the text a drag carries, then ✓ "Copied".
+    /// On a row that is not ready (a click, ⌘C or ⌘1…⌘8) nothing is
+    /// copied: its meta line says "Not copied" with its state, and focus
+    /// goes to its step.
     pub(crate) fn copy(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         #[cfg(test)]
         let text = (self.unchecked(crate::exits::Gate::ShelfCopy, index))
@@ -296,10 +336,17 @@ impl ShelfRows {
         #[cfg(not(test))]
         let text = self.checked_again(index, window, cx);
         let Some(text) = text else {
+            if let Some(document) = self.documents.get(index) {
+                self.refused = Some(index);
+                if document.step().is_some() {
+                    window.focus(&self.steps[index], cx);
+                }
+            }
             cx.notify();
             return;
         };
         cx.write_to_clipboard(ClipboardItem::new_string(text));
+        self.refused = None;
         self.copied = Some(index);
         cx.emit(ShelfRowsEvent::Copied(index));
         cx.notify();
@@ -400,6 +447,14 @@ impl ShelfRows {
         #[cfg(not(any(target_os = "macos", test)))]
         let _ = (text, path, card);
         cx.emit(ShelfRowsEvent::Dragged(index));
+    }
+
+    /// A refused row's step, as its button runs it: the host opens the
+    /// document in mdoc and runs it there.
+    pub(crate) fn step(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(step) = self.documents.get(index).and_then(ShelfDocument::step) {
+            cx.emit(ShelfRowsEvent::Step(index, step));
+        }
     }
 
     /// The running drag was released over the host itself.

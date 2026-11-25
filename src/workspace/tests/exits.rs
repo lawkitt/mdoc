@@ -17,6 +17,12 @@
 //! tests take each gate's check out (`crate::exits`) and assert that its
 //! exits then fail and every other exit still passes.
 //!
+//! A refusal's step (#1209) is an exit too: "Replace N and copy" on the
+//! Share tab, in the "Not copied" notice and on a shelf row replaces the
+//! pending names and then asks Copy for AI. Such an exit `resolves`: in a
+//! scenario its step fixes, it may hand out text, but only what the
+//! Vault's check gives for the document then.
+//!
 //! To add an exit, add its row to [`EXITS`] and its [`Via`]. The match in
 //! [`hand_out`] then needs its driver, and if it has a check of its own,
 //! `crate::exits::Gate` needs its gate.
@@ -51,6 +57,7 @@ use super::*;
 use crate::{
     exits::{Gate, take_out},
     pii::ui::CopyForAi,
+    refusal::Step,
     shelf::{Readiness, ShelfKey},
     shelf_ui::ShelfView,
 };
@@ -67,6 +74,8 @@ struct Exit {
     /// Where its text is checked.
     gate: Gate,
     via: Via,
+    /// It may make the document Ready first (a refusal's step).
+    resolves: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,6 +95,11 @@ enum Via {
     ShelfCopy(Placement),
     /// A drag from the shelf: its text and its `.md` file, name and all.
     ShelfDrag(Placement),
+    /// Copy for AI refused in the editor, then the "Not copied" notice's
+    /// step.
+    NoticeStep,
+    /// A shelf row's "Replace N and copy", run in its open tab.
+    ShelfStep,
     /// The AI connector's `get_document` (Milestone 2), the Project shared.
     Connector(Placement),
     /// The AI connector's `list_documents`: the document's label, from a
@@ -108,61 +122,86 @@ const EXITS: &[Exit] = &[
         name: "Share tab › Copy for AI",
         gate: Gate::EditorCopyForAi,
         via: Via::ShareButton,
+        // Its button shows "Replace N and copy" while names are pending.
+        resolves: true,
     },
     Exit {
         name: "⋯ › Copy for AI",
         gate: Gate::EditorCopyForAi,
         via: Via::MoreMenu,
+        resolves: false,
     },
     Exit {
         name: "File › Copy for AI",
         gate: Gate::EditorCopyForAi,
         via: Via::FileMenu,
+        resolves: false,
     },
     Exit {
         name: "Copy for AI shortcut",
         gate: Gate::EditorCopyForAi,
         via: Via::Shortcut,
+        resolves: false,
     },
     Exit {
         name: "Palette › Copy for AI",
         gate: Gate::EditorCopyForAi,
         via: Via::Palette,
+        resolves: false,
+    },
+    Exit {
+        name: "Not copied notice › its step",
+        gate: Gate::EditorCopyForAi,
+        via: Via::NoticeStep,
+        resolves: true,
     },
     Exit {
         name: "Shelf › Copy for AI, open document",
         gate: Gate::ShelfCopy,
         via: Via::ShelfCopy(Placement::Open),
+        resolves: false,
     },
     Exit {
         name: "Shelf › Copy for AI, stored document",
         gate: Gate::ShelfCopy,
         via: Via::ShelfCopy(Placement::Stored),
+        resolves: false,
+    },
+    Exit {
+        name: "Shelf › Replace N and copy, open document",
+        gate: Gate::EditorCopyForAi,
+        via: Via::ShelfStep,
+        resolves: true,
     },
     Exit {
         name: "Shelf › drag, open document",
         gate: Gate::ShelfDrag,
         via: Via::ShelfDrag(Placement::Open),
+        resolves: false,
     },
     Exit {
         name: "Shelf › drag, stored document",
         gate: Gate::ShelfDrag,
         via: Via::ShelfDrag(Placement::Stored),
+        resolves: false,
     },
     Exit {
         name: "Connector › get_document, open document",
         gate: Gate::Connector,
         via: Via::Connector(Placement::Open),
+        resolves: false,
     },
     Exit {
         name: "Connector › get_document, stored document",
         gate: Gate::Connector,
         via: Via::Connector(Placement::Stored),
+        resolves: false,
     },
     Exit {
         name: "Connector › list_documents, the document's label",
         gate: Gate::Connector,
         via: Via::ConnectorList,
+        resolves: false,
     },
 ];
 
@@ -197,6 +236,10 @@ const NOT_READY: [Scenario; 4] = [
     Scenario::NameOnlyTheVaultKnows,
     Scenario::ChangedElsewhere,
 ];
+
+/// The scenarios no step resolves: replacing what the tab proposes leaves
+/// the document not Ready, so an exit that resolves must still refuse.
+const UNRESOLVED: [Scenario; 2] = [Scenario::NameOnlyTheVaultKnows, Scenario::ChangedElsewhere];
 
 impl Scenario {
     /// The names its Project knows once it has happened: none of them may
@@ -234,7 +277,7 @@ impl Via {
     }
 
     fn on_shelf(self) -> bool {
-        matches!(self, Via::ShelfCopy(_) | Via::ShelfDrag(_))
+        matches!(self, Via::ShelfCopy(_) | Via::ShelfDrag(_) | Via::ShelfStep)
     }
 }
 
@@ -257,23 +300,6 @@ struct Fixture<'a> {
 fn written(cx: &mut VisualTestContext) {
     wait(cx, 800);
     wait(cx, 800);
-}
-
-fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<ShelfView> {
-    use crate::shelf_ui::ShelfContent;
-    let workspace = cx.window_handle().downcast::<Workspace>().unwrap();
-    let shelf = cx.cx.update(|cx| {
-        let content = workspace
-            .read(cx)
-            .map(|workspace| ShelfContent::of(workspace, cx))
-            .unwrap();
-        cx.open_window(gpui::WindowOptions::default(), |window, cx| {
-            cx.new(|cx| ShelfView::new(workspace, content, window, cx))
-        })
-        .unwrap()
-    });
-    cx.run_until_parked();
-    shelf
 }
 
 fn clipboard(cx: &mut VisualTestContext) -> String {
@@ -500,15 +526,17 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Handed {
                     view.toggle_replacements_panel(window, cx);
                 }
                 view.inspector = crate::document_view::Inspector::Share;
-                view.error = None;
+                view.copy_refusal = None;
                 cx.notify();
             });
             click_toolbar(fixture.cx, "share-copy-for-ai");
             written(fixture.cx);
             let reached = fixture.cx.update(|_, cx| {
-                let refused =
-                    (view.read(cx).error.as_deref()).is_some_and(|e| e.starts_with("Not copied"));
-                refused || clipboard_of(cx) != BEFORE
+                let view = view.read(cx);
+                // A step that opens the review hands nothing out.
+                let reviewing = view.replacements_open()
+                    && view.inspector == crate::document_view::Inspector::Review;
+                view.copy_refusal.is_some() || reviewing || clipboard_of(cx) != BEFORE
             });
             if !reached {
                 // While a proposal is pending, GPUI's test window drops this
@@ -549,6 +577,40 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Handed {
             shelf
                 .update(fixture.cx, |view, window, cx| view.copy(index, window, cx))
                 .unwrap();
+        }
+        Via::NoticeStep => {
+            fixture.focus_letter();
+            fixture.cx.dispatch_action(CopyForAi);
+            written(fixture.cx);
+            let view = active(&fixture.tabs, fixture.cx);
+            let step = view.read_with(fixture.cx, |view, _| {
+                view.copy_refusal.as_ref().and_then(|refusal| refusal.step)
+            });
+            if step.is_some() {
+                click_toolbar(fixture.cx, "copy-refusal-step");
+            }
+        }
+        Via::ShelfStep => {
+            // The row as the shelf lists it now, its "Replace N and copy"
+            // run as its button runs it. It is driven in every scenario, so
+            // the path to Copy for AI is asked even where the row offers
+            // Review.
+            let key = fixture.key();
+            let shelf = open_shelf(fixture.cx);
+            let index = shelf
+                .read_with(fixture.cx, |view, cx| {
+                    (view.content(cx).documents.iter()).position(|row| row.key == key)
+                })
+                .unwrap()
+                .expect("the shelf lists it");
+            let view = active(&fixture.tabs, fixture.cx);
+            let pending = view.read_with(fixture.cx, |view, _| view.pii.review().remaining());
+            shelf
+                .update(fixture.cx, |view, window, cx| {
+                    view.run_step(index, Step::ReplaceAndCopy(pending), window, cx)
+                })
+                .unwrap();
+            fixture.cx.run_until_parked();
         }
         Via::ShelfDrag(_) => {
             let (shelf, index) = fixture.shelf.expect("the shelf is open");
@@ -598,8 +660,15 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Handed {
 }
 
 /// What is wrong with what `exit` handed out in `scenario` for the
-/// document titled `titles`; empty when nothing is.
-fn faults(exit: &Exit, scenario: Scenario, titles: &[String], out: &Handed) -> Vec<String> {
+/// document titled `titles`; empty when nothing is. `now`: what the
+/// Vault's check gives for the document once the exit has run.
+fn faults(
+    exit: &Exit,
+    scenario: Scenario,
+    titles: &[String],
+    out: &Handed,
+    now: Option<&str>,
+) -> Vec<String> {
     let mut faults = Vec::new();
     let ready = READY.contains(&scenario);
     match scenario {
@@ -607,6 +676,12 @@ fn faults(exit: &Exit, scenario: Scenario, titles: &[String], out: &Handed) -> V
             faults.push(format!("{}: handed out nothing Ready: {out:?}", exit.name));
         }
         _ if ready => {}
+        // Its step made the document Ready: what it handed out is the
+        // check's text now, with no file.
+        _ if exit.resolves
+            && !out.texts.is_empty()
+            && out.file_names.is_empty()
+            && out.texts.iter().all(|text| Some(text.as_str()) == now) => {}
         _ if !out.texts.is_empty() || !out.file_names.is_empty() => {
             faults.push(format!(
                 "{}: handed out a document not Ready ({scenario:?}): {out:?}",
@@ -650,7 +725,10 @@ fn run(cx: &mut TestAppContext, exit: &Exit, scenario: Scenario) -> Vec<String> 
     fixture.change(scenario);
     let titles = fixture.titles();
     let out = hand_out(exit.via, &mut fixture);
-    let mut faults = faults(exit, scenario, &titles, &out);
+    let now = (vault(&fixture.tabs, fixture.cx))
+        .text_for_ai(fixture.document.as_str())
+        .ok();
+    let mut faults = faults(exit, scenario, &titles, &out, now.as_deref());
     if fixture.missed_click && READY.contains(&scenario) {
         faults.push(format!(
             "{}: the click never reached Copy for AI",
@@ -720,7 +798,9 @@ fn taken_out_fails_only(cx: &mut TestAppContext, gate: Gate) {
     for exit in EXITS {
         // The others are run once, in the scenario only the Vault's check
         // catches.
-        let scenarios: &[Scenario] = if exit.gate == gate {
+        let scenarios: &[Scenario] = if exit.gate == gate && exit.resolves {
+            &UNRESOLVED
+        } else if exit.gate == gate {
             &NOT_READY
         } else {
             &[Scenario::NameOnlyTheVaultKnows]

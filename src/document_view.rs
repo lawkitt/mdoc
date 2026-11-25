@@ -181,6 +181,9 @@ pub(crate) struct DocumentView {
     pub(crate) from_reply: Option<notes::FromReply>,
     /// The running copy feedback belongs to Copy for AI, not Copy Markdown.
     pub(crate) copied_for_ai: bool,
+    /// Why the last Copy for AI copied nothing, and its step: the "Not
+    /// copied" notice, until dismissed, a copy or its step.
+    pub(crate) copy_refusal: Option<crate::refusal::Refusal>,
     /// The running copy feedback belongs to Copy reply.
     pub(crate) copied_reply: bool,
     /// The tab's AI reply and its restoration.
@@ -430,6 +433,7 @@ impl DocumentView {
             notes: Default::default(),
             from_reply: None,
             copied_for_ai: false,
+            copy_refusal: None,
             copied_reply: false,
             reply: Default::default(),
             reply_box: None,
@@ -1722,6 +1726,22 @@ impl DocumentView {
                     .when(id == "preview-notice" && self.preview.retryable(), |v| {
                         v.child(button("Retry", RetryPreview, theme))
                     })
+                    .when_some(
+                        (self.copy_refusal.as_ref())
+                            .filter(|_| id == "copy-refusal-notice")
+                            .and_then(|refusal| refusal.step),
+                        |v, step| {
+                            v.child(
+                                ui::filled_button("copy-refusal-step", step.label(), theme, true)
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "copy-refusal-step".into())
+                                    })
+                                    .on_click(cx.listener(move |_, _, _, cx| {
+                                        cx.emit(workspace::TabEvent::CopyStep(step));
+                                    })),
+                            )
+                        },
+                    )
                     .when(id == "ocr-notice", |v| {
                         v.child(ui::control("show-markdown", "Show", theme, true).on_click(
                             cx.listener(|this, _, _, cx| {
@@ -1753,6 +1773,7 @@ impl DocumentView {
                                     "preview-notice" => this.preview.clear_message(),
                                     "setup-notice" => this.import.dismiss_setup_error(),
                                     "clipboard-notice" => this.clipboard_notice.clear(),
+                                    "copy-refusal-notice" => this.copy_refusal = None,
                                     _ => this.error = None,
                                 }
                                 cx.notify();
@@ -2423,6 +2444,9 @@ impl Render for DocumentView {
             // hidden nothing needs attention (#950 review).
             .filter(|_| !card_shows_error && !setup_says_error && !self.conversion_cancelled())
             .map(|detail| self.notice("error-notice", "Needs attention", detail, true, cx));
+        let refusal_notice = (self.copy_refusal.as_ref())
+            .map(|refusal| refusal.reason.clone())
+            .map(|detail| self.notice("copy-refusal-notice", "Not copied", detail, false, cx));
         let minimum = (280. / content_width.max(620.)).min(0.5);
         let split = self
             .preview
@@ -2509,7 +2533,7 @@ impl Render for DocumentView {
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Enter its password to see it here.").into_any_element() } else { pdf.into_any_element() }))
                     .children(preview_notice)))
 )
-            .children(setup_notice.filter(|_| !(show_markdown && self.lifecycle.source_only() && self.import.ocr_required().is_some()))).children(error_notice)
+            .children(setup_notice.filter(|_| !(show_markdown && self.lifecycle.source_only() && self.import.ocr_required().is_some()))).children(error_notice).children(refusal_notice)
             // The word popup anchors to the editor, hidden under before/after.
             .children(self.pii_popup(cx).filter(|_| self.compare.is_none()))
             .children(self.replacement_tip(window, cx).filter(|_| self.compare.is_none()));
