@@ -410,7 +410,8 @@ struct DocumentScreen: View {
             edit: model.isEditing ? EditActions(model) : nil,
             findBar: model.findBarRequest,
             shown: textShows,
-            viewport: textViewport)
+            viewport: textViewport,
+            selectionCopy: SelectionCopyActions(model))
     }
 
     /// Edit is offered while the text shows, in live preview or with Show

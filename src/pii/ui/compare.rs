@@ -2,7 +2,7 @@
 //! pseudonymized text, both formatted like the editor and read-only, scrolling
 //! together. Live: it follows every change to the applied replacements, with
 //! the editor's replacement motion.
-use super::APPLIED_ID;
+use super::{APPLIED_ID, CopyFrom};
 use crate::{document_view::DocumentView, style, ui};
 use gpui::{
     AnyElement, AppContext, Context, Entity, FocusHandle, Focusable, Hsla, Pixels, SharedString,
@@ -119,6 +119,24 @@ impl CompareState {
     pub(crate) fn reply_editor(&self) -> &Entity<mdoc_editor::EditorState> {
         &self.reply
     }
+    /// `range` of the Original column's `text` as a range of the editor's
+    /// text, when the column shows that text and review (`now`: their
+    /// revisions) and no restored name lies in or across `range`; outside
+    /// the restored names the two texts are the same.
+    pub(super) fn original_in_editor(
+        &self,
+        text: &str,
+        range: Range<usize>,
+        now: (u64, u64),
+    ) -> Option<Range<usize>> {
+        let shown = self
+            .key
+            .is_some_and(|(editor, review, _)| (editor, review) == now);
+        let restored = (self.marks.iter())
+            .any(|(before, _)| before.start < range.end && range.start < before.end);
+        (shown && self.before == text && !restored)
+            .then(|| to_after(range.start, &self.marks)..to_after(range.end, &self.marks))
+    }
 }
 
 #[cfg(test)]
@@ -135,6 +153,15 @@ impl CompareState {
             .read(cx)
             .offset_screen_top(offset)
             .is_some_and(|top| top >= viewport.top() && top + px(16.) <= viewport.bottom())
+    }
+    /// The Original and Pseudonymized columns' editors.
+    pub(crate) fn columns(
+        &self,
+    ) -> (
+        Entity<mdoc_editor::EditorState>,
+        Entity<mdoc_editor::EditorState>,
+    ) {
+        (self.original.clone(), self.current.clone())
     }
     pub(super) fn current_focus(&self, cx: &gpui::App) -> FocusHandle {
         self.current.read(cx).focus_handle(cx)
@@ -200,34 +227,46 @@ impl DocumentView {
     }
     fn open_compare(&mut self, mode: CompareMode, window: &mut Window, cx: &mut Context<Self>) {
         let theme = self.theme.get();
-        let pane = |scroll: &gpui::ScrollHandle, window: &mut Window, cx: &mut Context<Self>| {
+        let pane = |scroll: &gpui::ScrollHandle,
+                    from: CopyFrom,
+                    window: &mut Window,
+                    cx: &mut Context<Self>| {
+            let view = cx.weak_entity();
             let editor = cx.new(|cx| {
                 let mut editor = mdoc_editor::EditorState::new(window, cx);
                 editor.set_markdown_style(crate::style::markdown_style(theme), cx);
                 editor.set_read_only(true, cx);
                 editor.set_autoscroll(scroll.clone());
+                super::check_hand_copies(&mut editor, view, from);
                 editor
             });
             // A name clicked in either column selects its Replacements row.
-            let subscription = cx.subscribe_in(&editor, window, |this, _, event, window, cx| {
-                let id = match event {
-                    mdoc_editor::EditorEvent::ActivateAnnotation(id) => *id,
-                    mdoc_editor::EditorEvent::ActivateAnnotations(ids) => match ids.first() {
-                        Some(id) => *id,
-                        None => return,
-                    },
-                    _ => return,
-                };
-                if !this.pii.mapping.open {
-                    this.pii.mapping.open_panel(window.focused(cx));
-                }
-                this.panel_select_mention(id, cx);
-            });
+            let subscription =
+                cx.subscribe_in(&editor, window, move |this, editor, event, window, cx| {
+                    let id = match event {
+                        // "Replace N and Copy", offered in the Pseudonymized
+                        // column only: its text is the editor's.
+                        mdoc_editor::EditorEvent::CopyAction { range, label } => {
+                            this.copy_action(from, editor, range.clone(), label, cx);
+                            return;
+                        }
+                        mdoc_editor::EditorEvent::ActivateAnnotation(id) => *id,
+                        mdoc_editor::EditorEvent::ActivateAnnotations(ids) => match ids.first() {
+                            Some(id) => *id,
+                            None => return,
+                        },
+                        _ => return,
+                    };
+                    if !this.pii.mapping.open {
+                        this.pii.mapping.open_panel(window.focused(cx));
+                    }
+                    this.panel_select_mention(id, cx);
+                });
             (editor, subscription)
         };
         let (left_scroll, right_scroll) = (gpui::ScrollHandle::new(), gpui::ScrollHandle::new());
-        let (original, left) = pane(&left_scroll, window, cx);
-        let (current, right) = pane(&right_scroll, window, cx);
+        let (original, left) = pane(&left_scroll, CopyFrom::Original, window, cx);
+        let (current, right) = pane(&right_scroll, CopyFrom::Pseudonymized, window, cx);
         let reply_scroll = gpui::ScrollHandle::new();
         let reply = cx.new(|cx| {
             let mut editor = mdoc_editor::EditorState::new(window, cx);

@@ -16,19 +16,24 @@ struct RestoredTextView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> RenderedTextView {
-        let view = RenderedTextView()
+        let view = RestoredReplyTextView()
         view.isEditable = false
         view.isSelectable = true
         view.dataDetectorTypes = []
         // Writing Tools would act on the originals (#321).
         view.writingToolsBehavior = .none
+        view.textDragInteraction?.isEnabled = false
         view.backgroundColor = .systemBackground
         view.textContainerInset = UIEdgeInsets(top: 16, left: 12, bottom: 32, right: 12)
         view.textLayoutManager?.usesHyphenation = false
         view.accessibilityIdentifier = "restored-text"
-        // A reply is the user's to copy, in a table cell too.
-        view.configureCell = { $0.allowsCopy = true }
         let coordinator = context.coordinator
+        view.delegate = coordinator
+        // A reply is the user's to copy, marked, in a table cell too.
+        view.configureCell = { [weak coordinator] cell in
+            cell.allowsCopy = true
+            cell.delegate = coordinator
+        }
         view.onWidth = { [weak coordinator, weak view] width in
             guard let coordinator, let view else { return }
             coordinator.render(view, width: width)
@@ -48,12 +53,17 @@ struct RestoredTextView: UIViewRepresentable {
         coordinator.render(view, width: view.textWidth)
     }
 
-    /// Restyles for a new text column width.
+    /// Restyles for a new text column width, and keeps a selection's
+    /// menu to Copy and Select All (#1228).
     @MainActor
-    final class Coordinator {
+    final class Coordinator: NSObject, UITextViewDelegate {
         var result: RestoreResult?
         var traits = UITraitCollection.current
         var rendered = true
+
+        func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+            RestoredReplyTextView.menu(from: suggestedActions)
+        }
 
         func render(_ view: RenderedTextView, width: CGFloat) {
             guard let result else { return }
@@ -101,6 +111,48 @@ struct RestoredTextView: UIViewRepresentable {
                 ], range: range)
             }
         }
+    }
+}
+
+/// A restored reply's text (#1228): it holds the user's real names, so a
+/// selection's Copy, ⌘C and VoiceOver's Copy are marked as Copy reply's
+/// copy is (`RestoredPasteboard`), and nothing sends a selection on: no
+/// Share, Look Up, Translate, Search Web, Writing Tools or drag. Its table
+/// cells follow the same rule (`CellTextView.allowsCopy`).
+final class RestoredReplyTextView: RenderedTextView {
+    /// The standard actions a selection keeps.
+    static let allowedActions: Set<Selector> = [
+        #selector(UIResponderStandardEditActions.copy(_:)),
+        #selector(UIResponderStandardEditActions.select(_:)),
+        #selector(UIResponderStandardEditActions.selectAll(_:)),
+    ]
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        guard Self.allowedActions.contains(action) else { return false }
+        if action == #selector(UIResponderStandardEditActions.copy(_:)) { return selectedRange.length > 0 }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    override func copy(_ sender: Any?) {
+        let range = selectedRange
+        guard range.length > 0, NSMaxRange(range) <= textStorage.length else { return }
+        RestoredPasteboard.copy((textStorage.string as NSString).substring(with: range))
+    }
+
+    /// The edit menu UIKit suggests, kept to Copy and Select All, in its
+    /// words and order.
+    static func menu(from suggested: [UIMenuElement]) -> UIMenu {
+        func kept(_ element: UIMenuElement) -> UIMenuElement? {
+            if let command = element as? UICommand {
+                return allowedActions.contains(command.action) ? command : nil
+            }
+            if let menu = element as? UIMenu {
+                let children = menu.children.compactMap(kept)
+                return children.isEmpty ? nil : menu.replacingChildren(children)
+            }
+            return nil
+        }
+        return UIMenu(children: suggested.compactMap(kept))
     }
 }
 

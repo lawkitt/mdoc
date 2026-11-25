@@ -12,6 +12,7 @@ merge-hint
 mention-popup
 selection-pill
 selection-category-menu
+copy-menu-replace
 setup-consent
 setup-consent-fp32
 setup-runtime-update
@@ -148,3 +149,6 @@ ai-delivery-badge
 ai-reply-delivered
 project-page-activity
 ai-project-rail
+ask-menu
+ask-unfiled
+project-ask-menu

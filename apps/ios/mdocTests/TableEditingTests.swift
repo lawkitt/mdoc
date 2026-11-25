@@ -114,7 +114,7 @@ final class TableEditingTests: XCTestCase, TextViewHarnessTests {
         XCTAssertFalse(change(harness, harness.view.selectedRange, "a\nb"))
         XCTAssertTrue(harness.shown.contains("| Rent\\|a<br>b | £1,150 |"), harness.shown)
         // Paste: one line, its pipes escaped, as desktop pastes into a cell.
-        InAppClipboard.shared.write("x|y\nz")
+        UIPasteboard.general.string = "x|y\nz"
         harness.view.paste(nil)
         XCTAssertTrue(harness.shown.contains("| Rent\\|a<br>bx\\|y z | £1,150 |"), harness.shown)
         XCTAssertEqual(coreText(harness), harness.shown)
@@ -884,7 +884,7 @@ final class TableEditingTests: XCTestCase, TextViewHarnessTests {
             case 4, 5:
                 if harness.view.selectedRange.location > 0 { backspace(harness) }
             case 6:
-                InAppClipboard.shared.write(pieces[random.next(below: pieces.count)])
+                UIPasteboard.general.string = pieces[random.next(below: pieces.count)]
                 harness.view.paste(nil)
             default:
                 harness.toolbar.run(.moveInTable([.left, .right][random.next(below: 2)]))

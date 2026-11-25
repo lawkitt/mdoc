@@ -1003,13 +1003,18 @@ final class MarkdownLayoutFragment: NSTextLayoutFragment {
 // MARK: Tables
 
 /// A table cell's selectable text. Its location maps a selection back to
-/// document offsets; outside the Reply view it allows no copy, as the main
-/// text does (ADR 0085's export invariant).
+/// document offsets. Copy is its owner's: the review's hand copy (#1209),
+/// or a restored reply's marked copy; Share, Look Up, Translate and the
+/// rest are off, as in the main text.
 final class CellTextView: UITextView, UIAccessibilityContainerDataTableCell {
     var location = 0
     var row = 0
     var column = 0
+    /// A restored reply's cell: VoiceOver and Copy read its source, and
+    /// Copy marks it as the reply's copy is (#321, #1228).
     var allowsCopy = false
+    /// The review's Copy, ⌘C and VoiceOver's Copy of the selection (#1209).
+    var onCopy: (() -> Void)?
     /// Where a `<br>` tag's `<` is drawn as a line separator.
     var breaks: [Int] = []
 
@@ -1024,7 +1029,9 @@ final class CellTextView: UITextView, UIAccessibilityContainerDataTableCell {
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        if allowsCopy { return super.canPerformAction(action, withSender: sender) }
+        if action == #selector(UIResponderStandardEditActions.copy(_:)) {
+            return (allowsCopy || onCopy != nil) && selectedRange.length > 0
+        }
         return [
             #selector(UIResponderStandardEditActions.select(_:)),
             #selector(UIResponderStandardEditActions.selectAll(_:)),
@@ -1032,9 +1039,9 @@ final class CellTextView: UITextView, UIAccessibilityContainerDataTableCell {
     }
 
     override func copy(_ sender: Any?) {
-        guard allowsCopy else { return }
-        guard !breaks.isEmpty, selectedRange.length > 0 else { return super.copy(sender) }
-        UIPasteboard.general.string = source(in: selectedRange)
+        if let onCopy { return onCopy() }
+        guard allowsCopy, selectedRange.length > 0 else { return }
+        RestoredPasteboard.copy(source(in: selectedRange))
     }
 
     /// In the review, where nothing copies, VoiceOver hears the cell as

@@ -350,6 +350,7 @@ impl DocumentView {
             .when(self.shows_history_button(reviewable, cx), |v| {
                 v.child(self.history_button(cx))
             })
+            .children(self.ask_button(cx))
             .child(self.more_button(cx))
             .children(self.primary_button(cx).map(|b| div().ml_1().child(b)));
         let detached = self.title.detached.get();
@@ -406,6 +407,8 @@ impl DocumentView {
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.more_open = !this.more_open;
                         this.history.open = false;
+                        this.ask.open = false;
+                        this.ask.unfiled = None;
                         // The menu takes focus, so Tab and Esc work in it.
                         if this.more_open {
                             window.focus(&this.more_menu_focus, cx);

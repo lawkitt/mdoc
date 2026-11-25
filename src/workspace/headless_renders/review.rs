@@ -95,6 +95,7 @@ pub(super) fn scenes(
         view.update(cx, |v, cx| v.close_pii_popup(&PiiClosePopup, window, cx))
     })?;
     selection_pill(d, view)?;
+    copy_menu(d, view)?;
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
             v.pii.show_setup(true);
@@ -215,6 +216,69 @@ fn selection_pill(d: &mut Driver, view: &Entity<DocumentView>) -> Result<()> {
         })
     })?;
     Ok(())
+}
+
+/// The right-click menu on a selection holding proposals: "Replace N and
+/// Copy" under Copy (#1209). Right-clicked as a pointer would, at the
+/// selection's end; Esc closes it.
+fn copy_menu(d: &mut Driver, view: &Entity<DocumentView>) -> Result<()> {
+    let before = d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            let text = v.editor.read(cx).text().to_owned();
+            // From the first proposal to its line's end.
+            let start = (v.pii.review().candidates().iter())
+                .map(|c| c.range.start)
+                .min()
+                .expect("the fixture's proposals");
+            let end = text[start..].find('\n').map_or(text.len(), |n| start + n);
+            // The fixture's detections stand for a scan, for this scene.
+            let scanned = std::mem::replace(&mut v.session.document.scanned, true);
+            window.focus(&v.editor.read(cx).focus_handle(cx), cx);
+            v.editor.update(cx, |e, cx| e.set_selection(start..end, cx));
+            (v.editor.read(cx).history_id(), scanned)
+        })
+    })?;
+    let (before, scanned) = before;
+    d.settle()?;
+    let at = d.change(|_, _, cx| view.read(cx).editor.read(cx).caret_bounds())?;
+    let at = at.ok_or("the selection is painted")?.center();
+    d.cx.update_window(d.window, |_, window, cx| {
+        window.dispatch_event(
+            gpui::PlatformInput::MouseDown(gpui::MouseDownEvent {
+                button: gpui::MouseButton::Right,
+                position: at,
+                modifiers: gpui::Modifiers::default(),
+                click_count: 1,
+                first_mouse: false,
+            }),
+            cx,
+        );
+    })
+    .map_err(|e| e.to_string())?;
+    let label = d.change(|_, _, cx| {
+        let editor = view.read(cx).editor.read(cx);
+        editor.menu_copy_action().map(|label| label.to_string())
+    })?;
+    let label = label.ok_or("Replace N and Copy is offered")?;
+    if !(label.starts_with("Replace ") && label.ends_with(" and Copy")) {
+        return Err(format!("unexpected copy item {label:?}"));
+    }
+    d.capture("copy-menu-replace")?;
+    d.key("escape")?;
+    // The capture's Tab walk indents in the editor; undo restores it.
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            for _ in 0..8 {
+                if v.editor.read(cx).history_id() == before {
+                    break;
+                }
+                v.editor.update(cx, |e, cx| e.undo_step(window, cx));
+            }
+            assert_eq!(v.editor.read(cx).history_id(), before, "Tab edits undone");
+            v.editor.update(cx, |e, cx| e.set_cursor(0, cx));
+            v.session.document.scanned = scanned;
+        })
+    })
 }
 
 /// Apply all, then Before/After.

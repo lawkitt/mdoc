@@ -353,6 +353,27 @@ pub struct AiConnectorConfig {
     /// only notifies and never takes focus (#1164 Decision 6).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub open_deliveries: bool,
+    /// The Ask button's last choice, which its main part repeats (#1164
+    /// Decision 22). Claude until another is chosen.
+    #[serde(default, skip_serializing_if = "AskWith::is_default")]
+    pub ask: AskWith,
+}
+/// Where the Ask button sends a document or a Project.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AskWith {
+    #[default]
+    #[serde(rename = "claude")]
+    Claude,
+    #[serde(rename = "chatgpt")]
+    ChatGpt,
+    /// Copy for AI: the document's text, for any chat.
+    #[serde(rename = "copy")]
+    CopyForAi,
+}
+impl AskWith {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 impl AiConnectorConfig {
     fn is_default(&self) -> bool {
@@ -776,6 +797,27 @@ mod tests {
         prefs.ai_connector.open_deliveries = true;
         save(&path, &prefs).unwrap();
         assert!(load(&path).unwrap().ai_connector.open_deliveries);
+    }
+    /// Ask's last choice is Claude until another is chosen, and is written
+    /// only then (#1164 Decision 22).
+    #[test]
+    fn asks_last_choice_is_written_only_once_it_is_not_claude() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut prefs = Preferences::default();
+        prefs.ai_connector.preview = true;
+        assert_eq!(prefs.ai_connector.ask, AskWith::Claude);
+        let written = serde_json::to_value(&prefs).unwrap();
+        assert!(written["ai_connector"].get("ask").is_none(), "{written}");
+        for (choice, word) in [(AskWith::ChatGpt, "chatgpt"), (AskWith::CopyForAi, "copy")] {
+            prefs.ai_connector.ask = choice;
+            save(&path, &prefs).unwrap();
+            assert_eq!(load(&path).unwrap().ai_connector.ask, choice);
+            let written = serde_json::to_value(&prefs).unwrap();
+            assert_eq!(written["ai_connector"]["ask"], word);
+        }
+        let claude: AiConnectorConfig = serde_json::from_str(r#"{"ask":"claude"}"#).unwrap();
+        assert_eq!(claude.ask, AskWith::Claude);
     }
     #[test]
     fn default_categories_detect_everything_and_unticked_ones_roundtrip() {

@@ -538,6 +538,16 @@ struct WordsDraft: Equatable, Sendable {
     var bounds: SourceRange
 }
 
+/// What Replace N and copy did (#1209).
+struct SelectionReplacement: Equatable, Sendable {
+    var snapshot: DocumentSnapshot
+    /// The selection in `snapshot.markdown`, widened over a proposal across
+    /// its edge so its alias is whole: what to copy.
+    var range: SourceRange
+    /// Proposals replaced; none made no undo step.
+    var replaced: Int
+}
+
 // MARK: - Setup
 
 enum ModelPurpose: Hashable, Sendable {

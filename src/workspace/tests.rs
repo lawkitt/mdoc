@@ -34,6 +34,7 @@ use std::{
     },
 };
 
+mod ai_ask;
 mod ai_connector_setting;
 mod ai_project;
 mod comment_rail;
@@ -46,6 +47,7 @@ mod exits;
 mod export_project;
 mod focus_regions;
 mod folder_sheet;
+mod hand_copies;
 mod home;
 mod import_flow;
 mod menu_bar;
