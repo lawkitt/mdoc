@@ -695,6 +695,11 @@ impl Workspace {
                             this.set_ocr(state, cx);
                         }
                     }
+                    // The detection model set up: AI project members that
+                    // waited for it scan now.
+                    settings_ui::Event::Finished(settings::Model::Pii(_), Ok(_)) => {
+                        this.scan_on_entry(cx);
+                    }
                     settings_ui::Event::Finished(_, _) => {}
                     settings_ui::Event::Compare(model) => {
                         this.open_comparison(*model, window, cx);
@@ -3463,7 +3468,7 @@ impl Render for Workspace {
             .children(self.project_list(cx))
             .children(self.switcher_view(cx))
             .children(self.move_toast(cx))
-            .children(self.ai_prompt_view(cx))
+            .children(self.ai_prompt_view(window, cx))
             .children(self.project_header_menu(cx))
             .children(self.folder_sheet_view(window, cx))
             .children(self.new_project_view(window, cx))

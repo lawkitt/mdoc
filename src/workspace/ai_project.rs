@@ -42,12 +42,17 @@ pub(super) struct AiProject {
     prompt: Option<Prompt>,
     /// "Not now" was chosen: no prompt before then.
     quiet_until: Option<Instant>,
+    /// There was no Project to share, and the window said so: it doesn't
+    /// say so again before then. A Project made meanwhile is offered at
+    /// once.
+    said_no_project_until: Option<Instant>,
     /// A Project's AI activity as last read, newest first, or why it
     /// could not be.
     activity: Option<(String, Result<Vec<AiActivity>, String>)>,
-    /// Documents whose scan on entering the AI project started in their
-    /// tab: each scans once until it leaves it.
-    entry_scans: std::collections::HashSet<String>,
+    /// The tabs and their documents whose scan on entering the AI project
+    /// started: each scans once in that tab until it leaves the AI
+    /// project. A document opened again, in a new tab, scans again.
+    entry_scans: std::collections::HashSet<(u64, String)>,
 }
 
 impl AiProject {
@@ -73,7 +78,6 @@ impl AiProject {
         if self.prompt.is_some() || self.quiet_until.is_some_and(|until| now < until) {
             return Asked::Nothing;
         }
-        self.quiet_until = None;
         let last = (self.last_viewed.as_ref()).filter(|last| projects.contains(last));
         let choices: Vec<String> = (last.into_iter())
             .chain(projects.iter().filter(|id| Some(*id) != last))
@@ -81,10 +85,13 @@ impl AiProject {
             .cloned()
             .collect();
         if choices.is_empty() {
-            // Said once, then quiet as after "Not now".
-            self.quiet_until = Some(now + QUIET);
+            if self.said_no_project_until.is_some_and(|until| now < until) {
+                return Asked::Nothing;
+            }
+            self.said_no_project_until = Some(now + QUIET);
             return Asked::NoProject(app);
         }
+        self.quiet_until = None;
         self.prompt = Some(Prompt {
             app,
             choices,
@@ -166,15 +173,15 @@ impl AiProject {
         self.activity = Some((project, read));
     }
 
-    /// Document `id` entered the AI project: `true` the first time, until
-    /// it [`left`](Self::left) it.
-    pub(super) fn entering(&mut self, id: &str) -> bool {
-        self.entry_scans.insert(id.to_string())
+    /// Document `id`, in tab `tab`, entered the AI project: `true` the
+    /// first time, until it [`left`](Self::left) it.
+    pub(super) fn entering(&mut self, tab: u64, id: &str) -> bool {
+        self.entry_scans.insert((tab, id.to_string()))
     }
 
-    /// Document `id` is not in the AI project now.
-    pub(super) fn left(&mut self, id: &str) {
-        self.entry_scans.remove(id);
+    /// Document `id`, in tab `tab`, is not in the AI project now.
+    pub(super) fn left(&mut self, tab: u64, id: &str) {
+        self.entry_scans.remove(&(tab, id.to_string()));
     }
 }
 
@@ -227,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn with_no_project_it_says_so_once() {
+    fn with_no_project_it_says_so_once_and_offers_one_made_since() {
         let now = Instant::now();
         let mut ai = AiProject::default();
         assert_eq!(
@@ -235,6 +242,12 @@ mod tests {
             Asked::NoProject("claude-ai".into())
         );
         assert_eq!(ai.asked("claude-ai".into(), &[], now), Asked::Nothing);
+        // A Project made after the notice is offered at once.
+        assert_eq!(
+            ai.asked("claude-ai".into(), &ids(&["new"]), now),
+            Asked::Prompt
+        );
+        ai.not_now(now);
         // A deleted last-viewed Project is not offered.
         ai.viewed(Some("gone".into()));
         assert_eq!(
@@ -261,16 +274,18 @@ mod tests {
     #[test]
     fn a_document_scans_once_on_entry_until_it_leaves() {
         let mut ai = AiProject::default();
-        assert!(ai.entering("d"));
-        assert!(!ai.entering("d"));
-        ai.left("d");
-        assert!(ai.entering("d"));
+        assert!(ai.entering(1, "d"));
+        assert!(!ai.entering(1, "d"));
+        // Opened again in a new tab: it scans there.
+        assert!(ai.entering(2, "d"));
+        ai.left(1, "d");
+        assert!(ai.entering(1, "d"));
         // A new share: every member enters again.
         ai.shared();
-        assert!(ai.entering("d"));
+        assert!(ai.entering(1, "d"));
         ai.viewed(Some("p".into()));
         ai.stopped();
-        assert!(ai.entering("d"));
+        assert!(ai.entering(1, "d"));
         assert_eq!(ai.last_viewed(), Some("p"));
     }
 }

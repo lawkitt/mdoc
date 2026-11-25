@@ -173,7 +173,18 @@ fn the_prompt_appears_only_when_nothing_is_shared(cx: &mut TestAppContext) {
     set_preview(&tabs, cx, true);
     // Nobody asked yet.
     assert_eq!(prompt(&tabs, cx), None);
+    // Asked while Settings is open: the card waits for it to close, so it
+    // never sits above the dialog.
+    cx.dispatch_action(Settings);
+    cx.run_until_parked();
     assert_eq!(list(&tabs, cx), Answer::Refused(Refusal::NothingShared));
+    draw(cx);
+    assert!(cx.update(|_, cx| tabs.read(cx).ai.prompt().is_some()));
+    assert!(cx.debug_bounds("ai-share-prompt").is_none());
+    tabs.update_in(cx, |tabs, window, cx| {
+        (tabs.settings).update(cx, |panel, cx| panel.close(window, cx))
+    });
+    cx.run_until_parked();
     let choices = prompt(&tabs, cx).expect("asking with nothing shared prompts");
     // Nothing viewed yet: the Projects as the sidebar lists them.
     assert_eq!(choices, [fixture.lease.clone(), fixture.estate.clone()]);
@@ -237,6 +248,17 @@ fn the_share_does_not_follow_the_view(cx: &mut TestAppContext) {
     click_toolbar(cx, "ai-share-choice-1");
     click_toolbar(cx, "ai-share");
     assert_eq!(shared(&tabs, cx), Some(fixture.estate.clone()));
+    // Closing a tab brings its neighbour to the front, unrecorded in the
+    // history: that one is the Project last viewed.
+    tabs.update(cx, |tabs, cx| tabs.stop_sharing_with_ai(cx));
+    open_member(&tabs, cx, &fixture.estate_doc);
+    open_member(&tabs, cx, &fixture.lease_doc);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.close_tab(tabs.tabs.active(), window, cx)
+    });
+    cx.run_until_parked();
+    list(&tabs, cx);
+    assert_eq!(prompt(&tabs, cx).unwrap()[0], fixture.estate);
 }
 
 /// Done when: Stop sharing, from the sidebar or the Project page, clears
@@ -337,9 +359,22 @@ fn a_document_entering_the_ai_project_is_scanned_not_replaced(cx: &mut TestAppCo
     assert!(!scanning(cx, waiting));
     draw(cx);
     assert!(cx.debug_bounds("pii-setup-primary").is_none());
-    // Once it is (Settings checked the model), the waiting one scans.
+    // Once Settings has set the model up, the waiting one scans.
     pii_model(&tabs, cx, true);
-    tabs.update(cx, |tabs, cx| tabs.scan_on_entry(cx));
+    let (panel, model) = cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        let config = tabs
+            .preferences
+            .borrow()
+            .snapshot()
+            .unwrap()
+            .pseudonymization;
+        (tabs.settings.clone(), settings::Model::Pii(config.model))
+    });
+    panel.update(cx, |_, cx| {
+        cx.emit(settings_ui::Event::Finished(model, Ok(None)))
+    });
+    cx.run_until_parked();
     assert!(
         scanning(cx, waiting),
         "a member that waited for the model scans"
@@ -353,6 +388,17 @@ fn a_document_entering_the_ai_project_is_scanned_not_replaced(cx: &mut TestAppCo
     assert!(
         !scanning(cx, waiting),
         "a failed entry scan does not repeat"
+    );
+    // Closed and opened again, in a new tab, it scans there.
+    let document = document_of(&tabs, waiting, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(waiting, window, cx));
+    cx.run_until_parked();
+    open_member(&tabs, cx, &document);
+    let reopened = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    assert_ne!(reopened, waiting);
+    assert!(
+        scanning(cx, reopened),
+        "a reopened member scans in its new tab"
     );
     // Into the AI project: its tab scans.
     let entering = open(cx);
@@ -419,8 +465,9 @@ fn the_project_page_lists_ai_activity(cx: &mut TestAppContext) {
     show_page(&tabs, cx, &fixture.lease);
     assert!(cx.debug_bounds("project-activity").is_none());
     click_toolbar(cx, "project-segment-activity");
-    assert!(cx.debug_bounds("project-activity-0").is_some());
-    assert!(cx.debug_bounds("project-activity-1").is_none());
+    // Rows are numbered from the oldest.
+    assert!(cx.debug_bounds("project-activity-1").is_some());
+    assert!(cx.debug_bounds("project-activity-2").is_none());
     // A delivery while the page shows it joins the list at the top.
     let delivered = call(
         &tabs,
@@ -434,7 +481,7 @@ fn the_project_page_lists_ai_activity(cx: &mut TestAppContext) {
     );
     assert!(matches!(delivered, Answer::Ok(Done::Delivered { .. })));
     draw(cx);
-    assert!(cx.debug_bounds("project-activity-1").is_some());
+    assert!(cx.debug_bounds("project-activity-2").is_some());
     let lines: Vec<String> = cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         let Some(Ok(entries)) = tabs.ai.activity(&fixture.lease) else {
@@ -463,7 +510,7 @@ fn the_project_page_lists_ai_activity(cx: &mut TestAppContext) {
     // Another Project's page lists only its own.
     show_page(&tabs, cx, &fixture.estate);
     click_toolbar(cx, "project-segment-activity");
-    assert!(cx.debug_bounds("project-activity-0").is_none());
+    assert!(cx.debug_bounds("project-activity-1").is_none());
 }
 
 /// Done when: with "AI connector (preview)" off, none of it is shown or

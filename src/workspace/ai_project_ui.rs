@@ -13,12 +13,7 @@
 //!
 //! The share lives in the connector, in memory only; nothing here writes
 //! the Vault.
-use super::{
-    Workspace,
-    ai_project::Asked,
-    navigation::{Arrival, Stop},
-    project_page::Place,
-};
+use super::{Workspace, ai_project::Asked, navigation::Stop, project_page::Place};
 use crate::{ai_connector, style, ui};
 use gpui::{AnyElement, Context, SharedString, Window, div, prelude::*, px};
 use mdoc_store::{document_id::VaultId, settings::AiConnectorConfig};
@@ -190,11 +185,10 @@ impl Workspace {
         self.ai.forget(id);
     }
 
-    /// The user arrived at a place: its Project is the one last viewed.
-    pub(super) fn note_ai_viewed(&mut self, stop: &Stop, arrival: Arrival) {
-        if arrival == Arrival::Unrecorded {
-            return;
-        }
+    /// The user arrived at a place, recorded in the history or not (a
+    /// closed tab's neighbour comes to the front unrecorded): its Project
+    /// is the one last viewed.
+    pub(super) fn note_ai_viewed(&mut self, stop: &Stop) {
         let project = match stop {
             Stop::Project(id) => Some(id.clone()),
             Stop::Document(document) => self.project_of(document.as_str()),
@@ -224,9 +218,9 @@ impl Workspace {
             .map(|summary| summary.id)
             .collect();
         let views: Vec<_> = (self.tabs.iter())
-            .filter_map(|tab| tab.view().cloned())
+            .filter_map(|tab| Some((tab.id(), tab.view()?.clone())))
             .collect();
-        for view in views {
+        for (tab, view) in views {
             let (document, project, restored) = {
                 let view = view.read(cx);
                 (
@@ -239,17 +233,17 @@ impl Workspace {
                 continue;
             };
             if project.as_deref() != Some(shared.as_str()) {
-                self.ai.left(document.as_str());
+                self.ai.left(tab, document.as_str());
                 continue;
             }
             if restored || excluded.contains(document.as_str()) {
                 continue;
             }
-            if !self.ai.entering(document.as_str()) {
+            if !self.ai.entering(tab, document.as_str()) {
                 continue;
             }
             if !view.update(cx, |view, cx| view.scan_on_entry(cx)) {
-                self.ai.left(document.as_str());
+                self.ai.left(tab, document.as_str());
             }
         }
     }
@@ -394,10 +388,24 @@ impl Workspace {
     }
 
     /// The share prompt: a card at the window's bottom left, over the
-    /// sidebar's foot. It takes no focus.
-    pub(super) fn ai_prompt_view(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    /// sidebar's foot. It takes no focus. While a dialog or sheet is up it
+    /// waits, and shows once that closes: it is drawn above the window's
+    /// own layers.
+    pub(super) fn ai_prompt_view(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         self.ai_connector.as_ref()?;
         let prompt = self.ai.prompt()?;
+        if self.settings.read(cx).open
+            || window.has_active_prompt()
+            || self.new_project.is_some()
+            || self.folder_sheets.open()
+            || self.project_ui.explainer
+        {
+            return None;
+        }
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let title = format!(
@@ -601,6 +609,9 @@ impl Workspace {
             .collect();
         let now = super::home::now();
         for (index, entry) in entries.iter().take(ACTIVITY_SHOWN).enumerate() {
+            // Numbered from the oldest, so a row keeps its control (and
+            // focus) as newer lines arrive above it.
+            let number = entries.len() - index;
             let line = activity_line(entry, &documents, &replies, now);
             let target = line.opens.clone();
             list = list.child(
@@ -610,7 +621,7 @@ impl Workspace {
                     .py_1()
                     .child(
                         self.page_control(
-                            SharedString::from(format!("project-activity-{index}")),
+                            SharedString::from(format!("project-activity-{number}")),
                             line.text,
                             cx,
                         )

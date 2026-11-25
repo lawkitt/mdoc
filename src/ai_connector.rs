@@ -42,6 +42,15 @@ pub(crate) struct Running {
     _listening: Option<Listening>,
 }
 
+impl Drop for Running {
+    /// A connection the listener accepted holds its handler, and so the
+    /// connector, past the stop: from now on it is shared nothing, so such
+    /// a call reads and delivers nothing.
+    fn drop(&mut self) {
+        self.connector.stop_sharing();
+    }
+}
+
 impl Running {
     /// The events since the last call, oldest first.
     pub(crate) fn events(&self) -> Vec<Event> {
@@ -240,6 +249,29 @@ mod tests {
                 app: "claude-ai".into()
             }]
         );
+    }
+
+    /// Review of #1213 (P1): a connection accepted before the setting went
+    /// off keeps the handler; its later calls find nothing shared.
+    #[test]
+    fn a_connection_held_across_the_stop_reads_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
+        let on = AiConnectorConfig { preview: true };
+        let running = start_unlistened(vault.clone(), &on).unwrap();
+        let project = vault.create_project(Default::default()).unwrap();
+        running.connector.share(&project.id).unwrap();
+        let list = serde_json::to_vec(&Request {
+            v: wire::VERSION,
+            app: "claude-ai".into(),
+            call: Call::ListDocuments,
+        })
+        .unwrap();
+        let held = running.answer.clone();
+        let answer = |line: &[u8]| serde_json::from_slice::<Answer>(&held(line)).unwrap();
+        assert!(matches!(answer(&list), Answer::Ok(Done::Documents { .. })));
+        drop(running);
+        assert_eq!(answer(&list), Answer::Refused(Refusal::NothingShared));
     }
 
     #[test]
