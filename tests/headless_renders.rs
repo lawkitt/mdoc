@@ -431,6 +431,10 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                             | "rename-project"
                             | "project-categories"
                             | "new-project-page"
+                            | "ai-share-prompt"
+                            | "ai-project-shared"
+                            | "project-page-activity"
+                            | "ai-project-rail"
                     ),
                     "{theme}/{name}"
                 );

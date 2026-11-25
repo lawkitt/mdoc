@@ -126,8 +126,11 @@ final class DocumentViewModelTests: XCTestCase {
         let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" })
         model.share(asFile: false)
         XCTAssertNil(model.share)
-        XCTAssertNotNil(model.errorMessage)
-        model.errorMessage = nil
+        XCTAssertEqual(
+            model.refusal,
+            .namesToDecide(names: model.identityCounts.toReview, proposals: model.snapshot.pendingCount))
+        XCTAssertNil(model.errorMessage)
+        model.refusal = nil
         model.replaceAllPending()
         model.share(asFile: false)
         // The text travels with the file's neutral name, without `.md`, as

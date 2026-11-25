@@ -259,6 +259,8 @@ final class AppModel {
             library.refresh()
             // Its reply restores from the names as saved now.
             if let model = documents.model(for: id), rejoined || model.snapshot.reply != nil { model.refresh() }
+            // Whether it may leave now, as saved (#1209).
+            documents.model(for: id)?.checkSaved()
         case .failed(let id, let error):
             if let model = documents.model(for: id), navigator.openDocument == id {
                 model.errorMessage = error.localizedDescription
@@ -581,11 +583,27 @@ final class AppModel {
         }
         model.share(asFile: false)
         defer { model.share = nil }
-        if let message = model.errorMessage {
+        if let refusal = model.refusal {
+            navigator.present(.refusal(id, refusal))
+            model.refusal = nil
+        } else if let message = model.errorMessage {
             navigator.present(.error(message))
             model.errorMessage = nil
         }
         return model.share
+    }
+
+    /// The step a refused Share offers for document `id`, as its own menu
+    /// would.
+    func step(for refusal: HandOffRefusal, of id: DocumentID) -> HandOffRefusal.Step? {
+        refusal.step(findsNames: setup.snapshot.tier == .detector)
+    }
+
+    /// The step, on the document it refused: it opens, then takes it.
+    func take(_ step: HandOffRefusal.Step, on id: DocumentID) {
+        navigator.dismiss()
+        open(id)
+        documents.model(for: id)?.take(step)
     }
 
     // MARK: Delete with Undo (Q17)

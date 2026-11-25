@@ -18,6 +18,7 @@ import uniffi.mdoc_ffi.JobProgress
 import uniffi.mdoc_ffi.JobStage
 import uniffi.mdoc_ffi.Mention
 import uniffi.mdoc_ffi.ProjectDocuments
+import uniffi.mdoc_ffi.Readiness
 import uniffi.mdoc_ffi.RestoredReply
 import uniffi.mdoc_ffi.ReviewSnapshot
 import uniffi.mdoc_ffi.SharedFrom
@@ -132,6 +133,13 @@ class Documents(
 
     /** Reads a document's record to open it again after a move; the tests make it fail. */
     @Volatile internal var opening: (String) -> DocumentInfo = { vault.document(it) }
+
+    /**
+     * The tests' stand-in for what the Vault says of a saved document, by
+     * its Vault id: changed since its review and excluded from AI come only
+     * from a computer today (iOS's `MDOC_UI_READINESS`). Null: the Vault's.
+     */
+    @Volatile internal var readiness: ((String) -> SavedReadiness?)? = null
 
     /** The session of a saved document, opened from the Vault the first time. */
     private fun stored(vaultId: String): Session {
@@ -921,13 +929,67 @@ class Documents(
             // No move or Project delete meanwhile: the place kept is the one
             // whose names the text was shared in.
             val current = snapshot()
-            if (current.pendingCount > 0) throw AppError.PendingReview(current.pendingCount)
-            val vaultId = vaultId ?: throw AppError.NotFound()
+            // Every refusal in the app's own words, never the core's (#1209).
+            fun refused(refusal: HandOffRefusal): Nothing = throw AppError.HandOffRefused(refusal)
+            val vaultId = vaultId
+            if (current.phase == DocumentPhase.Recognizing || vaultId == null) refused(HandOffRefusal.NotRead)
+            if (current.pendingCount > 0) refused(HandOffRefusal.toDecide(current))
+            val findsNames = !findsNoNames()
+            if (current.phase == DocumentPhase.Unscanned && findsNames) refused(HandOffRefusal.NotScanned)
+            // The review is done but the record was not saved Ready (a phone
+            // fallen below the floor since): saved again, as iOS's tap does.
+            // The Vault still decides.
+            if (savedReadiness() == SavedReadiness.NotReviewed) runCatching { save() }.onFailure { refused(HandOffRefusal.Failed) }
+            when (val saved = savedReadiness()) {
+                // At the detector tier: names marked by hand, never scanned.
+                SavedReadiness.NotReviewed -> refused(if (findsNames) HandOffRefusal.NotScanned else HandOffRefusal.NotChecked)
+                null -> Unit
+                else -> HandOffRefusal.of(saved)?.let(::refused)
+            }
             // The title masked with every name its Project knows (#1192).
-            val fileName = core { vault.shareFileName(vaultId) }
-            val text = core { vault.textForAi(vaultId) }
+            val fileName = runCatching { core { vault.shareFileName(vaultId) } }.getOrElse { refused(HandOffRefusal.Failed) }
+            val text = runCatching { core { vault.textForAi(vaultId) } }
+                // A change between the check and the read: why, as it is now.
+                .getOrElse { refused(savedReadiness()?.let(HandOffRefusal::of) ?: HandOffRefusal.Failed) }
             lastShared.set(projectId?.let { Place.Project(ProjectId(it)) } ?: Place.Unfiled(vaultId))
             HandOff(text, fileName)
+        }
+
+        /**
+         * What the Vault says of the document as last saved: whether it may
+         * leave for an AI now, checked against its Project's names as they
+         * are now. Null before its first save, or when it can't be read.
+         * Reads the record: off the main thread.
+         */
+        fun savedReadiness(): SavedReadiness? {
+            val vaultId = vaultId ?: return null
+            readiness?.let { return it(vaultId) }
+            return runCatching {
+                if (vault.document(vaultId).excludeFromAi) return SavedReadiness.ExcludedFromAi
+                when (val readiness = vault.readiness(vaultId)) {
+                    Readiness.Ready -> SavedReadiness.Ready
+                    Readiness.NotReviewed -> SavedReadiness.NotReviewed
+                    Readiness.ChangedSinceReview -> SavedReadiness.ChangedSinceReview
+                    is Readiness.NamesNotReplaced -> SavedReadiness.NamesNotReplaced(readiness.count.toInt())
+                }
+            }.getOrNull()
+        }
+
+        /**
+         * Opens the document again from the Vault, its names lined up with
+         * its Project's as they are now: a name another document added
+         * since this session opened it is proposed (Review's way to it).
+         * Saved first, under the same lock, so no decision a failed save
+         * left only in the session is lost; when that save fails, the
+         * session stays as it is and the refusal says so.
+         */
+        fun lineUpWithProject(): DocumentSnapshot {
+            holdingSave {
+                val vaultId = vaultId ?: return@holdingSave
+                runCatching { saveHeld() }.onFailure { throw AppError.HandOffRefused(HandOffRefusal.Failed) }
+                reopen(vaultId, core { vault.document(vaultId) })
+            }
+            return snapshot()
         }
 
         /**

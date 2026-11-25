@@ -14,3 +14,6 @@ is the standard documentation example.
 with paragraphs after it: edit mode keeps the place in it, and a word
 selected in a cell, without stopping mdoc. Its text is invented;
 its one email, the only name to review, uses the reserved example.com domain.
+
+`no-names.md` is a site visit report that names nobody: scanned, it has
+nothing to replace and is Ready (`ReadyChecksUITests`).

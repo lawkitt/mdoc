@@ -38,16 +38,24 @@ pub(crate) enum Segment {
     Documents,
     Replies,
     Names,
+    /// The Project's AI activity: only with "AI connector (preview)" on.
+    Activity,
 }
 
 impl Segment {
-    pub(crate) const ALL: [Segment; 3] = [Segment::Documents, Segment::Replies, Segment::Names];
+    pub(crate) const ALL: [Segment; 4] = [
+        Segment::Documents,
+        Segment::Replies,
+        Segment::Names,
+        Segment::Activity,
+    ];
 
     fn label(self) -> &'static str {
         match self {
             Segment::Documents => "Documents",
             Segment::Replies => "Replies",
             Segment::Names => "Names",
+            Segment::Activity => "AI activity",
         }
     }
 
@@ -56,6 +64,7 @@ impl Segment {
             Segment::Documents => "project-segment-documents",
             Segment::Replies => "project-segment-replies",
             Segment::Names => "project-segment-names",
+            Segment::Activity => "project-segment-activity",
         }
     }
 }
@@ -109,7 +118,6 @@ impl ProjectPage {
         &self.id
     }
 
-    #[cfg(test)]
     pub(crate) fn segment(&self) -> Segment {
         self.segment
     }
@@ -407,6 +415,13 @@ impl Workspace {
             return;
         }
         page.segment = segment;
+        if segment == Segment::Activity {
+            let id = page.id.clone();
+            self.load_ai_activity(&id);
+        }
+        let Some(page) = self.project_ui.page.as_mut() else {
+            return;
+        };
         page.controls
             .borrow_mut()
             .retain(|id, _| header_control(id));
@@ -630,7 +645,7 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn page_control(
+    pub(super) fn page_control(
         &self,
         id: impl Into<SharedString>,
         label: impl Into<SharedString>,
@@ -673,23 +688,29 @@ impl Workspace {
             .rounded_lg()
             .border_1()
             .border_color(self.theme.get().pdf_style().border)
-            .children(Segment::ALL.into_iter().map(|segment| {
-                let p = self.theme.get().pdf_style();
-                let selected = page.segment == segment;
-                self.page_control(segment.control(), segment.label(), cx)
-                    .role(gpui::Role::Tab)
-                    .aria_selected(selected)
-                    .px_3()
-                    .when(selected, |v| v.bg(p.placeholder_bg).text_color(p.header_fg))
-                    .when(!selected, |v| v.text_color(p.header_muted))
-                    .on_click(
-                        cx.listener(move |this, _, _, cx| this.show_project_segment(segment, cx)),
-                    )
-            }));
+            .children(
+                (Segment::ALL.into_iter())
+                    .filter(|segment| *segment != Segment::Activity || self.ai_connector_on())
+                    .map(|segment| {
+                        let p = self.theme.get().pdf_style();
+                        let selected = page.segment == segment;
+                        self.page_control(segment.control(), segment.label(), cx)
+                            .role(gpui::Role::Tab)
+                            .aria_selected(selected)
+                            .px_3()
+                            .when(selected, |v| v.bg(p.placeholder_bg).text_color(p.header_fg))
+                            .when(!selected, |v| v.text_color(p.header_muted))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.show_project_segment(segment, cx)
+                            }))
+                    }),
+            );
         let body = match page.segment {
             Segment::Documents => self.documents_segment(project, &members, cx),
             Segment::Replies => self.replies_segment(project, &replies, cx),
             Segment::Names => self.names_segment(project, &members, cx),
+            Segment::Activity if self.ai_connector_on() => self.ai_activity_segment(project, cx),
+            Segment::Activity => self.documents_segment(project, &members, cx),
         };
         div()
             .w_full()
@@ -811,6 +832,7 @@ impl Workspace {
                     .text_color(p.header_muted)
                     .child(project_counts(documents, replies, names, project.created)),
             )
+            .children(self.ai_project_chip(project, cx))
             .when(page.swatches, |v| {
                 v.child(
                     div()

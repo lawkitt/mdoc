@@ -77,16 +77,47 @@ struct ActionBar: View {
                 .accessibilityHint(Text("Each gets its alias. You can still keep any of them."))
             }
         case .handOff:
-            VStack(spacing: Space.xs) {
-                HStack(alignment: .center, spacing: Space.xs) {
-                    if !model.snapshot.candidates.isEmpty {
-                        AllReviewedLine(candidates: model.snapshot.candidates)
-                    } else {
-                        Spacer(minLength: 0)
-                    }
-                    typeReply
+            if let refusal = model.handOffRefusal {
+                refused(refusal)
+            } else {
+                handOff
+            }
+        }
+    }
+
+    /// Every name decided: Share, Copy and Paste.
+    private var handOff: some View {
+        VStack(spacing: Space.xs) {
+            HStack(alignment: .center, spacing: Space.xs) {
+                if !model.snapshot.candidates.isEmpty {
+                    AllReviewedLine(candidates: model.snapshot.candidates)
+                } else {
+                    Spacer(minLength: 0)
                 }
-                handOffButtons
+                typeReply
+            }
+            handOffButtons
+        }
+    }
+
+    /// Every name decided, but the Vault refuses the text as saved: a
+    /// known name written out, changed since its review, excluded from AI.
+    /// Why, and its step in Share's place; Type a reply and Paste still
+    /// restore a reply (#1209).
+    private func refused(_ refusal: HandOffRefusal) -> some View {
+        VStack(spacing: Space.xs) {
+            ActionNote(text: "\(refusal.reason). \(refusal.detail)", identifier: "hand-off-refusal")
+            HStack {
+                Spacer(minLength: 0)
+                typeReply
+            }
+            layout {
+                if let step = model.step(for: refusal) {
+                    primary(LocalizedStringKey(step.title), systemImage: step.systemImage) {
+                        model.take(step)
+                    }
+                }
+                pasteReply(accessibilityLabel: "Paste reply")
             }
         }
     }

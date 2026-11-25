@@ -108,6 +108,10 @@ in [CONTEXT.md](../../CONTEXT.md).
   reviewed text and never by stored title. Unfiled documents stay hidden.
   `deliver_reply` restores only inside mdoc, returns no real name, and is
   refused unless it names a document it read from what is served now.
+- A Project's AI activity records each connector read that handed text out
+  and each delivery, with its app and time: ids only, never text, a title
+  or a name. A read whose record can't be written hands nothing out; the
+  activity goes when its Project does.
 - A Personal alias stands for one stored value. mdoc puts it back exactly as
   stored and computes nothing from it
   ([ADR 0129](../adr/0129-personal-documents-restore-only-aliases.md)).
