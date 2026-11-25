@@ -10,6 +10,7 @@
 mod history;
 mod ids;
 mod mapping;
+mod selection;
 mod typing;
 pub(crate) mod words;
 

@@ -22,6 +22,9 @@ pub enum StepKind {
     ReplaceAll,
     /// A selection marked as a proposal.
     Mark,
+    /// Replace in selection: the proposals in a selection copied by hand
+    /// ("Replace N and copy").
+    ReplaceSelection,
     Rename,
     Category,
     /// Same as…: an identity, or one mention, linked to another identity.
@@ -53,6 +56,7 @@ impl StepKind {
             Self::Keep => "Keep",
             Self::ReplaceAll => "Replace all",
             Self::Mark => "Mark",
+            Self::ReplaceSelection => "Replace in selection",
             Self::Rename => "Rename",
             Self::Category => "Category",
             Self::SameAs => "Same as",

@@ -30,7 +30,10 @@
 //! **Not exits:** `DocumentSession::copy_for_ai`, `share_text` and
 //! `HandOff::text` are the session's unchecked text. The apps never send
 //! them, and only the parity tests read them. By the maintainer's ruling on
-//! item 29 they stay in the bindings, documented as unchecked.
+//! item 29 they stay in the bindings, documented as unchecked. A selection
+//! copied by hand is the user's own copy, never blocked (#1209):
+//! `DocumentSession::check_selection` only says what it holds and
+//! `replace_selection` changes the review, so neither is an exit.
 //!
 //! To add an exit (Milestone 2's connector), add its row to [`EXITS`] and,
 //! if it has a check of its own, a [`Gate`].
