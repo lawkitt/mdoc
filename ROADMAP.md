@@ -393,8 +393,8 @@ done. Desktop items 16–23 and 25 landed together from an integration branch
 The Vault ships as 0.4.0 ([#1153](https://github.com/lawkitt/mdoc/issues/1153)). Items 28–32, the
 GUI rows in [#1146](https://github.com/lawkitt/mdoc/issues/1146) and one day
 of real use by the maintainer on the landed build gate its next candidate;
-items 33–35 are polish and do not. Items 36–39 gate it too; items 40–43
-follow them and gate nothing ([#1209](https://github.com/lawkitt/mdoc/issues/1209)).
+items 33–35 are polish and do not. Items 36–39 and 44 gate it too; items
+40–43 follow them and gate nothing ([#1209](https://github.com/lawkitt/mdoc/issues/1209)).
 
 36. **[Desktop] A refusal offers the fix.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
     A refused Copy for AI, Share or shelf row names its reason and carries
@@ -444,6 +444,15 @@ follow them and gate nothing ([#1209](https://github.com/lawkitt/mdoc/issues/120
     restored reply's copy is; ⌘C stays silent. *Done when:* workspace tests
     cover the menu item and the marking in Edit, Original and Side by side.
     *Blocked by 40.*
+44. **[Core] An edit's new text is scanned.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091) (the maintainer,
+    2026-11-25).* At Done, the paragraphs an edit changed are scanned for
+    names as a fresh document is, by the name finder or below the floor by
+    the rules; a new name becomes a proposal and the document is not Ready
+    until it is decided. Only the changed paragraphs are scanned. *Done
+    when:* core tests pin a typed new name as a proposal and an edit with no
+    new name staying Ready, and desktop, iOS and Android each have a test of
+    a typed name that does not leave unreplaced.
 
 - **[Mobile] Later: drag a selection out.** It follows the copy menu's three
   states once those have been used for a while. *From
