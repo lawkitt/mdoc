@@ -164,6 +164,10 @@ Bash 3.2 compatible for macOS's `/bin/bash`.
   the Keychain and DPAPI are never asked, and the title says "dev profile".
   Release builds ignore it. Without it, a debug build uses the real profile
   and the one a test run leaves in `target/debug` panics.
+- **Real model check:** `scripts/dev/connector-real-model.sh` runs `claude
+  -p` through the built `mdoc-mcp` against a seeded dev profile, then checks
+  the Vault and the transcript. It spends Claude usage, so it runs by hand
+  on macOS, never in CI; its header says how it logs in.
 - An integration branch keeps `main`'s required checks. After every two or
   three items merged into it, one cross-provider review of the whole branch
   runs, limited to the privacy and data-loss rules. It never blocks a merge
