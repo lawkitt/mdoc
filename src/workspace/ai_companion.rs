@@ -58,8 +58,12 @@ pub(crate) struct CompanionReply {
     pub(crate) from: String,
     /// Its text with the names restored, as the Reply page shows it.
     pub(crate) restored: String,
-    /// Save as document ran on it.
+    /// It is a Document already: saved from here, or delivered as one.
     pub(crate) saved: bool,
+    /// Save as document is on its way.
+    pub(crate) saving: bool,
+    /// The last Save as document failed; it may run again.
+    pub(crate) failed: bool,
 }
 
 /// The latest request for a document that needs review.
@@ -142,6 +146,15 @@ impl Workspace {
         }
     }
 
+    /// What the window shares and the document it was last asked to
+    /// review: the companion reads the window again when either changes.
+    pub(crate) fn companion_marks(&self) -> (Option<String>, Option<String>) {
+        (
+            self.ai_shared(),
+            self.ai.review_ask().map(|ask| ask.document.clone()),
+        )
+    }
+
     /// The latest delivered reply, restored now; `None` once deleted.
     fn companion_reply(&self) -> Option<CompanionReply> {
         let latest = self.ai.latest_reply()?;
@@ -150,6 +163,8 @@ impl Workspace {
             from: ai_connector::display_name(&latest.app),
             restored: self.companion_reply_text(&latest.reply)?,
             saved: latest.saved,
+            saving: latest.saving,
+            failed: latest.failed,
         })
     }
 
@@ -170,6 +185,7 @@ impl Workspace {
 
     /// The companion's Save as document on reply `id`: Promote to Document,
     /// once; the new document opens in a tab, and mdoc stays where it is.
+    /// The reply counts as saved only once the promotion succeeds.
     pub(crate) fn companion_save_reply(
         &mut self,
         id: &str,
@@ -180,10 +196,10 @@ impl Workspace {
         if self.vault.vault().is_none() || latest.is_none_or(|latest| latest.reply != id) {
             return;
         }
-        if latest.is_some_and(|latest| latest.saved) {
+        if latest.is_some_and(|latest| latest.saved || latest.saving) {
             return;
         }
-        self.ai.reply_saved(id);
+        self.ai.reply_saving(id);
         self.next_op += 1;
         let target = Target::Op(self.next_op);
         self.queue_write(target, Write::Promote(id.to_string()), window, cx);

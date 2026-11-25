@@ -5,6 +5,7 @@
   state; shows the latest reply with the names restored, only while the
   pointer is over it, with Copy and Save as document; takes dropped files
   into the shared Project; and holds the shelf's rows. It opens by itself
-  for a delivery or a review request, never takes focus, and is left out
-  of screenshots and screen sharing (Milestone 2 item 14,
+  for a delivery or a review request and never takes focus. It asks macOS
+  to keep it out of screen capture, which only some capture paths honour
+  (Milestone 2 item 14,
   [#1164](https://github.com/lawkitt/mdoc/issues/1164)).

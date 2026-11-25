@@ -14,9 +14,10 @@
 //! It opens by itself only for a delivery or a review request, and never
 //! takes focus: a click on it leaves the app the user is in active and
 //! keeps its keyboard, and only what opens mdoc (a row, Review in mdoc,
-//! Open mdoc, Settings, a drop) brings mdoc forward. It is excluded from
-//! screen capture, and the restored reply shows only while the pointer is
-//! over it: until then the window holds a placeholder, not the text.
+//! Open mdoc, Settings, a drop) brings mdoc forward. It asks to be left out
+//! of screen capture (`NSWindowSharingNone`, which not every capture path
+//! honours), and the restored reply shows only while the pointer is over
+//! it: until then the window holds a placeholder, not the text.
 //! `native.rs` makes the window; Personal and search (ADR 0128) are not
 //! here yet.
 
@@ -34,9 +35,10 @@ use crate::{
     workspace::{CompanionContent, Quit, Workspace},
 };
 use gpui::{
-    AnyElement, App, Bounds, Context, DisplayId, Entity, ExternalPaths, FocusHandle, Pixels,
-    Render, SharedString, Subscription, Task, Window, WindowBackgroundAppearance, WindowBounds,
-    WindowHandle, WindowKind, WindowOptions, div, prelude::*, px,
+    AnyElement, App, Bounds, Context, DispatchPhase, DisplayId, Entity, ExternalPaths, FocusHandle,
+    MouseExitEvent, MouseMoveEvent, Pixels, Render, SharedString, Subscription, Task, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, div,
+    prelude::*, px,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -55,6 +57,8 @@ const BUTTONS: f32 = 32.;
 const DROP: f32 = 44.;
 const DIVIDER: f32 = 9.;
 const FOOTER: f32 = 30.;
+/// What stays in view above the scrolling part.
+const HEADER_TOTAL: f32 = PADDING + HEADER + PROJECT_LINE;
 
 /// Open a companion window: a non-activating panel above other apps that
 /// never takes focus, excluded from capture (`native.rs`), at `bounds` on
@@ -122,8 +126,17 @@ pub(crate) struct CompanionView {
     content: CompanionContent,
     rows: Entity<ShelfRows>,
     _rows_events: Subscription,
-    /// The pointer is over the reply: its restored text shows.
+    /// The pointer is over the reply: its restored text shows, unless
+    /// the pointer has left the window since (`pointer_away`).
     reply_shown: bool,
+    /// The pointer left the window and has not moved inside it again:
+    /// GPUI keeps its last place, so a redraw could find the reply under
+    /// it and show it again.
+    pointer_away: bool,
+    /// What the window last shared and asked to review: when either
+    /// changes, the companion reads the window again.
+    marks: (Option<String>, Option<String>),
+    _workspace_changes: Option<Subscription>,
     /// "Copied" shows on the reply's Copy until this ends.
     copied: Option<Task<()>>,
     /// A row's "Copied" shows until this ends.
@@ -165,6 +178,21 @@ impl CompanionView {
         let (rows, rows_events) = Self::rows(workspace, &content, window, cx);
         let hide_focus = cx.focus_handle().tab_index(0).tab_stop(true);
         window.focus(&hide_focus, cx);
+        let marks = workspace
+            .read(cx)
+            .map(|workspace| workspace.companion_marks())
+            .unwrap_or_default();
+        // Opening a requested document from the sidebar, or a share from
+        // the Project page, changes what it shows.
+        let workspace_changes = workspace.root(cx).ok().map(|root| {
+            cx.observe_in(&root, window, |this: &mut Self, root, window, cx| {
+                let marks = root.read(cx).companion_marks();
+                if marks != this.marks {
+                    this.marks = marks;
+                    this.refresh(window, cx);
+                }
+            })
+        });
         Self {
             workspace,
             theme,
@@ -172,6 +200,9 @@ impl CompanionView {
             rows,
             _rows_events: rows_events,
             reply_shown: false,
+            pointer_away: false,
+            marks,
+            _workspace_changes: workspace_changes,
             copied: None,
             row_copied: None,
             hide_focus,
@@ -271,7 +302,7 @@ impl CompanionView {
         )
     ))]
     pub(crate) fn reply_shown(&self) -> bool {
-        self.reply_shown
+        self.shows_reply()
     }
 
     /// Keep the content given, for renders.
@@ -378,10 +409,13 @@ impl CompanionView {
 
     /// Save as document: the reply becomes a Document in its place, once.
     pub(crate) fn save_reply(&mut self, cx: &mut Context<Self>) {
-        let Some(reply) = self.content.reply.as_mut().filter(|reply| !reply.saved) else {
+        let Some(reply) = (self.content.reply.as_mut()).filter(|r| !r.saved && !r.saving) else {
             return;
         };
-        reply.saved = true;
+        // Saved only once the promotion succeeds; the companion reads it
+        // again when it ends.
+        reply.saving = true;
+        reply.failed = false;
         let id = reply.id.clone();
         self.in_window(cx, move |workspace, window, cx| {
             workspace.companion_save_reply(&id, window, cx)
@@ -429,11 +463,55 @@ impl CompanionView {
             cx.notify();
         }
     }
+
+    /// Whether the restored reply is in the window now.
+    fn shows_reply(&self) -> bool {
+        self.reply_shown && !self.pointer_away
+    }
+
+    /// The pointer left the window: the reply hides until it moves inside
+    /// again.
+    fn pointer_left(&mut self, cx: &mut Context<Self>) {
+        self.pointer_away = true;
+        self.reply_shown = false;
+        cx.notify();
+    }
+
+    fn pointer_moved(&mut self, cx: &mut Context<Self>) {
+        if std::mem::take(&mut self.pointer_away) {
+            cx.notify();
+        }
+    }
 }
 
 // ---- What it shows ---------------------------------------------------------
 
 impl CompanionView {
+    /// Hears the pointer leave the window, and move in it again.
+    fn pointer_watch(&self, cx: &mut Context<Self>) -> AnyElement {
+        let view = cx.entity().downgrade();
+        gpui::canvas(
+            |_, _, _| {},
+            move |_, _, window, _| {
+                let left = view.clone();
+                window.on_mouse_event(move |_: &MouseExitEvent, phase, _, cx| {
+                    if phase == DispatchPhase::Bubble {
+                        let _ = left.update(cx, |this, cx| this.pointer_left(cx));
+                    }
+                });
+                let moved = view.clone();
+                window.on_mouse_event(move |_: &MouseMoveEvent, phase, _, cx| {
+                    if phase == DispatchPhase::Bubble {
+                        let _ = moved.update(cx, |this, cx| this.pointer_moved(cx));
+                    }
+                });
+            },
+        )
+        .absolute()
+        .size_0()
+        .into_any_element()
+    }
+
     fn heading(&self, text: impl Into<SharedString>) -> gpui::Div {
         let p = self.theme.get().pdf_style();
         div()
@@ -655,7 +733,7 @@ impl CompanionView {
         let reply = self.content.reply.as_ref()?;
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let shown = self.reply_shown;
+        let shown = self.shows_reply();
         let text = div()
             .id("companion-reply")
             .when(cfg!(test), |v| {
@@ -725,13 +803,14 @@ impl CompanionView {
             .child(
                 ui::action_control(
                     "companion-reply-save",
-                    if reply.saved {
-                        "Saved as a document"
-                    } else {
-                        "Save as document"
+                    match (reply.saved, reply.saving, reply.failed) {
+                        (true, _, _) => "Saved as a document",
+                        (false, true, _) => "Saving…",
+                        (false, false, true) => "Not saved. Try again",
+                        (false, false, false) => "Save as document",
                     },
                     theme,
-                    !reply.saved,
+                    !reply.saved && !reply.saving,
                     false,
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.save_reply(cx))),
@@ -829,14 +908,21 @@ impl Render for CompanionView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
+        // What is shared stays in view while the rest scrolls.
+        let header = div()
+            .flex_shrink_0()
+            .px(px(PADDING))
+            .pt(px(PADDING))
+            .child(self.shared(cx));
         let body = div()
             .relative()
             .flex_shrink_0()
             .flex()
             .flex_col()
             .gap(px(SECTION_GAP))
-            .p(px(PADDING))
-            .child(self.shared(cx))
+            .px(px(PADDING))
+            .pt(px(SECTION_GAP))
+            .pb(px(PADDING))
             .children(self.review_card(cx))
             .children(self.documents())
             .children(self.reply(cx))
@@ -854,7 +940,8 @@ impl Render for CompanionView {
                 body.child(
                     gpui::canvas(
                         move |bounds, window, cx| {
-                            fit.measured(bounds.size.height.as_f32(), window, cx)
+                            let height = HEADER_TOTAL + bounds.size.height.as_f32();
+                            fit.measured(height, window, cx)
                         },
                         |_, _, _, _| {},
                     )
@@ -888,10 +975,20 @@ impl Render for CompanionView {
                 }
             }))
             .size_full()
-            .overflow_y_scroll()
+            .flex()
+            .flex_col()
             .bg(crate::shelf_ui::surface(theme))
             .text_color(p.header_fg)
             .text_size(px(13.))
-            .child(body)
+            .child(self.pointer_watch(cx))
+            .child(header)
+            .child(
+                div()
+                    .id("companion-scroll")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .child(body),
+            )
     }
 }

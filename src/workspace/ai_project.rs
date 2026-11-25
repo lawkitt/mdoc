@@ -77,8 +77,13 @@ pub(super) struct LatestReply {
     pub(super) reply: String,
     /// The AI app that delivered it, as it named itself.
     pub(super) app: String,
-    /// Save as document ran on it from the companion.
+    /// It is a Document already: Save as document ran on it, or it was
+    /// delivered as one.
     pub(super) saved: bool,
+    /// Save as document is queued and has not ended yet.
+    pub(super) saving: bool,
+    /// The last Save as document failed (mdoc's notice says why).
+    pub(super) failed: bool,
 }
 
 /// The latest request for a document that needs review, as the
@@ -228,11 +233,14 @@ impl AiProject {
     }
 
     /// AI app `app` delivered reply `reply`: the companion's latest.
-    pub(super) fn delivered(&mut self, reply: String, app: String) {
+    /// `as_document`: it landed as a Document too, so it is saved already.
+    pub(super) fn delivered(&mut self, reply: String, app: String, as_document: bool) {
         self.latest_reply = Some(LatestReply {
             reply,
             app,
-            saved: false,
+            saved: as_document,
+            saving: false,
+            failed: false,
         });
     }
 
@@ -254,12 +262,33 @@ impl AiProject {
         self.review_ask.as_ref()
     }
 
-    /// Save as document ran on reply `reply`: it does not run twice.
+    /// The latest reply, if it is `reply`.
+    fn latest_mut(&mut self, reply: &str) -> Option<&mut LatestReply> {
+        (self.latest_reply.as_mut()).filter(|latest| latest.reply == reply)
+    }
+
+    /// Save as document was queued for reply `reply`.
+    pub(super) fn reply_saving(&mut self, reply: &str) {
+        if let Some(latest) = self.latest_mut(reply) {
+            latest.saving = true;
+            latest.failed = false;
+        }
+    }
+
+    /// The promotion of reply `reply` ended without a Document.
+    pub(super) fn reply_not_saved(&mut self, reply: &str) {
+        if let Some(latest) = self.latest_mut(reply).filter(|latest| latest.saving) {
+            latest.saving = false;
+            latest.failed = true;
+        }
+    }
+
+    /// Reply `reply` was promoted to a Document: it is not saved twice.
     pub(super) fn reply_saved(&mut self, reply: &str) {
-        if let Some(latest) = self.latest_reply.as_mut()
-            && latest.reply == reply
-        {
+        if let Some(latest) = self.latest_mut(reply) {
             latest.saved = true;
+            latest.saving = false;
+            latest.failed = false;
         }
     }
 
@@ -424,16 +453,32 @@ mod tests {
     fn the_companion_keeps_the_latest_reply_and_review_request() {
         let mut ai = AiProject::default();
         assert!(ai.latest_reply().is_none() && ai.review_ask().is_none());
-        ai.delivered("r1".into(), "claude-ai".into());
-        ai.delivered("r2".into(), "chatgpt".into());
+        ai.delivered("r1".into(), "claude-ai".into(), false);
+        ai.delivered("r2".into(), "chatgpt".into(), false);
         assert_eq!(ai.latest_reply().unwrap().reply, "r2");
         ai.reply_saved("r1");
         assert!(!ai.latest_reply().unwrap().saved, "not the latest");
+        // Saved only once the promotion succeeds; a failure can retry.
+        ai.reply_saving("r2");
+        assert!(ai.latest_reply().unwrap().saving);
+        ai.reply_not_saved("r2");
+        let latest = ai.latest_reply().unwrap();
+        assert!(!latest.saved && !latest.saving && latest.failed);
+        ai.reply_saving("r2");
         ai.reply_saved("r2");
-        assert!(ai.latest_reply().unwrap().saved);
-        // A new delivery can be saved again.
-        ai.delivered("r3".into(), "claude-ai".into());
+        let latest = ai.latest_reply().unwrap();
+        assert!(latest.saved && !latest.saving && !latest.failed);
+        ai.reply_not_saved("r2");
+        assert!(
+            ai.latest_reply().unwrap().saved,
+            "a later end changes nothing"
+        );
+        // A new delivery can be saved again; one delivered as a Document
+        // is saved already.
+        ai.delivered("r3".into(), "claude-ai".into(), false);
         assert!(!ai.latest_reply().unwrap().saved);
+        ai.delivered("r5".into(), "claude-ai".into(), true);
+        assert!(ai.latest_reply().unwrap().saved);
 
         ai.review_asked("d".into(), "Document 1".into(), "claude-ai".into());
         assert_eq!(ai.review_ask().unwrap().label, "Document 1");
@@ -448,7 +493,7 @@ mod tests {
         ai.shared();
         assert!(ai.review_ask().is_none(), "another share makes it moot");
         // Deliveries outlive a stop of the share, not of the connector.
-        ai.delivered("r4".into(), "claude-ai".into());
+        ai.delivered("r4".into(), "claude-ai".into(), false);
         ai.sharing_stopped();
         assert!(ai.latest_reply().is_some());
         ai.stopped();

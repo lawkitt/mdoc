@@ -546,6 +546,10 @@ impl Workspace {
     /// Promote reply `id` at the head of the writer's queue and open the
     /// document it made; the reply stays.
     pub(super) fn run_promote(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        // The companion's Save as document says how it ended: not saved,
+        // unless the promotion below succeeds.
+        self.ai.reply_not_saved(id);
+        crate::menu_bar::companion_changed(cx);
         let Some(vault) = self.vault.vault().cloned() else {
             return;
         };
@@ -585,6 +589,7 @@ impl Workspace {
             });
         match promoted {
             Ok(document) => {
+                self.ai.reply_saved(id);
                 // A quit waiting on the writer opens nothing more.
                 if self.quit_flow.may_quit() {
                     self.open_vault_document(document, window, cx);

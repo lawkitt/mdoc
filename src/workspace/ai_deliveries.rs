@@ -166,7 +166,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.ai.delivered(reply.clone(), app.to_string());
+        self.ai
+            .delivered(reply.clone(), app.to_string(), document.is_some());
         let item = match document {
             Some(document) => Arrived::Document(document),
             None => Arrived::Reply(reply),

@@ -107,6 +107,8 @@ fn reply() -> CompanionReply {
                    this."
             .into(),
         saved: false,
+        saving: false,
+        failed: false,
     }
 }
 

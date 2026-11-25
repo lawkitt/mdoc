@@ -15,6 +15,7 @@ use super::*;
 use crate::{companion::CompanionView, menu_bar, shelf_ui::ShelfView};
 use mdoc_mcp::wire::{Answer, Call, Done, Kind};
 use mdoc_pii::{Category::Person, restore::ExportedIdentity};
+use mdoc_store::document_id::VaultId as VaultIdOf;
 
 /// The menu bar item on, as at launch.
 fn install_menu_bar(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
@@ -276,6 +277,23 @@ fn the_restored_reply_copies_and_saves(cx: &mut TestAppContext) {
     window.simulate_mouse_move(gpui::point(px(1.), px(1.)), None, gpui::Modifiers::none());
     window.run_until_parked();
     assert!(!view(open, &mut window, |view, _| view.reply_shown()));
+    // Review of #1250: leaving the window straight from the reply hides
+    // it, and a redraw at the last place inside does not show it again.
+    window.simulate_mouse_move(bounds.center(), None, gpui::Modifiers::none());
+    window.run_until_parked();
+    assert!(view(open, &mut window, |view, _| view.reply_shown()));
+    window.simulate_event(gpui::MouseExitEvent {
+        position: bounds.center(),
+        pressed_button: None,
+        modifiers: gpui::Modifiers::none(),
+    });
+    window.run_until_parked();
+    window.update(|window, _| window.refresh());
+    window.run_until_parked();
+    assert!(!view(open, &mut window, |view, _| view.reply_shown()));
+    window.simulate_mouse_move(bounds.center(), None, gpui::Modifiers::none());
+    window.run_until_parked();
+    assert!(view(open, &mut window, |view, _| view.reply_shown()));
     // Copy, hidden or not: restored, marked as a restored reply's copy.
     update(open, cx, |view, window, cx| view.copy_reply(window, cx));
     let copied = cx.update(|_, cx| cx.read_from_clipboard()).unwrap();
@@ -303,6 +321,71 @@ fn the_restored_reply_copies_and_saves(cx: &mut TestAppContext) {
     update(open, cx, |view, _, cx| view.save_reply(cx));
     wait(cx, 800);
     assert_eq!(members(cx).len(), before + 1);
+}
+
+/// Review of #1250: a reply delivered as a Document is saved already, and
+/// a Save as document that fails says so and may run again.
+#[gpui::test]
+fn save_as_document_counts_only_what_was_saved(cx: &mut TestAppContext) {
+    let fixture = fixture();
+    name_anna(&fixture);
+    let (tabs, cx, _notes) = shared_lease(cx, &fixture);
+    install_menu_bar(&tabs, cx);
+    let members = |cx: &mut VisualTestContext| vault(&tabs, cx).documents_in(Some(&fixture.lease));
+    let (_, document) = deliver(&tabs, cx, &fixture, Kind::Document);
+    assert!(document.is_some());
+    let open = companion(cx).unwrap();
+    let reply = view(open, cx, |view, _| view.content().reply.clone()).unwrap();
+    assert!(reply.saved, "delivered as a Document");
+    let before = members(cx).len();
+    update(open, cx, |view, _, cx| view.save_reply(cx));
+    wait(cx, 800);
+    assert_eq!(members(cx).len(), before, "no second Document");
+    // A reply whose promotion fails (deleted meanwhile): not saved, and
+    // not marked so.
+    let (reply, _) = deliver(&tabs, cx, &fixture, Kind::Reply);
+    vault(&tabs, cx).delete_reply(&reply).unwrap();
+    cx.update(|window, cx| {
+        tabs.update(cx, |tabs, cx| tabs.companion_save_reply(&reply, window, cx))
+    });
+    wait(cx, 800);
+    let latest = cx.update(|_, cx| tabs.read(cx).ai.latest_reply().cloned());
+    let latest = latest.unwrap();
+    assert!(
+        latest.failed && !latest.saved && !latest.saving,
+        "{latest:?}"
+    );
+}
+
+/// Review of #1250: opening the requested document from mdoc's sidebar
+/// takes the review card off the companion at once.
+#[gpui::test]
+fn the_review_card_goes_once_the_document_opens(cx: &mut TestAppContext) {
+    crate::document_view::DocumentView::hold_scans(true);
+    let fixture = fixture();
+    let (tabs, cx, _notes) = shared_lease(cx, &fixture);
+    install_menu_bar(&tabs, cx);
+    vault(&tabs, cx)
+        .update_document(&fixture.lease_doc, |d| d.set_ready(false))
+        .unwrap();
+    call(
+        &tabs,
+        cx,
+        Call::GetDocument {
+            doc_id: fixture.lease_doc.clone(),
+            part: None,
+        },
+    );
+    let open = companion(cx).unwrap();
+    assert!(view(open, cx, |view, _| view.content().review.clone()).is_some());
+    let id = VaultIdOf::parse(&fixture.lease_doc).unwrap();
+    cx.update(|window, cx| tabs.update(cx, |tabs, cx| tabs.open_vault_document(id, window, cx)));
+    cx.run_until_parked();
+    assert_eq!(
+        view(open, cx, |view, _| view.content().review.clone()),
+        None
+    );
+    crate::document_view::DocumentView::hold_scans(false);
 }
 
 /// Done when: files dropped on the companion are imported into the AI
