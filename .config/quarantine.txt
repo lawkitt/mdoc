@@ -49,3 +49,8 @@ ios:mdocUITests/EditToolbarUITests/testHardwareKeys  #837  2026-12-11
 # a drop plus a retried pass (#1074).
 ios:mdocUITests/TableEditingUITests/testThePencilInALongTableKeepsThePlaceAndTheWord  #1073  2026-12-22
 ios:mdocUITests/IdentitiesGesturesUITests/testRowsSwipeLeftAndASwipeRightClosesIdentities  #1074  2026-12-22
+
+# Dropped #1224 and #1203 from the queue on the PC runner, 2026-11-25.
+android:io.github.lawkitt.mdoc.AskAiTest#noBannerAfterACancelOrAPlainShare  #1233  2026-12-25
+android:io.github.lawkitt.mdoc.AskAiTest#theBannerRestoresAPastedReply  #1233  2026-12-25
+android:io.github.lawkitt.mdoc.AskAiTest#askAiIsHiddenUntilThePreviewIsOn  #1233  2026-12-25

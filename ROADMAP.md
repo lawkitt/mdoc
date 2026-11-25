@@ -406,11 +406,6 @@ items 33–35 are polish and do not. Items 36–39 and 44 gate it too; items
     "Changed since review". *Done when:* workspace tests and headless renders
     cover every refusal state, and one click from each ends in copied text or
     the open review.
-37. **[iOS] Refusals in plain words.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
-    Changed since review, a known name written out and excluded from AI each
-    get their own sentence and the step that resolves them; no core error
-    text reaches a screen. Below the memory floor the bar and the title menu
-    agree. *Done when:* UI tests cover each refusal state and the floor case.
 38. **[Android] Refusals in plain words.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
     The same sentences and steps as item 37. Copy and Share show disabled
     with their reason, as on iOS, and are no longer hidden. *Done when:*
