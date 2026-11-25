@@ -389,6 +389,19 @@ impl Panel {
         }
         cx.notify();
     }
+    /// The window remembered a choice of the AI connector's, such as
+    /// Ask's: the draft keeps it, so applying Settings never undoes it.
+    pub fn ai_connector_changed(
+        &mut self,
+        change: impl FnOnce(&mut mdoc_store::settings::AiConnectorConfig),
+        cx: &mut Context<Self>,
+    ) {
+        change(&mut self.draft.ai_connector);
+        if self.applying {
+            self.save_pending = true;
+        }
+        cx.notify();
+    }
     pub fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.open {
             return;

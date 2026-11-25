@@ -121,6 +121,7 @@ impl Workspace {
         // A menu belongs to the page it was opened over.
         self.document_menu = None;
         self.project_ui.header_menu = None;
+        self.project_ui.ask_menu = None;
         self.menu_return = None;
         // The cursor is already on this stop, so the destination's own
         // visit is a no-op and preserves the forward branch.

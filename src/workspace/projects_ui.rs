@@ -51,6 +51,8 @@ pub(super) struct MoveToast {
 pub(super) struct ProjectsState {
     pub(super) page: Option<super::project_page::ProjectPage>,
     pub(super) header_menu: Option<(String, gpui::Point<gpui::Pixels>)>,
+    /// The Project page's Ask menu (Milestone 2 item 10).
+    pub(super) ask_menu: Option<(String, gpui::Point<gpui::Pixels>)>,
     pub(super) renaming: Option<(String, Entity<markdown_search::SearchInput>)>,
     /// Saves the rename when focus leaves its field.
     rename_blur: Option<gpui::Subscription>,
@@ -798,6 +800,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Ran {
+        // An Ask waiting for this move: it asks only once the move landed.
+        let ask = self.ai_ask.moved(document.as_str());
         let Some(vault) = self.vault.vault().cloned() else {
             self.moving.remove(&document);
             return Ran::Ended;
@@ -912,6 +916,9 @@ impl Workspace {
                 });
                 self.took_move(&moved);
                 self.sync_members(&moved, &document, cx);
+                let asked = ask
+                    .zip(made.clone())
+                    .map(|(with, made)| (with, made, id.to_string()));
                 let tab = self.find_document(&DocumentId::Vault(document.clone()), None, cx);
                 match tab {
                     Some(tab) => {
@@ -939,6 +946,10 @@ impl Workspace {
                 };
                 let undo = (!matches!(moving, Moving::Undo)).then(|| (moved.undo.clone(), made));
                 self.show_toast(text, undo, window, cx);
+                // "Move to a new Project and share" asks now.
+                if let Some((with, made, document)) = asked {
+                    self.ask_after_move(&document, &made, with, cx);
+                }
             }
             Err(error) => {
                 self.moving.remove(&document);
