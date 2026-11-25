@@ -161,6 +161,11 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
     let mut handed = Vec::new();
     for row in &rows {
         let copied = row.text_for_ai().map(str::to_owned);
+        // Named as a drag names it, as it leaves.
+        let mut row = row.clone();
+        let name = cx.update(|_, cx| tabs.read(cx).shelf_share_name(&row.key, cx));
+        row.set_share_name(name);
+        let row = &row;
         let dragged = exports.export(row).unwrap();
         assert_eq!(copied.is_some(), row.readiness.is_ready(), "{:?}", row.key);
         assert_eq!(dragged.is_some(), row.readiness.is_ready(), "{:?}", row.key);
@@ -185,7 +190,13 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
         handed.extend(card.into_iter().flat_map(|(title, line)| [title, line]));
         handed.extend(copied);
     }
-    assert!(handed.iter().any(|h| h == "PERSON_1 contract.md"));
+    // Exports leave under the Vault's neutral names, nothing of a title
+    // (#1208).
+    let ready_document = cx.update(|_, cx| tabs.read(cx).tab_document(ready, cx).unwrap());
+    for document in [&ready_document, &closed_document] {
+        let name = format!("{}.md", vault.share_name(document.as_str()).unwrap());
+        assert!(handed.contains(&name), "{name} in {handed:?}");
+    }
     for original in ORIGINALS {
         for text in &handed {
             assert!(
@@ -796,7 +807,19 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
         .unwrap();
     assert_eq!(dragged, editor_copy);
     assert_eq!(std::fs::read_to_string(&file).unwrap(), editor_copy);
-    assert_eq!(file.file_name().unwrap(), "PERSON_1 contract.md");
+    // Its file leaves under the Vault's neutral name, nothing of its title
+    // (#1208).
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(ready, cx).unwrap());
+    let share_name = vault(&tabs, cx).share_name(document.as_str()).unwrap();
+    assert!(share_name.starts_with("Document "), "{share_name}");
+    let name = file.file_name().unwrap().to_string_lossy().to_lowercase();
+    for word in ["anna", "petrova", "contract"] {
+        assert!(!name.contains(word), "{word} of the title left in {name}");
+    }
+    assert_eq!(
+        file.file_name().unwrap().to_string_lossy(),
+        format!("{share_name}.md")
+    );
 
     // Restore Clipboard with the Project of the document used last.
     cx.write_to_clipboard(gpui::ClipboardItem::new_string(
