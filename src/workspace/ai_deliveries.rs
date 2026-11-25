@@ -172,8 +172,10 @@ impl Workspace {
             self.notify_os(&Note::of(&item, app, ""), cx);
         }
         // A dialog or sheet up keeps it on the badge: nothing moves under
-        // it.
-        if self.ai_setting().open_deliveries && !self.modal_up(window, cx) {
+        // it. The switch must be on as saved and as Settings shows it, so
+        // it is off at once and on only once saved.
+        let open = self.ai_setting().open_deliveries && self.settings.read(cx).opens_deliveries();
+        if open && !self.modal_up(window, cx) {
             crate::menu_bar::reveal_window(window, cx);
             self.open_arrived(&item, window, cx);
         }

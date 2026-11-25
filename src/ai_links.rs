@@ -50,5 +50,6 @@ mod tests {
             "codex://new?prompt=List%20my%20documents%20in%20mdoc."
         );
         assert_eq!(percent_encoded("A-z_0.9~"), "A-z_0.9~");
+        assert_eq!(percent_encoded("a+b/ü"), "a%2Bb%2F%C3%BC");
     }
 }

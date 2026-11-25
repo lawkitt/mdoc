@@ -417,3 +417,60 @@ fn off_is_told_before_its_save_lands(cx: &mut TestAppContext) {
     assert_eq!(*told.borrow(), [false, false, true]);
     panel.update(cx, |p, _| assert!(p.draft.ai_connector.preview));
 }
+
+/// "Open deliveries when they arrive" shows only with the preview on, is
+/// off by default, and saves `ai_connector.open_deliveries`.
+#[gpui::test]
+fn open_deliveries_shows_with_the_preview_and_saves(cx: &mut TestAppContext) {
+    let apps = apps(None, None);
+    let (panel, shared, cx) = page(&apps, false, cx);
+    assert!(
+        !shown(cx, "ai-open-deliveries"),
+        "shown with the preview off"
+    );
+    click(cx, "ai-connector-preview");
+    assert!(shown(cx, "ai-open-deliveries"));
+    let saved = |shared: &Shared| shared.borrow().snapshot().unwrap().ai_connector;
+    assert!(!saved(&shared).open_deliveries, "off by default");
+    click(cx, "ai-open-deliveries");
+    assert!(saved(&shared).open_deliveries);
+    assert!(saved(&shared).preview, "the preview stays on");
+    panel.update(cx, |p, _| assert!(p.draft.ai_connector.open_deliveries));
+    click(cx, "ai-open-deliveries");
+    assert!(!saved(&shared).open_deliveries);
+    // Off with the preview, it stays as saved.
+    click(cx, "ai-open-deliveries");
+    click(cx, "ai-connector-preview");
+    assert!(!shown(cx, "ai-open-deliveries"));
+    assert!(saved(&shared).open_deliveries);
+}
+
+/// A failed save of "Open deliveries when they arrive" puts the switch
+/// back and says so.
+#[gpui::test]
+fn a_failed_open_deliveries_save_restores_it(cx: &mut TestAppContext) {
+    let apps = apps(None, None);
+    let (panel, shared, cx) = page(&apps, true, cx);
+    let dir = tempfile::tempdir().unwrap();
+    let blocked = dir.path().join("not-a-directory");
+    std::fs::write(&blocked, b"blocked").unwrap();
+    shared.borrow_mut().path = Some(blocked.join("settings.json"));
+    click(cx, "ai-open-deliveries");
+    assert!(
+        !shared
+            .borrow()
+            .snapshot()
+            .unwrap()
+            .ai_connector
+            .open_deliveries
+    );
+    panel.update(cx, |p, _| {
+        assert!(
+            !p.draft.ai_connector.open_deliveries,
+            "the switch is back off"
+        );
+        assert!(p.draft.ai_connector.preview);
+    });
+    assert!(shown(cx, "settings-error"));
+    assert!(shown(cx, "ai-open-deliveries"));
+}

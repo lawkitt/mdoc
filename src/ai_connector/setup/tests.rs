@@ -409,14 +409,14 @@ fn a_dev_profile_goes_with_the_entry() {
 }
 
 /// Test connection opens a new Claude chat with the first prompt filled
-/// in, percent-encoded (item 1's spike).
+/// in, percent-encoded (item 1's spike): byte for byte the link it opened
+/// before it used `crate::ai_links` (encoding is tested there).
 #[test]
 fn test_connection_prefills_a_new_claude_chat() {
     assert_eq!(
         claude_test_link(),
         "claude://claude.ai/new?q=List%20my%20documents%20in%20mdoc."
     );
-    assert_eq!(percent_encoded("a+b/ü"), "a%2Bb%2F%C3%BC");
 }
 
 /// A config that is a link (into a dotfiles repository, say) is refused:
