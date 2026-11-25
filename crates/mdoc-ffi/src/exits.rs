@@ -7,12 +7,13 @@
 //! `DocumentSession::hand_off` on iOS (`RealCore.copyForAI`, after
 //! saving), or the app's own pending check and `Vault::share_file_name` on
 //! Android (`Documents.copyForAi`); `hand_off` names the file with
-//! `Vault::share_file_name` too, the title masked with every name the
-//! Project knows (#1192). The text, which is also the file's contents,
-//! always comes from `Vault::text_for_ai`. [`EXITS`] mirrors each app's
-//! composition, and the suite runs both against a document that is not
-//! Ready, and against a Ready one whose title holds a name only another
-//! document gave its Project.
+//! `Vault::share_file_name` too, a neutral "Document 3 – 2026-11-25.md"
+//! with nothing of the stored title (#1205). The text, which is also the
+//! file's contents, always comes from `Vault::text_for_ai`. [`EXITS`]
+//! mirrors each app's composition, and the suite runs both against a
+//! document that is not Ready, and against Ready ones whose title holds a
+//! name only another document gave its Project, or a real name nobody
+//! reviewed.
 //!
 //! What each carries: the text (the clipboard, the share sheet's text, the
 //! `.md` file's contents), the file's name, and the share sheet's subject
@@ -50,8 +51,8 @@ pub(crate) enum Gate {
     TextForAi,
     /// `DocumentSession::hand_off`'s refusal while proposals are pending.
     HandOff,
-    /// `Vault::share_file_name`'s mask of the title with the Project's
-    /// names: the file's name, and the subject both apps take from it.
+    /// `Vault::share_file_name`'s neutral name in place of the title: the
+    /// file's name, and the subject both apps take from it.
     ShareFileName,
     // Milestone 2: the connector joins here, if it checks anywhere else.
 }
@@ -88,7 +89,8 @@ const TEXT: &str = "Anna Petrova wrote to Boris Ivanov about the lease.";
 struct Exit {
     name: &'static str,
     gate: Gate,
-    /// What it sends for the document: `None` when refused.
+    /// What it sends for the document, the text first and then the names
+    /// it leaves under (file name, subject): `None` when refused.
     send: fn(&Letter) -> Option<Vec<String>>,
 }
 
@@ -184,12 +186,26 @@ enum Scenario {
     ChangedElsewhere,
     /// Another document names Dmitri Orlov and is saved into the Project,
     /// and the letter is renamed "Dmitri Orlov lease": its text never
-    /// mentions him, so it stays Ready, and its title must leave masked
-    /// (#1192).
+    /// mentions him, so it stays Ready, and nothing of its title may leave
+    /// (#1192, #1205).
     ProjectNameInTheTitle,
+    /// The letter is renamed "Clara Moss: Brightwater lease", a real name
+    /// no review saw and the Project doesn't know: it stays Ready, and
+    /// nothing of its title may leave (#1205).
+    UnknownNameInTheTitle,
 }
 
-const READY: [Scenario; 2] = [Scenario::Ready, Scenario::ProjectNameInTheTitle];
+const READY: [Scenario; 3] = [
+    Scenario::Ready,
+    Scenario::ProjectNameInTheTitle,
+    Scenario::UnknownNameInTheTitle,
+];
+
+/// The Ready scenarios that rename the letter.
+const TITLED: [Scenario; 2] = [
+    Scenario::ProjectNameInTheTitle,
+    Scenario::UnknownNameInTheTitle,
+];
 
 const NOT_READY: [Scenario; 4] = [
     Scenario::NameFromAnotherDocument,
@@ -201,9 +217,10 @@ const NOT_READY: [Scenario; 4] = [
 impl Scenario {
     fn known_names(self) -> &'static [&'static str] {
         match self {
-            Scenario::Ready | Scenario::MappedNameAsWritten | Scenario::ChangedElsewhere => {
-                &["Anna Petrova"]
-            }
+            Scenario::Ready
+            | Scenario::MappedNameAsWritten
+            | Scenario::ChangedElsewhere
+            | Scenario::UnknownNameInTheTitle => &["Anna Petrova"],
             Scenario::NameFromAnotherDocument | Scenario::NameOnlyTheVaultKnows => {
                 &["Anna Petrova", "Boris Ivanov"]
             }
@@ -364,6 +381,12 @@ impl Letter {
                     .unwrap();
                 assert!(store.readiness(&self.id).unwrap().is_ready());
             }
+            Scenario::UnknownNameInTheTitle => {
+                self.session
+                    .rename_in_vault(self.vault.clone(), "Clara Moss: Brightwater lease".into())
+                    .unwrap();
+                assert!(store.readiness(&self.id).unwrap().is_ready());
+            }
         }
         if !scenario.is_ready() {
             assert!(
@@ -374,8 +397,9 @@ impl Letter {
     }
 }
 
-/// What is wrong with what `exit` sent in `scenario`.
-fn faults(exit: &Exit, scenario: Scenario, sent: Option<&[String]>) -> Vec<String> {
+/// What is wrong with what `exit` sent in `scenario` for the document
+/// titled `title` as stored.
+fn faults(exit: &Exit, scenario: Scenario, title: &str, sent: Option<&[String]>) -> Vec<String> {
     let mut faults = Vec::new();
     match (scenario, sent) {
         (_, Some(sent))
@@ -402,14 +426,29 @@ fn faults(exit: &Exit, scenario: Scenario, sent: Option<&[String]>) -> Vec<Strin
             }
         }
     }
+    // The names it leaves under hold no word of the stored title (#1205).
+    let words: Vec<String> = (title.split(|c: char| !c.is_alphanumeric()))
+        .filter(|word| word.chars().any(char::is_alphabetic))
+        .map(str::to_lowercase)
+        .collect();
+    for name in sent.unwrap_or_default().iter().skip(1) {
+        let lower = name.to_lowercase();
+        for word in words.iter().filter(|word| lower.contains(word.as_str())) {
+            faults.push(format!(
+                "{}: {word:?} of the title {title:?} left ({scenario:?}) in {name:?}",
+                exit.name
+            ));
+        }
+    }
     faults
 }
 
 fn run(exit: &Exit, scenario: Scenario) -> Vec<String> {
     let letter = ready();
     letter.change(scenario);
+    let title = letter.vault.store().document(&letter.id).unwrap().title;
     let sent = (exit.send)(&letter);
-    faults(exit, scenario, sent.as_deref())
+    faults(exit, scenario, &title, sent.as_deref())
 }
 
 fn suite(scenarios: &[Scenario]) -> Vec<String> {
@@ -423,8 +462,9 @@ fn suite(scenarios: &[Scenario]) -> Vec<String> {
 }
 
 /// Done when: each app exit sends the Vault's checked text for a Ready
-/// document, with no original in it or in its file name and subject, even
-/// one its title holds and only another document gave the Project.
+/// document, with no original in it, and no word of its stored title in
+/// its file name and subject: not a name only another document gave the
+/// Project, not a real name nobody reviewed (#1205).
 #[test]
 fn every_exit_sends_a_ready_document_pseudonymized() {
     let faults = suite(&READY);
@@ -456,9 +496,9 @@ fn hand_off_refuses_while_proposals_are_pending() {
 
 /// Done when: taking the check out of any one gate fails the suite: with
 /// `Vault::text_for_ai`'s check out, every app exit sends a document that
-/// is not Ready; with `Vault::share_file_name`'s mask out, every app exit
-/// sends a Project's name its title holds; with `hand_off`'s out, it
-/// hands off pending proposals.
+/// is not Ready; with `Vault::share_file_name`'s neutral name out, every
+/// app exit sends its stored title, a Project's name or an unknown real
+/// name in it; with `hand_off`'s out, it hands off pending proposals.
 #[test]
 fn taking_a_gates_check_out_fails_the_suite() {
     {
@@ -475,12 +515,14 @@ fn taking_a_gates_check_out_fails_the_suite() {
     }
     {
         let _taken = take_out(Gate::ShareFileName);
-        for exit in EXITS {
-            assert!(
-                !run(exit, Scenario::ProjectNameInTheTitle).is_empty(),
-                "{} passed with the file name's mask taken out",
-                exit.name
-            );
+        for scenario in TITLED {
+            for exit in EXITS {
+                assert!(
+                    !run(exit, scenario).is_empty(),
+                    "{} passed with the neutral name taken out ({scenario:?})",
+                    exit.name
+                );
+            }
         }
     }
     let _taken = take_out(Gate::HandOff);
