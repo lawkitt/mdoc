@@ -13,6 +13,7 @@ DeviceLongJobsUITests	0	22
 DeviceTapTimingUITests	0	22
 EditModeUITests	168	25
 EditToolbarUITests	96	25
+HandOffRefusalUITests	254	1
 IdentitiesGesturesUITests	315	23
 IdentitiesHeaderUITests	144	23
 IdentitiesSelectUITests	68	23
