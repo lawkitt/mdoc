@@ -34,9 +34,38 @@ fn start(tabs: &Entity<Workspace>, endpoint: &Endpoint, cx: &mut VisualTestConte
     tabs.update(cx, |tabs, _| {
         let vault = tabs.vault.vault().cloned().expect("the test Vault");
         let on = mdoc_store::settings::AiConnectorConfig { preview: true };
-        tabs.ai_connector = crate::ai_connector::start(vault, &on, endpoint);
+        tabs.ai_connector = crate::ai_connector::start(vault, &on, Some(endpoint)).unwrap();
         assert!(tabs.ai_connector.is_some(), "listening at once");
     });
+}
+
+/// #1220: a start that fails, here on a name another mdoc holds, is shown
+/// in Settings › AI connector, and goes with the switch off.
+#[gpui::test]
+fn a_failed_start_reaches_settings(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let dir = tempfile::tempdir().unwrap();
+    let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
+    let _other = ipc::listen(&endpoint, std::sync::Arc::new(|_: &[u8]| Vec::new())).unwrap();
+    set_preview(&tabs, true, cx);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.ai_connector = None;
+        let vault = tabs.vault.vault().cloned().expect("the test Vault");
+        let on = mdoc_store::settings::AiConnectorConfig { preview: true };
+        let started = crate::ai_connector::start(vault, &on, Some(&endpoint));
+        tabs.ai_started(started, window, cx);
+        assert!(tabs.ai_connector.is_none());
+    });
+    let failed = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| (tabs.read(cx).settings.read(cx).ai_failed()).map(str::to_string))
+    };
+    assert!(
+        failed(cx).is_some_and(|why| why.contains("another copy of mdoc")),
+        "{:?}",
+        failed(cx)
+    );
+    set_preview(&tabs, false, cx);
+    assert_eq!(failed(cx), None);
 }
 
 #[gpui::test]

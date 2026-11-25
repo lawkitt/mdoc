@@ -5,6 +5,11 @@
 use std::{
     io::{self, BufRead, Read, Write},
     path::{Path, PathBuf},
+    sync::{
+        Arc, Mutex, PoisonError, RwLock, TryLockError,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    time::Duration,
 };
 
 #[cfg(unix)]
@@ -84,7 +89,10 @@ pub fn call(endpoint: &Endpoint, request: &[u8]) -> Result<Vec<u8>, CallError> {
 /// Answers each request line with `answer`'s line.
 pub type Handler = std::sync::Arc<dyn Fn(&[u8]) -> Vec<u8> + Send + Sync>;
 
-/// A listener; dropping it stops it.
+/// A listener; dropping it stops it. Once the drop returns, nothing more
+/// is written to any connection it accepted (#1220): a call still being
+/// answered then gets no answer. The drop never waits for an answer
+/// being made, only for one being written, which it cuts short.
 pub struct Listening(Option<sys::Listener>);
 
 impl Drop for Listening {
@@ -102,13 +110,83 @@ pub fn listen(endpoint: &Endpoint, answer: Handler) -> io::Result<Listening> {
     sys::listen(&endpoint.0, answer).map(|listener| Listening(Some(listener)))
 }
 
-/// Serve one connection: one request line, one answer line.
-fn serve(stream: impl Read + Write, answer: &Handler) {
+/// What a listener shares with the calls it serves (#1220): whether it
+/// has stopped, the gate each answer is written under, and how to cut
+/// short the pipe or socket I/O under way.
+struct Calls {
+    stopped: AtomicBool,
+    /// Held shared while an answer is written; [`Calls::stop`] takes it
+    /// alone once, so no write outlasts the stop.
+    gate: RwLock<()>,
+    /// The I/O under way, by call: never a handler's own (Vault) I/O.
+    cuts: Mutex<Vec<(u64, Arc<sys::Cut>)>>,
+    next: AtomicU64,
+}
+
+impl Calls {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            stopped: AtomicBool::new(false),
+            gate: RwLock::new(()),
+            cuts: Mutex::new(Vec::new()),
+            next: AtomicU64::new(0),
+        })
+    }
+
+    fn stopped(&self) -> bool {
+        self.stopped.load(Ordering::SeqCst)
+    }
+
+    /// Run `io` on the pipe or socket, where a stop can cut it.
+    fn cuttable<T>(&self, cut: &Arc<sys::Cut>, io: impl FnOnce() -> T) -> T {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        lock(&self.cuts).push((id, cut.clone()));
+        let done = io();
+        // Under the lock a stop cuts with: once off the list, this call's
+        // thread is never cut again (its handler's I/O is the Vault's).
+        lock(&self.cuts).retain(|(at, _)| *at != id);
+        done
+    }
+
+    /// No answer is written from now on; one being written is cut and
+    /// waited for. An answer still being made is not waited for: it finds
+    /// the stop when it is done, and writes nothing.
+    fn stop(&self) {
+        self.stopped.store(true, Ordering::SeqCst);
+        loop {
+            for (_, cut) in lock(&self.cuts).iter() {
+                cut.cut();
+            }
+            match self.gate.try_write() {
+                Ok(_) | Err(TryLockError::Poisoned(_)) => return,
+                // A write began after the cut: cut again.
+                Err(TryLockError::WouldBlock) => std::thread::sleep(Duration::from_millis(5)),
+            }
+        }
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Serve one connection: one request line, one answer line, written only
+/// while the listener runs.
+fn serve(stream: impl Read + Write, cut: sys::Cut, calls: &Calls, answer: &Handler) {
+    let cut = Arc::new(cut);
     let mut reader = io::BufReader::new(stream);
-    let Ok(request) = read_line(&mut reader) else {
+    let Ok(request) = calls.cuttable(&cut, || read_line(&mut reader)) else {
         return;
     };
-    let _ = write_line(reader.get_mut(), &answer(&request));
+    if calls.stopped() {
+        return;
+    }
+    let answer = answer(&request);
+    let _open = calls.gate.read().unwrap_or_else(PoisonError::into_inner);
+    if calls.stopped() {
+        return;
+    }
+    let _ = calls.cuttable(&cut, || write_line(reader.get_mut(), &answer));
 }
 
 /// One line, at most [`crate::wire::MAX_LINE`] bytes, without its line
@@ -147,7 +225,7 @@ fn write_line(writer: &mut impl Write, line: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
+    use std::sync::mpsc;
 
     fn scratch() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
@@ -183,13 +261,75 @@ mod tests {
         );
     }
 
+    /// A handler held at a hook until released, telling when it is
+    /// entered; it answers `answer`.
+    fn held(answer: Vec<u8>) -> (Handler, mpsc::Receiver<()>, mpsc::Sender<()>) {
+        let (enter, entered) = mpsc::channel();
+        let (release, released) = mpsc::channel::<()>();
+        let released = Mutex::new(released);
+        let handler: Handler = Arc::new(move |_: &[u8]| {
+            let _ = enter.send(());
+            let _ = lock(&released).recv();
+            answer.clone()
+        });
+        (handler, entered, release)
+    }
+
+    const SOON: Duration = Duration::from_secs(2);
+
+    /// #1220: a call whose answer is still being made when the listener
+    /// stops gets nothing written, and the stop doesn't wait for it.
+    #[test]
+    fn an_answer_made_across_the_stop_is_not_written() {
+        let profile = scratch();
+        let endpoint = Endpoint::for_profile(Some(profile.path())).unwrap();
+        let (handler, entered, release) = held(b"the text".to_vec());
+        let listening = listen(&endpoint, handler).unwrap();
+        let caller = {
+            let endpoint = endpoint.clone();
+            std::thread::spawn(move || call(&endpoint, b"read"))
+        };
+        entered.recv_timeout(Duration::from_secs(10)).unwrap();
+        let stopping = std::time::Instant::now();
+        drop(listening);
+        assert!(stopping.elapsed() < SOON, "the stop waited for the answer");
+        release.send(()).unwrap();
+        // The call ends with nothing: an empty line or a broken pipe.
+        if let Ok(answer) = caller.join().unwrap() {
+            assert!(answer.is_empty(), "written after the stop: {answer:?}");
+        }
+    }
+
+    /// #1220: an answer being written to a caller that doesn't read is cut
+    /// short by the stop, which returns rather than waiting on it.
+    #[test]
+    fn a_stuck_write_is_cut_by_the_stop() {
+        let profile = scratch();
+        let endpoint = Endpoint::for_profile(Some(profile.path())).unwrap();
+        let big = vec![b'x'; 8 << 20];
+        let (handler, entered, release) = held(big);
+        let listening = listen(&endpoint, handler).unwrap();
+        let mut stream = sys::connect(&endpoint.0).unwrap();
+        write_line(&mut stream, b"read").unwrap();
+        entered.recv_timeout(Duration::from_secs(10)).unwrap();
+        release.send(()).unwrap();
+        // Long enough for the write to fill the pipe and block.
+        std::thread::sleep(Duration::from_millis(300));
+        let stopping = std::time::Instant::now();
+        drop(listening);
+        assert!(stopping.elapsed() < SOON, "the stop waited on the write");
+        drop(stream);
+    }
+
     #[test]
     fn a_second_listener_on_the_same_endpoint_is_refused() {
         let profile = scratch();
         let endpoint = Endpoint::for_profile(Some(profile.path())).unwrap();
         let echo: Handler = Arc::new(|request: &[u8]| request.to_vec());
         let _first = listen(&endpoint, echo.clone()).unwrap();
-        assert!(listen(&endpoint, echo).is_err());
+        // Told apart, so Settings can say another mdoc holds it (#1220).
+        let refused = listen(&endpoint, echo).err().unwrap();
+        assert_eq!(refused.kind(), io::ErrorKind::AddrInUse, "{refused}");
         assert_eq!(
             call(&endpoint, b"still the first").unwrap(),
             b"still the first"

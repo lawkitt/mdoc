@@ -298,6 +298,9 @@ Section un.OpenWith
   DeleteRegKey SHCTX "Software\Classes\${MDOC_PROGID}"
   DeleteRegKey SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe"
   !insertmacro UPDATEFILEASSOC
+  ; The notifications' AppUserModelID, which mdoc (GPUI) registers under the
+  ; user's own key at its first notification, not the installer.
+  DeleteRegKey HKCU "Software\Classes\AppUserModelId\io.github.lawkitt.mdoc"
 SectionEnd
 '''
 

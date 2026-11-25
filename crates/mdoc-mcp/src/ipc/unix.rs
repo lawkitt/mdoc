@@ -9,7 +9,7 @@
 //! socket goes when the listener stops.
 #![allow(unsafe_code)] // geteuid, flock and the peer's credentials (#897).
 
-use super::{CallError, Handler};
+use super::{CallError, Calls, Handler};
 use std::{
     fs::{self, File},
     io::{self, ErrorKind},
@@ -21,10 +21,7 @@ use std::{
         },
     },
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
 };
 
 /// The socket's path.
@@ -127,9 +124,23 @@ pub(super) fn lock(folder: &Path) -> io::Result<Option<File>> {
     Ok(Some(file))
 }
 
+/// How a stop cuts a call's socket I/O short: the connection, shut down
+/// both ways, which ends a blocking read or write.
+pub struct Cut(UnixStream);
+
+impl Cut {
+    fn of(stream: &UnixStream) -> io::Result<Self> {
+        stream.try_clone().map(Self)
+    }
+
+    pub fn cut(&self) {
+        let _ = self.0.shutdown(std::net::Shutdown::Both);
+    }
+}
+
 pub struct Listener {
     socket: PathBuf,
-    stop: Arc<AtomicBool>,
+    calls: Arc<Calls>,
     /// Held while listening; released once the socket is gone.
     _lock: File,
 }
@@ -156,36 +167,38 @@ pub fn listen(socket: &Address, answer: Handler) -> io::Result<Listener> {
     }
     let listener = UnixListener::bind(socket)?;
     fs::set_permissions(socket, fs::Permissions::from_mode(0o600))?;
-    let stop = Arc::new(AtomicBool::new(false));
+    let calls = Calls::new();
     let handle = Listener {
         socket: socket.clone(),
-        stop: stop.clone(),
+        calls: calls.clone(),
         _lock: held,
     };
     std::thread::Builder::new()
         .name("mdoc-connector-listener".into())
         .spawn(move || {
             for stream in listener.incoming() {
-                if stop.load(Ordering::SeqCst) {
+                if calls.stopped() {
                     return;
                 }
                 let Ok(stream) = stream else { continue };
                 if !peer(&stream).is_ok_and(is_us) {
                     continue;
                 }
-                let answer = answer.clone();
+                // No way to cut it short: not served.
+                let Ok(cut) = Cut::of(&stream) else { continue };
+                let (answer, calls) = (answer.clone(), calls.clone());
                 let _ = std::thread::Builder::new()
                     .name("mdoc-connector-call".into())
-                    .spawn(move || super::serve(stream, &answer));
+                    .spawn(move || super::serve(stream, cut, &calls, &answer));
             }
         })?;
     Ok(handle)
 }
 
-/// Stop: the flag, one connection to wake the accept, the socket gone,
-/// then the lock.
+/// Stop: no answer written from now on, one connection to wake the
+/// accept, the socket gone, then the lock.
 pub fn stop(listener: Listener) {
-    listener.stop.store(true, Ordering::SeqCst);
+    listener.calls.stop();
     let _ = UnixStream::connect(&listener.socket);
     let _ = fs::remove_file(&listener.socket);
 }

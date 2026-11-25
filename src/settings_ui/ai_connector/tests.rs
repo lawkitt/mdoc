@@ -358,3 +358,19 @@ fn a_failed_switch_save_shows_the_rows_again(cx: &mut TestAppContext) {
     assert_eq!(status(&panel, Host::Claude, cx), Some(Status::NotAdded));
     assert!(shown(cx, "ai-claude-add"));
 }
+
+/// #1220: a failed start shows under the switch while it is on, and not
+/// with the switch off.
+#[gpui::test]
+fn a_failed_start_shows_under_the_switch(cx: &mut TestAppContext) {
+    let apps = apps(Some(CLAUDE), Some(CODEX));
+    let (panel, _, cx) = page(&apps, true, cx);
+    assert!(!shown(cx, "ai-connector-failed"));
+    let why = "Couldn't start the connector: another copy of mdoc is using it.";
+    panel.update(cx, |p, cx| p.ai_connector_failed(Some(why.into()), cx));
+    draw(cx);
+    assert!(shown(cx, "ai-connector-failed"));
+    assert!(shown(cx, "ai-claude-add"), "the rest of the page stays");
+    click(cx, "ai-connector-preview");
+    assert!(!shown(cx, "ai-connector-failed"));
+}

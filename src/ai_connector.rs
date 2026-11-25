@@ -90,14 +90,25 @@ fn service(vault: Arc<Vault>, setting: &AiConnectorConfig) -> Option<Running> {
 }
 
 /// Start the connector over `vault` and listen at `endpoint`, while
-/// `setting` is on; `None` while it is off, or when the endpoint can't be
-/// held (it says why on stderr).
+/// `setting` is on: `Ok(None)` while it is off. `Err` holds why it
+/// couldn't listen, as Settings › AI connector shows it (#1220).
 pub(crate) fn start(
     vault: Arc<Vault>,
     setting: &AiConnectorConfig,
-    endpoint: &Endpoint,
-) -> Option<Running> {
-    let mut running = service(vault, setting)?;
+    endpoint: Option<&Endpoint>,
+) -> Result<Option<Running>, String> {
+    let Some(running) = service(vault, setting) else {
+        return Ok(None);
+    };
+    let Some(endpoint) = endpoint else {
+        eprintln!("mdoc: the AI connector has no endpoint: no data folder");
+        return Err("Couldn't start the connector: this system gives mdoc no data folder.".into());
+    };
+    listen(running, endpoint).map(Some)
+}
+
+/// Listen at `endpoint` for `running`.
+fn listen(mut running: Running, endpoint: &Endpoint) -> Result<Running, String> {
     // Turned off and on again quickly (Settings › AI connector), the
     // listener that just stopped may still hold the name for a moment: try
     // again a few times before giving up.
@@ -106,7 +117,7 @@ pub(crate) fn start(
         match ipc::listen(endpoint, running.answer.clone()) {
             Ok(listening) => {
                 running._listening = Some(listening);
-                return Some(running);
+                return Ok(running);
             }
             Err(_) if tries < LISTEN_TRIES => {
                 tries += 1;
@@ -114,10 +125,25 @@ pub(crate) fn start(
             }
             Err(error) => {
                 eprintln!("mdoc: the AI connector can't listen at {endpoint}: {error}");
-                return None;
+                return Err(failed_start(&error));
             }
         }
     }
+}
+
+/// A failed start in Settings' words (#1220, decided by default on #1091).
+pub(crate) fn failed_start(error: &std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::AddrInUse {
+        return "Couldn't start the connector: another copy of mdoc is using it. Quit the other \
+                copy, then turn AI connector (preview) off and on."
+            .into();
+    }
+    let why = error.to_string();
+    let why = why.trim_end().trim_end_matches('.');
+    format!(
+        "Couldn't start the connector: {why}. Turn AI connector (preview) off and on to try \
+         again."
+    )
 }
 
 /// How many times [`start`] tries to listen, 50 ms apart.
@@ -206,10 +232,14 @@ mod tests {
         let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
         let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
         let off = AiConnectorConfig::default();
-        assert!(start(vault.clone(), &off, &endpoint).is_none());
+        assert!(
+            start(vault.clone(), &off, Some(&endpoint))
+                .unwrap()
+                .is_none()
+        );
         assert!(matches!(ask(&endpoint), Err(ipc::CallError::NotListening)));
         let on = AiConnectorConfig { preview: true };
-        let running = start(vault, &on, &endpoint).unwrap();
+        let running = start(vault, &on, Some(&endpoint)).unwrap().unwrap();
         assert!(running.connector.ai_project().is_none());
         assert_eq!(
             ask(&endpoint).unwrap(),
@@ -244,13 +274,94 @@ mod tests {
             drop(held);
         });
         let on = AiConnectorConfig { preview: true };
-        let running = start(vault, &on, &endpoint);
+        let running = start(vault, &on, Some(&endpoint));
         release.join().unwrap();
-        assert!(running.is_some(), "gave up while the old listener stopped");
+        assert!(
+            matches!(running, Ok(Some(_))),
+            "gave up while the old listener stopped"
+        );
         assert_eq!(
             ask(&endpoint).unwrap(),
             Answer::Refused(Refusal::NothingShared)
         );
+    }
+
+    /// #1220: a name another mdoc holds is a failed start, in Settings'
+    /// words, not silence.
+    #[test]
+    fn a_name_held_elsewhere_is_a_failed_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
+        let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
+        let _other = ipc::listen(&endpoint, Arc::new(|_: &[u8]| Vec::new())).unwrap();
+        let on = AiConnectorConfig { preview: true };
+        let Err(why) = start(vault.clone(), &on, Some(&endpoint)) else {
+            panic!("started on a name another mdoc holds");
+        };
+        assert_eq!(
+            why,
+            "Couldn't start the connector: another copy of mdoc is using it. Quit the other \
+             copy, then turn AI connector (preview) off and on."
+        );
+        let Err(why) = start(vault, &on, None) else {
+            panic!("started with no endpoint");
+        };
+        assert!(why.starts_with("Couldn't start the connector: "), "{why}");
+        let other = std::io::Error::other("Access is denied. (os error 5)");
+        assert_eq!(
+            failed_start(&other),
+            "Couldn't start the connector: Access is denied. (os error 5). Turn AI connector \
+             (preview) off and on to try again."
+        );
+    }
+
+    /// #1220: a read held at a hook while the preview turns off, then
+    /// released, writes nothing to the pipe: not the text, not even a
+    /// refusal.
+    #[test]
+    fn a_read_held_across_off_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
+        let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
+        let on = AiConnectorConfig { preview: true };
+        let mut running = start_unlistened(vault.clone(), &on).unwrap();
+        let project = vault.create_project(Default::default()).unwrap();
+        running.connector.share(&project.id).unwrap();
+        // The hook: the read waits for its release, then is answered.
+        let (enter, entered) = channel();
+        let (release, released) = channel::<()>();
+        let released = std::sync::Mutex::new(released);
+        let inner = running.answer.clone();
+        running.answer = Arc::new(move |line: &[u8]| {
+            let _ = enter.send(());
+            let _ = released.lock().unwrap().recv();
+            inner(line)
+        });
+        let running = listen(running, &endpoint).unwrap();
+        let caller = {
+            let endpoint = endpoint.clone();
+            std::thread::spawn(move || {
+                let request = Request {
+                    v: mdoc_mcp::wire::VERSION,
+                    app: "claude-ai".into(),
+                    call: Call::ListDocuments,
+                };
+                ipc::call(&endpoint, &serde_json::to_vec(&request).unwrap())
+            })
+        };
+        entered
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        // The preview turns off.
+        drop(running);
+        release.send(()).unwrap();
+        if let Ok(written) = caller.join().unwrap() {
+            assert!(
+                written.is_empty(),
+                "written after off: {}",
+                String::from_utf8_lossy(&written)
+            );
+        }
     }
 
     /// Only a call that found nothing shared asks; a bad request or a

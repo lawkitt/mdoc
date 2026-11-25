@@ -59,12 +59,28 @@ impl Workspace {
             return;
         };
         let setting = self.ai_setting();
-        let running = if cfg!(test) || mdoc_store::app_paths::isolated() {
-            ai_connector::start_unlistened(vault, &setting)
+        let started = if cfg!(test) || mdoc_store::app_paths::isolated() {
+            Ok(ai_connector::start_unlistened(vault, &setting))
         } else {
-            (ai_connector::endpoint())
-                .and_then(|endpoint| ai_connector::start(vault, &setting, &endpoint))
+            ai_connector::start(vault, &setting, ai_connector::endpoint().as_ref())
         };
+        self.ai_started(started, window, cx);
+    }
+
+    /// What a start gave: the running connector, or why it couldn't
+    /// start, which Settings › AI connector shows (#1220).
+    pub(super) fn ai_started(
+        &mut self,
+        started: Result<Option<ai_connector::Running>, String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (running, failed) = match started {
+            Ok(running) => (running, None),
+            Err(why) => (None, Some(why)),
+        };
+        self.settings
+            .update(cx, |panel, cx| panel.ai_connector_failed(failed, cx));
         let Some(running) = running else {
             return;
         };
@@ -88,7 +104,11 @@ impl Workspace {
     pub(super) fn refresh_ai_connector(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.ai_setting().preview {
             self.start_ai_connector(window, cx);
-        } else if self.ai_connector.take().is_some() {
+            return;
+        }
+        self.settings
+            .update(cx, |panel, cx| panel.ai_connector_failed(None, cx));
+        if self.ai_connector.take().is_some() {
             self.ai_poll = None;
             self.ai.stopped();
             if (self.project_ui.page.as_ref())

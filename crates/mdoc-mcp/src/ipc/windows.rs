@@ -9,7 +9,7 @@
 //! identify it but never impersonate it.
 #![allow(unsafe_code)] // The named pipe and token checks through Win32 (#897).
 
-use super::{CallError, Handler};
+use super::{CallError, Calls, Handler};
 use std::{
     ffi::OsStr,
     fs::File,
@@ -19,16 +19,14 @@ use std::{
         io::{FromRawHandle, RawHandle},
     },
     path::Path,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
     time::Duration,
 };
 use windows_sys::Win32::{
     Foundation::{
-        CloseHandle, ERROR_FILE_NOT_FOUND, ERROR_NO_DATA, ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED,
-        GENERIC_READ, GENERIC_WRITE, GetLastError, HANDLE, INVALID_HANDLE_VALUE, LocalFree,
+        CloseHandle, ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_NO_DATA, ERROR_PIPE_BUSY,
+        ERROR_PIPE_CONNECTED, GENERIC_READ, GENERIC_WRITE, GetLastError, HANDLE,
+        INVALID_HANDLE_VALUE, LocalFree,
     },
     Security::{
         Authorization::{
@@ -43,6 +41,7 @@ use windows_sys::Win32::{
         SECURITY_IDENTIFICATION, SECURITY_SQOS_PRESENT,
     },
     System::{
+        IO::CancelSynchronousIo,
         Pipes::{
             ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeServerProcessId, PIPE_READMODE_BYTE,
             PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
@@ -50,8 +49,8 @@ use windows_sys::Win32::{
         },
         RemoteDesktop::ProcessIdToSessionId,
         Threading::{
-            GetCurrentProcess, GetCurrentProcessId, OpenProcess, OpenProcessToken,
-            PROCESS_QUERY_LIMITED_INFORMATION,
+            GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId, OpenProcess,
+            OpenProcessToken, OpenThread, PROCESS_QUERY_LIMITED_INFORMATION, THREAD_TERMINATE,
         },
     },
 };
@@ -231,17 +230,44 @@ fn create(name: &str, first: bool) -> io::Result<HANDLE> {
     Ok(pipe)
 }
 
+/// How a stop cuts a call's pipe I/O short: its serving thread, whose
+/// blocking read or write `CancelSynchronousIo` ends.
+pub struct Cut(Owned);
+
+// SAFETY: a thread handle may be used and closed from any thread.
+unsafe impl Send for Cut {}
+// SAFETY: as above; the handle is only passed to `CancelSynchronousIo`.
+unsafe impl Sync for Cut {}
+
+impl Cut {
+    /// The calling thread's.
+    fn this_thread() -> io::Result<Self> {
+        // SAFETY: no pointers; a null handle is checked.
+        let thread = unsafe { OpenThread(THREAD_TERMINATE, 0, GetCurrentThreadId()) };
+        if thread.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(Self(Owned(thread)))
+    }
+
+    pub fn cut(&self) {
+        // SAFETY: a thread handle opened with THREAD_TERMINATE, as the call
+        // needs; a thread with no I/O under way is left alone.
+        unsafe { CancelSynchronousIo(self.0.0) };
+    }
+}
+
 pub struct Listener {
     name: String,
-    stop: Arc<AtomicBool>,
+    calls: Arc<Calls>,
 }
 
 pub fn listen(name: &Address, answer: Handler) -> io::Result<Listener> {
-    let first = create(name, true)? as usize;
-    let stop = Arc::new(AtomicBool::new(false));
+    let first = create(name, true).map_err(held)? as usize;
+    let calls = Calls::new();
     let listener = Listener {
         name: name.clone(),
-        stop: stop.clone(),
+        calls: calls.clone(),
     };
     let name = name.clone();
     std::thread::Builder::new()
@@ -260,16 +286,21 @@ pub fn listen(name: &Address, answer: Handler) -> io::Result<Listener> {
                 };
                 // SAFETY: owned here; the File closes it once.
                 let client = unsafe { File::from_raw_handle(pipe as RawHandle) };
-                if stop.load(Ordering::SeqCst) {
+                if calls.stopped() {
                     return;
                 }
                 // The next instance exists before this one is handed off.
                 let next = create(&name, false);
                 if connected {
-                    let answer = answer.clone();
+                    let (answer, calls) = (answer.clone(), calls.clone());
                     let _ = std::thread::Builder::new()
                         .name("mdoc-connector-call".into())
-                        .spawn(move || super::serve(client, &answer));
+                        .spawn(move || {
+                            // No way to cut it short: not served.
+                            if let Ok(cut) = Cut::this_thread() {
+                                super::serve(client, cut, &calls, &answer);
+                            }
+                        });
                 } else {
                     drop(client);
                     // A failing pipe must not spin.
@@ -287,9 +318,21 @@ pub fn listen(name: &Address, answer: Handler) -> io::Result<Listener> {
     Ok(listener)
 }
 
-/// Stop: the flag, then one connection to wake the blocking connect.
+/// The name's first instance refused: another process holds the name
+/// (`ErrorKind::AddrInUse`, as on Unix).
+fn held(error: io::Error) -> io::Error {
+    match error.raw_os_error().map(|code| code as u32) {
+        Some(ERROR_ACCESS_DENIED | ERROR_PIPE_BUSY) => {
+            io::Error::new(io::ErrorKind::AddrInUse, "another mdoc listens there")
+        }
+        _ => error,
+    }
+}
+
+/// Stop: no answer written from now on, then one connection to wake the
+/// blocking connect.
 pub fn stop(listener: Listener) {
-    listener.stop.store(true, Ordering::SeqCst);
+    listener.calls.stop();
     let _ = std::fs::OpenOptions::new()
         .read(true)
         .write(true)

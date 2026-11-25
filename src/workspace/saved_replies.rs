@@ -995,7 +995,8 @@ impl Workspace {
     }
 }
 
-/// "From “Lease.pdf” · Claude · 23 Nov".
+/// "From “Lease.pdf” · Claude · 23 Nov": the app by its product's name,
+/// as a delivered reply keeps the id the app gave itself ("claude-ai").
 pub(super) fn reply_detail(
     owner: &ReplyOwner,
     source_app: Option<&str>,
@@ -1010,7 +1011,7 @@ pub(super) fn reply_detail(
     };
     [
         Some(from),
-        source_app.map(str::to_string),
+        source_app.map(crate::ai_connector::display_name),
         Some(super::project_page::created_date(created)),
     ]
     .into_iter()
