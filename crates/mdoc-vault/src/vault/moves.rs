@@ -189,6 +189,8 @@ impl Vault {
                 return Ok(false);
             }
         }
+        // Its AI activity first: a failure there leaves the Project whole.
+        self.delete_activity_locked(&lock, id)?;
         for document in self.documents_in(Some(id)) {
             match documents {
                 ProjectDocuments::MoveToUnfiled => {

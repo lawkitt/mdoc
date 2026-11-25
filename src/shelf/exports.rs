@@ -21,8 +21,8 @@ pub(crate) struct ShelfExports {
     /// Held while this process runs; its lock marks the folder as in use.
     /// Released before the folder is removed (Windows keeps open files).
     lock: Option<File>,
-    /// Each export gets its own numbered folder, so its file keeps the
-    /// title as its name.
+    /// Each export gets its own numbered folder, so files of one name
+    /// never collide.
     next: AtomicU64,
 }
 
@@ -54,8 +54,9 @@ impl ShelfExports {
         &self.root
     }
 
-    /// Write `document`'s Copy for AI text to a fresh `.md` file named after
-    /// its pseudonymized title. `None` when the document is not ready.
+    /// Write `document`'s Copy for AI text to a fresh `.md` file under its
+    /// neutral name (`ShelfDocument::file_name`). `None` when the document
+    /// is not ready.
     pub(crate) fn export(&self, document: &ShelfDocument) -> io::Result<Option<PathBuf>> {
         let Some(text) = document.text_for_ai() else {
             return Ok(None);

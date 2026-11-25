@@ -50,6 +50,9 @@ enum Presentation: Identifiable {
     case importing(PendingImport)
     /// Try a sample on an edited sample: "Restore the sample?"
     case restoreSample(DocumentID)
+    /// Copy for AI or Share refused a document from a menu: why, with the
+    /// step that resolves it, never the core's words (#1209).
+    case refusal(DocumentID, HandOffRefusal)
     /// Something went wrong.
     case error(String)
 
@@ -67,6 +70,7 @@ enum Presentation: Identifiable {
         case .intake(let intake): "intake-\(intake.rawValue)"
         case .importing(let pending): "import-\(pending.id)"
         case .restoreSample(let id): "restore-sample-\(id.rawValue)"
+        case .refusal(let id, _): "refusal-\(id.rawValue)"
         case .error(let message): "error-\(message)"
         }
     }

@@ -6,17 +6,15 @@ fn disabled_copy_for_ai_says_why(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
     let view = active(&tabs, cx);
-    cx.simulate_input("Maya Bennett signed.");
+    // Empty, nothing to find: off, with its reason under the label, so the
+    // row is taller than Copy Markdown's.
     click_toolbar(cx, "header-more");
     draw(cx);
     cx.update(|_, cx| {
-        assert_eq!(
-            view.read(cx).alias_actions_reason(),
-            Some("Pseudonymize the document first.")
-        );
+        let view = view.read(cx);
+        assert!(view.alias_actions_reason().is_some());
+        assert_eq!(view.copy_step(cx), None);
     });
-    // The reason sits under the label, so the row is taller than Copy
-    // Markdown's.
     let disabled = cx.debug_bounds("more-copy-for-ai").unwrap();
     let enabled = cx.debug_bounds("more-copy-markdown").unwrap();
     assert!(disabled.size.height > enabled.size.height);
@@ -27,6 +25,33 @@ fn disabled_copy_for_ai_says_why(cx: &mut TestAppContext) {
             cx.read_from_clipboard().unwrap().text().as_deref(),
             Some("kept")
         );
+    });
+}
+
+/// #1209: a document never scanned is refused with its step, not a dead
+/// row: ⋯ › Copy for AI copies nothing and the notice offers "Find names".
+#[gpui::test]
+fn copy_for_ai_before_a_scan_offers_find_names(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    let view = active(&tabs, cx);
+    cx.simulate_input("Maya Bennett signed.");
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).copy_step(cx),
+            Some(crate::refusal::Step::FindNames)
+        );
+    });
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("kept".into()));
+    more(cx, "more-copy-for-ai");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("kept")
+        );
+        let refusal = view.read(cx).copy_refusal.clone().expect("refused");
+        assert_eq!(refusal.step, Some(crate::refusal::Step::FindNames));
     });
 }
 
@@ -894,6 +919,7 @@ fn settings_categories_use_one_tab_stop_and_arrow_keys(cx: &mut TestAppContext) 
         settings_ui::Category::Recognition,
         settings_ui::Category::Spelling,
         settings_ui::Category::Vault,
+        settings_ui::Category::AiConnector,
         settings_ui::Category::About,
         settings_ui::Category::General,
     ] {

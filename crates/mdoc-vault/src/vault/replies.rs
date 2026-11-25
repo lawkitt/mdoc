@@ -266,6 +266,15 @@ impl Vault {
     pub fn promote_reply(&self, id: &str) -> Result<Document, VaultError> {
         let lock = self.write_lock()?;
         let reply: Reply = self.load_record(id)?;
+        self.promote_locked(&lock, &reply)
+    }
+
+    /// [`Self::promote_reply`] of `reply`, under the caller's lock.
+    pub(super) fn promote_locked(
+        &self,
+        lock: &WriteLock<'_>,
+        reply: &Reply,
+    ) -> Result<Document, VaultError> {
         let place = |project: String| -> Result<_, VaultError> {
             let mapping = self.load_record::<Project>(&project)?.mapping;
             Ok((Some(project), mapping, Mapping::default()))
@@ -277,7 +286,7 @@ impl Vault {
                 match document.project {
                     Some(project) => place(project)?,
                     None => {
-                        let own = bound_identities(&document.mapping, &reply);
+                        let own = bound_identities(&document.mapping, reply);
                         (None, document.mapping, own)
                     }
                 }
@@ -295,8 +304,8 @@ impl Vault {
         };
         let mut document = super::new_document(new_id()?, new, None);
         document.mapping = own;
-        document.from_reply = Some(reply.id);
-        self.write_record(&lock, &document)?;
+        document.from_reply = Some(reply.id.clone());
+        self.write_record(lock, &document)?;
         Ok(document)
     }
 
@@ -435,7 +444,11 @@ impl Vault {
 
     /// Seal `reply` to its file and note it in the cached summaries without
     /// marking the manifest for a rewrite.
-    fn write_reply(&self, _lock: &WriteLock<'_>, reply: &Reply) -> Result<(), VaultError> {
+    pub(super) fn write_reply(
+        &self,
+        _lock: &WriteLock<'_>,
+        reply: &Reply,
+    ) -> Result<(), VaultError> {
         let json = serde_json::to_vec(reply).map_err(io::Error::from)?;
         let path = reply_path(&self.root, &reply.id);
         let stamp = self.write_object(ObjectKind::Reply, &reply.id, &path, &json)?;

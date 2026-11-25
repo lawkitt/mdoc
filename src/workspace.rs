@@ -32,6 +32,8 @@ use std::{
     time::Duration,
 };
 
+mod ai_project;
+mod ai_project_ui;
 mod autosave;
 mod document_writer;
 mod docx_queue;
@@ -137,6 +139,9 @@ pub(super) enum TabEvent {
     /// Discovery or the edited paragraphs' scan finished: a Copy for AI
     /// waiting for it is checked again.
     NamesFound,
+    /// A refused Copy for AI's step, from its notice or the Share tab: the
+    /// window runs it unless the document is kept from AI.
+    CopyStep(crate::refusal::Step),
     ToggleTheme,
     /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
     /// Source follows and Settings keeps it.
@@ -350,6 +355,14 @@ pub(super) struct Workspace {
     window_handle: gpui::AnyWindowHandle,
     /// The Vault, once the key opened it.
     vault: vault_state::VaultState,
+    /// The AI connector and its listener, while "AI connector (preview)"
+    /// is on and the Vault is open.
+    ai_connector: Option<crate::ai_connector::Running>,
+    /// What the window knows of the AI project: the Project last viewed,
+    /// the share prompt, the activity shown.
+    ai: ai_project::AiProject,
+    /// Hears from the connector while it runs.
+    ai_poll: Option<gpui::Task<()>>,
     /// Settings › Vault's key, the first-Project nudge and the wrong-key
     /// screen.
     recovery: recovery_key::Recovery,
@@ -608,6 +621,9 @@ impl Workspace {
             next_op: 0,
             window_handle: window.window_handle(),
             vault: Default::default(),
+            ai_connector: None,
+            ai: Default::default(),
+            ai_poll: None,
             recovery: Default::default(),
             document_writer: Default::default(),
             admitted_from: Default::default(),
@@ -654,6 +670,10 @@ impl Workspace {
                     settings_ui::Event::Applied | settings_ui::Event::Checked => {
                         this.refresh_model_settings(cx);
                         crate::menu_bar::set_enabled(this.menu_bar_setting(), cx);
+                        // "AI connector (preview)" starts or stops at once; a
+                        // model now set up lets entering documents scan.
+                        this.refresh_ai_connector(window, cx);
+                        this.scan_on_entry(cx);
                         // Spelling choices apply at once; views re-read them on render.
                         for view in this.tabs.iter().filter_map(|tab| tab.view()) {
                             view.update(cx, |_, cx| cx.notify());
@@ -680,6 +700,11 @@ impl Workspace {
                             let state = known_ocr_state(&this.preferences, this.settings.read(cx));
                             this.set_ocr(state, cx);
                         }
+                    }
+                    // The detection model set up: AI project members that
+                    // waited for it scan now.
+                    settings_ui::Event::Finished(settings::Model::Pii(_), Ok(_)) => {
+                        this.scan_on_entry(cx);
                     }
                     settings_ui::Event::Finished(_, _) => {}
                     settings_ui::Event::Compare(model) => {
@@ -1302,15 +1327,11 @@ impl Workspace {
                             // document's own names come back.
                             if let Some(review) = review {
                                 view.restore_review(review, cx);
-                                // Saved unscanned and not Ready: it may have been
-                                // left mid-edit, so it owes a scan of all its text.
-                                if !view.session.document.scanned && !view.session.document.ready {
-                                    view.owe_whole_text(cx);
-                                }
                             } else if let Some(names) = names {
                                 view.open_names(&names.identities, &names.reserved, cx);
                                 view.pii.review_mut().leave_off(&names.not_names);
                             }
+                            view.owe_if_left_mid_edit(cx);
                             view.replace_images(view.save_directory(), window, cx);
                             view.scroll
                                 .set_offset(gpui::point(px(0.), px(record.scroll_y.min(0.))));
@@ -1705,6 +1726,9 @@ impl Workspace {
             TabEvent::Project(ProjectEvent::MoveToNew) => self.move_to_new_project(id, window, cx),
             TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
             TabEvent::NamesFound => self.copy_for_ai_after_write(cx),
+            TabEvent::CopyStep(step) => {
+                self.run_tab_step(id, *step, window, cx);
+            }
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
             TabEvent::SourceDisplay(display) => {
                 let display = *display;
@@ -1726,7 +1750,11 @@ impl Workspace {
                 }
             }
             TabEvent::Save(SaveEvent::Changed) => self.autosave(id, window, cx),
-            TabEvent::Import(ImportEvent::Finished) => self.refresh_import(window, cx),
+            TabEvent::Import(ImportEvent::Finished) => {
+                self.refresh_import(window, cx);
+                // A converted member of the AI project has text to scan now.
+                self.scan_on_entry(cx);
+            }
             TabEvent::Docx(DocxEvent::Finished { generation }) => {
                 self.docx_finished(id, *generation, window, cx);
             }
@@ -3453,6 +3481,7 @@ impl Render for Workspace {
             .children(self.project_list(cx))
             .children(self.switcher_view(cx))
             .children(self.move_toast(cx))
+            .children(self.ai_prompt_view(window, cx))
             .children(self.project_header_menu(cx))
             .children(self.folder_sheet_view(window, cx))
             .children(self.new_project_view(window, cx))

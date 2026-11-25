@@ -225,6 +225,27 @@
     <string name="unrecognised">%1$d unrecognised</string>
     <string name="nothing_to_restore">Nothing to restore</string>
 
+    <!-- Refusals in plain words (#1209), in iOS's words -->
+    <string name="copy_for_ai">Copy for AI</string>
+    <string name="refusal_note">%1$s. %2$s</string>
+    <string name="refusal_some_names_to_decide">Some names are left to decide</string>
+    <string name="refusal_not_scanned">Names not looked for yet</string>
+    <string name="refusal_not_read">The document isn\'t ready yet</string>
+    <string name="refusal_not_checked">The new text isn\'t checked yet</string>
+    <string name="refusal_changed_since_review">Changed since its review</string>
+    <string name="refusal_excluded_from_ai">Excluded from AI</string>
+    <string name="refusal_failed">The text couldn\'t be prepared</string>
+    <string name="refusal_names_to_decide_detail">The text leaves once every name is replaced or kept.</string>
+    <string name="refusal_not_scanned_detail">mdoc looks for names before the text leaves.</string>
+    <string name="refusal_not_read_detail">Its text is read first.</string>
+    <string name="refusal_not_checked_detail">Names in the edited text are looked for first.</string>
+    <string name="refusal_changed_since_review_detail">The text changed after its review, so names are looked for again first.</string>
+    <string name="refusal_names_written_out_detail">A name this document\'s Project knows is still written out. Replace it first.</string>
+    <string name="refusal_excluded_from_ai_detail">This document is set to stay out of AI apps. Only mdoc on a computer changes that.</string>
+    <string name="refusal_failed_detail">Try again.</string>
+    <string name="step_replace_and_copy">Replace %1$d and copy</string>
+    <string name="step_review">Review</string>
+
     <!-- Notes and Promote to Document (#1091 Decision 3), in iOS's words -->
     <string name="notes">Notes</string>
     <string name="once_the_document_is_read">Once the document is read</string>
@@ -326,6 +347,14 @@
     <plurals name="delete_project_body">
         <item quantity="one">Its document can move to Unfiled, or be deleted with it. Its own AI replies are deleted either way.</item>
         <item quantity="other">Its %1$d documents can move to Unfiled, or be deleted with it. Its own AI replies are deleted either way.</item>
+    </plurals>
+    <plurals name="refusal_names_to_decide">
+        <item quantity="one">%1$d name left to decide</item>
+        <item quantity="other">%1$d names left to decide</item>
+    </plurals>
+    <plurals name="refusal_names_written_out">
+        <item quantity="one">%1$d known name is written out</item>
+        <item quantity="other">%1$d known names are written out</item>
     </plurals>
     <plurals name="pages_scanned">
         <item quantity="one">%1$d page scanned.</item>

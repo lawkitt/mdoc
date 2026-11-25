@@ -1087,13 +1087,41 @@ fn below_the_floor_a_document_left_mid_edit_owes_the_rules() {
     let (again, opened) = reopened(&vault, &id);
     again.set_no_name_finder(true);
     assert!(opened.edits_unscanned);
+    // Its next save runs the rules over all of it first.
     again.save_pending_into_vault(vault.clone()).unwrap();
+    let saved = again.snapshot().unwrap();
+    assert!(
+        !saved.edits_unscanned && saved.proposed == 1,
+        "the typed address"
+    );
     assert_ne!(
         vault.readiness(id.clone()).unwrap(),
         crate::vault::Readiness::Ready
     );
-    let done = again.scan_edits(None, None).unwrap();
-    assert!(!done.edits_unscanned && done.proposed == 1);
+    again.replace_all().unwrap();
+    again.save_pending_into_vault(vault.clone()).unwrap();
+    assert_eq!(vault.readiness(id).unwrap(), crate::vault::Readiness::Ready);
+}
+
+/// Below the floor, a hand review saved with a proposal left (never
+/// edited) reopens owing the rules too, and is Ready once its proposal is
+/// decided: it never stays owed.
+#[test]
+fn below_the_floor_a_hand_review_left_with_a_proposal_is_ready_once_decided() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let session = session("Ann Lee signed.", "Letter");
+    session.set_no_name_finder(true);
+    let text = session.snapshot().unwrap().text;
+    (session.add_selection(at(&text, "Ann Lee", 0), Some(Category::Person))).unwrap();
+    let id = session.save_into_vault(vault.clone()).unwrap().id;
+    drop(session);
+    let (again, opened) = reopened(&vault, &id);
+    assert!(opened.edits_unscanned);
+    again.set_no_name_finder(true);
+    again.replace_all().unwrap();
+    again.save_pending_into_vault(vault.clone()).unwrap();
+    assert_eq!(vault.readiness(id).unwrap(), crate::vault::Readiness::Ready);
 }
 
 /// The scan at Done restores `scanned`: written unscanned during the edit,
