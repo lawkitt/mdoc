@@ -189,6 +189,13 @@ impl DocumentView {
             Selection::Entity(_) => None,
         }
     }
+    /// The kept mention the popup shows, for tests.
+    #[cfg(test)]
+    pub(crate) fn shown_kept_mention(&self) -> Option<Range<usize>> {
+        self.pii.popup.as_ref()?;
+        self.active_replacement_range()
+            .filter(|_| self.active_is_kept())
+    }
     /// Whether the popup's mention is a kept original (Replace unticked).
     pub(in crate::pii::ui) fn active_is_kept(&self) -> bool {
         matches!(self.pii.mapping.selected, Some(Selection::Kept { .. }))

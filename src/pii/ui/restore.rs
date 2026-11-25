@@ -3,7 +3,7 @@
 //! page (`workspace::saved_replies`); the clipboard actions.
 use crate::{
     document_view::{DocumentView, Inspector},
-    pii::ui::{CopyForAi, PiiApplyAll},
+    pii::ui::{CopyForAi, KEPT_ID, PiiApplyAll},
     refusal::{Refusal, Step},
     shelf::Readiness,
     workspace::{PasteAiResponse, PseudonymizeClipboard, RestoreClipboard},
@@ -151,7 +151,7 @@ impl DocumentView {
             }
             Step::Review => {
                 self.show_review(window, cx);
-                self.select_first_proposal(window, cx)
+                self.select_first_proposal(window, cx) || self.select_first_kept(window, cx)
             }
             Step::FindNames => {
                 let review = &self.pii.review;
@@ -167,6 +167,23 @@ impl DocumentView {
         };
         cx.notify();
         shown
+    }
+    /// Open the popup on the earliest mention of a known name kept as
+    /// written: Replace or Not a name is its way out (a Keep refuses).
+    /// Returns whether there was one.
+    fn select_first_kept(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.pii.reviewing = true;
+        let Some(start) = (self.kept_entries().into_iter())
+            .filter(|(_, _, identity)| identity.is_some())
+            .map(|(range, _, _)| range.start)
+            .min()
+        else {
+            return false;
+        };
+        self.editor
+            .update(cx, |editor, cx| editor.set_cursor(start, cx));
+        self.activate_annotation(KEPT_ID | start as u64, window, cx);
+        self.active_is_kept()
     }
     /// The Inspector open on Review.
     fn show_review(&mut self, window: &mut Window, cx: &mut Context<Self>) {

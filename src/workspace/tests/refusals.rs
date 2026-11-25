@@ -236,12 +236,15 @@ fn a_kept_name_offers_review(cx: &mut TestAppContext) {
                 }],
             )
             .unwrap();
-        // Propagation proposes the lone first name; keep it as written.
+        // Propagation proposes the lone first name; keep it as written, as
+        // the popup's Keep does.
         let lone = (view.pii.review().variants().iter())
             .find(|variant| variant.original.as_ref() == "Марина")
-            .expect("propagated first name")
-            .id;
-        view.pii.review_mut().keep(lone, None);
+            .expect("propagated first name");
+        let mentions: Vec<_> = (lone.mentions.iter())
+            .map(|range| (lone.id, range.clone()))
+            .collect();
+        view.pii.review_mut().keep_mentions(mentions);
         view.review_changed(cx);
         view.apply_all_pii(&PiiApplyAll, window, cx);
     });
@@ -260,9 +263,27 @@ fn a_kept_name_offers_review(cx: &mut TestAppContext) {
     );
     assert_eq!(refused.step, Some(Step::Review));
     assert_eq!(clipboard(cx), "before");
+    // Both clicks open the kept mention itself, where Replace and Not a
+    // name are.
+    let kept = |cx: &mut VisualTestContext| {
+        view.read_with(cx, |view, cx| {
+            let text = view.editor.read(cx).text();
+            let start = text.find("Марина").expect("kept as written");
+            (view.shown_kept_mention(), start..start + "Марина".len())
+        })
+    };
+    click_toolbar(cx, "copy-refusal-step");
+    assert!(reviewing(&view, cx));
+    let (shown, expected) = kept(cx);
+    assert_eq!(shown, Some(expected));
+    view.update_in(cx, |view, window, cx| {
+        view.close_pii_popup(&crate::pii::ui::PiiClosePopup, window, cx)
+    });
     show_share(&view, cx);
     click_toolbar(cx, "share-copy-for-ai");
     assert!(reviewing(&view, cx));
+    let (shown, expected) = kept(cx);
+    assert_eq!(shown, Some(expected));
     assert_eq!(clipboard(cx), "before");
 }
 
