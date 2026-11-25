@@ -422,6 +422,7 @@ impl Workspace {
             .pb_2()
             .pt_1()
             .flex_shrink_0()
+            .children(self.ai_indicator(cx))
             .children(card)
             .child(
                 div()
@@ -609,6 +610,7 @@ impl Workspace {
             .pt_1()
             .pb_3()
             .flex_shrink_0()
+            .children(self.ai_rail_icon(cx))
             .child(
                 div()
                     .relative()

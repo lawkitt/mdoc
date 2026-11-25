@@ -141,3 +141,7 @@ home-vault-wrong-key-error
 import-repeated
 import-repeated-several
 document-original-missing
+ai-share-prompt
+ai-project-shared
+project-page-activity
+ai-project-rail

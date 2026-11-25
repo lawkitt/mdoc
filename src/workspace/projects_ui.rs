@@ -283,6 +283,8 @@ impl Workspace {
                 view.pii.review_mut().leave_off(&not_names);
             }
         });
+        // Loaded in the AI project: it entered it (#1164 Decision 5).
+        self.scan_on_entry(cx);
         cx.notify();
     }
 
@@ -870,6 +872,7 @@ impl Workspace {
                     && vault.delete_project(made, ProjectDocuments::Delete).is_ok()
                 {
                     self.projects.remove(made);
+                    self.ai_project_gone(made);
                     self.navigation
                         .forget(&super::navigation::Stop::Project(made.clone()));
                 }
@@ -1362,6 +1365,7 @@ impl Workspace {
                 self.navigation
                     .forget(&super::navigation::Stop::Project(project_id.clone()));
                 self.projects.remove(&project_id);
+                self.ai_project_gone(&project_id);
                 self.tree.forget_project(&project_id);
                 for (tab, member) in tabs {
                     match documents {

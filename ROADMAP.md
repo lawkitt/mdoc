@@ -398,18 +398,6 @@ of real use by the maintainer on the landed build gate its next candidate;
 items 33–35 are polish and do not. Items 36–39 and 44 gate it too; items
 40–43 follow them and gate nothing ([#1209](https://github.com/lawkitt/mdoc/issues/1209)).
 
-36. **[Desktop] A refusal offers the fix.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
-    A refused Copy for AI, Share or shelf row names its reason and carries
-    the one step that resolves it: "Replace 3 and copy", "Review" or "Find
-    names". The button shows the count before the click. ⌘C on a shelf row
-    that is not Ready says why, and "not reviewed" is no longer labelled
-    "Changed since review". *Done when:* workspace tests and headless renders
-    cover every refusal state, and one click from each ends in copied text or
-    the open review.
-38. **[Android] Refusals in plain words.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
-    The same sentences and steps as item 37. Copy and Share show disabled
-    with their reason, as on iOS, and are no longer hidden. *Done when:*
-    instrumented tests cover each refusal state.
 39. **[Check] Nothing to replace, and an edit with no new name.** *From
     [#1209](https://github.com/lawkitt/mdoc/issues/1209).* Two behaviours to
     confirm in running builds and fix where they fail: a scanned document with
@@ -490,12 +478,6 @@ or ChatGPT apps themselves are the maintainer's.
    launcher for a binary inside an installed app? The maintainer runs it,
    since the install can restart Claude Desktop. *Done when:* the answer is a
    comment on the issue.
-6. **[Core] Deliveries and AI activity.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-   A delivery names the documents it read and is a reply or a new Document
-   with a title; one that names a document outside the AI project is refused.
-   Each read and delivery is recorded in the Vault with its app and time.
-   *Blocked by:* item 5. *Done when:* core tests pin the refusals, a reply
-   restoring by identity, a delivered Document linking back, and the record.
 7. **[Desktop] The shim and local IPC.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
    (ADR 0126); promotes Later's Agent access item.* mdoc listens on an
    owner-only socket or pipe. The `mdoc-mcp` shim, shipped in the app, speaks

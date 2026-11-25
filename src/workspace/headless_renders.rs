@@ -46,6 +46,7 @@
 //! images establish neither native input, IME, accessibility nor display
 //! presentation.
 mod ai_connector;
+mod ai_project;
 mod comments;
 mod comparison;
 mod confirm;
@@ -409,6 +410,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     let project = projects::scenes(d)?;
     tree::scenes(d, &project)?;
     folder_sheet::scenes(d, path, &project)?;
+    ai_project::scenes(d, &project)?;
     projects::delete(d, project)?;
     new_project::scenes(d)?;
     confirm::scenes(d)?;

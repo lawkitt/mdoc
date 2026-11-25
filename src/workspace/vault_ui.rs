@@ -67,44 +67,12 @@ impl Workspace {
         // Its Projects and the user-wide lists come with it.
         if self.vault.vault().is_some() {
             self.load_projects(cx);
-            self.start_ai_connector();
+            self.start_ai_connector(window, cx);
         } else if self.vault.unavailable().is_some() {
             self.projects.clear();
         }
         self.recovery_screen_opened(window, cx);
         cx.notify();
-    }
-
-    /// With "AI connector (preview)" on, the connector and its listener
-    /// once the Vault is open (ADR 0126); turned off, they stop, and the
-    /// AI project with them. Never started in tests or headless renders:
-    /// they keep to their own Vaults and never take the profile's endpoint.
-    pub(super) fn start_ai_connector(&mut self) {
-        let setting = (self.preferences.borrow().current.as_ref())
-            .map(|preferences| preferences.ai_connector)
-            .unwrap_or_default();
-        if !setting.preview {
-            self.stop_ai_connector();
-            return;
-        }
-        if self.ai_connector.is_some() || cfg!(test) || mdoc_store::app_paths::isolated() {
-            return;
-        }
-        let Some(vault) = self.vault.vault().cloned() else {
-            return;
-        };
-        if let Some(endpoint) = crate::ai_connector::endpoint() {
-            self.ai_connector = crate::ai_connector::start(vault, &setting, &endpoint);
-        }
-    }
-
-    /// The connector and its listener stop; nothing is shared any more. The
-    /// share goes first: a call already accepted, which still holds the
-    /// connector, then finds nothing shared.
-    pub(super) fn stop_ai_connector(&mut self) {
-        if let Some(running) = self.ai_connector.take() {
-            running.connector.stop_sharing();
-        }
     }
 
     /// Tests and headless renders: use `vault`, as if launch opened it.

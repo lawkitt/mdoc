@@ -14,6 +14,13 @@ use std::{
     },
 };
 
+#[cfg(test)]
+thread_local! {
+    /// Tests: scans start without running the detector; the test ends
+    /// each with [`DocumentView::finish_scan`].
+    static HOLD_SCANS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// A scan only proposes candidates; Apply edits the document explicitly.
 pub(super) struct ScanJob {
     pub(super) cancel: Arc<AtomicBool>,
@@ -119,6 +126,46 @@ impl DocumentView {
             cx.notify();
         }
     }
+    /// It entered the AI project (#1164 Decision 5): scan it, as
+    /// Pseudonymize does, unless it was scanned already, is scanning, has
+    /// no text yet, or the model isn't set up (no setup card appears by
+    /// itself). The scan only proposes. Whether it started.
+    pub(crate) fn scan_on_entry(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.can_copy_markdown() || self.pii.scanning() || !self.pii.scans.is_empty() {
+            return false;
+        }
+        let model = match self.preferences.borrow().snapshot() {
+            Ok(preferences) => settings::Model::Pii(preferences.pseudonymization.model),
+            Err(_) => return false,
+        };
+        if !mdoc_detect::SUPPORTED || self.model_panel.read(cx).needs_setup(model) {
+            return false;
+        }
+        self.start_pii_scan(cx);
+        self.pii.scanning()
+    }
+
+    /// Tests: from now on on this thread, scans start without running the
+    /// detector (`hold`), or as they do in the app.
+    #[cfg(test)]
+    pub(crate) fn hold_scans(hold: bool) {
+        HOLD_SCANS.set(hold);
+    }
+
+    /// Tests: the running scan ends with `result`, as the detector would
+    /// end it.
+    #[cfg(test)]
+    pub(crate) fn finish_scan(
+        &mut self,
+        result: Result<Vec<mdoc_pii::Detection>, String>,
+        cx: &mut Context<Self>,
+    ) {
+        let job = self.pii.job.as_ref().expect("a scan runs");
+        let (generation, revision) = (job.generation, job.revision);
+        let identity = self.session.generation;
+        self.complete_pii_scan(generation, identity, revision, result, cx);
+    }
+
     pub(crate) fn start_pii_scan(&mut self, cx: &mut Context<Self>) {
         if !self.can_copy_markdown() {
             return;
@@ -164,6 +211,12 @@ impl DocumentView {
             config: config.clone(),
             progress: progress.clone(),
         });
+        // Tests that hold scans end them with their own detections.
+        #[cfg(test)]
+        if HOLD_SCANS.get() {
+            cx.notify();
+            return;
+        }
         let task = cx.background_executor().spawn(async move {
             mdoc_detect::scan_config_with_progress(&source, &cancel, &config, &|p| {
                 progress.set(p.done, p.windows)
