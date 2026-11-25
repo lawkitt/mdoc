@@ -48,6 +48,15 @@ sealed interface SelectionAction {
 /** The core's range for a source range. */
 internal val SourceRange.ffi: TextRange get() = TextRange(start.toULong(), end.toULong())
 
+/** The text of a source range (UTF-8 offsets) of this string, clamped to it. */
+internal fun String.sourceSlice(range: SourceRange): String {
+    val offsets = TextOffsets(this)
+    return substring(offsets.utf16(range.start.toLong()), offsets.utf16(range.end.toLong()).coerceAtLeast(offsets.utf16(range.start.toLong())))
+}
+
+/** Replace N and copy refused: the selection's text changed since it was drawn. */
+internal const val SELECTION_CHANGED = "The document changed. Select the text again."
+
 /** What a hand copy puts on the clipboard: `text`, `marked` sensitive unless clean. */
 data class SelectionCopy(
     val text: String,

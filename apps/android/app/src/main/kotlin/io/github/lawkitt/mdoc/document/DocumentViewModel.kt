@@ -229,12 +229,12 @@ class DocumentViewModel(
         return SelectionAction.menu(check)
     }
 
-    /** What to put on the clipboard for `action` on `range`, and whether it is marked; null, with why shown, on failure. */
-    suspend fun copySelection(range: SourceRange, action: SelectionAction): SelectionCopy? {
+    /** What to put on the clipboard for `action` on `range`, which read `shown`, and whether it is marked; null, with why shown, on failure. */
+    suspend fun copySelection(range: SourceRange, shown: String, action: SelectionAction): SelectionCopy? {
         // Selected in the snapshot shown: refused if a move opened the document again since.
         val seen = mutable.value.snapshot.opened
         return withContext(Dispatchers.IO) {
-            runCatching { session.copySelection(range, action, seen) }
+            runCatching { session.copySelection(range, shown, action, seen) }
                 .onSuccess { copied -> copied.snapshot?.let { next -> mutable.update { it.copy(snapshot = next) } } }
                 .onFailure(::show)
                 .getOrNull()

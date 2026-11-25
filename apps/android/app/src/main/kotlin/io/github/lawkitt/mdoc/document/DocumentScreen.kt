@@ -490,8 +490,8 @@ fun DocumentScreen(
                         },
                         // A hand copy (#1209): marked sensitive unless the core finds it clean.
                         selectionMenu = model::selectionMenu,
-                        onCopySelection = { range, action ->
-                            scope.launch { model.copySelection(range, action)?.let { copy(context, it.text, sensitive = it.marked) } }
+                        onCopySelection = { range, shown, action ->
+                            scope.launch { model.copySelection(range, shown, action)?.let { copy(context, it.text, sensitive = it.marked) } }
                         },
                     )
                 }

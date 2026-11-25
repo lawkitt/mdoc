@@ -3,11 +3,14 @@ package io.github.lawkitt.mdoc
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
+import android.os.SystemClock
 import android.text.Selection
 import android.text.Spannable
 import android.view.ActionMode
+import android.view.DragEvent
 import android.view.Menu
 import android.view.MenuInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
@@ -151,6 +154,69 @@ class SelectionCopyTest {
             assertFalse("$gone listed", gone in ids)
         }
     }
+
+    /** Review: a mouse's right-click menu on a selection offers Copy, marked unless clean, and Select all only. */
+    @Test
+    fun aRightClickOffersCopyAndSelectAllOnly() {
+        val note = compose.note(app.core.documents)
+        compose.openDocument(note.snapshot().title)
+        val part = "Write to $EMAIL"
+        compose.waitUntil(15_000) { compose.reviewText().contains(part) }
+
+        var ids: List<Int>? = null
+        compose.onReviewText { view ->
+            view.select(part)
+            // Listeners see the menu after the view built it.
+            view.setOnCreateContextMenuListener { menu, _, _ -> ids = (0 until menu.size()).map { menu.getItem(it).itemId } }
+            val (x, y) = view.pointIn(part)
+            view.showContextMenu(x, y)
+        }
+        compose.waitUntil(5_000) { compose.onMain { ids != null } }
+        compose.back()
+        compose.onReviewText { it.setOnCreateContextMenuListener(null) }
+        val listed = compose.onMain { ids!! }
+        assertTrue("$listed", android.R.id.copy in listed)
+        for (gone in listOf(android.R.id.shareText, android.R.id.textAssist, android.R.id.cut, android.R.id.paste, android.R.id.replaceText)) {
+            assertFalse("$gone listed", gone in listed)
+        }
+
+        stale()
+        compose.onReviewText { view ->
+            view.select(part)
+            view.onTextContextMenuItem(android.R.id.copy)
+        }
+        compose.waitForClip(part)
+        assertTrue(sensitive())
+    }
+
+    /**
+     * Review: a long press inside a selection, which the system turns into
+     * a drag another app beside mdoc can take, drags nothing (#1209
+     * decision 8). The selection is made as a person makes it, by a long
+     * press on a word, so the system's toolbar is up.
+     */
+    @Test
+    fun aLongPressInTheSelectionDragsNothing() {
+        val note = compose.note(app.core.documents)
+        compose.openDocument(note.snapshot().title)
+        compose.waitUntil(15_000) { compose.reviewText().contains("Write") }
+        var drags = 0
+        compose.onReviewText { view ->
+            view.setOnDragListener { _, event ->
+                if (event.action == DragEvent.ACTION_DRAG_STARTED) drags++
+                true
+            }
+            view.longPress(view.pointIn("Write"), release = true)
+        }
+        compose.waitUntil(5_000) { compose.onReviewText { it.hasSelection() } }
+        // The system's toolbar shows after a moment; a drag needs it up.
+        Thread.sleep(1_000)
+        compose.onReviewText { view -> view.longPress(view.pointIn(view.selectedPart()), release = false) }
+        Thread.sleep(1_000)
+        compose.waitForIdle()
+        compose.onReviewText { it.setOnDragListener(null) }
+        assertEquals("drags started", 0, compose.onMain { drags })
+    }
 }
 
 /** A document never scanned, at the detector tier: Copy with names alone, marked. */
@@ -265,6 +331,30 @@ private fun SelectionTextView.select(part: String) {
     val start = text.indexOf(part)
     assertTrue("'$part' in '$text'", start >= 0)
     Selection.setSelection(text as Spannable, start, start + part.length)
+}
+
+/** A point on the middle of `part`, in the view's coordinates. */
+private fun SelectionTextView.pointIn(part: String): Pair<Float, Float> {
+    val start = text.indexOf(part)
+    assertTrue("'$part' in '$text'", start >= 0)
+    val offset = start + part.length / 2
+    val line = layout.getLineForOffset(offset)
+    val x = layout.getPrimaryHorizontal(offset) + totalPaddingLeft - scrollX
+    val y = (layout.getLineTop(line) + layout.getLineBottom(line)) / 2f + totalPaddingTop - scrollY
+    return x to y
+}
+
+private fun SelectionTextView.selectedPart(): String =
+    text.substring(minOf(selectionStart, selectionEnd), maxOf(selectionStart, selectionEnd))
+
+/** A finger down at `point`, held for a long press; lifted after it, or the gesture cancelled. */
+private fun SelectionTextView.longPress(point: Pair<Float, Float>, release: Boolean) {
+    val (x, y) = point
+    val down = SystemClock.uptimeMillis()
+    dispatchTouchEvent(MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, x, y, 0))
+    performLongClick(x, y)
+    val end = if (release) MotionEvent.ACTION_UP else MotionEvent.ACTION_CANCEL
+    dispatchTouchEvent(MotionEvent.obtain(down, down + 600, end, x, y, 0))
 }
 
 /**

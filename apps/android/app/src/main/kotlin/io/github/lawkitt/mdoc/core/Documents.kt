@@ -861,32 +861,35 @@ class Documents(
         }
 
         /**
-         * A hand copy of `range` (#1209): never refused. Copy and Copy with
-         * names take the text as written; Replace N and copy first replaces
-         * the proposals in it as one undo step, saved as every decision is,
-         * and takes the range the core returns, widened so an alias is
-         * whole. Either way the text copied is checked once more, and it is
-         * marked unless that check finds it clean (a failed check marks it).
+         * A hand copy of `range`, which read `shown` on screen (#1209).
+         * Copy and Copy with names are never refused: they copy `shown` as
+         * written, checked once more, and marked unless that check finds
+         * it clean. A check that fails, or a document whose text there is
+         * no longer `shown` (a move or a decision since it was drawn),
+         * marks it. Replace N and copy first replaces the proposals in it
+         * as one undo step, saved as every decision is, and copies the
+         * range the core returns, widened so an alias is whole; it is
+         * refused when the text there is no longer `shown`, so it never
+         * replaces names the user did not select. Its copy is checked in
+         * the text it was cut from; a save that changed that text (a
+         * Project's names applied) marks it.
          */
-        fun copySelection(range: SourceRange, action: SelectionAction, seen: Int? = null): SelectionCopy = holdingSave {
+        fun copySelection(range: SourceRange, shown: String, action: SelectionAction, seen: Int? = null): SelectionCopy = holdingSave {
             reopenHeldIfStale()
-            val copied: SourceRange
-            val text: String
-            var after: DocumentSnapshot? = null
-            if (action is SelectionAction.ReplaceAndCopy) {
-                var replaced: uniffi.mdoc_ffi.SelectionReplaced? = null
-                after = change(seen) { ffi.replaceSelection(range.ffi).also { replaced = it }.snapshot }
-                val result = replaced ?: throw AppError.NotFound()
-                copied = SourceRange(result.range.start.toInt(), result.range.end.toInt())
-                text = result.snapshot.text
-            } else {
-                if (seen != null && seen != synchronized(this) { opened }) throw AppError.Failed(MOVED_MEANWHILE)
-                copied = range
-                text = synchronized(this) { review?.text } ?: throw AppError.NotFound()
+            val text = synchronized(this) { review?.text }
+            val unchanged = text != null && (seen == null || seen == synchronized(this) { opened }) && text.sourceSlice(range) == shown
+            if (action !is SelectionAction.ReplaceAndCopy) {
+                val check = if (unchanged) runCatching { checkHeld(range, null) }.getOrNull() else null
+                return@holdingSave SelectionCopy(shown, SelectionAction.marked(check))
             }
-            val check = runCatching { checkHeld(copied, null) }.getOrNull()
-            val offsets = TextOffsets(text)
-            SelectionCopy(text.substring(offsets.utf16(copied.start.toLong()), offsets.utf16(copied.end.toLong())), SelectionAction.marked(check), after)
+            if (!unchanged) throw AppError.Failed(SELECTION_CHANGED)
+            var replaced: uniffi.mdoc_ffi.SelectionReplaced? = null
+            val after = change(null) { ffi.replaceSelection(range.ffi).also { replaced = it }.snapshot }
+            val result = replaced ?: throw AppError.NotFound()
+            val copied = SourceRange(result.range.start.toInt(), result.range.end.toInt())
+            val saved = synchronized(this) { review?.text }
+            val check = if (saved == result.snapshot.text) runCatching { checkHeld(copied, null) }.getOrNull() else null
+            SelectionCopy(result.snapshot.text.sourceSlice(copied), SelectionAction.marked(check), after)
         }
 
         /**

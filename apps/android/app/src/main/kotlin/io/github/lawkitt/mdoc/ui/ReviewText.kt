@@ -20,6 +20,7 @@ import android.text.style.TtsSpan
 import android.text.style.TypefaceSpan
 import android.text.style.UnderlineSpan
 import android.view.ActionMode
+import android.view.ContextMenu
 import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
@@ -73,8 +74,8 @@ fun ReviewText(
     onSelectedTop: ((Int) -> Unit)? = null,
     /** A selection's copy menu, from what the core finds in it. */
     selectionMenu: suspend (SourceRange) -> List<SelectionAction> = { SelectionAction.menu(null) },
-    /** A hand copy of a selection: the menu's, a keyboard's Ctrl+C or TalkBack's Copy. */
-    onCopySelection: (SourceRange, SelectionAction) -> Unit = { _, _ -> },
+    /** A hand copy of a selection, with the text it reads: the menu's, a keyboard's Ctrl+C, TalkBack's or a mouse's Copy. */
+    onCopySelection: (SourceRange, String, SelectionAction) -> Unit = { _, _, _ -> },
 ) {
     val colours = ReviewColours.current()
     val selectedTop = rememberUpdatedState(onSelectedTop)
@@ -88,7 +89,7 @@ fun ReviewText(
         factory = { context ->
             reviewTextView(
                 context, scope, { tap.value(it) }, { range, text -> replace.value?.invoke(range, text) },
-                { menu.value(it) }, { range, action -> copy.value(range, action) },
+                { menu.value(it) }, { range, shown, action -> copy.value(range, shown, action) },
             )
         },
         update = { view ->
@@ -150,7 +151,7 @@ private fun reviewTextView(
     onCandidate: (CandidateId) -> Unit,
     onReplace: (SourceRange, String) -> Unit,
     menuFor: suspend (SourceRange) -> List<SelectionAction>,
-    onCopy: (SourceRange, SelectionAction) -> Unit,
+    onCopy: (SourceRange, String, SelectionAction) -> Unit,
 ): TextView = SelectionTextView(context).apply {
     setTextIsSelectable(true)
     textSize = 17f
@@ -161,7 +162,7 @@ private fun reviewTextView(
     movementMethod = CandidateMovement(onCandidate)
     customSelectionActionModeCallback = SelectionActions(this, scope, menuFor, onCopy, onReplace)
     // As written, marked unless the core finds the text clean.
-    onCopyAsWritten = { range -> onCopy(range, SelectionAction.CopyWithNames) }
+    onCopyAsWritten = { range, shown -> onCopy(range, shown, SelectionAction.CopyWithNames) }
     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
 }
 
@@ -173,17 +174,61 @@ internal fun TextView.selectedRange(): SourceRange? {
     return if (start >= 0 && end > start) offsets.sourceRange(start, end) else null
 }
 
+/** The selection's text as drawn; null when nothing is selected. */
+internal fun TextView.selectedText(): String? {
+    val start = minOf(selectionStart, selectionEnd)
+    val end = maxOf(selectionStart, selectionEnd)
+    return if (start >= 0 && end > start) text.substring(start, end) else null
+}
+
+/**
+ * A mouse's right-click menu on a selection: Copy (as written, marked
+ * unless clean, as Ctrl+C) and Select all. Share, Assist, Cut, Paste,
+ * Translate and the like are removed, as from the selection's toolbar.
+ */
+internal fun Menu.keepCopyAndSelectAll() {
+    val keep = setOf(android.R.id.copy, android.R.id.selectAll)
+    (size() - 1 downTo 0).map(this::getItem).filter { it.itemId !in keep }.forEach { removeItem(it.itemId) }
+}
+
 /**
  * The review text's view. A copy of the selection is the user's own
  * (#1209): a keyboard's Ctrl+C and TalkBack's Copy hand it to
  * [onCopyAsWritten], which copies it as written and marks it unless the
- * core finds it clean, never as an unmarked system copy. Cut, Paste, Share
- * and Assist are refused however they are asked for: they would change
- * the text or send it on without saying so.
+ * core finds it clean, never as an unmarked system copy; a mouse's
+ * right-click menu offers that Copy too. Cut, Paste, Share and Assist are
+ * refused however they are asked for, and a long press inside the
+ * selection never drags it out to another app: they would change the
+ * text or send it on without saying so.
  */
 class SelectionTextView(context: Context) : TextView(context) {
-    /** A copy of the selection as written. */
-    var onCopyAsWritten: ((SourceRange) -> Unit)? = null
+    /** A copy of the selection as written, with the text it reads. */
+    var onCopyAsWritten: ((SourceRange, String) -> Unit)? = null
+
+    /** Where the last touch went down, as a text offset; -1 before any. */
+    private var downAt = -1
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) downAt = getOffsetForPosition(event.x, event.y)
+        return super.onTouchEvent(event)
+    }
+
+    /**
+     * A long press inside the selection would start the system's drag of
+     * its text, which another app beside mdoc can take: here it starts
+     * nothing (#1209 decision 8).
+     */
+    override fun performLongClick(): Boolean {
+        val start = minOf(selectionStart, selectionEnd)
+        val end = maxOf(selectionStart, selectionEnd)
+        if (start in 0 until end && downAt in start until end) return true
+        return super.performLongClick()
+    }
+
+    override fun onCreateContextMenu(menu: ContextMenu) {
+        super.onCreateContextMenu(menu)
+        menu.keepCopyAndSelectAll()
+    }
 
     override fun onTextContextMenuItem(id: Int): Boolean = when (id) {
         android.R.id.copy -> {
@@ -197,7 +242,8 @@ class SelectionTextView(context: Context) : TextView(context) {
     /** Copies the selection, if any; whether there was one. */
     private fun copyAsWritten(): Boolean {
         val range = selectedRange() ?: return false
-        onCopyAsWritten?.invoke(range)
+        val shown = selectedText() ?: return false
+        onCopyAsWritten?.invoke(range, shown)
         return true
     }
 
@@ -232,7 +278,7 @@ internal class SelectionActions(
     private val view: TextView,
     private val scope: CoroutineScope,
     private val menuFor: suspend (SourceRange) -> List<SelectionAction>,
-    private val onCopy: (SourceRange, SelectionAction) -> Unit,
+    private val onCopy: (SourceRange, String, SelectionAction) -> Unit,
     private val onReplace: (SourceRange, String) -> Unit,
 ) : ActionMode.Callback {
     /** The selection the copy items were found for, and them. */
@@ -286,7 +332,8 @@ internal class SelectionActions(
         }
         val (at, actions) = found ?: return false
         val action = actions.firstOrNull { it.itemId == item.itemId } ?: return false
-        if (range == at) onCopy(at, action)
+        val shown = view.selectedText()
+        if (range == at && shown != null) onCopy(at, shown, action)
         mode.finish()
         return true
     }

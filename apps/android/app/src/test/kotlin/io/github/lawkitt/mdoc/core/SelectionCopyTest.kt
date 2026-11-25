@@ -103,7 +103,7 @@ class SelectionCopyTest {
         val selection = range(shown, "$alias, your claim")
 
         assertEquals(SelectionCheck.Clean, letter.checkSelection(selection))
-        val copied = letter.copySelection(selection, SelectionAction.Copy)
+        val copied = letter.copySelection(selection, "$alias, your claim", SelectionAction.Copy)
         assertEquals("$alias, your claim", copied.text)
         assertFalse(copied.marked)
     }
@@ -117,13 +117,13 @@ class SelectionCopyTest {
         val check = note.checkSelection(selection)
         assertEquals(listOf(SelectionAction.ReplaceAndCopy(1), SelectionAction.CopyWithNames), SelectionAction.menu(check))
 
-        val withNames = note.copySelection(selection, SelectionAction.CopyWithNames)
+        val withNames = note.copySelection(selection, "Write to $EMAIL", SelectionAction.CopyWithNames)
         assertEquals("Write to $EMAIL", withNames.text)
         assertTrue(withNames.marked)
         assertEquals("nothing changed", 1, note.snapshot().pendingCount)
 
         // Cut into the email: the alias still copies whole.
-        val replaced = note.copySelection(range(shown, "to ann@exa"), SelectionAction.ReplaceAndCopy(1))
+        val replaced = note.copySelection(range(shown, "to ann@exa"), "to ann@exa", SelectionAction.ReplaceAndCopy(1))
         val alias = note.snapshot().candidates.single().alias
         assertEquals("to $alias", replaced.text)
         assertFalse(replaced.marked)
@@ -140,18 +140,51 @@ class SelectionCopyTest {
         val check = note.checkSelection(selection)
         assertTrue("$check", check is SelectionCheck.NotClean && check.proposals == 0uL && check.knownNames > 0uL)
         assertEquals(listOf(SelectionAction.CopyWithNames), SelectionAction.menu(check))
-        val copied = note.copySelection(selection, SelectionAction.CopyWithNames)
+        val copied = note.copySelection(selection, EMAIL, SelectionAction.CopyWithNames)
         assertEquals(EMAIL, copied.text)
         assertTrue(copied.marked)
     }
 
-    /** A selection made before a move opened the document again is refused, not checked against the new text. */
+    /**
+     * A selection drawn before a move opened the document again: Copy with
+     * names still copies what was selected, marked; Replace N and copy is
+     * refused rather than replace names the user did not select.
+     */
     @Test
-    fun aSelectionFromBeforeAMoveIsRefused() {
+    fun aSelectionFromBeforeAMoveCopiesMarked() {
         val note = note()
         val seen = note.snapshot().opened
+        val selection = range(note.snapshot().markdown, "Write to")
         documents.moveDocument(note.id, MoveTarget.Unfiled)
-        val outcome = runCatching { note.copySelection(range(note.snapshot().markdown, "Write"), SelectionAction.CopyWithNames, seen) }
+        val copied = note.copySelection(selection, "Write to", SelectionAction.CopyWithNames, seen)
+        assertEquals("Write to", copied.text)
+        assertTrue(copied.marked)
+        val replaced = runCatching { note.copySelection(selection, "Write to", SelectionAction.ReplaceAndCopy(1), seen) }
+        assertTrue("${replaced.exceptionOrNull()}", replaced.exceptionOrNull() is AppError.Failed)
+    }
+
+    /**
+     * The text changed under a selection since it was drawn (a decision
+     * shifted it): Copy with names copies the text the user selected,
+     * marked; Replace N and copy is refused and replaces nothing.
+     */
+    @Test
+    fun aSelectionWhoseTextChangedCopiesWhatWasSelected() {
+        val note = note()
+        val shown = note.snapshot().markdown
+        val selection = range(shown, "Write to $EMAIL")
+        note.replaceAllPending()
+        val copied = note.copySelection(selection, "Write to $EMAIL", SelectionAction.CopyWithNames)
+        assertEquals("Write to $EMAIL", copied.text)
+        assertTrue(copied.marked)
+
+        val text = "Ann Lee met the client."
+        val memo = documents.importDocument(ImportSource.Text(text), "Memo")
+        memo.recognize(Quiet)
+        val drawn = memo.snapshot().markdown
+        // Ann Lee is replaced after "Ann Lee met" was selected: Replace N and copy on it is refused.
+        memo.addReplacement(range(text, "Ann Lee"), Category.Person)
+        val outcome = runCatching { memo.copySelection(range(drawn, "Ann Lee met"), "Ann Lee met", SelectionAction.ReplaceAndCopy(1)) }
         assertTrue("${outcome.exceptionOrNull()}", outcome.exceptionOrNull() is AppError.Failed)
     }
 
