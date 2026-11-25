@@ -1,6 +1,7 @@
 package io.github.lawkitt.mdoc.document
 
 import android.content.Intent
+import android.service.chooser.ChooserResult
 import io.github.lawkitt.mdoc.core.AppError
 import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.Documents
@@ -15,6 +16,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import uniffi.mdoc_ffi.JobStage
@@ -114,6 +116,16 @@ class AskAiTest {
     @Test
     fun aChoiceReportedAfterTheReturnShowsItAtOnce() {
         assertEquals(ReplyOffer.Offered, AskAiWait.chosen(AskAiWait.asked(), inFront = true))
+    }
+
+    /** Done when: the chooser's own Copy and Edit (Android 15+) are no app taking the text; a pick is. */
+    @Test
+    fun theChoosersCopyAndEditAreNoChoice() {
+        assertTrue("before Android 15 a report is a pick", AskAiWait.pickedAnApp(null))
+        assertTrue(AskAiWait.pickedAnApp(ChooserResult.CHOOSER_RESULT_SELECTED_COMPONENT))
+        for (type in listOf(ChooserResult.CHOOSER_RESULT_COPY, ChooserResult.CHOOSER_RESULT_EDIT, ChooserResult.CHOOSER_RESULT_UNKNOWN)) {
+            assertFalse("type $type", AskAiWait.pickedAnApp(type))
+        }
     }
 
     /** Done when: a chooser closed without a choice, or Share's, offers nothing. */

@@ -6,7 +6,10 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
+import android.service.chooser.ChooserResult
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import io.github.lawkitt.mdoc.core.HandOff
 import io.github.lawkitt.mdoc.restore.RestoreActivity
 
@@ -63,6 +66,14 @@ object AskAiWait {
 
     /** mdoc is in front again. */
     fun resumed(offer: ReplyOffer?): ReplyOffer? = if (offer == ReplyOffer.AwaitingReturn) ReplyOffer.Offered else offer
+
+    /**
+     * Whether the chooser's report is an app taking the text: its
+     * `ChooserResult` type from Android 15, which also reports its own Copy
+     * and Edit (no app the text went to); before, a report is only ever an
+     * app picked (null).
+     */
+    fun pickedAnApp(resultType: Int?): Boolean = resultType == null || resultType == ChooserResult.CHOOSER_RESULT_SELECTED_COMPONENT
 }
 
 /** The chooser's callback when an app is picked: only mdoc's own broadcast. */
@@ -84,10 +95,17 @@ fun askAiIntent(handOff: HandOff, context: Context): Intent {
         .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(context, RestoreActivity::class.java)))
 }
 
-/** Calls `onChosen` each time Ask AI's chooser starts an app, until unregistered. */
+/** Calls `onChosen` each time Ask AI's chooser starts an app (not its own Copy or Edit), until unregistered. */
 fun registerAskAiChosen(context: Context, onChosen: () -> Unit): BroadcastReceiver {
     val receiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) = onChosen()
+        override fun onReceive(context: Context, intent: Intent) {
+            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_CHOOSER_RESULT, ChooserResult::class.java)?.type
+            } else {
+                null
+            }
+            if (AskAiWait.pickedAnApp(type)) onChosen()
+        }
     }
     ContextCompat.registerReceiver(context, receiver, IntentFilter(CHOSEN), ContextCompat.RECEIVER_NOT_EXPORTED)
     return receiver

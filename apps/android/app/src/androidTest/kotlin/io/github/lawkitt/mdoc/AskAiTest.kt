@@ -176,7 +176,7 @@ class AskAiTest {
         for (sent in listOf(send.getStringExtra(Intent.EXTRA_TEXT), title)) {
             assertFalse("an original left: $sent", sent!!.contains("Maya Bennett"))
         }
-        assertNotNull("it hears the app picked", IntentCompat.getParcelableExtra(chooser, Intent.EXTRA_CHOSEN_COMPONENT_INTENT_SENDER, IntentSender::class.java))
+        assertNotNull("it hears the app picked", resultSender(chooser))
         @Suppress("DEPRECATION")
         val excluded = chooser.getParcelableArrayExtra(Intent.EXTRA_EXCLUDE_COMPONENTS).orEmpty().map { it as ComponentName }
         assertEquals("Restore with mdoc is no AI app", listOf(ComponentName(app, RestoreActivity::class.java)), excluded)
@@ -197,7 +197,7 @@ class AskAiTest {
 
         // The AI app in front: mdoc stops, the chooser says which app it
         // started, and the answer is copied there, before mdoc is back.
-        val sender = checkNotNull(IntentCompat.getParcelableExtra(chooser, Intent.EXTRA_CHOSEN_COMPONENT_INTENT_SENDER, IntentSender::class.java))
+        val sender = checkNotNull(resultSender(chooser))
         awayAndBack {
             sender.sendIntent(app, 0, Intent().putExtra(Intent.EXTRA_CHOSEN_COMPONENT, ComponentName("com.example.ai", "com.example.ai.Share") as Parcelable), null, null)
             instrumentation.runOnMainSync {
@@ -212,7 +212,8 @@ class AskAiTest {
         val paste = hasText("Paste") and isEnabled() and hasAnyAncestor(hasTestTag("reply-banner-paste"))
         compose.waitForShown(paste)
         compose.shown(paste).performClick()
-        compose.waitForText("Dear Maya Bennett, the claim is filed.", substring = true)
+        // The Reply pane, restored (its text is a TextView's).
+        compose.waitForText("1 value restored")
         compose.waitUntil(5_000) { !compose.exists(hasTestTag("reply-banner")) }
         assertEquals("Dear Maya Bennett, the claim is filed.", letter.snapshot().reply?.restored?.text)
     }
@@ -235,10 +236,15 @@ class AskAiTest {
         compose.shown(hasTestTag("menu-share")).performClick()
         compose.waitUntil(10_000) { choosers.started.size == 2 }
         val share = choosers.started.last()
-        assertEquals(null, IntentCompat.getParcelableExtra(share, Intent.EXTRA_CHOSEN_COMPONENT_INTENT_SENDER, IntentSender::class.java))
+        assertEquals("Share's chooser reports nothing", null, resultSender(share))
         awayAndBack()
         assertFalse("a plain Share offers nothing", compose.exists(hasTestTag("reply-banner")))
     }
+
+    /** Where the chooser reports the app picked: Android 15's key, or the one before. */
+    private fun resultSender(chooser: Intent): IntentSender? =
+        IntentCompat.getParcelableExtra(chooser, Intent.EXTRA_CHOOSER_RESULT_INTENT_SENDER, IntentSender::class.java)
+            ?: IntentCompat.getParcelableExtra(chooser, Intent.EXTRA_CHOSEN_COMPONENT_INTENT_SENDER, IntentSender::class.java)
 
     private fun shows(text: String, substring: Boolean) = compose.exists(hasText(text, substring) and onScreen)
 }
