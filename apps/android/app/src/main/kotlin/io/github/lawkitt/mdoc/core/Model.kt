@@ -359,6 +359,9 @@ sealed class AppError(message: String) : Exception(message) {
 
     class PendingReview(val count: Int) : AppError("Review the proposals first.")
 
+    /** Copy for AI or Share refused: the screen shows the refusal's own words and step (#1209). */
+    class HandOffRefused(val refusal: HandOffRefusal) : AppError("The document can't leave for an AI yet.")
+
     class EmptySelection : AppError("Select the words to replace.")
 
     class Failed(message: String) : AppError(message)
