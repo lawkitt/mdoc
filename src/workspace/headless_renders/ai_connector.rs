@@ -59,7 +59,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         })?;
         d.settle()?;
         if d.change(|w, _, cx| w.settings.read(cx).ai_consent().is_none())? {
-            return Err(format!("Add to {} showed no consent card", host.name()).into());
+            return Err(format!("Add to {} showed no consent card", host.name()));
         }
         d.capture(name)?;
         d.change(|w, window, cx| {
