@@ -44,6 +44,7 @@ import io.github.lawkitt.mdoc.core.RestoredSegment
 import io.github.lawkitt.mdoc.core.SelectionAction
 import io.github.lawkitt.mdoc.core.SourceRange
 import io.github.lawkitt.mdoc.core.TextOffsets
+import io.github.lawkitt.mdoc.document.copy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -505,8 +506,11 @@ private fun withAlpha(colour: Int, alpha: Float): Int = (colour and 0x00FFFFFF) 
 
 /**
  * A restored reply, styled with the review text's spans and colours, its
- * restored values highlighted. The reply holds the user's own
- * names again, so it is selectable and copyable as ordinary text.
+ * restored values highlighted. The reply holds the user's own names
+ * again, so a selection of it follows the review text's rules (#1228):
+ * Copy, a keyboard's Ctrl+C and TalkBack's Copy copy it marked sensitive,
+ * as Copy reply does, and Share, Assist, Translate and Search stay off.
+ * A restored reply is never clean, so no check is asked for.
  */
 @Composable
 fun RestoredText(result: RestoreResult, styling: MarkdownStyling?, modifier: Modifier = Modifier) {
@@ -516,12 +520,14 @@ fun RestoredText(result: RestoreResult, styling: MarkdownStyling?, modifier: Mod
     AndroidView(
         modifier = modifier,
         factory = { context ->
-            TextView(context).apply {
+            SelectionTextView(context).apply {
                 setTextIsSelectable(true)
                 textSize = 17f
                 setLineSpacing(4f, 1f)
                 hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
                 breakStrategy = Layout.BREAK_STRATEGY_SIMPLE
+                customSelectionActionModeCallback = RestoredActions
+                onCopyAsWritten = { _, shown -> copy(context, shown, sensitive = true) }
             }
         },
         update = { view ->
@@ -548,7 +554,26 @@ fun RestoredText(result: RestoreResult, styling: MarkdownStyling?, modifier: Mod
             }
             view.setText(text, TextView.BufferType.SPANNABLE)
             view.setTextColor(colours.text)
+            view.setTag(R.id.review_offsets, TextOffsets(markdown))
             view.tag = key
         },
     )
+}
+
+/**
+ * A restored reply's selection menu: the system's Copy, which
+ * [SelectionTextView] copies marked, and Select all. Share, Assist,
+ * Translate, Search and the like are removed.
+ */
+internal object RestoredActions : ActionMode.Callback {
+    override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean = true
+
+    override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
+        menu.keepCopyAndSelectAll()
+        return true
+    }
+
+    override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean = false
+
+    override fun onDestroyActionMode(mode: ActionMode) = Unit
 }
