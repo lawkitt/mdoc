@@ -6,9 +6,9 @@ import SwiftUI
 /// store: the App Group's defaults, which the Restore extension reads too
 /// (ADR 0104). Theme and the document font (Settings › Appearance), Show
 /// Markdown and comments (the title menu), the Original's Dark page,
-/// haptics, the review's hints and the setup card. UI tests keep theirs
-/// under a prefix of their own, cleared at each launch, so a test never
-/// changes the user's choices.
+/// haptics, the review's hints, the setup card and the AI connector
+/// preview. UI tests keep theirs under a prefix of their own, cleared at
+/// each launch, so a test never changes the user's choices.
 @Observable
 final class Preferences: @unchecked Sendable {
     enum Key: String, CaseIterable {
@@ -25,6 +25,9 @@ final class Preferences: @unchecked Sendable {
         case grabberBounced = "hint.grabber.bounced"
         case nudged = "reviewNudged"
         case setupCardDismissed
+        /// Settings › AI connector (preview): Milestone 2's phone loop
+        /// (#1164), off by default.
+        case aiConnectorPreview
     }
 
     /// The keys the app kept in its own defaults before they moved to the
@@ -148,6 +151,16 @@ final class Preferences: @unchecked Sendable {
     var setupCardDismissed: Bool {
         get { access(keyPath: \.setupCardDismissed); return bool(.setupCardDismissed) }
         set { withMutation(keyPath: \.setupCardDismissed) { store.set(newValue, forKey: name(.setupCardDismissed)) } }
+    }
+
+    // MARK: AI connector
+
+    /// Settings › AI connector (preview), off until turned on: with it off
+    /// nothing of Milestone 2 shows (#1164), neither Ask AI nor the
+    /// "Paste reply?" banner.
+    var aiConnectorPreview: Bool {
+        get { access(keyPath: \.aiConnectorPreview); return bool(.aiConnectorPreview) }
+        set { withMutation(keyPath: \.aiConnectorPreview) { store.set(newValue, forKey: name(.aiConnectorPreview)) } }
     }
 
     // MARK: Store

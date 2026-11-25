@@ -4622,6 +4622,7 @@ dependencies = [
  "mdoc-vault",
  "pdf-inspector",
  "qrcode",
+ "raw-window-handle",
  "regex",
  "roxmltree 0.21.2",
  "semver",
