@@ -139,7 +139,7 @@ pub(crate) fn row_label(document: &ShelfDocument) -> String {
         label.push_str(name);
     }
     label.push_str(", ");
-    label.push_str(&document.readiness.label());
+    label.push_str(&document.state());
     label
 }
 
@@ -541,7 +541,7 @@ impl ShelfRows {
                 line.child(label("Not copied", theme.proposed()).mr(px(6.)))
             })
             .when(!ready, |line| {
-                let state = document.readiness.label();
+                let state = document.state();
                 let state = if refused {
                     format!("Not copied · {state}")
                 } else {

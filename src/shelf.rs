@@ -1,14 +1,16 @@
 //! The menu bar shelf's model, GPUI-free: which documents it
 //! lists and whether each is ready, the pseudonymized row it shows, the
 //! text Copy for AI and a drag carry, the temporary `.md` exports a drag
-//! drops, and Restore Clipboard. The window collects what it lists, from
-//! its open tabs and the Vault; the shelf's view shows it.
+//! drops under a neutral name, and Restore Clipboard. The window collects
+//! what it lists, from its open tabs and the Vault; the shelf's view shows
+//! it.
 //!
 //! Invariants: nothing leaves through the shelf that is not ready, and a
 //! row is ready only once the Vault's outbound check passes
 //! (`Vault::text_for_ai`), whose text is all a row hands out; rows and
-//! exports carry pseudonymized text only; no document text goes to app
-//! data, and exports live in a private temporary folder until quit.
+//! exports carry pseudonymized text only; an export's name holds nothing
+//! of the title (#1208); no document text goes to app data, and exports
+//! live in a private temporary folder until quit.
 
 mod exports;
 #[cfg(test)]
@@ -141,6 +143,9 @@ pub(crate) struct ShelfDocument {
     pub mentions: usize,
     /// Copy for AI's text; only a ready document has it.
     for_ai: Option<String>,
+    /// Its document's `Vault::share_name`, asked only as a drag leaves
+    /// ([`Self::set_share_name`]): see [`Self::file_name`].
+    share_name: Option<String>,
 }
 
 /// An open tab as the shelf needs it. The window builds this only for tabs
@@ -312,6 +317,7 @@ impl ShelfDocument {
             replaced,
             mentions,
             for_ai,
+            share_name: None,
         }
     }
 
@@ -324,6 +330,15 @@ impl ShelfDocument {
             .map_or(&self.title, |ext| {
                 &self.title[..self.title.len() - ext.len()]
             })
+    }
+
+    /// The row's state as it and VoiceOver read it: never scanned reads
+    /// apart from a review left unfinished, as its step differs.
+    pub(crate) fn state(&self) -> String {
+        match self.readiness {
+            Readiness::NotReviewed if !self.scanned => "Names not looked for yet".into(),
+            readiness => readiness.label(),
+        }
     }
 
     /// What resolves the row's refusal: "Replace 2 and copy", "Review" or
@@ -370,29 +385,35 @@ impl ShelfDocument {
         self.for_ai.as_deref().filter(|_| self.readiness.is_ready())
     }
 
-    /// The `.md` file name a drag drops: the pseudonymized title, made safe
-    /// for a file name.
+    /// The `.md` file name a drag drops: the document's
+    /// `Vault::share_name`, "Document 3 – 2026-11-25.md", or "Document –
+    /// 2026-11-25.md" when the Vault gave none. Nothing of the title, which
+    /// may hold a real name nobody reviewed (#1208).
     pub(crate) fn file_name(&self) -> String {
-        let mut name: String = self
-            .title
-            .chars()
-            .map(|c| match c {
-                '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
-                c if c.is_control() => ' ',
-                c => c,
-            })
-            .collect();
-        let trimmed = name.trim().trim_start_matches('.').trim();
-        name = trimmed.chars().take(120).collect();
-        if name.is_empty() {
-            name = "Document".into();
+        #[cfg(test)]
+        if crate::exits::taken_out(crate::exits::Gate::ShelfFileName) {
+            // As before #1208: the title, masked with the names it knows.
+            return format!("{}.md", self.display_title().replace(['/', ':'], "-"));
         }
-        let lower = name.to_lowercase();
-        if !(lower.ends_with(".md") || lower.ends_with(".markdown")) {
-            name.push_str(".md");
+        match &self.share_name {
+            Some(name) => format!("{name}.md"),
+            None => format!("{}.md", neutral_name(SystemTime::now())),
         }
-        name
     }
+
+    /// The name its drag's file leaves under: `Vault::share_name`, asked
+    /// as the drag leaves, not for every row listed.
+    pub(crate) fn set_share_name(&mut self, name: Option<String>) {
+        self.share_name = name;
+    }
+}
+
+/// The name a document leaves under when the Vault gave none: "Document
+/// – 2026-11-25", the day `at` falls on in UTC, as `Vault::share_name`
+/// dates a creation.
+fn neutral_name(at: SystemTime) -> String {
+    let day = chrono::DateTime::<chrono::Utc>::from(at).format("%Y-%m-%d");
+    format!("Document \u{2013} {day}")
 }
 
 /// The mentions `text` holds by an alias, and the distinct names they are,

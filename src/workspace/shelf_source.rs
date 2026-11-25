@@ -114,6 +114,20 @@ impl Workspace {
         Some(checked(vault.text_for_ai(document.as_str())))
     }
 
+    /// The name row `key`'s document leaves under as a drag's file,
+    /// nothing of its title (#1208): its `Vault::share_name`. `None` outside
+    /// the Vault, where a tab is never ready.
+    pub(crate) fn shelf_share_name(&self, key: &ShelfKey, cx: &App) -> Option<String> {
+        let vault = self.vault.vault()?;
+        match key {
+            ShelfKey::Tab(id) => match self.tabs.get(*id)?.view()?.read(cx).session.document.id() {
+                Some(DocumentId::Vault(document)) => vault.share_name(document.as_str()).ok(),
+                _ => None,
+            },
+            ShelfKey::Document(id) => vault.share_name(id.as_str()).ok(),
+        }
+    }
+
     /// A stored document's row, with the names it lives with as stored;
     /// `None` when it can't be read or holds no alias.
     fn stored_row(

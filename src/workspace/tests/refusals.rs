@@ -453,9 +453,9 @@ fn shelf_rows_that_are_not_ready_carry_their_step(cx: &mut TestAppContext) {
     let note_row = at(ShelfKey::Tab(note));
     assert_eq!(rows[letter_row].readiness, Readiness::NamesNotReplaced(1));
     assert_eq!(rows[letter_row].step(), Some(Step::Review));
-    assert_eq!(rows[unscanned_row].readiness.label(), "Not reviewed");
+    assert_eq!(rows[unscanned_row].state(), "Names not looked for yet");
     assert_eq!(rows[unscanned_row].step(), Some(Step::FindNames));
-    assert_eq!(rows[scanned_row].readiness.label(), "Not reviewed");
+    assert_eq!(rows[scanned_row].state(), "Not reviewed");
     assert_eq!(rows[scanned_row].step(), Some(Step::Review));
     let left = rows[note_row].readiness;
     assert!(matches!(left, Readiness::LeftToReview(_)), "{left:?}");

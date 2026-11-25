@@ -2,15 +2,19 @@
 //! time: in the process through a mutex and across processes and handles
 //! through `.lock`, held only for the write (#1091 Decision 20). A handle
 //! never writes a revision older than the last it wrote.
+mod activity;
+mod deliveries;
 mod export;
 mod moves;
 mod readiness;
 mod replies;
 mod staging;
 
+pub use activity::{ACTIVITY_KEPT, AiActivity, AiEvent};
+pub use deliveries::{Delivered, NewDelivery};
 pub use export::{Exported, ORIGINALS};
 pub use moves::{MoveUndo, Moved, ProjectDocuments};
-pub use readiness::{AiRead, AiText, Readiness};
+pub use readiness::{AiRead, AiText, ReadAt, Readiness};
 pub use replies::ReplyHandle;
 pub use staging::StagedImport;
 

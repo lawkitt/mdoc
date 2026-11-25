@@ -389,9 +389,15 @@ impl ShelfRows {
             cx.notify();
             return;
         };
-        let Some(document) = self.documents.get(index) else {
+        let Some(key) = self.documents.get(index).map(|d| d.key.clone()) else {
             return;
         };
+        // Its file's neutral name, asked only now it leaves (#1208).
+        let name = (self.workspace.read(cx).ok())
+            .and_then(|workspace| workspace.shelf_share_name(&key, cx));
+        let document = &mut self.documents[index];
+        document.set_share_name(name);
+        let document = &self.documents[index];
         let card = document.drag_card();
         let Some(path) = export(document, cx) else {
             return;
