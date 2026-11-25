@@ -32,6 +32,7 @@ use std::{
     time::Duration,
 };
 
+mod ai_deliveries;
 mod ai_project;
 mod ai_project_ui;
 mod autosave;
@@ -363,6 +364,9 @@ pub(super) struct Workspace {
     ai: ai_project::AiProject,
     /// Hears from the connector while it runs.
     ai_poll: Option<gpui::Task<()>>,
+    /// Where deliveries' and review requests' notifications go: the OS's,
+    /// or a recorder in tests and renders.
+    notifier: ai_deliveries::Notifier,
     /// Settings › Vault's key, the first-Project nudge and the wrong-key
     /// screen.
     recovery: recovery_key::Recovery,
@@ -624,6 +628,7 @@ impl Workspace {
             ai_connector: None,
             ai: Default::default(),
             ai_poll: None,
+            notifier: Default::default(),
             recovery: Default::default(),
             document_writer: Default::default(),
             admitted_from: Default::default(),
@@ -1366,6 +1371,8 @@ impl Workspace {
                     cx.notify();
                 });
                 this.attach_project(id, cx);
+                // Opened from an AI notification: for review.
+                this.review_if_asked(id, window, cx);
                 this.refresh_saved_replies(cx);
                 // A view kept while it loaded may be evicted now.
                 this.evict(window, cx);

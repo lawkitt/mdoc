@@ -434,6 +434,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                             | "new-project-page"
                             | "ai-share-prompt"
                             | "ai-project-shared"
+                            | "ai-delivery-badge"
                             | "project-page-activity"
                             | "ai-project-rail"
                     ),

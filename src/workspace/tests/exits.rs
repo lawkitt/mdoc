@@ -554,7 +554,10 @@ const LIST_HEADING: &str = "PERSON_1's lease";
 
 /// A connector over the window's Vault, sharing the fixture's Project.
 fn connector(fixture: &mut Fixture<'_>) -> mdoc_connector::Connector {
-    let setting = mdoc_store::settings::AiConnectorConfig { preview: true };
+    let setting = mdoc_store::settings::AiConnectorConfig {
+        preview: true,
+        ..Default::default()
+    };
     let vault = vault(&fixture.tabs, fixture.cx);
     let connector = mdoc_connector::Connector::start(vault, &setting).unwrap();
     connector.share(&fixture.project).unwrap();

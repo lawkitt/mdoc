@@ -33,7 +33,10 @@ fn listening(endpoint: &Endpoint) -> bool {
 fn start(tabs: &Entity<Workspace>, endpoint: &Endpoint, cx: &mut VisualTestContext) {
     tabs.update(cx, |tabs, _| {
         let vault = tabs.vault.vault().cloned().expect("the test Vault");
-        let on = mdoc_store::settings::AiConnectorConfig { preview: true };
+        let on = mdoc_store::settings::AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
         tabs.ai_connector = crate::ai_connector::start(vault, &on, endpoint);
         assert!(tabs.ai_connector.is_some(), "listening at once");
     });
