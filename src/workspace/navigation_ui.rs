@@ -32,6 +32,7 @@ impl Workspace {
 
     pub(super) fn note_destination(&mut self, arrival: Arrival, cx: &App) {
         let stop = self.place(cx);
+        self.note_ai_viewed(&stop);
         self.navigation.arrive(stop, arrival);
     }
 

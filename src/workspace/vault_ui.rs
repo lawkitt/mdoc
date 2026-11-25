@@ -67,31 +67,12 @@ impl Workspace {
         // Its Projects and the user-wide lists come with it.
         if self.vault.vault().is_some() {
             self.load_projects(cx);
-            self.start_ai_connector();
+            self.start_ai_connector(window, cx);
         } else if self.vault.unavailable().is_some() {
             self.projects.clear();
         }
         self.recovery_screen_opened(window, cx);
         cx.notify();
-    }
-
-    /// With "AI connector (preview)" on, the connector and its listener
-    /// once the Vault is open (ADR 0126). Never in tests or headless
-    /// renders: they keep to their own Vaults and never take the profile's
-    /// endpoint.
-    fn start_ai_connector(&mut self) {
-        if self.ai_connector.is_some() || cfg!(test) || mdoc_store::app_paths::isolated() {
-            return;
-        }
-        let Some(vault) = self.vault.vault().cloned() else {
-            return;
-        };
-        let setting = (self.preferences.borrow().current.as_ref())
-            .map(|preferences| preferences.ai_connector)
-            .unwrap_or_default();
-        if let Some(endpoint) = crate::ai_connector::endpoint() {
-            self.ai_connector = crate::ai_connector::start(vault, &setting, &endpoint);
-        }
     }
 
     /// Tests and headless renders: use `vault`, as if launch opened it.
