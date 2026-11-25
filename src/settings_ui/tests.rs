@@ -440,8 +440,8 @@ fn tab_list_keys_show_categories_and_tab_enters_content(cx: &mut TestAppContext)
         });
         // Every category's last control remains reachable and its entire
         // ring stays in the viewport after scrolling in either direction.
-        for category in
-            (Category::ALL.into_iter()).filter(|c| !matches!(c, Category::About | Category::Vault))
+        for category in (Category::ALL.into_iter())
+            .filter(|c| !matches!(c, Category::About | Category::Vault | Category::AiConnector))
         {
             panel.update_in(cx, |p, w, cx| p.change_category(category, w, cx));
             let mut reached = false;
@@ -756,7 +756,7 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
             }
             Category::Recognition => expected.ocr = defaults.ocr,
             Category::Spelling => expected.spelling = defaults.spelling,
-            Category::About | Category::Vault => {}
+            Category::About | Category::Vault | Category::AiConnector => {}
         }
         assert_eq!(
             shared.borrow().snapshot().unwrap(),

@@ -3,7 +3,8 @@
 # Release gate on what ships: runs `mdoc --mdoc-self-test` from the
 # packaged artifact after `just package`. On macOS that is the app inside the
 # .dmg, under its real hardened-runtime signature, which test builds never
-# have; on Windows the release mdoc.exe the installer carries. The self-test
+# have; on Windows the release mdoc.exe the installer carries. The AI
+# connector's shim beside it must answer an MCP initialize. The self-test
 # downloads the OCR runtime and model into throwaway storage and recognizes
 # the English qualification fixture. A Developer ID build must also pass
 # Gatekeeper with stapled tickets; MDOC_REQUIRE_SIGNING=1 refuses
@@ -15,6 +16,16 @@ require_shipped_target "smoke-package"
 v=$(version)
 fixtures=tests/fixtures/ocr-qualification
 args=(--mdoc-self-test "$PWD/$fixtures/english.pdf" "$PWD/$fixtures/english.txt")
+
+# The AI connector's shim ships beside mdoc (ADR 0126) and answers an MCP
+# initialize; a handshake never starts mdoc or reads a Vault.
+shim_answers() {
+  local reply
+  reply=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mdoc-smoke","version":"0"}}}' | "$1")
+  [[ $reply == *'"serverInfo"'* && $reply == *'"name":"mdoc"'* ]] ||
+    die "$1 did not answer an MCP initialize: $reply"
+  echo "$(basename "$1") answers an MCP initialize"
+}
 
 case "$(platform)" in
   macos-arm64)
@@ -46,11 +57,25 @@ case "$(platform)" in
     for font in $fonts Carlito-OFL.txt Caladea-OFL.txt Liberation-LICENSE.txt; do
       [ -f "$app/Contents/Resources/fonts/$font" ] || die "mdoc.app has no fonts/$font"
     done
+    # The shim is signed as its own code, hardened, with the app's authority.
+    shim="$app/Contents/MacOS/mdoc-mcp"
+    [ -x "$shim" ] || die "mdoc.app has no Contents/MacOS/mdoc-mcp"
+    shim_signature=$(codesign -dvv "$shim" 2>&1)
+    [[ $shim_signature == *"flags="*runtime* ]] ||
+      die "mdoc-mcp is not signed with the hardened runtime"
+    if [[ $signature == *"Authority=Developer ID Application"* ]]; then
+      [[ $shim_signature == *"Authority=Developer ID Application"* ]] ||
+        die "mdoc-mcp is not signed with the Developer ID"
+    fi
+    shim_answers "$shim"
     "$app/Contents/MacOS/mdoc" "${args[@]}"
     ;;
   windows-x64)
     exe=target/release/mdoc.exe
     [ -f "$exe" ] || die "$exe not found; run \`just package\` first"
+    shim=target/release/mdoc-mcp.exe
+    [ -f "$shim" ] || die "$shim not found; run \`just package\` first"
+    shim_answers "$shim"
     "$exe" "${args[@]}"
     ;;
 esac

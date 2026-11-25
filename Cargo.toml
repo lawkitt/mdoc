@@ -64,7 +64,11 @@ sha2 = "0.11"
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# Settings › AI connector keeps the order of Claude Desktop's config when it
+# adds or removes its entry (src/ai_connector/setup.rs).
+serde_json = { version = "1", features = ["preserve_order"] }
+# ...and edits ChatGPT's (Codex's) config.toml keeping its comments and layout.
+toml_edit = "0.25"
 # Update check (src/updater.rs, ADR 0038): release tags compared by SemVer.
 semver = "1"
 # canonicalize without Windows verbatim (`\\?\`) prefixes in user-visible paths.
@@ -219,7 +223,11 @@ authors = ["lawkitt", "packetThrower"]
 publisher = "lawkitt"
 description = "Prepare legal documents for AI on your own computer."
 long-description = "Convert PDF, scans and Word documents to Markdown and pseudonymize client details before you paste them into an AI tool."
-before-packaging-command = "cargo build --release"
+before-packaging-command = "cargo build --release -p mdoc -p mdoc-mcp"
+# The AI connector's shim ships beside mdoc (ADR 0126): mdoc-mcp.exe in the
+# install folder, Contents/MacOS/mdoc-mcp in the .app. Settings › AI connector
+# points Claude Desktop at it there, and the shim starts the mdoc beside it.
+binaries = [{ path = "mdoc", main = true }, { path = "mdoc-mcp" }]
 icons = ["resources/icons/icon.icns", "resources/icons/icon.png", "resources/icons/icon.ico"]
 # The DOCX preview's fallback fonts and their licences (crates/mdoc-import/src/
 # docx_preview/fonts.rs): Contents/Resources/fonts on macOS, fonts\ beside
