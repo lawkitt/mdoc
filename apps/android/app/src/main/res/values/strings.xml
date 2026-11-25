@@ -163,6 +163,9 @@
     <!-- Review -->
     <string name="replace">Replace</string>
     <string name="replace_ellipsis">Replace…</string>
+    <!-- A selection copied by hand (#1209): the grill's words -->
+    <string name="selection_replace_and_copy">Replace %1$d and copy</string>
+    <string name="selection_copy_with_names">Copy with names</string>
     <string name="keep">Keep</string>
     <string name="keep_all">Keep all</string>
     <string name="next_proposal">Next proposal</string>

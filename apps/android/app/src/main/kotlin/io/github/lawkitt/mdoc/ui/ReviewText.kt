@@ -28,6 +28,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.TextView
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,8 +40,12 @@ import io.github.lawkitt.mdoc.core.CandidateId
 import io.github.lawkitt.mdoc.core.MentionState
 import io.github.lawkitt.mdoc.core.RestoreResult
 import io.github.lawkitt.mdoc.core.RestoredSegment
+import io.github.lawkitt.mdoc.core.SelectionAction
 import io.github.lawkitt.mdoc.core.SourceRange
 import io.github.lawkitt.mdoc.core.TextOffsets
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import uniffi.mdoc_ffi.MarkdownLineKind
 import uniffi.mdoc_ffi.MarkdownStyling
 
@@ -49,8 +54,10 @@ import uniffi.mdoc_ffi.MarkdownStyling
  * core's spans with markers dimmed: the twin of the
  * iOS `UITextView`. Every range is the core's UTF-8 source range, mapped
  * once per text; the Markdown is never re-rendered. Candidates are tappable
- * and spoken with their state; a selection offers only Replace…, never Copy,
- * Cut or Share, so originals cannot leave by the clipboard. Nothing is
+ * and spoken with their state. A selection is the user's own to copy
+ * (#1209): its menu says what it holds, as the core finds it (Copy;
+ * Replace N and copy, then Copy with names; or Copy with names alone),
+ * beside Replace…; never Cut, Share, Assist or Translate. Nothing is
  * hyphenated.
  */
 @Composable
@@ -64,14 +71,26 @@ fun ReviewText(
     modifier: Modifier = Modifier,
     /** Where a newly selected candidate's line starts, in pixels from the view's top. */
     onSelectedTop: ((Int) -> Unit)? = null,
+    /** A selection's copy menu, from what the core finds in it. */
+    selectionMenu: suspend (SourceRange) -> List<SelectionAction> = { SelectionAction.menu(null) },
+    /** A hand copy of a selection: the menu's, a keyboard's Ctrl+C or TalkBack's Copy. */
+    onCopySelection: (SourceRange, SelectionAction) -> Unit = { _, _ -> },
 ) {
     val colours = ReviewColours.current()
     val selectedTop = rememberUpdatedState(onSelectedTop)
     val tap = rememberUpdatedState(onCandidate)
     val replace = rememberUpdatedState(onReplaceSelection)
+    val menu = rememberUpdatedState(selectionMenu)
+    val copy = rememberUpdatedState(onCopySelection)
+    val scope = rememberCoroutineScope()
     AndroidView(
         modifier = modifier,
-        factory = { context -> reviewTextView(context, { tap.value(it) }, { range, text -> replace.value?.invoke(range, text) }) },
+        factory = { context ->
+            reviewTextView(
+                context, scope, { tap.value(it) }, { range, text -> replace.value?.invoke(range, text) },
+                { menu.value(it) }, { range, action -> copy.value(range, action) },
+            )
+        },
         update = { view ->
             // Set only when something drawn changed, so a selection survives recomposition.
             val key = listOf(markdown, styling, candidates, selected, colours).hashCode()
@@ -127,9 +146,12 @@ data class ReviewColours(val text: Int, val marker: Int, val secondary: Int, val
 @SuppressLint("ClickableViewAccessibility")
 private fun reviewTextView(
     context: Context,
+    scope: CoroutineScope,
     onCandidate: (CandidateId) -> Unit,
     onReplace: (SourceRange, String) -> Unit,
-): TextView = NoCopyTextView(context).apply {
+    menuFor: suspend (SourceRange) -> List<SelectionAction>,
+    onCopy: (SourceRange, SelectionAction) -> Unit,
+): TextView = SelectionTextView(context).apply {
     setTextIsSelectable(true)
     textSize = 17f
     setLineSpacing(4f, 1f)
@@ -137,51 +159,91 @@ private fun reviewTextView(
     hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
     breakStrategy = Layout.BREAK_STRATEGY_SIMPLE
     movementMethod = CandidateMovement(onCandidate)
-    customSelectionActionModeCallback = ReplaceOnlyActions(this, onReplace)
-    // Long-press opens the selection; nothing to copy is offered (see ReplaceOnlyActions).
+    customSelectionActionModeCallback = SelectionActions(this, scope, menuFor, onCopy, onReplace)
+    // As written, marked unless the core finds the text clean.
+    onCopyAsWritten = { range -> onCopy(range, SelectionAction.CopyWithNames) }
     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
 }
 
+/** The selection as the core's source range; null when nothing is selected. */
+internal fun TextView.selectedRange(): SourceRange? {
+    val offsets = getTag(R.id.review_offsets) as? TextOffsets ?: return null
+    val start = minOf(selectionStart, selectionEnd)
+    val end = maxOf(selectionStart, selectionEnd)
+    return if (start >= 0 && end > start) offsets.sourceRange(start, end) else null
+}
+
 /**
- * The review text's view: Copy, Cut, Paste and Share are refused however
- * they are asked for (a keyboard's Ctrl+C, the menu, TalkBack's actions),
- * so an original cannot reach the clipboard or another app from here.
+ * The review text's view. A copy of the selection is the user's own
+ * (#1209): a keyboard's Ctrl+C and TalkBack's Copy hand it to
+ * [onCopyAsWritten], which copies it as written and marks it unless the
+ * core finds it clean, never as an unmarked system copy. Cut, Paste, Share
+ * and Assist are refused however they are asked for: they would change
+ * the text or send it on without saying so.
  */
-class NoCopyTextView(context: Context) : TextView(context) {
-    override fun onTextContextMenuItem(id: Int): Boolean =
-        if (id in BLOCKED) true else super.onTextContextMenuItem(id)
+class SelectionTextView(context: Context) : TextView(context) {
+    /** A copy of the selection as written. */
+    var onCopyAsWritten: ((SourceRange) -> Unit)? = null
+
+    override fun onTextContextMenuItem(id: Int): Boolean = when (id) {
+        android.R.id.copy -> {
+            copyAsWritten()
+            true
+        }
+        in BLOCKED -> true
+        else -> super.onTextContextMenuItem(id)
+    }
+
+    /** Copies the selection, if any; whether there was one. */
+    private fun copyAsWritten(): Boolean {
+        val range = selectedRange() ?: return false
+        onCopyAsWritten?.invoke(range)
+        return true
+    }
 
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
         super.onInitializeAccessibilityNodeInfo(info)
-        info.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_COPY)
         info.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CUT)
         info.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_PASTE)
     }
 
     override fun performAccessibilityAction(action: Int, arguments: android.os.Bundle?): Boolean = when (action) {
-        AccessibilityNodeInfo.ACTION_COPY, AccessibilityNodeInfo.ACTION_CUT, AccessibilityNodeInfo.ACTION_PASTE -> false
+        AccessibilityNodeInfo.ACTION_COPY -> copyAsWritten()
+        AccessibilityNodeInfo.ACTION_CUT, AccessibilityNodeInfo.ACTION_PASTE -> false
         else -> super.performAccessibilityAction(action, arguments)
     }
 
     private companion object {
         val BLOCKED = setOf(
-            android.R.id.copy, android.R.id.cut, android.R.id.paste, android.R.id.pasteAsPlainText,
+            android.R.id.cut, android.R.id.paste, android.R.id.pasteAsPlainText,
             android.R.id.shareText, android.R.id.textAssist,
         )
     }
 }
 
 /**
- * The selection menu: Replace… and Select all only. Copy, Cut, Share,
- * Translate and the like would carry originals out of mdoc.
+ * The selection menu: its copy items, as the core finds the selection
+ * (asked off the main thread, and again whenever the selection moves),
+ * then Replace… and Select all. The system's own Copy, Cut, Share, Assist,
+ * Translate and the like are removed: they would copy unmarked or send
+ * the text on.
  */
-private class ReplaceOnlyActions(
+internal class SelectionActions(
     private val view: TextView,
+    private val scope: CoroutineScope,
+    private val menuFor: suspend (SourceRange) -> List<SelectionAction>,
+    private val onCopy: (SourceRange, SelectionAction) -> Unit,
     private val onReplace: (SourceRange, String) -> Unit,
 ) : ActionMode.Callback {
+    /** The selection the copy items were found for, and them. */
+    private var found: Pair<SourceRange, List<SelectionAction>>? = null
+
+    /** The check running, and the selection it is for. */
+    private var checking: Pair<SourceRange, Job>? = null
+
     override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
         if (view.getTag(R.id.review_can_replace) == true) {
-            menu.add(Menu.NONE, R.id.review_replace, 0, view.context.getString(R.string.replace_ellipsis))
+            menu.add(Menu.NONE, R.id.review_replace, REPLACE_ORDER, view.context.getString(R.string.replace_ellipsis))
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
         }
         return true
@@ -190,20 +252,68 @@ private class ReplaceOnlyActions(
     override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
         val keep = setOf(R.id.review_replace, android.R.id.selectAll)
         (menu.size() - 1 downTo 0).map(menu::getItem).filter { it.itemId !in keep }.forEach { menu.removeItem(it.itemId) }
+        val range = view.selectedRange() ?: return true
+        val actions = found?.takeIf { it.first == range }?.second
+        if (actions == null) {
+            if (checking?.first != range) ask(mode, range)
+            return true
+        }
+        actions.forEachIndexed { order, action ->
+            menu.add(Menu.NONE, action.itemId, order, action.title(view.context)).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+        }
         return true
     }
 
+    /** Asks the core what `range` holds; its items show once it answers, while `range` is still selected. */
+    private fun ask(mode: ActionMode, range: SourceRange) {
+        checking?.second?.cancel()
+        val job = scope.launch {
+            val actions = menuFor(range)
+            found = range to actions
+            checking = null
+            if (view.selectedRange() == range) mode.invalidate()
+        }
+        checking = range to job
+    }
+
     override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
-        if (item.itemId != R.id.review_replace) return false
-        val offsets = view.getTag(R.id.review_offsets) as? TextOffsets ?: return false
-        val start = minOf(view.selectionStart, view.selectionEnd)
-        val end = maxOf(view.selectionStart, view.selectionEnd)
-        if (end > start) onReplace(offsets.sourceRange(start, end), view.text.substring(start, end))
+        val range = view.selectedRange()
+        if (item.itemId == R.id.review_replace) {
+            val offsets = view.getTag(R.id.review_offsets) as? TextOffsets ?: return false
+            if (range != null) onReplace(range, view.text.substring(offsets.utf16(range.start.toLong()), offsets.utf16(range.end.toLong())))
+            mode.finish()
+            return true
+        }
+        val (at, actions) = found ?: return false
+        val action = actions.firstOrNull { it.itemId == item.itemId } ?: return false
+        if (range == at) onCopy(at, action)
         mode.finish()
         return true
     }
 
-    override fun onDestroyActionMode(mode: ActionMode) = Unit
+    override fun onDestroyActionMode(mode: ActionMode) {
+        checking?.second?.cancel()
+        checking = null
+        found = null
+    }
+
+    private companion object {
+        /** After the copy items. */
+        const val REPLACE_ORDER = 10
+
+        val SelectionAction.itemId: Int
+            get() = when (this) {
+                SelectionAction.Copy -> R.id.review_copy
+                is SelectionAction.ReplaceAndCopy -> R.id.review_replace_and_copy
+                SelectionAction.CopyWithNames -> R.id.review_copy_with_names
+            }
+
+        fun SelectionAction.title(context: Context): String = when (this) {
+            SelectionAction.Copy -> context.getString(R.string.copy)
+            is SelectionAction.ReplaceAndCopy -> context.getString(R.string.selection_replace_and_copy, count)
+            SelectionAction.CopyWithNames -> context.getString(R.string.selection_copy_with_names)
+        }
+    }
 }
 
 /** Selection as usual, and a tap on a candidate opens it. */

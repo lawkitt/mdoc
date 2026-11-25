@@ -16,6 +16,8 @@ import io.github.lawkitt.mdoc.core.HandOff
 import io.github.lawkitt.mdoc.core.MentionState
 import io.github.lawkitt.mdoc.core.PromotedFrom
 import io.github.lawkitt.mdoc.core.Scope
+import io.github.lawkitt.mdoc.core.SelectionAction
+import io.github.lawkitt.mdoc.core.SelectionCopy
 import io.github.lawkitt.mdoc.core.SourceRange
 import io.github.lawkitt.mdoc.home.ShownReply
 import io.github.lawkitt.mdoc.jobs.CancelReason
@@ -217,6 +219,27 @@ class DocumentViewModel(
     fun startManualReplace(range: SourceRange, text: String) = mutable.update { it.copy(manual = range to text) }
 
     fun cancelManualReplace() = mutable.update { it.copy(manual = null) }
+
+    // A selection copied by hand (#1209): the user's own copy, never refused.
+
+    /** The selection's copy menu, from what the core finds in it; Copy with names alone when the check fails. */
+    suspend fun selectionMenu(range: SourceRange): List<SelectionAction> {
+        val seen = mutable.value.snapshot.opened
+        val check = withContext(Dispatchers.IO) { runCatching { session.checkSelection(range, seen) }.getOrNull() }
+        return SelectionAction.menu(check)
+    }
+
+    /** What to put on the clipboard for `action` on `range`, and whether it is marked; null, with why shown, on failure. */
+    suspend fun copySelection(range: SourceRange, action: SelectionAction): SelectionCopy? {
+        // Selected in the snapshot shown: refused if a move opened the document again since.
+        val seen = mutable.value.snapshot.opened
+        return withContext(Dispatchers.IO) {
+            runCatching { session.copySelection(range, action, seen) }
+                .onSuccess { copied -> copied.snapshot?.let { next -> mutable.update { it.copy(snapshot = next) } } }
+                .onFailure(::show)
+                .getOrNull()
+        }
+    }
 
     fun replaceSelection(category: Category) {
         val (range, _) = mutable.value.manual ?: return

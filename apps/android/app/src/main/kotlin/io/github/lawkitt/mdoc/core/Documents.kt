@@ -840,6 +840,56 @@ class Documents(
             change(null) { ffi.addCandidates(candidates) }
 
         /**
+         * What a selection copied by hand holds (#1209): its menu, and
+         * whether its copy is marked. The core decides, with the names its
+         * Project knows read now; nothing is written. `seen`: the
+         * [DocumentSnapshot.opened] it was selected in.
+         */
+        fun checkSelection(range: SourceRange, seen: Int? = null): uniffi.mdoc_ffi.SelectionCheck = holdingSave {
+            reopenHeldIfStale()
+            checkHeld(range, seen)
+        }
+
+        /** [checkSelection], the save lock held. */
+        private fun checkHeld(range: SourceRange, seen: Int?): uniffi.mdoc_ffi.SelectionCheck {
+            if (seen != null && seen != synchronized(this) { opened }) throw AppError.Failed(MOVED_MEANWHILE)
+            // Below the floor names decided by hand count as scanned, as they
+            // do for Ready, in a document opened from the Vault before its
+            // next save too.
+            ffi.setNoNameFinder(findsNoNames())
+            return core { ffi.checkSelection(vault, range.ffi) }
+        }
+
+        /**
+         * A hand copy of `range` (#1209): never refused. Copy and Copy with
+         * names take the text as written; Replace N and copy first replaces
+         * the proposals in it as one undo step, saved as every decision is,
+         * and takes the range the core returns, widened so an alias is
+         * whole. Either way the text copied is checked once more, and it is
+         * marked unless that check finds it clean (a failed check marks it).
+         */
+        fun copySelection(range: SourceRange, action: SelectionAction, seen: Int? = null): SelectionCopy = holdingSave {
+            reopenHeldIfStale()
+            val copied: SourceRange
+            val text: String
+            var after: DocumentSnapshot? = null
+            if (action is SelectionAction.ReplaceAndCopy) {
+                var replaced: uniffi.mdoc_ffi.SelectionReplaced? = null
+                after = change(seen) { ffi.replaceSelection(range.ffi).also { replaced = it }.snapshot }
+                val result = replaced ?: throw AppError.NotFound()
+                copied = SourceRange(result.range.start.toInt(), result.range.end.toInt())
+                text = result.snapshot.text
+            } else {
+                if (seen != null && seen != synchronized(this) { opened }) throw AppError.Failed(MOVED_MEANWHILE)
+                copied = range
+                text = synchronized(this) { review?.text } ?: throw AppError.NotFound()
+            }
+            val check = runCatching { checkHeld(copied, null) }.getOrNull()
+            val offsets = TextOffsets(text)
+            SelectionCopy(text.substring(offsets.utf16(copied.start.toLong()), offsets.utf16(copied.end.toLong())), SelectionAction.marked(check), after)
+        }
+
+        /**
          * Replace…: a manual identity for the selected text, replaced in
          * every exact repeat; `seen`, the [DocumentSnapshot.opened] it was
          * selected in.
