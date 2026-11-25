@@ -129,12 +129,31 @@ impl DocumentView {
         }
     }
 
+    /// The menu's "Replace N and Copy" (`label`) on `range` of the text
+    /// `from` shows (`editor`): replaced and copied only while the check
+    /// still offers that label, so a menu left open while proposals
+    /// changed replaces nothing it did not name.
+    pub(crate) fn copy_action(
+        &mut self,
+        from: CopyFrom,
+        editor: &gpui::Entity<mdoc_editor::EditorState>,
+        range: Range<usize>,
+        label: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let text = editor.read(cx).text().to_owned();
+        let offered = self.hand_copy_check(from, &text, range.clone(), cx).action;
+        if offered.as_deref() == Some(label) {
+            self.replace_and_copy(range, cx);
+        }
+    }
+
     /// "Replace N and Copy" on `range` of the editor's text: its proposals
     /// replaced as Replace all replaces them (`Review::selection_plans`),
     /// with the aliases there whose identity was renamed since, as one
     /// undo step, then that selection, widened over a proposal across its
     /// edge, copied and marked unless now clean. Silent, as ⌘C is.
-    pub(crate) fn replace_and_copy(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
+    fn replace_and_copy(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
         if !self.can_replace() {
             return;
         }

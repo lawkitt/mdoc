@@ -108,6 +108,10 @@ fn choose_menu_item(cx: &mut VisualTestContext) {
     cx.run_until_parked();
 }
 
+fn view_of(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, tab: u64) -> Entity<DocumentView> {
+    cx.update(|_, cx| tabs.read(cx).tabs.get(tab).unwrap().view().unwrap().clone())
+}
+
 fn main_editor(view: &Entity<DocumentView>, cx: &mut VisualTestContext) -> Entity<EditorState> {
     cx.update(|_, cx| view.read(cx).editor.clone())
 }
@@ -305,4 +309,117 @@ fn side_by_side_marks_each_column_and_replaces_from_the_pseudonymized(cx: &mut T
     let (original, current) = columns(&view, cx);
     assert!(copy(&original, "Boris Ivanov", cx).1);
     assert!(!copy(&current, "PERSON_2 signed", cx).1);
+}
+
+/// Done when: a menu left open while the selection or the proposals change
+/// replaces nothing: the item acts only on what it named (Codex review).
+#[gpui::test]
+fn a_stale_replace_and_copy_does_nothing(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (_tabs, cx, view) = replaced(cx, dir.path());
+    let editor = main_editor(&view, cx);
+    propose_boris(&view, cx);
+    let unchanged = |cx: &mut VisualTestContext| {
+        choose_menu_item(cx);
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("before")
+        );
+        assert_eq!(cx.update(|_, cx| view.read(cx).pii.review().remaining()), 1);
+    };
+    // The selection grew to the whole text after the menu opened.
+    assert!(menu_item(&editor, "Boris Ivanov", cx).is_some());
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("before".into()));
+    let all = editor.read_with(cx, |e, _| 0..e.text().len());
+    editor.update(cx, |e, cx| e.set_selection(all, cx));
+    draw(cx);
+    unchanged(cx);
+    // The proposals changed under the open menu: it names one, two wait.
+    assert_eq!(
+        menu_item(&editor, "Boris Ivanov signed", cx).as_deref(),
+        Some("Replace 1 and Copy")
+    );
+    view.update(cx, |view, cx| {
+        let text = view.editor.read(cx).text().to_owned();
+        let start = text.find("signed").unwrap();
+        (view.pii.review_mut())
+            .add_manual(&text, start..start + "signed".len(), Person)
+            .unwrap();
+        view.review_changed(cx);
+    });
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("before".into()));
+    choose_menu_item(cx);
+    assert_eq!(
+        cx.read_from_clipboard().unwrap().text().as_deref(),
+        Some("before")
+    );
+}
+/// Done when: a wording one member adds to a Project identity reaches the
+/// other open members at once, so a hand copy of it there is marked (and
+/// the shelf counts it as written out). Codex review, at the hub's request.
+#[gpui::test]
+fn a_wording_another_member_adds_marks_the_copy(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova met Bob. Annushka agreed.",
+        &[("Anna Petrova", Person)],
+    );
+    let project = new_project(&tabs, cx, first);
+    let second = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Anna Petrova signed. Annushka paid.",
+        &[("Anna Petrova", Person)],
+    );
+    move_tab(&tabs, cx, second, Some(&project));
+    let other = view_of(&tabs, cx, second);
+    let other_editor = main_editor(&other, cx);
+    assert!(
+        !copy(&other_editor, "Annushka paid", cx).1,
+        "not a name yet"
+    );
+
+    // The first member marks "Annushka" as PERSON_1 and replaces it.
+    let view = view_of(&tabs, cx, first);
+    view.update_in(cx, |view, window, cx| {
+        let text = view.editor.read(cx).text().to_owned();
+        let start = text.find("Annushka").unwrap();
+        let review = view.pii.review_mut();
+        review
+            .add_manual(&text, start..start + "Annushka".len(), Person)
+            .unwrap();
+        let variant = (review.candidates().iter())
+            .find(|c| c.range.start == start)
+            .unwrap()
+            .variant;
+        let person = review.identity_by_alias("PERSON_1").unwrap();
+        review.assign_variant(variant, person).unwrap();
+        view.review_changed(cx);
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+    });
+    cx.run_until_parked();
+    tabs.update(cx, |tabs, cx| tabs.project_changed(first, cx));
+    cx.run_until_parked();
+    let originals = cx.update(|_, cx| {
+        let project = tabs.read(cx).projects.project(&project).cloned().unwrap();
+        let identity = (project.mapping.exported().into_iter())
+            .find(|i| i.alias == "PERSON_1")
+            .unwrap();
+        identity.originals
+    });
+    assert!(
+        originals.iter().any(|o| &**o == "Annushka"),
+        "{originals:?}"
+    );
+    let (text, marked) = copy(&other_editor, "Annushka paid", cx);
+    assert_eq!(text, "Annushka paid");
+    assert!(marked, "a name its Project knows now");
 }

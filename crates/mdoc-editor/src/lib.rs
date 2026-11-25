@@ -306,7 +306,16 @@ struct DiagMenu {
     /// Whether the "Turn into" flyout is open (hover-opened; dies with the menu).
     turn_into: bool,
     /// The host's copy item for the selection, asked when the menu opened.
-    copy_action: Option<SharedString>,
+    copy_action: Option<MenuCopyAction>,
+}
+
+/// The host's copy item in an open menu, with what it was offered for.
+#[derive(Clone)]
+struct MenuCopyAction {
+    label: SharedString,
+    /// The copy range and text revision when the menu opened.
+    range: Range<usize>,
+    revision: u64,
 }
 
 /// If `offset` sits on a collapsed marker line (a table style marker or a
@@ -503,9 +512,14 @@ pub enum EditorEvent {
     SelectionChanged,
     /// The host's [`SelectionAction`] was chosen from its pill or menu item.
     SelectionAction,
-    /// The host's [`CopyCheck::action`] was chosen from the right-click
-    /// menu, for the selection it opened on (still the selection).
-    CopyAction,
+    /// The host's [`CopyCheck::action`] `label` was chosen from the
+    /// right-click menu, for the copy `range` it was offered on. Sent only
+    /// while that is still the selection and the text has not changed; the
+    /// host checks that the label still holds.
+    CopyAction {
+        range: Range<usize>,
+        label: SharedString,
+    },
     /// The pill's [`SelectionChoice`] part was pressed: the host opens (or
     /// closes) its chooser at [`EditorState::selection_choice_bounds`].
     SelectionActionChoice,
@@ -982,7 +996,7 @@ impl EditorState {
 
     /// The label of the host's copy item in the open right-click menu.
     pub fn menu_copy_action(&self) -> Option<&SharedString> {
-        self.menu.as_ref()?.copy_action.as_ref()
+        Some(&self.menu.as_ref()?.copy_action.as_ref()?.label)
     }
 
     /// Make this a plain-text field whose text is exactly what was typed or
@@ -2606,10 +2620,14 @@ impl EditorState {
     }
 
     /// The host's copy item for the selection a menu opens on.
-    fn ask_copy_action(&self, cx: &App) -> Option<SharedString> {
+    fn ask_copy_action(&self, cx: &App) -> Option<MenuCopyAction> {
         let range = self.copy_selection_range();
         let check = self.copy_check.as_ref().filter(|_| !range.is_empty())?;
-        check(&self.content, range, cx).action
+        Some(MenuCopyAction {
+            label: check(&self.content, range.clone(), cx).action?,
+            range,
+            revision: self.revision(),
+        })
     }
 
     /// The diagnostic whose range contains `offset`, if any.
@@ -4039,15 +4057,24 @@ impl Render for EditorState {
                             ),
                         )
                         // The host's copy item, e.g. "Replace 2 and Copy".
-                        .children(copy_action.map(|label| {
-                            clip_item("menu-copy-action", label)
+                        .children(copy_action.map(|action| {
+                            clip_item("menu-copy-action", action.label.clone())
                                 .debug_selector(|| "menu-copy-action".into())
                                 .on_mouse_down(
                                     MouseButton::Left,
-                                    cx.listener(|editor, _: &MouseDownEvent, _, cx| {
+                                    cx.listener(move |editor, _: &MouseDownEvent, _, cx| {
                                         cx.stop_propagation();
                                         editor.menu = None;
-                                        cx.emit(EditorEvent::CopyAction);
+                                        // Only for the text and selection it
+                                        // was offered on.
+                                        if editor.revision() == action.revision
+                                            && editor.copy_selection_range() == action.range
+                                        {
+                                            cx.emit(EditorEvent::CopyAction {
+                                                range: action.range.clone(),
+                                                label: action.label.clone(),
+                                            });
+                                        }
                                         cx.notify();
                                     }),
                                 )

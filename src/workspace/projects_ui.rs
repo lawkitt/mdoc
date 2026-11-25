@@ -441,6 +441,17 @@ impl Workspace {
         if let Some(lists) = lists {
             self.project_lists_changed(&link.id, &lists, cx);
         }
+        // Every open member knows the Project's names now, a new wording of
+        // an identity included: a hand copy of it is marked and the shelf
+        // counts it as written out (#1209).
+        for tab in &self.tabs {
+            if let Some(other) = tab.view()
+                && tab.id() != id
+                && other.read(cx).project.is(&link.id)
+            {
+                other.update(cx, |other, _| other.project.set_names(exported.clone()));
+            }
+        }
         if renames.is_empty() && !added {
             return Ok(());
         }

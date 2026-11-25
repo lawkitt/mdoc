@@ -372,9 +372,10 @@ impl DocumentView {
                     this.add_pii_candidate(&PiiAddCandidate, window, cx)
                 }
                 EditorEvent::SelectionActionChoice => this.toggle_selection_menu(window, cx),
-                EditorEvent::CopyAction => {
-                    let range = this.editor.read(cx).copy_selection_range();
-                    this.replace_and_copy(range, cx)
+                EditorEvent::CopyAction { range, label } => {
+                    let editor = this.editor.clone();
+                    let from = crate::pii::ui::CopyFrom::Editor;
+                    this.copy_action(from, &editor, range.clone(), label, cx)
                 }
                 // A hovered replacement shows its tooltip.
                 EditorEvent::HoverAnnotation(_) => cx.notify(),

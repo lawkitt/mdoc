@@ -242,13 +242,12 @@ impl DocumentView {
             });
             // A name clicked in either column selects its Replacements row.
             let subscription =
-                cx.subscribe_in(&editor, window, |this, editor, event, window, cx| {
+                cx.subscribe_in(&editor, window, move |this, editor, event, window, cx| {
                     let id = match event {
                         // "Replace N and Copy", offered in the Pseudonymized
                         // column only: its text is the editor's.
-                        mdoc_editor::EditorEvent::CopyAction => {
-                            let range = editor.read(cx).copy_selection_range();
-                            this.replace_and_copy(range, cx);
+                        mdoc_editor::EditorEvent::CopyAction { range, label } => {
+                            this.copy_action(from, editor, range.clone(), label, cx);
                             return;
                         }
                         mdoc_editor::EditorEvent::ActivateAnnotation(id) => *id,
