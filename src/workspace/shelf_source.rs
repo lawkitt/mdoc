@@ -91,6 +91,9 @@ impl Workspace {
         let mut tab = open_tab(id, view, &title, &names, cx)?;
         if tab.review_readiness().is_ready() {
             tab.stored = self.outbound(id, view, cx);
+            if tab.stored.as_ref().is_some_and(Result::is_ok) {
+                tab.share_name = self.share_name(view);
+            }
         }
         ShelfDocument::of_tab(tab)
     }
@@ -111,6 +114,15 @@ impl Workspace {
             return None;
         }
         Some(checked(vault.text_for_ai(document.as_str())))
+    }
+
+    /// The name tab `view`'s Vault document leaves under, nothing of its
+    /// title; `None` outside the Vault.
+    fn share_name(&self, view: &DocumentView) -> Option<String> {
+        let Some(DocumentId::Vault(document)) = view.session.document.id() else {
+            return None;
+        };
+        self.vault.vault()?.share_name(document.as_str()).ok()
     }
 
     /// A stored document's row, with the names it lives with as stored;
@@ -136,6 +148,11 @@ impl Workspace {
         // with one of them as written.
         let unwritten = self.moving.contains(&id)
             || (document.project.as_deref()).is_some_and(|p| self.project_unwritten(p, cx));
+        let outbound = (!unwritten).then(|| checked(vault.text_for_ai(&summary.id)));
+        let share_name = (outbound.as_ref())
+            .is_some_and(Result::is_ok)
+            .then(|| vault.share_name(&summary.id).ok())
+            .flatten();
         ShelfDocument::of_stored(StoredDocument {
             id,
             title: &document.title,
@@ -143,7 +160,8 @@ impl Workspace {
             names,
             project,
             edited: SystemTime::UNIX_EPOCH + Duration::from_secs(document.updated),
-            outbound: (!unwritten).then(|| checked(vault.text_for_ai(&summary.id))),
+            outbound,
+            share_name,
         })
     }
 
@@ -300,6 +318,7 @@ fn open_tab<'a>(
         project: view.project.link().cloned(),
         edited: view.lifecycle.edited_at().unwrap_or(SystemTime::UNIX_EPOCH),
         stored: None,
+        share_name: None,
     })
 }
 

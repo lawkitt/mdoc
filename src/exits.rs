@@ -4,8 +4,9 @@
 //!
 //! Each gate hands out only what the Vault's outbound check
 //! (`Vault::text_for_ai`) passes, now, against the names its Project
-//! holds. The suite takes one gate's check out at a time ([`take_out`]) and
-//! proves that it then fails at that gate's exits and nowhere else.
+//! holds; the drag's file leaves under a neutral name. The suite takes one
+//! gate's check out at a time ([`take_out`]) and proves that it then fails
+//! at that gate's exits and nowhere else.
 
 use std::cell::Cell;
 
@@ -22,9 +23,15 @@ pub(crate) enum Gate {
     ShelfDrag,
     // Milestone 2: the connector joins here, with a gate at its one
     // `Vault::text_for_ai` call and its exit in the suite's table.
+    /// The neutral name the drag's `.md` file leaves under in place of the
+    /// title (`ShelfDocument::file_name`, #1208). It checks a name, not
+    /// text, so it is not in [`Gate::ALL`]: taken out, the drag's exits
+    /// fail only for a Ready document, whose file is named after its title.
+    ShelfFileName,
 }
 
 impl Gate {
+    /// The gates that check an exit's text.
     pub(crate) const ALL: [Gate; 3] = [Gate::EditorCopyForAi, Gate::ShelfCopy, Gate::ShelfDrag];
 }
 

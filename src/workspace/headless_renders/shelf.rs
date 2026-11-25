@@ -132,6 +132,7 @@ fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
                 project: Some(link.clone()),
                 edited: at(14),
                 stored: None,
+                share_name: None,
             }
             .checked(),
         ),
@@ -147,6 +148,7 @@ fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
                 project: None,
                 edited: at(13),
                 stored: None,
+                share_name: None,
             }
             .checked(),
         ),
@@ -162,6 +164,7 @@ fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
                 project: Some(link.clone()),
                 edited: at(12),
                 stored: None,
+                share_name: None,
             }
             .checked(),
         ),
@@ -179,6 +182,7 @@ fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
             project: Some(link.clone()),
             edited: at(9),
             outbound: Some(Err(mdoc_vault::Readiness::ChangedSinceReview)),
+            share_name: None,
         }));
     }
     let source = ClipboardSource::Project {
@@ -243,6 +247,7 @@ fn demos() -> Result<Vec<ShelfDocument>> {
                 project: None,
                 edited: at(14 - index as u64),
                 stored: None,
+                share_name: None,
             }
             .checked(),
         ));
