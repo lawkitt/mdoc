@@ -14,6 +14,7 @@ mod resume;
 mod review;
 mod saving;
 mod scanning;
+mod selection;
 mod snapshot;
 mod vault;
 
@@ -34,6 +35,7 @@ use review::ReviewText;
 pub use review::{Scope, StepKind};
 pub use scanning::Thermal;
 pub(crate) use scanning::{PhoneScan, check_free_memory};
+pub use selection::{SelectionCheck, SelectionReplaced};
 pub use snapshot::{
     Category, CategoryChoice, DocumentPhase, HistoryStep, IdentityRow, LinkHint, Mention,
     MentionState, ReviewSnapshot,
