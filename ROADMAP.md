@@ -438,12 +438,6 @@ or ChatGPT apps themselves are the maintainer's.
    launcher for a binary inside an installed app? The maintainer runs it,
    since the install can restart Claude Desktop. *Done when:* the answer is a
    comment on the issue.
-12. **[Check] A real model end to end.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-    A script runs the Claude command-line app with a throwaway config and
-    the dev profile against the built shim: the model lists, reads, shows its
-    answer with aliases and delivers it. Not in CI. *Blocked by:* items 7, 9
-    and Vault & Projects item 30. *Done when:* the run passes on macOS and its
-    transcript is on the issue, with the maintainer's rows listed.
 14. **[macOS] The companion window.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
     (ADR 0128).* One floating window toggled from the menu bar icon: the AI
     project and Stop sharing, its documents with their state, the latest
