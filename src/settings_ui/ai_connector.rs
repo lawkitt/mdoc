@@ -1,7 +1,8 @@
 //! Settings › AI connector (Milestone 2 item 11): the "AI connector
-//! (preview)" switch, and with it on, adding mdoc to Claude Desktop and to
-//! ChatGPT through their config files, and Test connection. With the
-//! switch off the page shows the switch alone.
+//! (preview)" switch, and with it on, "Open deliveries when they arrive",
+//! adding mdoc to Claude Desktop and to ChatGPT through their config
+//! files, and Test connection. With the switch off the page shows the
+//! switch alone.
 //!
 //! Every button that writes shows a consent card first: the file, and the
 //! exact entry added or removed (`crate::ai_connector::setup`). Nothing is
@@ -234,24 +235,37 @@ impl Panel {
         let shim = (self.ai.places.as_ref())
             .and_then(|places| places.shim.as_ref())
             .map(|path| path.display().to_string());
-        let mut section =
-            div()
-                .flex()
-                .flex_col()
-                .child(switch)
-                .when_some(self.ai.failed.clone(), |v, why| {
-                    v.child(
-                        div()
-                            .id("ai-connector-failed")
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "ai-connector-failed".into())
-                            })
-                            .pb_3()
-                            .text_size(px(12.))
-                            .text_color(style::markdown_style(theme).alert_caution)
-                            .child(why),
-                    )
-                });
+        let mut section = div()
+            .flex()
+            .flex_col()
+            .child(switch)
+            .when_some(self.ai.failed.clone(), |v, why| {
+                v.child(
+                    div()
+                        .id("ai-connector-failed")
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "ai-connector-failed".into())
+                        })
+                        .pb_3()
+                        .text_size(px(12.))
+                        .text_color(style::markdown_style(theme).alert_caution)
+                        .child(why),
+                )
+            })
+            .child(self.setting_row(
+                "Open deliveries when they arrive",
+                "A reply or document an AI app sends opens in front, unless a dialog is open.",
+                self.switch(
+                    "ai-open-deliveries",
+                    "Open deliveries when they arrive",
+                    self.draft.ai_connector.open_deliveries,
+                    true,
+                    |p| p.ai_connector.open_deliveries = !p.ai_connector.open_deliveries,
+                    theme,
+                    cx,
+                ),
+                theme,
+            ));
         for host in Host::ALL {
             section = section.child(self.host_rows(host, shim.is_some(), theme, cx));
         }

@@ -721,19 +721,7 @@ fn stage(path: &Path, folder: &Path, bytes: &[u8]) -> std::io::Result<tempfile::
 /// The link Claude's Test connection opens: a new chat with the first
 /// prompt filled in and not sent (item 1's spike).
 pub(crate) fn claude_test_link() -> String {
-    format!("claude://claude.ai/new?q={}", percent_encoded(FIRST_PROMPT))
-}
-
-/// `text` with every byte but RFC 3986's unreserved ones as `%XX`.
-fn percent_encoded(text: &str) -> String {
-    text.bytes()
-        .map(|byte| match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                (byte as char).to_string()
-            }
-            _ => format!("%{byte:02X}"),
-        })
-        .collect()
+    crate::ai_links::claude(FIRST_PROMPT)
 }
 
 #[cfg(test)]

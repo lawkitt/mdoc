@@ -909,6 +909,52 @@ fn the_setting_opens_deliveries_in_front(cx: &mut TestAppContext) {
     assert!(cx.update(|_, cx| tabs.read(cx).project_ui.page.is_some()));
 }
 
+/// Done when: Settings › AI connector's "Open deliveries when they
+/// arrive" is what opens a delivery in front: off, as stored, it waits on
+/// the badge; switched on, the next opens; switched off again, the next
+/// waits.
+#[gpui::test]
+fn the_settings_switch_opens_deliveries_only_while_on(cx: &mut TestAppContext) {
+    let fixture = fixture();
+    let (tabs, cx, _) = shared_lease(cx, &fixture);
+    // Tall enough that the whole page is in view.
+    cx.simulate_resize(size(px(1100.), px(2400.)));
+    let flip = |cx: &mut VisualTestContext| {
+        tabs.update_in(cx, |tabs, window, cx| {
+            tabs.settings.update(cx, |panel, cx| {
+                panel.show_category(settings_ui::Category::AiConnector, window, cx)
+            })
+        });
+        draw(cx);
+        let bounds = cx
+            .debug_bounds("ai-open-deliveries")
+            .expect("the switch shows with the preview on");
+        cx.simulate_click(bounds.center(), gpui::Modifiers::none());
+        cx.run_until_parked();
+        tabs.update_in(cx, |tabs, window, cx| {
+            tabs.settings
+                .update(cx, |panel, cx| panel.close(window, cx))
+        });
+        cx.deactivate_window();
+        draw(cx);
+        cx.update(|_, cx| tabs.read(cx).ai_setting().open_deliveries)
+    };
+    let (waiting, _) = deliver(&tabs, cx, &fixture, Kind::Reply);
+    assert_eq!(reply_shown(&tabs, cx), None);
+    assert!(!window_active(cx));
+    assert!(cx.debug_bounds("ai-badge").is_some());
+    assert!(flip(cx), "the switch saved on");
+    let (reply, _) = deliver(&tabs, cx, &fixture, Kind::Reply);
+    assert!(window_active(cx));
+    assert_eq!(reply_shown(&tabs, cx).as_deref(), Some(reply.as_str()));
+    assert_ne!(reply, waiting);
+    assert!(!flip(cx), "the switch saved off");
+    let (later, _) = deliver(&tabs, cx, &fixture, Kind::Reply);
+    assert_ne!(later, reply);
+    assert!(!window_active(cx));
+    assert_eq!(reply_shown(&tabs, cx).as_deref(), Some(reply.as_str()));
+}
+
 /// Done when: with the preview off no notification is raised and the
 /// badge is gone; the injected notifier takes no app identity.
 #[gpui::test]
