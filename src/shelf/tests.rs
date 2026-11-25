@@ -35,7 +35,6 @@ fn tab<'a>(id: u64, title: &'a str, text: &'a str, pending: usize) -> OpenTab<'a
         project: None,
         edited: at(id),
         stored: None,
-        share_name: None,
     }
     .checked()
 }
@@ -53,7 +52,6 @@ fn stored<'a>(n: u8, title: &'a str, text: &'a str, outbound: Outbound) -> Store
         project: None,
         edited: at(n.into()),
         outbound: Some(outbound),
-        share_name: None,
     }
 }
 
@@ -80,10 +78,7 @@ fn a_ready_tab_copies_the_editor_text_and_previews_aliases() {
     assert_eq!(row.replaced_count(), 3);
     assert_eq!(row.names_count(), 2);
     assert_eq!(row.words, 9, "Markdown markers are not words");
-    assert_eq!(
-        row.file_name(),
-        format!("{}.md", neutral_name(SystemTime::now()))
-    );
+    assert_dated(&row.file_name());
     assert_eq!(
         row.drag_card(),
         Some((
@@ -190,13 +185,13 @@ fn a_stored_document_is_ready_only_when_the_outbound_check_passes() {
     let text = "PERSON_1 met ORG_1.";
     let sent = mdoc_pii::handoff::for_ai(text, ["PERSON_1", "ORG_1"]);
     let mut ready = stored(5, "Anna Petrova", text, Ok(sent.clone()));
-    ready.share_name = Some("Document 5 \u{2013} 2026-11-25".into());
     ready.project = Some(ProjectLink {
         id: "p".repeat(32),
         name: "Anna Petrova v Northwind Ltd".into(),
         colour: None,
     });
-    let row = ShelfDocument::of_stored(ready).unwrap();
+    let mut row = ShelfDocument::of_stored(ready).unwrap();
+    row.set_share_name(Some("Document 5 \u{2013} 2026-11-25".into()));
     assert_eq!(row.readiness, Readiness::Ready);
     assert_eq!(row.key, ShelfKey::Document(document_id(5)));
     assert_eq!(row.title, "PERSON_1");
@@ -266,6 +261,17 @@ fn the_list_puts_open_tabs_first_and_stops_at_eight() {
     assert_eq!(keys, (3..=10).rev().map(ShelfKey::Tab).collect::<Vec<_>>());
 }
 
+/// `name` is "Document – <a UTC day>.md", whatever day it is now.
+fn assert_dated(name: &str) {
+    let day = (name.strip_prefix("Document \u{2013} "))
+        .and_then(|rest| rest.strip_suffix(".md"))
+        .unwrap_or_else(|| panic!("{name}"));
+    assert!(
+        chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").is_ok(),
+        "{name}"
+    );
+}
+
 /// The words of `title` that `file_name` holds, ignoring case and a
 /// Markdown extension.
 fn title_words_in(file_name: &str, title: &str) -> Vec<String> {
@@ -298,12 +304,11 @@ fn no_file_name_holds_a_word_of_the_title() {
     let vault_name = || Some("Document 3 \u{2013} 2026-11-25".to_string());
     for title in TITLES {
         let unnamed = ShelfDocument::of_tab(tab(1, title, "PERSON_1", 0)).unwrap();
-        let mut in_vault = tab(2, title, "PERSON_1", 0);
-        in_vault.share_name = vault_name();
-        let in_vault = ShelfDocument::of_tab(in_vault).unwrap();
-        let mut document = stored(3, title, "PERSON_1", Ok("PERSON_1".into()));
-        document.share_name = vault_name();
-        let document = ShelfDocument::of_stored(document).unwrap();
+        let mut in_vault = ShelfDocument::of_tab(tab(2, title, "PERSON_1", 0)).unwrap();
+        in_vault.set_share_name(vault_name());
+        let document = stored(3, title, "PERSON_1", Ok("PERSON_1".into()));
+        let mut document = ShelfDocument::of_stored(document).unwrap();
+        document.set_share_name(vault_name());
         for row in [&unnamed, &in_vault, &document] {
             let name = row.file_name();
             assert_eq!(title_words_in(&name, title), Vec::<String>::new(), "{name}");
@@ -314,10 +319,7 @@ fn no_file_name_holds_a_word_of_the_title() {
         }
         assert_eq!(in_vault.file_name(), "Document 3 \u{2013} 2026-11-25.md");
         assert_eq!(document.file_name(), "Document 3 \u{2013} 2026-11-25.md");
-        assert_eq!(
-            unnamed.file_name(),
-            format!("{}.md", neutral_name(SystemTime::now()))
-        );
+        assert_dated(&unnamed.file_name());
     }
 }
 
@@ -360,10 +362,7 @@ fn exports_are_private_fresh_files_cleared_at_quit() {
     assert_ne!(first, second, "every drag writes a fresh export");
     // One name in folders of their own: the drags don't collide.
     assert_eq!(first.file_name(), second.file_name());
-    assert_eq!(
-        first.file_name().unwrap().to_string_lossy(),
-        format!("{}.md", neutral_name(SystemTime::now()))
-    );
+    assert_dated(&first.file_name().unwrap().to_string_lossy());
     assert!(first.starts_with(exports.root()));
     assert_eq!(
         std::fs::read_to_string(&first).unwrap(),

@@ -641,7 +641,6 @@ mod tests {
                     project: None,
                     edited: SystemTime::UNIX_EPOCH,
                     stored: None,
-                    share_name: None,
                 }
                 .checked(),
             )

@@ -137,9 +137,9 @@ pub(crate) struct ShelfDocument {
     pub mentions: usize,
     /// Copy for AI's text; only a ready document has it.
     for_ai: Option<String>,
-    /// The name a drag's file leaves under, nothing of the title: see
-    /// [`Self::file_name`].
-    share_name: String,
+    /// Its document's `Vault::share_name`, asked only as a drag leaves
+    /// ([`Self::set_share_name`]): see [`Self::file_name`].
+    share_name: Option<String>,
 }
 
 /// An open tab as the shelf needs it. The window builds this only for tabs
@@ -165,9 +165,6 @@ pub(crate) struct OpenTab<'a> {
     /// The outbound check of its Vault document, asked only once its review
     /// is ready; `None` while its text or review is not written yet.
     pub stored: Option<Outbound>,
-    /// Its Vault document's `Vault::share_name`, asked once `stored`
-    /// passes; `None` until then. A tab outside the Vault is never ready.
-    pub share_name: Option<String>,
 }
 
 impl OpenTab<'_> {
@@ -223,8 +220,6 @@ pub(crate) struct StoredDocument<'a> {
     /// `None` while a move of it, or a change to its Project's names, is
     /// not written yet.
     pub outbound: Option<Outbound>,
-    /// Its `Vault::share_name`, asked once `outbound` passes.
-    pub share_name: Option<String>,
 }
 
 impl ShelfDocument {
@@ -252,7 +247,6 @@ impl ShelfDocument {
             readiness,
             tab.edited,
             for_ai,
-            tab.share_name,
         ))
     }
 
@@ -279,7 +273,6 @@ impl ShelfDocument {
             readiness,
             document.edited,
             for_ai,
-            document.share_name,
         ))
     }
 
@@ -293,7 +286,6 @@ impl ShelfDocument {
         readiness: Readiness,
         edited: SystemTime,
         for_ai: Option<String>,
-        share_name: Option<String>,
     ) -> Self {
         let preview = readiness
             .is_ready()
@@ -315,7 +307,7 @@ impl ShelfDocument {
             replaced,
             mentions,
             for_ai,
-            share_name: share_name.unwrap_or_else(|| neutral_name(SystemTime::now())),
+            share_name: None,
         }
     }
 
@@ -378,7 +370,16 @@ impl ShelfDocument {
             // As before #1208: the title, masked with the names it knows.
             return format!("{}.md", self.display_title().replace(['/', ':'], "-"));
         }
-        format!("{}.md", self.share_name)
+        match &self.share_name {
+            Some(name) => format!("{name}.md"),
+            None => format!("{}.md", neutral_name(SystemTime::now())),
+        }
+    }
+
+    /// The name its drag's file leaves under: `Vault::share_name`, asked
+    /// as the drag leaves, not for every row listed.
+    pub(crate) fn set_share_name(&mut self, name: Option<String>) {
+        self.share_name = name;
     }
 }
 

@@ -161,6 +161,11 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
     let mut handed = Vec::new();
     for row in &rows {
         let copied = row.text_for_ai().map(str::to_owned);
+        // Named as a drag names it, as it leaves.
+        let mut row = row.clone();
+        let name = cx.update(|_, cx| tabs.read(cx).shelf_share_name(&row.key, cx));
+        row.set_share_name(name);
+        let row = &row;
         let dragged = exports.export(row).unwrap();
         assert_eq!(copied.is_some(), row.readiness.is_ready(), "{:?}", row.key);
         assert_eq!(dragged.is_some(), row.readiness.is_ready(), "{:?}", row.key);
