@@ -307,7 +307,11 @@ extension MarkdownTextView.Coordinator {
     /// A caret moved by the reader: out of a hidden marker run (live
     /// preview), the typing step ends, and the reveal follows it.
     func textViewDidChangeSelection(_ textView: UITextView) {
-        if !textView.isEditable { fixSelection.selectionChanged(textView) }
+        if !textView.isEditable {
+            fixSelection.selectionChanged(textView)
+            if textView.selectedRange.length == 0 { selectionChecks.forget() }
+            if let unsnapped, unsnapped.original(of: textView) == nil { self.unsnapped = nil }
+        }
         guard textView.isEditable, let view = textView as? CandidateTextView else { return }
         let moved = !bridge.isChanging && view.markedTextRange == nil
         // The reader moved the caret (⌘↓ scrolls to it): Done keeps the
@@ -380,7 +384,7 @@ extension CandidateTextView {
         case #selector(UIResponderStandardEditActions.cut(_:)), #selector(UIResponderStandardEditActions.copy(_:)):
             return selectedRange.length > 0
         case #selector(UIResponderStandardEditActions.paste(_:)):
-            return InAppClipboard.shared.hasText
+            return EditClipboard.shared.hasText
         case #selector(UIResponderStandardEditActions.selectAll(_:)), #selector(UIResponderStandardEditActions.select(_:)):
             return textStorage.length > 0
         case #selector(UIResponder.findAndReplace(_:)):
@@ -497,14 +501,19 @@ extension CandidateTextView {
         return (textStorage.string as NSString).substring(with: range)
     }
 
+    /// Copy in either mode, to the system clipboard (#1209): as written,
+    /// marked unless the core finds the selection clean.
     func copySelection() {
         guard let text = selectedSource else { return }
-        InAppClipboard.shared.write(text)
+        guard let onHandCopy else { return SelectionCopy.write(text, marked: true) }
+        onHandCopy()
     }
 
+    /// Cut, to the system clipboard, marked: the text it takes is gone
+    /// before any check could answer for it.
     func cutSelection() {
         guard let range = selectedTextRange, !range.isEmpty, let text = selectedSource else { return }
-        InAppClipboard.shared.write(text)
+        SelectionCopy.write(text, marked: true)
         replace(range, withText: "")
         onEdited?()
     }
@@ -539,7 +548,7 @@ extension CandidateTextView {
     }
 
     func pasteClipboard() {
-        guard let range = selectedTextRange, let text = InAppClipboard.shared.read(), !text.isEmpty else { return }
+        guard let range = selectedTextRange, let text = EditClipboard.shared.read(), !text.isEmpty else { return }
         // In a table cell the core makes the paste the cell's own bytes.
         if onCellPaste?(text) == true { return }
         replace(range, withText: text)

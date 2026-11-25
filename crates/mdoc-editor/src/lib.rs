@@ -305,6 +305,17 @@ struct DiagMenu {
     scroll: ScrollHandle,
     /// Whether the "Turn into" flyout is open (hover-opened; dies with the menu).
     turn_into: bool,
+    /// The host's copy item for the selection, asked when the menu opened.
+    copy_action: Option<MenuCopyAction>,
+}
+
+/// The host's copy item in an open menu, with what it was offered for.
+#[derive(Clone)]
+struct MenuCopyAction {
+    label: SharedString,
+    /// The copy range and text revision when the menu opened.
+    range: Range<usize>,
+    revision: u64,
 }
 
 /// If `offset` sits on a collapsed marker line (a table style marker or a
@@ -458,6 +469,20 @@ pub struct SelectionAction {
     pub choice: Option<SelectionChoice>,
 }
 
+/// What the host says of a copy of a range of the text (see
+/// [`EditorState::on_copy_check`]).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CopyCheck {
+    /// Clipboard metadata the copy carries; `None` for a plain string.
+    pub metadata: Option<String>,
+    /// A host item under Copy in the right-click menu, e.g. "Replace 2 and
+    /// Copy"; choosing it emits [`EditorEvent::CopyAction`].
+    pub action: Option<SharedString>,
+}
+
+/// The host's copy check: the whole text and the range a copy takes.
+type CopyCheckFn = Box<dyn Fn(&str, Range<usize>, &App) -> CopyCheck>;
+
 /// The split part of a [`SelectionAction`] pill.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SelectionChoice {
@@ -487,6 +512,14 @@ pub enum EditorEvent {
     SelectionChanged,
     /// The host's [`SelectionAction`] was chosen from its pill or menu item.
     SelectionAction,
+    /// The host's [`CopyCheck::action`] `label` was chosen from the
+    /// right-click menu, for the copy `range` it was offered on. Sent only
+    /// while that is still the selection and the text has not changed; the
+    /// host checks that the label still holds.
+    CopyAction {
+        range: Range<usize>,
+        label: SharedString,
+    },
     /// The pill's [`SelectionChoice`] part was pressed: the host opens (or
     /// closes) its chooser at [`EditorState::selection_choice_bounds`].
     SelectionActionChoice,
@@ -537,6 +570,9 @@ pub struct EditorState {
     /// Clipboard metadata on every copy and cut (see
     /// [`Self::set_copy_metadata`]).
     copy_metadata: Option<String>,
+    /// The host's check of each copy, over `copy_metadata` (see
+    /// [`Self::on_copy_check`]).
+    copy_check: Option<CopyCheckFn>,
     /// A plain-text field (see [`Self::set_plain_text`]).
     plain: bool,
     focus_handle: FocusHandle,
@@ -822,6 +858,7 @@ impl EditorState {
         Self {
             read_only: false,
             copy_metadata: None,
+            copy_check: None,
             plain: false,
             focus_handle: cx.focus_handle(),
             content: String::new(),
@@ -942,6 +979,24 @@ impl EditorState {
     }
     pub fn copy_metadata(&self) -> Option<&str> {
         self.copy_metadata.as_deref()
+    }
+
+    /// Ask `check` of every copy and cut, with the whole text and the range
+    /// it takes, for its clipboard metadata (in place of
+    /// [`Self::set_copy_metadata`]'s), and when the right-click menu opens
+    /// on a selection, for a host item under Copy. It runs inside this
+    /// editor's update, from its actions and listeners only, so it may read
+    /// other entities but not update this one.
+    pub fn on_copy_check(
+        &mut self,
+        check: impl Fn(&str, Range<usize>, &App) -> CopyCheck + 'static,
+    ) {
+        self.copy_check = Some(Box::new(check));
+    }
+
+    /// The label of the host's copy item in the open right-click menu.
+    pub fn menu_copy_action(&self) -> Option<&SharedString> {
+        Some(&self.menu.as_ref()?.copy_action.as_ref()?.label)
     }
 
     /// Make this a plain-text field whose text is exactly what was typed or
@@ -2014,8 +2069,7 @@ impl EditorState {
         // clipboard; neither it nor the language tag places the caret.
         if let Some((on_copy, fence_row)) = self.code_chip_at(event.position) {
             if on_copy && let Some((_, body)) = self.code_block_at(fence_row) {
-                let text = self.content[body].to_string();
-                self.write_clipboard(text, cx);
+                self.write_clipboard(body, cx);
             }
             return;
         }
@@ -2509,6 +2563,7 @@ impl EditorState {
                     suggesting: false,
                     scroll: ScrollHandle::new(),
                     turn_into: false,
+                    copy_action: self.ask_copy_action(cx),
                 });
             } else {
                 self.move_to(offset, cx);
@@ -2559,8 +2614,20 @@ impl EditorState {
             suggesting,
             scroll: ScrollHandle::new(),
             turn_into: false,
+            copy_action: self.ask_copy_action(cx),
         });
         cx.notify();
+    }
+
+    /// The host's copy item for the selection a menu opens on.
+    fn ask_copy_action(&self, cx: &App) -> Option<MenuCopyAction> {
+        let range = self.copy_selection_range();
+        let check = self.copy_check.as_ref().filter(|_| !range.is_empty())?;
+        Some(MenuCopyAction {
+            label: check(&self.content, range.clone(), cx).action?,
+            range,
+            revision: self.revision(),
+        })
     }
 
     /// The diagnostic whose range contains `offset`, if any.
@@ -3847,6 +3914,7 @@ impl Render for EditorState {
                     suggesting,
                     scroll,
                     turn_into: menu_turn_into,
+                    copy_action,
                 } = menu;
                 let count = suggestions.len();
                 // A flagged word without rows yet says why: still looking, or none.
@@ -3988,6 +4056,29 @@ impl Render for EditorState {
                                 }),
                             ),
                         )
+                        // The host's copy item, e.g. "Replace 2 and Copy".
+                        .children(copy_action.map(|action| {
+                            clip_item("menu-copy-action", action.label.clone())
+                                .debug_selector(|| "menu-copy-action".into())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |editor, _: &MouseDownEvent, _, cx| {
+                                        cx.stop_propagation();
+                                        editor.menu = None;
+                                        // Only for the text and selection it
+                                        // was offered on.
+                                        if editor.revision() == action.revision
+                                            && editor.copy_selection_range() == action.range
+                                        {
+                                            cx.emit(EditorEvent::CopyAction {
+                                                range: action.range.clone(),
+                                                label: action.label.clone(),
+                                            });
+                                        }
+                                        cx.notify();
+                                    }),
+                                )
+                        }))
                         // Plain-only: the raw markdown with no host flavors —
                         // for pasting literal source into rich surfaces
                         // (email, chat) where Copy's HTML flavor would win.

@@ -41,6 +41,10 @@ struct LaunchConfiguration: Sendable, Equatable {
     /// reads as changed since its review, or excluded from AI. Only a
     /// computer makes either today, so the refusals' UI tests stand in.
     var uiReadiness: SavedReadiness?
+    /// `MDOC_MARKED_LIFETIME` (seconds): a marked copy leaves the clipboard
+    /// this soon instead of after ten minutes, so a UI test sees which
+    /// copies are marked.
+    var markedCopyLifetime: TimeInterval?
 
     init() {}
 
@@ -63,6 +67,7 @@ struct LaunchConfiguration: Sendable, Equatable {
         case "excluded": .excludedFromAI
         default: nil
         }
+        markedCopyLifetime = environment["MDOC_MARKED_LIFETIME"].flatMap(TimeInterval.init)
         #endif
     }
 

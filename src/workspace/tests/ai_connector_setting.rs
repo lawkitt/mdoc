@@ -33,10 +33,77 @@ fn listening(endpoint: &Endpoint) -> bool {
 fn start(tabs: &Entity<Workspace>, endpoint: &Endpoint, cx: &mut VisualTestContext) {
     tabs.update(cx, |tabs, _| {
         let vault = tabs.vault.vault().cloned().expect("the test Vault");
-        let on = mdoc_store::settings::AiConnectorConfig { preview: true };
-        tabs.ai_connector = crate::ai_connector::start(vault, &on, endpoint);
+        let on = mdoc_store::settings::AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
+        tabs.ai_connector = crate::ai_connector::start(vault, &on, Some(endpoint)).unwrap();
         assert!(tabs.ai_connector.is_some(), "listening at once");
     });
+}
+
+/// #1220: the switch shown off stops the connector before its save lands;
+/// a save that failed starts it again.
+#[gpui::test]
+fn off_stops_before_its_save_lands(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let dir = tempfile::tempdir().unwrap();
+    let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
+    set_preview(&tabs, true, cx);
+    start(&tabs, &endpoint, cx);
+    assert!(listening(&endpoint));
+    // Still saved on.
+    tabs.update(cx, |tabs, cx| {
+        tabs.settings.update(cx, |_, cx| {
+            cx.emit(settings_ui::Event::AiConnectorShown(false))
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(tabs.read(cx).ai_connector.is_none()));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while listening(&endpoint) {
+        assert!(std::time::Instant::now() < deadline, "still listening");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    tabs.update(cx, |tabs, cx| {
+        tabs.settings.update(cx, |_, cx| {
+            cx.emit(settings_ui::Event::AiConnectorShown(true))
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(tabs.read(cx).ai_connector.is_some()));
+}
+
+/// #1220: a start that fails, here on a name another mdoc holds, is shown
+/// in Settings › AI connector, and goes with the switch off.
+#[gpui::test]
+fn a_failed_start_reaches_settings(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let dir = tempfile::tempdir().unwrap();
+    let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
+    let _other = ipc::listen(&endpoint, std::sync::Arc::new(|_: &[u8]| Vec::new())).unwrap();
+    set_preview(&tabs, true, cx);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.ai_connector = None;
+        let vault = tabs.vault.vault().cloned().expect("the test Vault");
+        let on = mdoc_store::settings::AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
+        let started = crate::ai_connector::start(vault, &on, Some(&endpoint));
+        tabs.ai_started(started, window, cx);
+        assert!(tabs.ai_connector.is_none());
+    });
+    let failed = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| (tabs.read(cx).settings.read(cx).ai_failed()).map(str::to_string))
+    };
+    assert!(
+        failed(cx).is_some_and(|why| why.contains("another copy of mdoc")),
+        "{:?}",
+        failed(cx)
+    );
+    set_preview(&tabs, false, cx);
+    assert_eq!(failed(cx), None);
 }
 
 #[gpui::test]
@@ -66,7 +133,15 @@ fn turning_the_preview_off_stops_the_connector(cx: &mut TestAppContext) {
     assert!(held.ai_project().is_some());
     set_preview(&tabs, false, cx);
     cx.update(|_, cx| assert!(tabs.read(cx).ai_connector.is_none()));
-    assert_eq!(held.ai_project(), None, "a held call finds nothing shared");
+    // Off the window's thread, a moment later (#1220).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while held.ai_project().is_some() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "a held call still finds the Project shared"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
     // Turned on again at once, it listens again.
     start(&tabs, &endpoint, cx);
     assert!(listening(&endpoint));

@@ -15,7 +15,11 @@ use mdoc_vault::{
 use std::sync::Arc;
 
 const KEY: [u8; 32] = [7; 32];
-const ON: AiConnectorConfig = AiConnectorConfig { preview: true };
+const ON: AiConnectorConfig = AiConnectorConfig {
+    preview: true,
+    open_deliveries: false,
+    ask: mdoc_store::settings::AskWith::Claude,
+};
 const CLAUDE: &str = "Claude";
 
 struct Fixture {

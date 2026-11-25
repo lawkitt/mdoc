@@ -32,6 +32,9 @@ pub(crate) struct AiConnectorUi {
     done: Option<(Host, String)>,
     /// Claude's Test connection was clicked: the page says what happens.
     tested: bool,
+    /// Why the connector, switched on, couldn't start (#1220); the window
+    /// sets it with each start, and clears it with the switch off.
+    failed: Option<String>,
     focus: Option<FocusHandle>,
 }
 
@@ -87,6 +90,20 @@ impl Panel {
     ))]
     pub(crate) fn ai_consent(&self) -> Option<&Change> {
         self.ai.consent.as_ref()
+    }
+
+    /// The window's last start of the connector: why it failed, or `None`.
+    pub(crate) fn ai_connector_failed(&mut self, failed: Option<String>, cx: &mut Context<Self>) {
+        if self.ai.failed != failed {
+            self.ai.failed = failed;
+            cx.notify();
+        }
+    }
+
+    /// Why the connector couldn't start, as the page shows it.
+    #[cfg(test)]
+    pub(crate) fn ai_failed(&self) -> Option<&str> {
+        self.ai.failed.as_deref()
     }
 
     fn places(&mut self) -> &Places {
@@ -217,7 +234,24 @@ impl Panel {
         let shim = (self.ai.places.as_ref())
             .and_then(|places| places.shim.as_ref())
             .map(|path| path.display().to_string());
-        let mut section = div().flex().flex_col().child(switch);
+        let mut section =
+            div()
+                .flex()
+                .flex_col()
+                .child(switch)
+                .when_some(self.ai.failed.clone(), |v, why| {
+                    v.child(
+                        div()
+                            .id("ai-connector-failed")
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "ai-connector-failed".into())
+                            })
+                            .pb_3()
+                            .text_size(px(12.))
+                            .text_color(style::markdown_style(theme).alert_caution)
+                            .child(why),
+                    )
+                });
         for host in Host::ALL {
             section = section.child(self.host_rows(host, shim.is_some(), theme, cx));
         }

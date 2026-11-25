@@ -119,7 +119,10 @@ impl App {
             );
         }
         let long = document(&shared, "Anna Petrova's long lease", &text, true);
-        let setting = AiConnectorConfig { preview: true };
+        let setting = AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
         let connector = Arc::new(Connector::start(vault.clone(), &setting).unwrap());
         connector.share(&shared).unwrap();
         let endpoint = Endpoint::for_profile(Some(profile)).unwrap();

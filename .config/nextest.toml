@@ -27,7 +27,7 @@ app = { max-threads = 4 }
 filter = "package(mdoc) - binary_id(mdoc::headless_renders)"
 test-group = "app"
 
-# The render test has its own hang watchdog (10 min on macOS, 20 on Windows,
+# The render test has its own hang watchdog (10 min on macOS, 25 on Windows,
 # tests/headless_renders.rs). Nextest kills it one period later, so the
 # watchdog's panic, with the child's stderr, reports a hang first.
 [[profile.default.overrides]]
@@ -38,4 +38,4 @@ slow-timeout = { period = "60s", terminate-after = 11 }
 [[profile.default.overrides]]
 filter = "binary_id(mdoc::headless_renders)"
 platform = 'cfg(target_os = "windows")'
-slow-timeout = { period = "60s", terminate-after = 21 }
+slow-timeout = { period = "60s", terminate-after = 26 }

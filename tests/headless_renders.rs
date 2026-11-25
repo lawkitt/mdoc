@@ -123,10 +123,11 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
         .unwrap();
     let start = Instant::now();
     // WARP rasterizes every 2x frame in software; allow slower hosted Windows
-    // CPUs as well as this workstation. Hosted macOS runners vary too (one
-    // took over 300 s). This is a hang watchdog, not a budget.
+    // CPUs as well as this workstation (one queue run took 1177 s, #1243).
+    // Hosted macOS runners vary too (one took over 300 s). This is a hang
+    // watchdog, not a budget.
     let timeout = Duration::from_secs(if cfg!(target_os = "windows") {
-        1200
+        1500
     } else {
         600
     });
@@ -433,8 +434,10 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                             | "new-project-page"
                             | "ai-share-prompt"
                             | "ai-project-shared"
+                            | "ai-delivery-badge"
                             | "project-page-activity"
                             | "ai-project-rail"
+                            | "project-ask-menu"
                     ),
                     "{theme}/{name}"
                 );
@@ -494,6 +497,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     "settings-about" => Some("About"),
                     "settings-ai-connector-off"
                     | "settings-ai-connector"
+                    | "settings-ai-connector-failed"
                     | "settings-ai-connector-consent"
                     | "settings-ai-connector-consent-chatgpt" => Some("AI connector"),
                     _ => None,

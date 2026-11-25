@@ -53,6 +53,9 @@ struct MarkdownTextView: UIViewRepresentable {
     var shown = true
     /// The ↑ control past one screen of text, never in edit mode.
     var viewport: PageViewport?
+    /// A selection copied by hand (#1209): its menu's copy items, ⌘C and
+    /// edit mode's Copy. Nil copies marked, with no check.
+    var selectionCopy: SelectionCopyActions?
 
     /// The text is edited now.
     var editing: Bool { edit != nil }
@@ -192,6 +195,11 @@ struct MarkdownTextView: UIViewRepresentable {
         let fixSelection = WordsFixSelection()
         /// Shows mdoc's own selection menus (Hide name).
         var menuPresenter: SelectionMenuPresenter?
+        /// The core's answers for the selection menu's copy items (#1209).
+        var selectionChecks = SelectionChecks()
+        /// The selection as the reader made it, while Hide name shows it
+        /// snapped to whole words: a copy takes the reader's own.
+        var unsnapped: UnsnappedSelection?
         /// A name's long-press menu is closing: UIKit carries the name it
         /// lifted back into the text and keeps its picture there until the
         /// menu is gone. Adjust Words chosen there shows its draft then
@@ -250,6 +258,12 @@ struct MarkdownTextView: UIViewRepresentable {
             }
         }
 
+        /// The view shows the text the core holds now: no newer text waits
+        /// for a menu to close. Outside edit mode.
+        var showsCurrentText: Bool {
+            pending == nil && content != nil && content?.textRevision == parent.snapshot.textRevision
+        }
+
         /// What the reveal measures in now.
         private var revealText: RevealText {
             RevealText(
@@ -277,6 +291,9 @@ struct MarkdownTextView: UIViewRepresentable {
                 // The status bar's tap scrolls the text, never a table.
                 cell.scrollsToTop = false
                 cell.allowsCopy = false
+                cell.onCopy = { [weak self, weak cell] in
+                    if let self, let cell { self.copyAsWritten(cell) }
+                }
                 cell.tintColor = Self.selectionTint
                 cell.onResign = { [weak self, weak cell] in
                     if let self, let cell { self.fixSelection.holderResigned(cell) }
@@ -297,6 +314,9 @@ struct MarkdownTextView: UIViewRepresentable {
                 self.reveal.layoutDone(view)
             }
             view.onReviewNext = { [weak self] in self?.parent.onReviewNext() }
+            view.onHandCopy = { [weak self, weak view] in
+                if let self, let view { self.copyAsWritten(view) }
+            }
         }
 
         /// `inViewUpdate` is true from SwiftUI's own update of the view:
@@ -751,33 +771,23 @@ struct MarkdownTextView: UIViewRepresentable {
             fixSelection.follow(view)
         }
 
-        /// Only Hide name, and nothing while a name's words are fixed (its
-        /// bar holds Hide «…», ADR 0115): text leaves mdoc through Copy for
-        /// AI and Share, never a plain Copy, Share, Look Up or Translate of
-        /// the selection (ADR 0085's export invariant).
+        /// The selection's copy items (#1209), then Hide name, then Select
+        /// All; nothing while a name's words are fixed (its bar holds Hide
+        /// «…», ADR 0115). No Share, Look Up, Translate, Search Web or
+        /// Writing Tools: they send text on without saying so.
         func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
             // Edit mode: Cut, Copy, Paste and Select All only (ADR 0109).
             if textView.isEditable { return CandidateTextView.editMenu(from: suggestedActions) }
-            guard range.length > 0 else { return UIMenu(children: []) }
-            // A selection in the main text that runs into a folded table
-            // holds hidden source: no Replace… (ADR 0096). Cells are their
-            // own text views.
-            if let main = textView as? CandidateTextView,
-               main.tableViews.contains(where: { NSIntersectionRange($0.table.range, range).length > 0 }) {
-                return UIMenu(children: [])
-            }
-            if parent.wordsFix != nil { return UIMenu(children: []) }
-            // A table cell's selection, in document offsets.
-            let base = (textView as? CellTextView)?.location ?? 0
-            let source = offsets.sourceRange(NSRange(location: base + range.location, length: range.length))
-            return hideMenu(for: source, in: textView, at: range)
+            guard range.length > 0, parent.wordsFix == nil else { return UIMenu(children: []) }
+            return selectionMenu(in: textView, at: range, suggested: suggestedActions)
         }
     }
 }
 
-/// The text view with the Candidates rotor and a Review next action. The
-/// selection exists only for Replace…: copying, sharing and dragging it out
-/// are off, keyboard shortcuts included, in table cells too.
+/// The text view with the Candidates rotor and a Review next action. A
+/// selection copies as written through the core's check (#1209), ⌘C and
+/// VoiceOver's Copy included, in table cells too; sharing, Look Up,
+/// Translate and dragging it out are off.
 final class CandidateTextView: RenderedTextView {
     /// Where the Candidates rotor goes: a candidate's text, in the main
     /// text or in a table cell, in document order.
@@ -789,6 +799,10 @@ final class CandidateTextView: RenderedTextView {
 
     var rotorItems: [RotorItem] = []
     var onReviewNext: (() -> Void)?
+    /// Copy, ⌘C and VoiceOver's Copy, in both modes: the selection as
+    /// written, marked unless the core finds it clean (#1209). Nil copies
+    /// marked.
+    var onHandCopy: (() -> Void)?
     /// Edit mode's actions (ADR 0109); nil in review.
     var editActions: EditActions?
     /// After a change made through the view's own API (Paste, Cut, a find
@@ -1083,7 +1097,7 @@ final class CandidateTextView: RenderedTextView {
         set { super.accessibilityValue = newValue }
     }
 
-    /// Selecting is the only standard action left.
+    /// Selecting, and Copy of a selection, are the standard actions left.
     static let allowedActions: Set<Selector> = [
         #selector(UIResponderStandardEditActions.select(_:)),
         #selector(UIResponderStandardEditActions.selectAll(_:)),
@@ -1092,11 +1106,12 @@ final class CandidateTextView: RenderedTextView {
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         if isEditMode { return canPerformEditAction(action, withSender: sender) }
         if Self.findActions.contains(action) { return super.canPerformAction(action, withSender: sender) }
+        if action == #selector(UIResponderStandardEditActions.copy(_:)) { return selectedRange.length > 0 }
         return Self.allowedActions.contains(action)
     }
 
     override func copy(_ sender: Any?) {
-        if isEditMode { copySelection() }
+        copySelection()
     }
 
     override func cut(_ sender: Any?) {

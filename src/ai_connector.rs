@@ -6,8 +6,9 @@
 //! there is no service and no listener at all.
 //!
 //! Each call also tells the window what it needs to know ([`Event`]): an
-//! AI app asked while nothing is shared (the share prompt, item 8), or a
-//! read or delivery was recorded (the Project page's AI activity).
+//! AI app asked while nothing is shared (the share prompt, item 8), a read
+//! or delivery was recorded (the Project page's AI activity), or a document
+//! it asked for needs review (item 9's notifications).
 pub(crate) mod setup;
 
 use mdoc_connector::Connector;
@@ -26,8 +27,22 @@ pub(crate) enum Event {
     /// AI app `app` asked while nothing was shared: mdoc asks the user to
     /// share a Project (#1164 Decision 2).
     Asked { app: String },
-    /// A read or a delivery was recorded in the AI project's activity.
+    /// A read was recorded in the AI project's activity.
     Activity,
+    /// AI app `app` delivered: an AI Reply, and the Document it landed as
+    /// when it asked for one (item 9). Recorded in the activity too.
+    Delivered {
+        app: String,
+        reply: String,
+        document: Option<String>,
+    },
+    /// AI app `app` asked for a document of the AI project that needs
+    /// review, named to it as `label` (#1164 Decision 4; item 9).
+    NeedsReview {
+        app: String,
+        document: String,
+        label: String,
+    },
 }
 
 /// The connector, its events and its listener; dropping it stops
@@ -45,11 +60,23 @@ pub(crate) struct Running {
 }
 
 impl Drop for Running {
-    /// A connection the listener accepted holds its handler, and so the
-    /// connector, past the stop: from now on it is shared nothing, so such
-    /// a call reads and delivers nothing.
+    /// The listener stops first: from then on nothing reaches an AI app
+    /// (#1220). A call it accepted still holds its handler, and so the
+    /// connector: it is then shared nothing, so such a call reads and
+    /// delivers nothing more. That waits for a delivery being saved, so it
+    /// runs off the window's thread.
     fn drop(&mut self) {
-        self.connector.stop_sharing();
+        drop(self._listening.take());
+        let connector = self.connector.clone();
+        let stopped = std::thread::Builder::new()
+            .name("mdoc-connector-stop".into())
+            .spawn({
+                let connector = connector.clone();
+                move || connector.stop_sharing()
+            });
+        if stopped.is_err() {
+            connector.stop_sharing();
+        }
     }
 }
 
@@ -90,14 +117,25 @@ fn service(vault: Arc<Vault>, setting: &AiConnectorConfig) -> Option<Running> {
 }
 
 /// Start the connector over `vault` and listen at `endpoint`, while
-/// `setting` is on; `None` while it is off, or when the endpoint can't be
-/// held (it says why on stderr).
+/// `setting` is on: `Ok(None)` while it is off. `Err` holds why it
+/// couldn't listen, as Settings › AI connector shows it (#1220).
 pub(crate) fn start(
     vault: Arc<Vault>,
     setting: &AiConnectorConfig,
-    endpoint: &Endpoint,
-) -> Option<Running> {
-    let mut running = service(vault, setting)?;
+    endpoint: Option<&Endpoint>,
+) -> Result<Option<Running>, String> {
+    let Some(running) = service(vault, setting) else {
+        return Ok(None);
+    };
+    let Some(endpoint) = endpoint else {
+        eprintln!("mdoc: the AI connector has no endpoint: no data folder");
+        return Err("Couldn't start the connector: this system gives mdoc no data folder.".into());
+    };
+    listen(running, endpoint).map(Some)
+}
+
+/// Listen at `endpoint` for `running`.
+fn listen(mut running: Running, endpoint: &Endpoint) -> Result<Running, String> {
     // Turned off and on again quickly (Settings › AI connector), the
     // listener that just stopped may still hold the name for a moment: try
     // again a few times before giving up.
@@ -106,7 +144,7 @@ pub(crate) fn start(
         match ipc::listen(endpoint, running.answer.clone()) {
             Ok(listening) => {
                 running._listening = Some(listening);
-                return Some(running);
+                return Ok(running);
             }
             Err(_) if tries < LISTEN_TRIES => {
                 tries += 1;
@@ -114,10 +152,25 @@ pub(crate) fn start(
             }
             Err(error) => {
                 eprintln!("mdoc: the AI connector can't listen at {endpoint}: {error}");
-                return None;
+                return Err(failed_start(&error));
             }
         }
     }
+}
+
+/// A failed start in Settings' words (#1220, decided by default on #1091).
+pub(crate) fn failed_start(error: &std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::AddrInUse {
+        return "Couldn't start the connector: another copy of mdoc is using it. Quit the other \
+                copy, then turn AI connector (preview) off and on."
+            .into();
+    }
+    let why = error.to_string();
+    let why = why.trim_end().trim_end_matches('.');
+    format!(
+        "Couldn't start the connector: {why}. Turn AI connector (preview) off and on to try \
+         again."
+    )
 }
 
 /// How many times [`start`] tries to listen, 50 ms apart.
@@ -155,9 +208,21 @@ fn answer_line(connector: &Connector, events: &Sender<Event>, line: &[u8]) -> Ve
 fn event_of(app: String, answer: &Answer) -> Option<Event> {
     match answer {
         Answer::Refused(Refusal::NothingShared) => Some(Event::Asked { app }),
-        Answer::Ok(
-            Done::Text { .. } | Done::Outline { .. } | Done::Part { .. } | Done::Delivered { .. },
-        ) => Some(Event::Activity),
+        Answer::Ok(Done::Text { .. } | Done::Outline { .. } | Done::Part { .. }) => {
+            Some(Event::Activity)
+        }
+        Answer::Ok(Done::Delivered {
+            reply, document, ..
+        }) => Some(Event::Delivered {
+            app,
+            reply: reply.clone(),
+            document: document.clone(),
+        }),
+        Answer::Ok(Done::NeedsReview { doc_id, label, .. }) => Some(Event::NeedsReview {
+            app,
+            document: doc_id.clone(),
+            label: label.clone(),
+        }),
         _ => None,
     }
 }
@@ -173,13 +238,24 @@ pub(crate) fn display_name(app: &str) -> String {
         .collect();
     let line: String = line.trim().chars().take(64).collect();
     let app = line.trim_end();
-    match app.to_ascii_lowercase().as_str() {
-        "" | "ai app" => "An AI app".into(),
-        "claude-ai" | "claude" => "Claude".into(),
-        "claude-code" => "Claude Code".into(),
-        "chatgpt" | "openai-chatgpt" => "ChatGPT".into(),
-        "codex" | "codex-mcp-client" => "Codex".into(),
-        _ => app.into(),
+    match product_name(app) {
+        Some(name) => name.into(),
+        None if app.is_empty() => "An AI app".into(),
+        None => app.into(),
+    }
+}
+
+/// The product an AI app's own name (`clientInfo.name`) stands for, when
+/// mdoc knows it; "An AI app" for none. A system notification names only
+/// these: any other name is the client's free text (item 9 review).
+pub(crate) fn product_name(app: &str) -> Option<&'static str> {
+    match app.trim().to_ascii_lowercase().as_str() {
+        "" | "ai app" => Some("An AI app"),
+        "claude-ai" | "claude" => Some("Claude"),
+        "claude-code" => Some("Claude Code"),
+        "chatgpt" | "openai-chatgpt" => Some("ChatGPT"),
+        "codex" | "codex-mcp-client" => Some("Codex"),
+        _ => None,
     }
 }
 
@@ -206,10 +282,17 @@ mod tests {
         let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
         let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
         let off = AiConnectorConfig::default();
-        assert!(start(vault.clone(), &off, &endpoint).is_none());
+        assert!(
+            start(vault.clone(), &off, Some(&endpoint))
+                .unwrap()
+                .is_none()
+        );
         assert!(matches!(ask(&endpoint), Err(ipc::CallError::NotListening)));
-        let on = AiConnectorConfig { preview: true };
-        let running = start(vault, &on, &endpoint).unwrap();
+        let on = AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
+        let running = start(vault, &on, Some(&endpoint)).unwrap().unwrap();
         assert!(running.connector.ai_project().is_none());
         assert_eq!(
             ask(&endpoint).unwrap(),
@@ -243,14 +326,124 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(100));
             drop(held);
         });
-        let on = AiConnectorConfig { preview: true };
-        let running = start(vault, &on, &endpoint);
+        let on = AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
+        let running = start(vault, &on, Some(&endpoint));
         release.join().unwrap();
-        assert!(running.is_some(), "gave up while the old listener stopped");
+        assert!(
+            matches!(running, Ok(Some(_))),
+            "gave up while the old listener stopped"
+        );
         assert_eq!(
             ask(&endpoint).unwrap(),
             Answer::Refused(Refusal::NothingShared)
         );
+    }
+
+    /// #1220: a name another mdoc holds is a failed start, in Settings'
+    /// words, not silence.
+    #[test]
+    fn a_name_held_elsewhere_is_a_failed_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
+        let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
+        let _other = ipc::listen(&endpoint, Arc::new(|_: &[u8]| Vec::new())).unwrap();
+        let on = AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
+        let Err(why) = start(vault.clone(), &on, Some(&endpoint)) else {
+            panic!("started on a name another mdoc holds");
+        };
+        assert_eq!(
+            why,
+            "Couldn't start the connector: another copy of mdoc is using it. Quit the other \
+             copy, then turn AI connector (preview) off and on."
+        );
+        let Err(why) = start(vault, &on, None) else {
+            panic!("started with no endpoint");
+        };
+        assert!(why.starts_with("Couldn't start the connector: "), "{why}");
+        let other = std::io::Error::other("Access is denied. (os error 5)");
+        assert_eq!(
+            failed_start(&other),
+            "Couldn't start the connector: Access is denied. (os error 5). Turn AI connector \
+             (preview) off and on to try again."
+        );
+    }
+
+    /// #1220: a read of a Ready document, held at a hook once its text is
+    /// ready, while the preview turns off, then released, writes nothing
+    /// to the pipe.
+    #[test]
+    fn a_read_held_across_off_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
+        let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
+        let on = AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
+        let mut running = start_unlistened(vault.clone(), &on).unwrap();
+        let project = vault.create_project(Default::default()).unwrap();
+        let document = vault
+            .create_document(mdoc_vault::NewDocument {
+                project: Some(project.id.clone()),
+                title: "Lease memo".into(),
+                source_kind: mdoc_vault::SourceKind::Markdown,
+                origin: mdoc_vault::DocumentOrigin::Ordinary,
+                markdown: "PERSON_1 rents.".into(),
+            })
+            .unwrap();
+        vault
+            .update_document(&document.id, |d| {
+                d.scanned = true;
+                d.set_ready(true);
+            })
+            .unwrap();
+        running.connector.share(&project.id).unwrap();
+        // The hook: the answer is made, then waits for its release.
+        let (made, answered) = channel();
+        let (release, released) = channel::<()>();
+        let released = std::sync::Mutex::new(released);
+        let inner = running.answer.clone();
+        running.answer = Arc::new(move |line: &[u8]| {
+            let answer = inner(line);
+            let _ = made.send(answer.clone());
+            let _ = released.lock().unwrap().recv();
+            answer
+        });
+        let running = listen(running, &endpoint).unwrap();
+        let caller = {
+            let endpoint = endpoint.clone();
+            std::thread::spawn(move || {
+                let request = Request {
+                    v: mdoc_mcp::wire::VERSION,
+                    app: "claude-ai".into(),
+                    call: Call::GetDocument {
+                        doc_id: document.id,
+                        part: None,
+                    },
+                };
+                ipc::call(&endpoint, &serde_json::to_vec(&request).unwrap())
+            })
+        };
+        let held = (answered.recv_timeout(std::time::Duration::from_secs(10))).unwrap();
+        let held: Answer = serde_json::from_slice(&held).unwrap();
+        assert!(matches!(held, Answer::Ok(Done::Text { .. })), "{held:?}");
+        // The preview turns off, as Settings' switch does.
+        drop(running);
+        // Let go at once, while the text is still held.
+        if let Ok(written) = caller.join().unwrap() {
+            assert!(
+                written.is_empty(),
+                "written after off: {}",
+                String::from_utf8_lossy(&written)
+            );
+        }
+        release.send(()).unwrap();
     }
 
     /// Only a call that found nothing shared asks; a bad request or a
@@ -259,7 +452,10 @@ mod tests {
     fn only_a_call_finding_nothing_shared_asks() {
         let dir = tempfile::tempdir().unwrap();
         let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
-        let on = AiConnectorConfig { preview: true };
+        let on = AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
         let running = start_unlistened(vault.clone(), &on).unwrap();
         assert!(running.events().is_empty());
         (running.answer)(b"not json");
@@ -295,7 +491,10 @@ mod tests {
     fn a_connection_held_across_the_stop_reads_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
-        let on = AiConnectorConfig { preview: true };
+        let on = AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
         let running = start_unlistened(vault.clone(), &on).unwrap();
         let project = vault.create_project(Default::default()).unwrap();
         running.connector.share(&project.id).unwrap();
@@ -308,8 +507,19 @@ mod tests {
         let held = running.answer.clone();
         let answer = |line: &[u8]| serde_json::from_slice::<Answer>(&held(line)).unwrap();
         assert!(matches!(answer(&list), Answer::Ok(Done::Documents { .. })));
+        let connector = running.connector.clone();
         drop(running);
+        shares_nothing_soon(&connector);
         assert_eq!(answer(&list), Answer::Refused(Refusal::NothingShared));
+    }
+
+    /// Off shares nothing, off the window's thread: a moment later.
+    fn shares_nothing_soon(connector: &Connector) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while connector.ai_project().is_some() {
+            assert!(std::time::Instant::now() < deadline, "still shared");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
     }
 
     #[test]

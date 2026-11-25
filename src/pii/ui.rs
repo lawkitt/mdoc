@@ -7,8 +7,10 @@ pub(crate) use compare::CompareMode;
 pub(crate) use compare::{CompareState, SwitcherRest};
 mod discovery;
 mod edit_scan;
+mod hand_copy;
 #[cfg(test)]
 pub(crate) use edit_scan::TEST_SCAN;
+pub(crate) use hand_copy::{CopyFrom, check_hand_copies};
 mod mapping;
 mod render;
 mod reply;
@@ -580,6 +582,26 @@ impl DocumentView {
         parts.join(", ")
     }
     /// Whether the replacements panel is open.
+    /// Pseudonymize's click, and an AI notification's (Milestone 2 item
+    /// 9): scan once, unless a scan runs, and open the Review panel; it
+    /// never closes it.
+    pub(crate) fn open_review(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let review = &self.pii.review();
+        let fresh = !self.pii.reviewing()
+            && !self.pii.scanning()
+            && review.variants().is_empty()
+            && review.applied().is_empty();
+        if fresh {
+            self.start_pii_scan(cx);
+        }
+        // A scan is reviewed in Review, not beside Notes.
+        if self.inspector == crate::document_view::Inspector::Notes {
+            self.inspector = crate::document_view::Inspector::Review;
+        }
+        if !self.replacements_open() {
+            self.toggle_replacements_panel(window, cx);
+        }
+    }
     pub(crate) fn replacements_open(&self) -> bool {
         self.pii.mapping.open
     }

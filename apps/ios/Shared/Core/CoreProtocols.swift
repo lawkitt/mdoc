@@ -206,6 +206,16 @@ protocol DocumentSession: AnyObject, Sendable {
     /// core's guess when nil; a proposed wording keeps its own. Replaces
     /// nothing yet.
     func markSelection(_ range: SourceRange, as category: Category?) throws -> DocumentSnapshot
+    /// What a selection copied by hand holds (#1209): Clean copies plainly;
+    /// otherwise its menu offers Copy with names, and Replace N and copy
+    /// with proposals in it, and its copy is marked. Reads the Vault: call
+    /// it off the main thread.
+    func checkSelection(_ range: SourceRange) throws -> SelectionCheck
+    /// Replace N and copy: the proposals in `range` or across its edges
+    /// replaced as the review's Replace does, one "Replace in selection"
+    /// undo step (none when nothing was replaced). Its `range` is the one
+    /// to copy, widened so an alias is whole.
+    func replaceSelection(_ range: SourceRange) throws -> SelectionReplacement
     /// Fix the words begins on a name (ADR 0114): the document as it shows
     /// meanwhile (a replaced name's original back in place), where the
     /// handles start and how far they reach. Changes nothing.

@@ -11,6 +11,9 @@
 //!   path Pseudonymize takes: proposals only, never applied;
 //! - the Project page lists its AI activity.
 //!
+//! Notifications, the badge and where a delivery lands are
+//! `ai_deliveries.rs` (item 9).
+//!
 //! The share lives in the connector, in memory only; nothing here writes
 //! the Vault.
 use super::{Workspace, ai_project::Asked, navigation::Stop, project_page::Place};
@@ -28,7 +31,7 @@ pub(super) const ACTIVITY_SHOWN: usize = 100;
 
 impl Workspace {
     /// "AI connector (preview)" as Settings holds it.
-    fn ai_setting(&self) -> AiConnectorConfig {
+    pub(super) fn ai_setting(&self) -> AiConnectorConfig {
         (self.preferences.borrow().current.as_ref())
             .map(|preferences| preferences.ai_connector)
             .unwrap_or_default()
@@ -59,16 +62,33 @@ impl Workspace {
             return;
         };
         let setting = self.ai_setting();
-        let running = if cfg!(test) || mdoc_store::app_paths::isolated() {
-            ai_connector::start_unlistened(vault, &setting)
+        let started = if cfg!(test) || mdoc_store::app_paths::isolated() {
+            Ok(ai_connector::start_unlistened(vault, &setting))
         } else {
-            (ai_connector::endpoint())
-                .and_then(|endpoint| ai_connector::start(vault, &setting, &endpoint))
+            ai_connector::start(vault, &setting, ai_connector::endpoint().as_ref())
         };
+        self.ai_started(started, window, cx);
+    }
+
+    /// What a start gave: the running connector, or why it couldn't
+    /// start, which Settings › AI connector shows (#1220).
+    pub(super) fn ai_started(
+        &mut self,
+        started: Result<Option<ai_connector::Running>, String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (running, failed) = match started {
+            Ok(running) => (running, None),
+            Err(why) => (None, Some(why)),
+        };
+        self.settings
+            .update(cx, |panel, cx| panel.ai_connector_failed(failed, cx));
         let Some(running) = running else {
             return;
         };
         self.ai_connector = Some(running);
+        self.listen_for_notifications(cx);
         self.ai_poll = Some(cx.spawn_in(window, async move |this, cx| {
             loop {
                 cx.background_executor().timer(POLL).await;
@@ -88,9 +108,20 @@ impl Workspace {
     pub(super) fn refresh_ai_connector(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.ai_setting().preview {
             self.start_ai_connector(window, cx);
-        } else if self.ai_connector.take().is_some() {
+        } else {
+            self.stop_ai_connector(cx);
+        }
+    }
+
+    /// The switch shows off, saved or not yet (#1220): nothing more
+    /// reaches an AI app, and nothing is shared.
+    pub(super) fn stop_ai_connector(&mut self, cx: &mut Context<Self>) {
+        self.settings
+            .update(cx, |panel, cx| panel.ai_connector_failed(None, cx));
+        if self.ai_connector.take().is_some() {
             self.ai_poll = None;
             self.ai.stopped();
+            self.ai_ask_cancelled();
             if (self.project_ui.page.as_ref())
                 .is_some_and(|page| page.segment() == super::project_page::Segment::Activity)
             {
@@ -115,6 +146,19 @@ impl Workspace {
             match event {
                 ai_connector::Event::Asked { app } => self.ai_app_asked(app, window, cx),
                 ai_connector::Event::Activity => activity = true,
+                ai_connector::Event::Delivered {
+                    app,
+                    reply,
+                    document,
+                } => {
+                    activity = true;
+                    self.ai_delivered(&app, reply, document, window, cx);
+                }
+                ai_connector::Event::NeedsReview {
+                    app,
+                    document,
+                    label,
+                } => self.ai_review_requested(&app, document, &label, cx),
             }
         }
         if activity {
@@ -149,22 +193,27 @@ impl Workspace {
         }
     }
 
-    /// The prompt's Share: Project `project` is the AI project from now
-    /// on, in place of any other, and its members not yet scanned scan.
-    pub(super) fn share_with_ai(&mut self, project: &str, cx: &mut Context<Self>) {
+    /// The prompt's Share, and Ask's: Project `project` is the AI project
+    /// from now on, in place of any other, and its members not yet scanned
+    /// scan. `false` when it could not be shared, which a notice says.
+    pub(super) fn share_with_ai(&mut self, project: &str, cx: &mut Context<Self>) -> bool {
         let Some(running) = &self.ai_connector else {
-            return;
+            return false;
         };
-        match running.connector.share(project) {
+        let shared = match running.connector.share(project) {
             Ok(()) => {
                 self.ai.shared();
                 self.scan_on_entry(cx);
+                true
             }
-            Err(error) => self
-                .notices
-                .post(format!("Could not share the Project with AI apps. {error}")),
-        }
+            Err(error) => {
+                self.notices
+                    .post(format!("Could not share the Project with AI apps. {error}"));
+                false
+            }
+        };
         cx.notify();
+        shared
     }
 
     /// Stop sharing: AI apps read nothing until a Project is shared again.
@@ -172,6 +221,9 @@ impl Workspace {
         if let Some(running) = &self.ai_connector {
             running.connector.stop_sharing();
         }
+        self.ai.sharing_stopped();
+        // A later Stop wins over an Ask still waiting for its move.
+        self.ai_ask_cancelled();
         cx.notify();
     }
 
@@ -201,6 +253,11 @@ impl Workspace {
             Stop::Home | Stop::Tab(_) => None,
         };
         self.ai.viewed(project);
+        match stop {
+            Stop::Reply(id) => self.ai.seen(Some(id), None),
+            Stop::Document(document) => self.ai.seen(None, Some(document.as_str())),
+            Stop::Project(_) | Stop::Home | Stop::Tab(_) => {}
+        }
     }
 
     /// Scan the open members of the AI project that entered it (#1164
@@ -284,11 +341,19 @@ impl Workspace {
             .border_color(p.border)
             .child(
                 div()
-                    .px_1()
-                    .text_size(px(10.))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(p.header_muted)
-                    .child("SHARED WITH AI APPS"),
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_1()
+                    .child(
+                        div()
+                            .px_1()
+                            .text_size(px(10.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(p.header_muted)
+                            .child("SHARED WITH AI APPS"),
+                    )
+                    .children(self.ai_badge(cx)),
             );
         let card = match shared {
             Some(project) => {
@@ -354,6 +419,12 @@ impl Workspace {
             None => "No Project shared with AI apps".to_string(),
         };
         let open = shared.as_ref().map(|project| project.id.clone());
+        let badge = self.ai_rail_badge();
+        let label = match self.ai.unseen().len() {
+            0 => label,
+            count => format!("{label}. {count} new, open the newest"),
+        };
+        let counts = badge.is_some();
         Some(
             div()
                 .relative()
@@ -364,12 +435,15 @@ impl Workspace {
                         })
                         .size(px(32.))
                         .on_click(cx.listener(move |this, _, window, cx| {
-                            if let Some(id) = &open {
+                            if counts {
+                                this.open_newest(window, cx);
+                            } else if let Some(id) = &open {
                                 this.show_project_page(id, Place::Header, window, cx);
                             }
                         })),
                 )
-                .when_some(shared, |v, project| {
+                .children(badge)
+                .when_some(shared.filter(|_| !counts), |v, project| {
                     v.child(
                         div()
                             .absolute()
@@ -398,12 +472,7 @@ impl Workspace {
     ) -> Option<AnyElement> {
         self.ai_connector.as_ref()?;
         let prompt = self.ai.prompt()?;
-        if self.settings.read(cx).open
-            || window.has_active_prompt()
-            || self.new_project.is_some()
-            || self.folder_sheets.open()
-            || self.project_ui.explainer
-        {
+        if self.modal_up(window, cx) {
             return None;
         }
         let theme = self.theme.get();

@@ -1,6 +1,8 @@
-//! What the window knows of the AI project (ADR 0126; #1164 Decisions 2
-//! and 5; Milestone 2 item 8): the Project the user last viewed, the share
-//! prompt, and the AI activity the Project page shows. The share itself is
+//! What the window knows of the AI project (ADR 0126; #1164 Decisions 2,
+//! 4, 5 and 6; Milestone 2 items 8 and 9): the Project the user last
+//! viewed, the share prompt, the AI activity the Project page shows, and
+//! what arrived from AI apps that the user has not opened yet (the badge
+//! and the notifications). The share itself is
 //! the connector's, in memory only; nothing here changes it. The view
 //! carries out what each change returns. GPUI-free.
 use mdoc_vault::AiActivity;
@@ -11,6 +13,50 @@ pub(super) const QUIET: Duration = Duration::from_secs(10 * 60);
 
 /// At most this many Projects to choose from in the prompt.
 pub(super) const CHOICES: usize = 4;
+
+/// After a review request's notification, the same document raises no
+/// other this soon, unless the user opened it meanwhile.
+pub(super) const REVIEW_QUIET: Duration = Duration::from_secs(10 * 60);
+
+/// Something an AI app sent or asked for, by id: what a notification and
+/// the badge open.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(super) enum Arrived {
+    /// A delivered AI Reply: its Reply page.
+    Reply(String),
+    /// A delivered Document: it opens for review.
+    Document(String),
+    /// A document an AI app asked for that needs review: it opens for
+    /// review.
+    Review(String),
+}
+
+impl Arrived {
+    const REPLY: &str = "ai-reply-";
+    const DOCUMENT: &str = "ai-document-";
+    const REVIEW: &str = "ai-review-";
+
+    /// Its notification's tag: ids only, never a name.
+    pub(super) fn tag(&self) -> String {
+        match self {
+            Self::Reply(id) => format!("{}{id}", Self::REPLY),
+            Self::Document(id) => format!("{}{id}", Self::DOCUMENT),
+            Self::Review(id) => format!("{}{id}", Self::REVIEW),
+        }
+    }
+
+    /// What the notification tagged `tag` opens; `None` for another's.
+    pub(super) fn from_tag(tag: &str) -> Option<Self> {
+        let id = |prefix: &str| {
+            (tag.strip_prefix(prefix))
+                .filter(|id| !id.is_empty())
+                .map(str::to_string)
+        };
+        (id(Self::REPLY).map(Self::Reply))
+            .or_else(|| id(Self::DOCUMENT).map(Self::Document))
+            .or_else(|| id(Self::REVIEW).map(Self::Review))
+    }
+}
 
 /// The share prompt while it shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,6 +99,13 @@ pub(super) struct AiProject {
     /// started: each scans once in that tab until it leaves the AI
     /// project. A document opened again, in a new tab, scans again.
     entry_scans: std::collections::HashSet<(u64, String)>,
+    /// What arrived and the user has not opened yet, oldest first: the
+    /// badge counts it.
+    unseen: Vec<Arrived>,
+    /// Review requests notified lately, by document: no other before then.
+    reviews_quiet: std::collections::HashMap<String, Instant>,
+    /// Documents opened for review whose Review panel opens once loaded.
+    to_review: std::collections::HashSet<String>,
 }
 
 impl AiProject {
@@ -128,6 +181,62 @@ impl AiProject {
         self.entry_scans.clear();
     }
 
+    /// `item` arrived at `now`: the badge counts it, newest last. `true`
+    /// when it is to raise a notification: always for a delivery; for a
+    /// review request, unless the same document raised one within
+    /// [`REVIEW_QUIET`] and was not opened since.
+    pub(super) fn arrived(&mut self, item: Arrived, now: Instant) -> bool {
+        self.unseen.retain(|unseen| *unseen != item);
+        let notify = match &item {
+            Arrived::Review(id) => {
+                let quiet = (self.reviews_quiet.get(id)).is_some_and(|until| now < *until);
+                if !quiet {
+                    self.reviews_quiet.insert(id.clone(), now + REVIEW_QUIET);
+                }
+                !quiet
+            }
+            Arrived::Reply(_) | Arrived::Document(_) => true,
+        };
+        self.unseen.push(item);
+        notify
+    }
+
+    /// What arrived and is not opened yet, oldest first.
+    pub(super) fn unseen(&self) -> &[Arrived] {
+        &self.unseen
+    }
+
+    /// The user arrived at reply `reply`, or at document `document`: what
+    /// arrived for it is seen, and the document may raise a review
+    /// request again.
+    pub(super) fn seen(&mut self, reply: Option<&str>, document: Option<&str>) {
+        self.unseen.retain(|item| match item {
+            Arrived::Reply(id) => Some(id.as_str()) != reply,
+            Arrived::Document(id) | Arrived::Review(id) => Some(id.as_str()) != document,
+        });
+        if let Some(document) = document {
+            self.reviews_quiet.remove(document);
+        }
+    }
+
+    /// Document `id` opens for review: its Review panel opens once its tab
+    /// has loaded ([`Self::take_review`]).
+    pub(super) fn review_on_load(&mut self, id: &str) {
+        self.to_review.insert(id.to_string());
+    }
+
+    /// `true` once for a document opened for review.
+    pub(super) fn take_review(&mut self, id: &str) -> bool {
+        self.to_review.remove(id)
+    }
+
+    /// Sharing stopped: review requests are moot, deliveries stay.
+    pub(super) fn sharing_stopped(&mut self) {
+        self.unseen
+            .retain(|item| !matches!(item, Arrived::Review(_)));
+        self.reviews_quiet.clear();
+    }
+
     /// Project `id` was deleted.
     pub(super) fn forget(&mut self, id: &str) {
         if self.last_viewed.as_deref() == Some(id) {
@@ -188,6 +297,56 @@ impl AiProject {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tags_hold_ids_and_read_back() {
+        for item in [
+            Arrived::Reply("r1".into()),
+            Arrived::Document("d1".into()),
+            Arrived::Review("d2".into()),
+        ] {
+            assert_eq!(Arrived::from_tag(&item.tag()), Some(item));
+        }
+        assert_eq!(Arrived::Reply("r1".into()).tag(), "ai-reply-r1");
+        assert_eq!(Arrived::from_tag("ai-reply-"), None);
+        assert_eq!(Arrived::from_tag("thread-1"), None);
+    }
+
+    #[test]
+    fn what_arrived_waits_until_it_is_opened() {
+        let now = Instant::now();
+        let mut ai = AiProject::default();
+        assert!(ai.arrived(Arrived::Reply("r".into()), now));
+        assert!(ai.arrived(Arrived::Document("d".into()), now));
+        assert!(ai.arrived(Arrived::Review("x".into()), now));
+        // The same again moves to the newest; a review request keeps quiet.
+        assert!(ai.arrived(Arrived::Reply("r".into()), now));
+        assert!(!ai.arrived(Arrived::Review("x".into()), now));
+        assert_eq!(
+            ai.unseen(),
+            [
+                Arrived::Document("d".into()),
+                Arrived::Reply("r".into()),
+                Arrived::Review("x".into()),
+            ]
+        );
+        ai.seen(Some("r"), None);
+        ai.seen(None, Some("d"));
+        assert_eq!(ai.unseen(), [Arrived::Review("x".into())]);
+        // Once quiet is over, or once opened, it notifies again.
+        assert!(ai.arrived(Arrived::Review("x".into()), now + REVIEW_QUIET));
+        assert!(!ai.arrived(Arrived::Review("x".into()), now + REVIEW_QUIET));
+        ai.seen(None, Some("x"));
+        assert!(ai.unseen().is_empty());
+        assert!(ai.arrived(Arrived::Review("x".into()), now + REVIEW_QUIET));
+        // Stopping the share drops review requests, never deliveries.
+        ai.arrived(Arrived::Reply("r".into()), now);
+        ai.sharing_stopped();
+        assert_eq!(ai.unseen(), [Arrived::Reply("r".into())]);
+        assert!(ai.arrived(Arrived::Review("x".into()), now));
+        ai.stopped();
+        assert!(ai.unseen().is_empty());
+    }
 
     fn ids(names: &[&str]) -> Vec<String> {
         names.iter().map(|name| name.to_string()).collect()

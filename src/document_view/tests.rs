@@ -252,7 +252,10 @@ fn copy_markdown_preserves_source_selection_undo_and_warning(cx: &mut TestAppCon
             cx.read_from_clipboard().unwrap().text(),
             Some(current.clone())
         );
-        assert!(cx.read_from_clipboard().unwrap().metadata().is_none());
+        // Never scanned: a hand copy not known to be clean (#1209).
+        assert!(crate::restored_clipboard::is_restored(
+            &cx.read_from_clipboard().unwrap()
+        ));
         assert_eq!(app.editor.read(cx).text(), current);
         assert!(app.unsaved(cx));
         assert_eq!(app.session.document.saved, saved);
@@ -289,7 +292,8 @@ fn copy_markdown_feedback_restarts_expires_and_stays_with_its_tab(cx: &mut TestA
             panic!("expected a single plain text entry");
         };
         assert!(text.text().is_empty());
-        assert!(item.metadata().is_none());
+        // Never scanned: marked as a hand copy not known to be clean (#1209).
+        assert!(crate::restored_clipboard::is_restored(&item));
     });
     cx.executor().advance_clock(Duration::from_secs(1));
     cx.dispatch_action(CopyMarkdown);

@@ -196,24 +196,7 @@ impl DocumentView {
                         theme,
                     ))
                     .when(cfg!(test), |v| v.debug_selector(|| "Pseudonymize".into()))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        // Pseudonymize scans once and opens the panel; it never
-                        // closes it.
-                        let review = &this.pii.review();
-                        let fresh = !this.pii.reviewing()
-                            && review.variants().is_empty()
-                            && review.applied().is_empty();
-                        if fresh {
-                            this.start_pii_scan(cx);
-                        }
-                        // A scan is reviewed in Review, not beside Notes.
-                        if this.inspector == super::Inspector::Notes {
-                            this.inspector = super::Inspector::Review;
-                        }
-                        if !this.replacements_open() {
-                            this.toggle_replacements_panel(window, cx);
-                        }
-                    }))
+                    .on_click(cx.listener(|this, _, window, cx| this.open_review(window, cx)))
                     .into_any_element()
             }
             Primary::Apply(n) => {
@@ -367,6 +350,7 @@ impl DocumentView {
             .when(self.shows_history_button(reviewable, cx), |v| {
                 v.child(self.history_button(cx))
             })
+            .children(self.ask_button(cx))
             .child(self.more_button(cx))
             .children(self.primary_button(cx).map(|b| div().ml_1().child(b)));
         let detached = self.title.detached.get();
@@ -423,6 +407,8 @@ impl DocumentView {
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.more_open = !this.more_open;
                         this.history.open = false;
+                        this.ask.open = false;
+                        this.ask.unfiled = None;
                         // The menu takes focus, so Tab and Esc work in it.
                         if this.more_open {
                             window.focus(&this.more_menu_focus, cx);

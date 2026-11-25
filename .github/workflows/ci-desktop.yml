@@ -74,8 +74,9 @@ jobs:
   test:
     name: ${{ fromJSON('{"macos":"ci/macos (tests)","windows":"ci/windows (hosted, tests)"}')[inputs.os] }}
     runs-on: ${{ fromJSON('{"macos":"macos-26","windows":"windows-latest"}')[inputs.os] }}
-    # Job limits (ADR 0095); hosted Windows builds take 32 minutes cold.
-    timeout-minutes: ${{ inputs.os == 'windows' && 40 || 30 }}
+    # Job limits (ADR 0095); hosted Windows builds take 32 minutes cold, and
+    # its render test alone can take 20 (#1243).
+    timeout-minutes: ${{ inputs.os == 'windows' && 45 || 30 }}
     env:
       SCREENS: ${{ inputs.screens }}
     steps:

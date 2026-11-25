@@ -1,11 +1,17 @@
 //! The AI project in the window (Milestone 2 item 8), with "AI connector
 //! (preview)" on: the share prompt after an AI app asked, the indicator
 //! with the Project shared (the sidebar's foot, the Project page's chip
-//! and the collapsed rail), and the Project page's AI activity. The AI
-//! app's calls go through the connector's own handler, with no listener.
-//! It leaves the setting off and the fixture as it found it.
+//! and the collapsed rail), the badge after a delivery and its Reply page
+//! (item 9), and the Project page's AI activity. The AI app's calls go
+//! through the connector's own handler, with no listener; notifications
+//! go to a recorder. It leaves the setting off and the fixture as it found
+//! it.
 use super::{Driver, Result};
-use crate::workspace::project_page::{Place, Segment};
+use crate::workspace::{
+    ai_deliveries::Notifier,
+    ai_project::Arrived,
+    project_page::{Place, Segment},
+};
 use mdoc_mcp::wire::{self, Answer, Call, Kind, Request};
 
 /// AI app `app` makes `call`; the window hears of it as its poll would.
@@ -48,6 +54,8 @@ pub(super) fn scenes(d: &mut Driver, project: &str) -> Result<()> {
         window.focus(&w.focus, cx);
         shown
     })?;
+    let (notifier, notes) = Notifier::recording();
+    let os_notifier = d.change(|w, _, _| std::mem::replace(&mut w.notifier, notifier))?;
     preview(d, true)?;
     // A Ready member for the AI app to read.
     let witness = d.change(|w, _, _| -> Result<String> {
@@ -88,6 +96,20 @@ pub(super) fn scenes(d: &mut Driver, project: &str) -> Result<()> {
             markdown: "The statement is public.".into(),
         },
     )?;
+    // The delivery's badge on the AI card, then its Reply page, as its
+    // notification's click opens it (without bringing the window forward).
+    if notes.borrow().len() != 1 {
+        return Err("the delivery's notification".into());
+    }
+    capture(d, "ai-delivery-badge")?;
+    let Answer::Ok(wire::Done::Delivered { reply, .. }) = &delivered else {
+        return Err("the delivery".into());
+    };
+    let reply = reply.clone();
+    d.change(|w, window, cx| w.open_arrived(&Arrived::Reply(reply), window, cx))?;
+    d.settle()?;
+    capture(d, "ai-reply-delivered")?;
+    d.change(|w, window, cx| w.show_project_page(project, Place::Header, window, cx))?;
     call(d, "openai-chatgpt", read())?;
     d.change(|w, _, cx| w.show_project_segment(Segment::Activity, cx))?;
     capture(d, "project-page-activity")?;
@@ -118,5 +140,6 @@ pub(super) fn scenes(d: &mut Driver, project: &str) -> Result<()> {
         (false, true) => w.show_home(window, cx),
         (false, false) => w.activate(w.tabs.active(), window, cx),
     })?;
-    preview(d, false)
+    preview(d, false)?;
+    d.change(|w, _, _| w.notifier = os_notifier)
 }

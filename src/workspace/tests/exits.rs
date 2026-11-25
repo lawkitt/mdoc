@@ -36,7 +36,8 @@
 //!
 //! **Not exits.** These hand out text on purpose and are not checked:
 //! - Copy Markdown (⋯ menu, File menu, shortcut, palette) is the
-//!   deliberate raw copy of the editor's text.
+//!   deliberate raw copy of the editor's text, a hand copy marked unless
+//!   clean.
 //! - Export Markdown (⋯ menu, File menu, shortcut, palette) is the same
 //!   raw copy, written to a file the user picks (Decision 6).
 //! - By the maintainer's ruling on item 29, neither is offered under the
@@ -52,7 +53,10 @@
 //!   reply box has no outbound path: Paste AI reply only comes in.
 //! - Copying a selection (in the editor, a find field or a DOCX comment
 //!   card), the model comparison's export, and the crash report (masked,
-//!   with no document text) are the user's own copies.
+//!   with no document text) are the user's own copies. A hand copy of
+//!   document text is never blocked; one not known to be clean is marked
+//!   as restored text is, and "Replace N and Copy" replaces through the
+//!   review (#1209, `hand_copies.rs`).
 use super::*;
 use crate::{
     exits::{Gate, take_out},
@@ -554,7 +558,10 @@ const LIST_HEADING: &str = "PERSON_1's lease";
 
 /// A connector over the window's Vault, sharing the fixture's Project.
 fn connector(fixture: &mut Fixture<'_>) -> mdoc_connector::Connector {
-    let setting = mdoc_store::settings::AiConnectorConfig { preview: true };
+    let setting = mdoc_store::settings::AiConnectorConfig {
+        preview: true,
+        ..Default::default()
+    };
     let vault = vault(&fixture.tabs, fixture.cx);
     let connector = mdoc_connector::Connector::start(vault, &setting).unwrap();
     connector.share(&fixture.project).unwrap();
