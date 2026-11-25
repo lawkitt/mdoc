@@ -82,6 +82,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -107,6 +108,7 @@ import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.Decision
 import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.DocumentPhase
+import io.github.lawkitt.mdoc.core.HandOffRefusal
 import io.github.lawkitt.mdoc.core.Identity
 import io.github.lawkitt.mdoc.core.PromotedFrom
 import io.github.lawkitt.mdoc.core.MentionState
@@ -196,6 +198,39 @@ fun DocumentScreen(
     // The banner shows over the text: on a phone the Original gives way.
     LaunchedEffect(state.showsReplyBanner) { if (state.showsReplyBanner) showsOriginal = false }
 
+    // The hand-off's ways out, each through Copy for AI's check (#1091
+    // Decision 19); a refusal shows its own words and step (#1209).
+    val refusal = model.handOffRefusal(state)
+    val step = refusal?.let(model::step)
+    val resources = LocalResources.current
+    val share: (asFile: Boolean) -> Unit = { asFile ->
+        scope.launch { model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, asFile, context)) } }
+    }
+    val copyForAi: () -> Unit = {
+        scope.launch {
+            model.handOff()?.let {
+                copy(context, it.text)
+                model.notice(R.string.copied_for_ai)
+            }
+        }
+    }
+    val take: (HandOffRefusal.Step) -> Unit = { taken ->
+        when (taken) {
+            is HandOffRefusal.Step.ReplaceAndCopy -> scope.launch {
+                model.replaceAndHandOff()?.let {
+                    copy(context, it.text)
+                    model.notice(R.string.copied_for_ai)
+                }
+            }
+            HandOffRefusal.Step.Review -> model.review()
+            HandOffRefusal.Step.FindNames -> {
+                model.dismissRefusal()
+                beforeJob()
+                model.findNames()
+            }
+        }
+    }
+
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -230,30 +265,37 @@ fun DocumentScreen(
                     }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options)) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        // The hand-off's second way out (a long press on iOS).
-                        if (model.primaryAction(state, job) == PrimaryAction.HandOff && !state.showsReply) {
-                            // Ask AI took Share's place on the bar (#1164).
-                            if (aiConnector) {
+                        // The hand-off's second way out (a long press on iOS):
+                        // always listed; until the document can leave,
+                        // disabled with why, and the step that resolves it
+                        // after them, as on iOS (#1209).
+                        if (!state.showsReply) {
+                            val goes = refusal == null && model.primaryAction(state, job) == PrimaryAction.HandOff
+                            val why = refusal?.reason(resources)
+                            HandOffMenuItem(R.string.copy_for_ai, why, goes, "menu-copy-for-ai") {
+                                menu = false
+                                copyForAi()
+                            }
+                            HandOffMenuItem(R.string.share, why, goes, "menu-share") {
+                                menu = false
+                                share(false)
+                            }
+                            HandOffMenuItem(R.string.share_as_file, why, goes, "menu-share-file") {
+                                menu = false
+                                share(true)
+                            }
+                            step?.let {
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.share)) },
-                                    modifier = Modifier.testTag("menu-share"),
+                                    text = { Text(it.title(resources)) },
+                                    // Find names waits while a job runs, as the bar does.
+                                    enabled = it != HandOffRefusal.Step.FindNames || job == null,
+                                    modifier = Modifier.testTag("menu-hand-off-step"),
                                     onClick = {
                                         menu = false
-                                        scope.launch {
-                                            model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, false, context)) }
-                                        }
+                                        take(it)
                                     },
                                 )
                             }
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.share_as_file)) },
-                                onClick = {
-                                    menu = false
-                                    scope.launch {
-                                        model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, true, context)) }
-                                    }
-                                },
-                            )
                         }
                         // The document's own notes, and the reply it was promoted
                         // from (#1091 Decision 3). The core keeps notes with the
@@ -320,6 +362,9 @@ fun DocumentScreen(
                 // The password card's Unlock is the way on while it asks, as on iOS.
                 if (state.passwordPrompt == null || job != null) ActionBar(
                     action = model.primaryAction(state, job),
+                    refusal = refusal,
+                    step = step,
+                    onStep = take,
                     askAi = if (aiConnector) {
                         { scope.launch { model.askAi()?.let { context.startActivity(askAiIntent(it, context)) } } }
                     } else {
@@ -337,17 +382,8 @@ fun DocumentScreen(
                     },
                     onCancel = model::cancelJob,
                     onReplaceAll = model::replaceAll,
-                    onShare = { asFile ->
-                        scope.launch { model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, asFile, context)) } }
-                    },
-                    onCopy = {
-                        scope.launch {
-                            model.handOff()?.let {
-                                copy(context, it.text)
-                                model.notice(R.string.copied_for_ai)
-                            }
-                        }
-                    },
+                    onShare = share,
+                    onCopy = copyForAi,
                     onPasteReply = { model.showReplySheet(true) },
                     onShareReply = { snapshot.reply?.let { context.startActivity(shareIntent(it.restored.text, null, false, context)) } },
                     onCopyReply = {
@@ -554,6 +590,25 @@ fun DocumentScreen(
     state.fromReply?.let { shown ->
         SavedReplySheet(shown, onDismiss = model::hideFromReply, onPromote = { model.promote(shown.reply.id, onOpenDocument) })
     }
+    // Copy for AI, Share or Ask AI refused on a tap: why, and its step (#1209).
+    state.refusal?.let { refused ->
+        val resolves = model.step(refused)
+        val ok: @Composable () -> Unit = { TextButton(onClick = model::dismissRefusal) { Text(stringResource(R.string.ok)) } }
+        AlertDialog(
+            onDismissRequest = model::dismissRefusal,
+            confirmButton = {
+                if (resolves == null) {
+                    ok()
+                } else {
+                    TextButton(onClick = { take(resolves) }, Modifier.testTag("refusal-step")) { Text(resolves.title(resources)) }
+                }
+            },
+            dismissButton = if (resolves == null) null else ok,
+            title = { Text(refused.reason(resources)) },
+            text = { Text(refused.detail(resources)) },
+            modifier = Modifier.testTag("refusal-dialog"),
+        )
+    }
     state.error?.let { message ->
         AlertDialog(
             onDismissRequest = model::dismissError,
@@ -562,6 +617,22 @@ fun DocumentScreen(
             text = { Text(message) },
         )
     }
+}
+
+/** Copy for AI or a Share in the document's menu: always listed, disabled with why until it goes. */
+@Composable
+private fun HandOffMenuItem(label: Int, why: String?, goes: Boolean, tag: String, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Column {
+                Text(stringResource(label))
+                if (why != null) Text(why, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        enabled = goes,
+        modifier = Modifier.testTag(tag),
+        onClick = onClick,
+    )
 }
 
 @Composable
@@ -608,6 +679,10 @@ private fun RecognizingPane(title: Int, body: Int, modifier: Modifier = Modifier
 @Composable
 private fun ActionBar(
     action: PrimaryAction,
+    /** Why the hand-off waits, before a tap; null when it goes. */
+    refusal: HandOffRefusal?,
+    step: HandOffRefusal.Step?,
+    onStep: (HandOffRefusal.Step) -> Unit,
     /** Ask AI, in Share's place: the AI connector preview is on. */
     askAi: (() -> Unit)?,
     hasReply: Boolean,
@@ -650,6 +725,27 @@ private fun ActionBar(
                         Triple(onCopyReply, R.string.copy, R.string.copy_reply),
                         Triple(onPasteReply, R.string.paste, R.string.paste_another_reply),
                     )
+                } else if (refusal != null) {
+                    // Every name decided, but the Vault refuses the text as
+                    // saved: a known name written out, changed since its
+                    // review, excluded from AI. Why, and its step in Share's
+                    // place; Paste still restores a reply (#1209).
+                    val resources = LocalResources.current
+                    Text(
+                        refusal.note(resources),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.testTag("hand-off-refusal"),
+                    )
+                    if (step != null) {
+                        HandOffButtons(
+                            Triple({ onStep(step) }, step.title(resources), step.title(resources)),
+                            Triple(onPasteReply, resources.getString(R.string.paste), resources.getString(R.string.paste_reply)),
+                        )
+                    } else {
+                        OutlinedButton(onClick = onPasteReply, Modifier.fillMaxWidth().semantics { contentDescription = resources.getString(R.string.paste_reply) }) {
+                            Text(stringResource(R.string.paste))
+                        }
+                    }
                 } else if (askAi != null) {
                     HandOffRow(
                         Triple(askAi, R.string.ask_ai, R.string.ask_ai),
@@ -675,12 +771,18 @@ private fun ActionBar(
  */
 @Composable
 private fun HandOffRow(vararg buttons: Triple<() -> Unit, Int, Int>) {
+    val resources = LocalResources.current
+    HandOffButtons(*buttons.map { (onClick, label, spoken) -> Triple(onClick, resources.getString(label), resources.getString(spoken)) }.toTypedArray())
+}
+
+/** [HandOffRow] of labels already in words. */
+@Composable
+private fun HandOffButtons(vararg buttons: Triple<() -> Unit, String, String>) {
     val stacked = LocalDensity.current.fontScale > 1.3f
     val items: @Composable (Modifier) -> Unit = { modifier ->
         buttons.forEachIndexed { index, (onClick, label, spoken) ->
-            val name = stringResource(spoken)
-            val described = modifier.semantics { contentDescription = name }
-            val text: @Composable () -> Unit = { Text(stringResource(label), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            val described = modifier.semantics { contentDescription = spoken }
+            val text: @Composable () -> Unit = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             when (index) {
                 0 -> Button(onClick, described) { text() }
                 1 -> FilledTonalButton(onClick, described) { text() }

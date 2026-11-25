@@ -13,8 +13,10 @@ import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.DocumentSnapshot
 import io.github.lawkitt.mdoc.core.Documents
 import io.github.lawkitt.mdoc.core.HandOff
+import io.github.lawkitt.mdoc.core.HandOffRefusal
 import io.github.lawkitt.mdoc.core.MentionState
 import io.github.lawkitt.mdoc.core.PromotedFrom
+import io.github.lawkitt.mdoc.core.SavedReadiness
 import io.github.lawkitt.mdoc.core.Scope
 import io.github.lawkitt.mdoc.core.SourceRange
 import io.github.lawkitt.mdoc.home.ShownReply
@@ -31,7 +33,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -78,6 +83,10 @@ data class DocumentState(
     val fromReply: ShownReply? = null,
     /** Where Ask AI's wait for the AI app's answer stands; null when nothing waits. */
     val replyOffer: ReplyOffer? = null,
+    /** What the Vault says of the document as saved, for this snapshot; null until asked. */
+    val saved: SavedReadiness? = null,
+    /** Copy for AI or Share refused on a tap: its dialog shows (#1209). */
+    val refusal: HandOffRefusal? = null,
 ) {
     /** "Paste reply?" shows, back from the AI app Ask AI shared to. */
     val showsReplyBanner: Boolean get() = replyOffer == ReplyOffer.Offered
@@ -229,9 +238,80 @@ class DocumentViewModel(
 
     // Hand-off
 
-    /** Copy for AI's text, or why it is not ready. */
+    /** Copy for AI's text; null when refused, and the refusal's dialog shows with its step. */
     suspend fun handOff(): HandOff? = withContext(Dispatchers.IO) {
-        runCatching { session.copyForAi() }.onFailure(::show).getOrNull()
+        runCatching { session.copyForAi() }.onFailure(::refused).getOrNull()
+    }
+
+    // Refusals in plain words (#1209 decisions 13 and 14)
+
+    /**
+     * Why Copy for AI and Share wait now, before a tap; null when they go.
+     * The bar and the menu read this one answer, so they agree, below the
+     * floor too.
+     */
+    fun handOffRefusal(state: DocumentState): HandOffRefusal? = HandOffRefusal.before(state.snapshot, findsNames, state.saved)
+
+    /** The step that resolves `refusal` on this phone. */
+    fun step(refusal: HandOffRefusal): HandOffRefusal.Step? = refusal.step(findsNames)
+
+    init {
+        // Each new snapshot (a save, a scan, a move, a refresh): what the
+        // Vault says of it now. A name another document added to the
+        // Project, or a Keep of one it knows, shows here before a tap.
+        viewModelScope.launch {
+            state.map { it.snapshot }.distinctUntilChanged().collectLatest { snapshot ->
+                mutable.update { if (it.snapshot == snapshot) it.copy(saved = null) else it }
+                checkSaved(snapshot)
+            }
+        }
+    }
+
+    /** Asks the Vault, off the main thread, about `snapshot`; kept while it is still the one shown. */
+    private suspend fun checkSaved(snapshot: DocumentSnapshot = mutable.value.snapshot) {
+        val saved = withContext(Dispatchers.IO) { session.savedReadiness() }
+        mutable.update { if (it.snapshot == snapshot) it.copy(saved = saved) else it }
+    }
+
+    /** A hand-off that failed: a refusal shows with its step; anything else as before. */
+    private fun refused(error: Throwable) {
+        if (error !is AppError.HandOffRefused) return show(error)
+        mutable.update { it.copy(refusal = error.refusal) }
+        // What the tap found, the bar and the menu show too.
+        viewModelScope.launch { checkSaved() }
+    }
+
+    fun dismissRefusal() = mutable.update { it.copy(refusal = null) }
+
+    /**
+     * Replace N and copy: the pending proposals replaced as the bar's
+     * Replace N does, then Copy for AI's text, through the same check;
+     * null when either refuses, and why shows.
+     */
+    suspend fun replaceAndHandOff(): HandOff? {
+        mutable.update { it.copy(refusal = null) }
+        val replaced = withContext(Dispatchers.IO) { runCatching { session.replaceAllPending() } }
+            .onFailure(::show).getOrNull() ?: return null
+        mutable.update { it.copy(snapshot = replaced) }
+        return handOff()
+    }
+
+    /**
+     * Review: the next proposal's sheet; else a kept mention's, a known
+     * name written out, which Replace resolves; else the document opened
+     * again from the Vault, so a name another document of its Project
+     * added since is proposed, and its sheet opens; else its names.
+     */
+    fun review() {
+        mutable.update { it.copy(refusal = null) }
+        val snapshot = mutable.value.snapshot
+        val open = firstProposal(snapshot) ?: snapshot.candidates.filter { it.state == MentionState.Kept }.minByOrNull { it.range.start }?.id
+        if (open != null) return open(open)
+        change {
+            val lined = session.lineUpWithProject()
+            val first = firstProposal(lined)
+            mutable.update { it.copy(snapshot = lined, reviewing = first, showsIdentities = first == null && lined.identities.isNotEmpty()) }
+        }
     }
 
     fun noticeShown() = mutable.update { it.copy(notice = null) }
@@ -370,6 +450,8 @@ class DocumentViewModel(
     fun resumed() = viewModelScope.launch(Dispatchers.IO) {
         documents.refresh()
         runCatching { session.snapshot() }.onSuccess { snapshot -> mutable.update { it.copy(snapshot = snapshot) } }
+        // Another document may have changed the Project's names meanwhile.
+        checkSaved()
     }
 
     /** The document closed: its decrypted original goes (#1091 Decision 24). */
@@ -402,6 +484,10 @@ class DocumentViewModel(
     private companion object {
         /** Ask AI's wait in the saved state: a [ReplyOffer]'s name. */
         const val REPLY_OFFER = "replyOffer"
+
+        /** The first proposal in reading order. */
+        fun firstProposal(snapshot: DocumentSnapshot): CandidateId? =
+            snapshot.candidates.filter { it.state == MentionState.Proposed }.minByOrNull { it.range.start }?.id
 
         /** The next proposal after `current` in reading order, wrapping round. */
         fun nextProposal(candidates: List<Candidate>, current: CandidateId): CandidateId? {
