@@ -1282,6 +1282,10 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// against its Project's names as they are now. The Vault also notes
     /// the share, so a move's Undo keeps the names a reply may use.
     func copyForAI() throws -> HandOff {
+        // A tap right after Done can come before Done's discovery has run
+        // off the main thread: run it now, so the save records the edited
+        // text as reviewed, or proposes what it found (#1209 decision 15).
+        _ = try? core { try ffi.discover() }
         try saveChanges()
         let handOff = try core { try ffi.handOff(vault: library.vault) }
         guard let vaultID else { throw CoreError.notFound }

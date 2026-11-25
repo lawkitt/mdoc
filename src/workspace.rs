@@ -137,6 +137,9 @@ pub(super) enum TabEvent {
     /// Discovery or the edited paragraphs' scan finished: a Copy for AI
     /// waiting for it is checked again.
     NamesFound,
+    /// A refused Copy for AI's step, from its notice or the Share tab: the
+    /// window runs it unless the document is kept from AI.
+    CopyStep(crate::refusal::Step),
     ToggleTheme,
     /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
     /// Source follows and Settings keeps it.
@@ -1302,15 +1305,11 @@ impl Workspace {
                             // document's own names come back.
                             if let Some(review) = review {
                                 view.restore_review(review, cx);
-                                // Saved unscanned and not Ready: it may have been
-                                // left mid-edit, so it owes a scan of all its text.
-                                if !view.session.document.scanned && !view.session.document.ready {
-                                    view.owe_whole_text(cx);
-                                }
                             } else if let Some(names) = names {
                                 view.open_names(&names.identities, &names.reserved, cx);
                                 view.pii.review_mut().leave_off(&names.not_names);
                             }
+                            view.owe_if_left_mid_edit(cx);
                             view.replace_images(view.save_directory(), window, cx);
                             view.scroll
                                 .set_offset(gpui::point(px(0.), px(record.scroll_y.min(0.))));
@@ -1705,6 +1704,9 @@ impl Workspace {
             TabEvent::Project(ProjectEvent::MoveToNew) => self.move_to_new_project(id, window, cx),
             TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
             TabEvent::NamesFound => self.copy_for_ai_after_write(cx),
+            TabEvent::CopyStep(step) => {
+                self.run_tab_step(id, *step, window, cx);
+            }
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
             TabEvent::SourceDisplay(display) => {
                 let display = *display;

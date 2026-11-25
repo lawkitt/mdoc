@@ -1,7 +1,8 @@
 //! The menu bar shelf: ready, not-ready and changed-since-review
 //! rows with prose previews, Project labels and the drag hint; the applied
 //! demos and their "N replaced" hovered (#304); a row's "Copied"; the
-//! first-close note; the empty shelf and the locked shelf.
+//! first-close note; the empty shelf and the locked shelf; every row that
+//! is not ready with its step, and a Copy for AI refused on one (#1209).
 //! The shelf is drawn on a stage window of the usual size, at the top right
 //! as it sits under the menu bar item; no status item or native popup (nor
 //! its blur) is involved.
@@ -46,12 +47,14 @@ impl Stage {
             "shelf": true,
             "rows": content.documents.iter().map(|d| json!({
                 "title": d.display_title(),
-                "state": d.readiness.label(),
+                "state": d.state(),
+                "step": d.step().map(crate::refusal::Step::label),
                 "preview": d.preview.as_ref().map(|p| p.text.clone()),
                 "replaced": d.replaced_count(),
                 "names": d.names_count(),
             })).collect::<Vec<_>>(),
             "copied": shelf.copied(cx),
+            "refused": shelf.refused(cx),
             "drag_hint": content.drag_hint,
             "source_line": shelf.source_line(),
             "clipboard_locked": shelf.clipboard_locked(cx),
@@ -178,7 +181,74 @@ fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
             names: names.clone(),
             project: Some(link.clone()),
             edited: at(9),
+            scanned: true,
             outbound: Some(Err(mdoc_vault::Readiness::ChangedSinceReview)),
+        }));
+    }
+    let source = ClipboardSource::Project {
+        id: link.id.clone(),
+        name: link.name.clone(),
+    };
+    (documents, source)
+}
+
+/// One row in each state that is not ready, each with its step: names
+/// left to review in an open tab, and stored documents holding a known name,
+/// changed since review, and never saved ready, scanned or not.
+fn refusals() -> (Vec<ShelfDocument>, ClipboardSource) {
+    let names = vec![
+        identity("PERSON_1", Category::Person, "Anna Petrova"),
+        identity("PERSON_2", Category::Person, "Boris Ivanov"),
+    ];
+    let link = ProjectLink {
+        id: "c".repeat(32),
+        name: "Petrova v Northwind".into(),
+        colour: None,
+    };
+    let mut documents: Vec<ShelfDocument> = ShelfDocument::of_tab(OpenTab {
+        id: 2,
+        title: "Draft memo.md",
+        text: "PERSON_1 asked Boris Ivanov to review the draft.
+",
+        aliases: vec!["PERSON_1"],
+        pending: 2,
+        checking: false,
+        names: names.clone(),
+        project: Some(link.clone()),
+        edited: at(14),
+        stored: None,
+    })
+    .into_iter()
+    .collect();
+    let stored = [
+        (
+            "Witness statement",
+            mdoc_vault::Readiness::NamesNotReplaced(1),
+            true,
+        ),
+        (
+            "Anna Petrova notice",
+            mdoc_vault::Readiness::ChangedSinceReview,
+            true,
+        ),
+        ("Lease schedule", mdoc_vault::Readiness::NotReviewed, true),
+        ("Reply notes", mdoc_vault::Readiness::NotReviewed, false),
+    ];
+    for (n, (title, readiness, scanned)) in stored.into_iter().enumerate() {
+        let Some(id) = mdoc_store::document_id::VaultId::parse(&format!("{:032x}", 0xd0 + n))
+        else {
+            continue;
+        };
+        documents.extend(ShelfDocument::of_stored(StoredDocument {
+            id,
+            title,
+            text: "PERSON_1 gives notice to Boris Ivanov under clause 9.
+",
+            names: names.clone(),
+            project: Some(link.clone()),
+            edited: at(12 - n as u64),
+            scanned,
+            outbound: Some(Err(readiness)),
         }));
     }
     let source = ClipboardSource::Project {
@@ -330,6 +400,22 @@ fn shelf(d: &mut Driver, name: &str, content: ShelfContent, copied: Option<usize
     shelf_hovering(d, name, content, copied, None)
 }
 
+/// The shelf with Copy for AI refused on row `row`, as ⌘C on it does.
+fn shelf_refused(d: &mut Driver, name: &str, content: ShelfContent, row: usize) -> Result<()> {
+    let height = content.height();
+    stage(
+        d,
+        name,
+        (crate::menu_bar::SHELF_WIDTH, height),
+        None,
+        move |workspace, _, window, cx| {
+            let shelf = cx.new(|cx| ShelfView::new(workspace, content, window, cx));
+            shelf.update(cx, |view, cx| view.copy(row, window, cx));
+            (shelf.clone().into(), Some(shelf))
+        },
+    )
+}
+
 fn shelf_hovering(
     d: &mut Driver,
     name: &str,
@@ -359,6 +445,14 @@ fn shelf_hovering(
 pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     let (rows, source) = documents(false);
     shelf(d, "shelf", content(rows, source.clone()), None)?;
+    let (rows, refusal_source) = refusals();
+    let mut not_ready = content(rows, refusal_source.clone());
+    not_ready.drag_hint = false;
+    shelf(d, "shelf-refusals", not_ready, None)?;
+    let (rows, _) = refusals();
+    let mut refused = content(rows, refusal_source);
+    refused.drag_hint = false;
+    shelf_refused(d, "shelf-refused", refused, 0)?;
     for (name, hover) in [("shelf-demos", None), ("shelf-demos-count", Some(0))] {
         let mut demos = content(demos()?, source.clone());
         demos.drag_hint = false;

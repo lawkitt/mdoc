@@ -281,6 +281,8 @@ impl Workspace {
             } else {
                 view.open_project_mapping(link, &identities, &reserved, cx);
                 view.pii.review_mut().leave_off(&not_names);
+                // A member moved mid-edit opens with its review cleared.
+                view.owe_if_left_mid_edit(cx);
             }
         });
         cx.notify();

@@ -268,7 +268,9 @@ Maintainer actions list the steps on the maintainer's side.
 10. **[Android] Editing.** *From the mobile editor grill Q2.* The editor
     screen on the editor core ADR 0109 adds, after Android's rendered
     Markdown (#569) and iOS item 23's slice 1. *Done when:* grilled for
-    Compose specifics and built to ADR 0109's rules.
+    Compose specifics and built to ADR 0109's rules, and Done calls
+    `scan_edits` with an instrumented test that a typed new name does not
+    leave unreplaced (Vault & Projects item 44).
 
 ## Mobile CI/CD
 
@@ -393,8 +395,8 @@ done. Desktop items 16–23 and 25 landed together from an integration branch
 The Vault ships as 0.4.0 ([#1153](https://github.com/lawkitt/mdoc/issues/1153)). Items 28–32, the
 GUI rows in [#1146](https://github.com/lawkitt/mdoc/issues/1146) and one day
 of real use by the maintainer on the landed build gate its next candidate;
-items 33–35 are polish and do not. Items 36–39 gate it too; items 40–43
-follow them and gate nothing ([#1209](https://github.com/lawkitt/mdoc/issues/1209)).
+items 33–35 are polish and do not. Items 36–39 and 44 gate it too; items
+40–43 follow them and gate nothing ([#1209](https://github.com/lawkitt/mdoc/issues/1209)).
 
 36. **[Desktop] A refusal offers the fix.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
     A refused Copy for AI, Share or shelf row names its reason and carries
@@ -444,6 +446,15 @@ follow them and gate nothing ([#1209](https://github.com/lawkitt/mdoc/issues/120
     restored reply's copy is; ⌘C stays silent. *Done when:* workspace tests
     cover the menu item and the marking in Edit, Original and Side by side.
     *Blocked by 40.*
+44. **[Core] An edit's new text is scanned.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091) (the maintainer,
+    2026-11-25).* At Done, the paragraphs an edit changed are scanned for
+    names as a fresh document is, by the name finder or below the floor by
+    the rules; a new name becomes a proposal and the document is not Ready
+    until it is decided. Only the changed paragraphs are scanned. *Done
+    when:* core tests pin a typed new name as a proposal and an edit with no
+    new name staying Ready, and desktop, iOS and Android each have a test of
+    a typed name that does not leave unreplaced.
 
 - **[Mobile] Later: drag a selection out.** It follows the copy menu's three
   states once those have been used for a while. *From
@@ -484,20 +495,6 @@ or ChatGPT apps themselves are the maintainer's.
    launcher for a binary inside an installed app? The maintainer runs it,
    since the install can restart Claude Desktop. *Done when:* the answer is a
    comment on the issue.
-4. **[Spike] A floating window on Windows.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-   Can GPUI show a small topmost window that takes no keyboard focus when it
-   appears, with a tray icon, a system-wide hotkey and exclusion from screen
-   capture? *Done when:* what worked and what did not is a comment on the
-   issue.
-5. **[Core] Connector service: the AI project and reads.** *From
-   [#1164](https://github.com/lawkitt/mdoc/issues/1164) (ADR 0126).* One service over
-   the Vault holds the AI project (off by default), lists its documents by
-   AI label, size and state, and returns a Ready document's text for AI or
-   its "needs review" state, with an outline and parts above about 60,000
-   characters. *Blocked by:* Vault & Projects item 29. *Done when:* core
-   tests on a temp Vault prove no read reaches another Project or Unfiled,
-   each read re-checks the Project's names, no label comes from a stored
-   title, and the connector is in item 29's list of exits.
 6. **[Core] Deliveries and AI activity.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
    A delivery names the documents it read and is a reply or a new Document
    with a title; one that names a document outside the AI project is refused.
@@ -573,9 +570,6 @@ or ChatGPT apps themselves are the maintainer's.
     reply?" banner restores what the user pastes. *Done when:* the iOS job
     passes with tests of both, and a device check shares to an AI app and
     restores its answer.
-20. **[Android] Ask AI and the reply banner.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-    As item 18. *Blocked by:* item 18. *Done when:* the Android job passes
-    with tests of both.
 21. **[Docs] Words, privacy and release notes.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
     `privacy.md` says what a connected AI app can read and that any process
     running as the user can read the same; the glossary gains the companion

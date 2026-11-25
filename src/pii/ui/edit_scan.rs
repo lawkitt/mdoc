@@ -66,9 +66,20 @@ impl DocumentView {
         }));
     }
 
-    /// A document opened that may have been left mid-edit: none of its text
-    /// counts as scanned, and its scan follows the pause.
-    pub(crate) fn owe_whole_text(&mut self, cx: &mut Context<Self>) {
+    /// A Vault document just loaded, its review or names back: saved
+    /// unscanned and not Ready, with a review or aliases (a move clears the
+    /// review), it may have been left mid-edit, so it owes a scan of all of
+    /// it. One never reviewed waits for Find names as before.
+    pub(crate) fn owe_if_left_mid_edit(&mut self, cx: &mut Context<Self>) {
+        let stored = &self.session.document;
+        let reviewed = stored.review.is_some() || !self.pii.review.applied().is_empty();
+        if stored.vault.is_some() && !stored.scanned && !stored.ready && reviewed {
+            self.owe_whole_text(cx);
+        }
+    }
+
+    /// None of the text counts as scanned, and its scan follows the pause.
+    fn owe_whole_text(&mut self, cx: &mut Context<Self>) {
         self.pii.review.owe_whole_text();
         self.pii.edit_scan.whole = true;
         self.schedule_edit_scan(cx);
@@ -77,7 +88,8 @@ impl DocumentView {
     /// Copy for AI: scan the edited paragraphs now rather than after the
     /// pause.
     pub(crate) fn scan_edits_now(&mut self, cx: &mut Context<Self>) {
-        if self.pii.edit_scan.pause.take().is_some() {
+        self.pii.edit_scan.pause = None;
+        if self.pii.edit_scan.cancel.is_none() {
             self.start_edit_scan(cx);
         }
     }
@@ -163,8 +175,20 @@ impl DocumentView {
         if revision != self.editor.read(cx).revision() || identity != self.session.generation {
             return;
         }
-        let Ok(mut found) = found else {
-            return;
+        let mut found = match found {
+            Ok(found) => found,
+            // Another document holds the name finder: try again after the
+            // pause.
+            Err(mdoc_detect::DetectError::Busy | mdoc_detect::DetectError::Permit(_)) => {
+                self.schedule_edit_scan(cx);
+                return;
+            }
+            // Owed still: Copy for AI tries again, and says why it waits.
+            Err(error) => {
+                self.pii.error = Some(error.to_string());
+                cx.notify();
+                return;
+            }
         };
         let skip = self.scan_skip();
         found.retain(|d| !skip.contains(&d.category));
