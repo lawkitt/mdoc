@@ -124,18 +124,20 @@ pub(super) fn lock(folder: &Path) -> io::Result<Option<File>> {
     Ok(Some(file))
 }
 
-/// How a stop cuts a call's socket I/O short: the connection, shut down
-/// both ways, which ends a blocking read or write.
-pub struct Cut(UnixStream);
+/// A served connection.
+pub type Stream = UnixStream;
+
+/// A stop shuts the connection down both ways: the caller sees its end
+/// at once, and a blocking read or write on it ends, now and later.
+pub fn close(stream: &Stream) {
+    let _ = stream.shutdown(std::net::Shutdown::Both);
+}
+
+/// Nothing more to cut: [`close`] ended the call's I/O for good.
+pub struct Cut;
 
 impl Cut {
-    fn of(stream: &UnixStream) -> io::Result<Self> {
-        stream.try_clone().map(Self)
-    }
-
-    pub fn cut(&self) {
-        let _ = self.0.shutdown(std::net::Shutdown::Both);
-    }
+    pub fn cut(&self) {}
 }
 
 pub struct Listener {
@@ -184,12 +186,10 @@ pub fn listen(socket: &Address, answer: Handler) -> io::Result<Listener> {
                 if !peer(&stream).is_ok_and(is_us) {
                     continue;
                 }
-                // No way to cut it short: not served.
-                let Ok(cut) = Cut::of(&stream) else { continue };
                 let (answer, calls) = (answer.clone(), calls.clone());
                 let _ = std::thread::Builder::new()
                     .name("mdoc-connector-call".into())
-                    .spawn(move || super::serve(stream, cut, &calls, &answer));
+                    .spawn(move || super::serve(stream, Cut, &calls, &answer));
             }
         })?;
     Ok(handle)

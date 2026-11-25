@@ -230,8 +230,17 @@ fn create(name: &str, first: bool) -> io::Result<HANDLE> {
     Ok(pipe)
 }
 
+/// A served connection: the pipe instance, closed when the last read or
+/// write lets go of it.
+pub type Stream = File;
+
+/// A stop closes the instance by letting go of it; nothing more to do.
+pub fn close(_: &Stream) {}
+
 /// How a stop cuts a call's pipe I/O short: its serving thread, whose
-/// blocking read or write `CancelSynchronousIo` ends.
+/// blocking read or write `CancelSynchronousIo` ends. A shared handle's
+/// synchronous I/O is serialized, so `DisconnectNamedPipe` would wait
+/// behind a blocked write instead.
 pub struct Cut(Owned);
 
 // SAFETY: a thread handle may be used and closed from any thread.

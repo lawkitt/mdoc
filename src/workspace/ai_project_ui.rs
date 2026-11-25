@@ -104,8 +104,14 @@ impl Workspace {
     pub(super) fn refresh_ai_connector(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.ai_setting().preview {
             self.start_ai_connector(window, cx);
-            return;
+        } else {
+            self.stop_ai_connector(cx);
         }
+    }
+
+    /// The switch shows off, saved or not yet (#1220): nothing more
+    /// reaches an AI app, and nothing is shared.
+    pub(super) fn stop_ai_connector(&mut self, cx: &mut Context<Self>) {
         self.settings
             .update(cx, |panel, cx| panel.ai_connector_failed(None, cx));
         if self.ai_connector.take().is_some() {

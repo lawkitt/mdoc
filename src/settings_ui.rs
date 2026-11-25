@@ -71,6 +71,10 @@ pub enum Event {
     /// Settings › Vault's Show: read the key and hand it back with
     /// [`Panel::show_recovery_key`].
     ShowRecoveryKey,
+    /// "AI connector (preview)" as the page shows it, ahead of its save:
+    /// off stops the connector at once, and a save that fails turns it
+    /// back on (#1220). On starts with [`Event::Applied`].
+    AiConnectorShown(bool),
 }
 
 struct SetupCompletion {
@@ -850,11 +854,20 @@ impl Panel {
         }
         self.persist(cx);
     }
+    /// "AI connector (preview)" as last saved.
+    fn ai_connector_saved_on(&self) -> bool {
+        (self.shared.borrow().current.as_ref()).is_some_and(|saved| saved.ai_connector.preview)
+    }
+
     /// Atomically save `draft`. A failure restores the previous choices.
     fn persist(&mut self, cx: &mut Context<Self>) {
         // The AI connector switch shows or hides Claude Desktop's state at once.
         if self.category == Category::AiConnector {
             self.refresh_ai(cx);
+        }
+        // Shown off, it serves nothing more, before the save lands (#1220).
+        if !self.draft.ai_connector.preview && self.ai_connector_saved_on() {
+            cx.emit(Event::AiConnectorShown(false));
         }
         if self.applying {
             self.save_pending = true;
@@ -948,6 +961,10 @@ impl Panel {
                         this.update_fields(cx);
                         if this.category == Category::AiConnector {
                             this.refresh_ai(cx);
+                        }
+                        // An off that didn't save is on again.
+                        if this.ai_connector_saved_on() {
+                            cx.emit(Event::AiConnectorShown(true));
                         }
                         this.error = Some(format!(
                             "Could not save settings: {e}. Previous defaults remain active."

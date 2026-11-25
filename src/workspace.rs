@@ -661,71 +661,76 @@ impl Workspace {
             }));
         this.theme
             .set(style::resolve(this.theme_choice, window.appearance()));
-        this.settings_subscription =
-            Some(
-                cx.subscribe_in(&panel, window, |this, _, event, window, cx| match event {
-                    settings_ui::Event::ThemeSelected(choice) => {
-                        this.select_theme(*choice, window, cx);
+        this.settings_subscription = Some(cx.subscribe_in(
+            &panel,
+            window,
+            |this, _, event, window, cx| match event {
+                settings_ui::Event::ThemeSelected(choice) => {
+                    this.select_theme(*choice, window, cx);
+                }
+                settings_ui::Event::Applied | settings_ui::Event::Checked => {
+                    this.refresh_model_settings(cx);
+                    crate::menu_bar::set_enabled(this.menu_bar_setting(), cx);
+                    // "AI connector (preview)" starts or stops at once; a
+                    // model now set up lets entering documents scan.
+                    this.refresh_ai_connector(window, cx);
+                    this.scan_on_entry(cx);
+                    // Spelling choices apply at once; views re-read them on render.
+                    for view in this.tabs.iter().filter_map(|tab| tab.view()) {
+                        view.update(cx, |_, cx| cx.notify());
                     }
-                    settings_ui::Event::Applied | settings_ui::Event::Checked => {
-                        this.refresh_model_settings(cx);
-                        crate::menu_bar::set_enabled(this.menu_bar_setting(), cx);
-                        // "AI connector (preview)" starts or stops at once; a
-                        // model now set up lets entering documents scan.
-                        this.refresh_ai_connector(window, cx);
-                        this.scan_on_entry(cx);
-                        // Spelling choices apply at once; views re-read them on render.
-                        for view in this.tabs.iter().filter_map(|tab| tab.view()) {
-                            view.update(cx, |_, cx| cx.notify());
-                        }
+                }
+                // Off stops before its save lands; a failed save
+                // starts it again (#1220).
+                settings_ui::Event::AiConnectorShown(false) => this.stop_ai_connector(cx),
+                settings_ui::Event::AiConnectorShown(true) => this.refresh_ai_connector(window, cx),
+                settings_ui::Event::Finished(settings::Model::Ocr(model), result) => {
+                    let selected = this.preferences.borrow().snapshot().map(|p| p.ocr);
+                    if let Ok(config) = selected
+                        && config.model == *model
+                    {
+                        let state = match result {
+                            Ok(Some(installed)) => {
+                                let mut installed = installed.clone();
+                                installed.config = config;
+                                OcrState::Ready(installed)
+                            }
+                            Ok(None) => OcrState::Missing,
+                            Err(e) => OcrState::Failed(e.clone()),
+                        };
+                        this.set_ocr(state, cx);
+                    } else if matches!(this.ocr_state, OcrState::Installing) {
+                        // A tab's setup of a model Settings no longer
+                        // selects ended; the tab may be gone.
+                        let state = known_ocr_state(&this.preferences, this.settings.read(cx));
+                        this.set_ocr(state, cx);
                     }
-                    settings_ui::Event::Finished(settings::Model::Ocr(model), result) => {
-                        let selected = this.preferences.borrow().snapshot().map(|p| p.ocr);
-                        if let Ok(config) = selected
-                            && config.model == *model
-                        {
-                            let state = match result {
-                                Ok(Some(installed)) => {
-                                    let mut installed = installed.clone();
-                                    installed.config = config;
-                                    OcrState::Ready(installed)
-                                }
-                                Ok(None) => OcrState::Missing,
-                                Err(e) => OcrState::Failed(e.clone()),
-                            };
-                            this.set_ocr(state, cx);
-                        } else if matches!(this.ocr_state, OcrState::Installing) {
-                            // A tab's setup of a model Settings no longer
-                            // selects ended; the tab may be gone.
-                            let state = known_ocr_state(&this.preferences, this.settings.read(cx));
-                            this.set_ocr(state, cx);
-                        }
+                }
+                // The detection model set up: AI project members that
+                // waited for it scan now.
+                settings_ui::Event::Finished(settings::Model::Pii(_), Ok(_)) => {
+                    this.scan_on_entry(cx);
+                }
+                settings_ui::Event::Finished(_, _) => {}
+                settings_ui::Event::Compare(model) => {
+                    this.open_comparison(*model, window, cx);
+                }
+                settings_ui::Event::RestartToUpdate => this.restart_to_update(window, cx),
+                settings_ui::Event::Shortcuts => this.toggle_shortcuts(window, cx),
+                settings_ui::Event::UserListsChanged(lists) => {
+                    this.save_user_lists(lists.clone(), window, cx)
+                }
+                settings_ui::Event::UnlockLists => this.unlock_projects(window, cx),
+                settings_ui::Event::ShowRecoveryKey => this.show_recovery_key(cx),
+                settings_ui::Event::CategoriesUnticked(categories) => {
+                    for view in this.tabs.iter().filter_map(|tab| tab.view().cloned()) {
+                        view.update(cx, |view, cx| {
+                            view.default_categories_unticked(categories, cx)
+                        });
                     }
-                    // The detection model set up: AI project members that
-                    // waited for it scan now.
-                    settings_ui::Event::Finished(settings::Model::Pii(_), Ok(_)) => {
-                        this.scan_on_entry(cx);
-                    }
-                    settings_ui::Event::Finished(_, _) => {}
-                    settings_ui::Event::Compare(model) => {
-                        this.open_comparison(*model, window, cx);
-                    }
-                    settings_ui::Event::RestartToUpdate => this.restart_to_update(window, cx),
-                    settings_ui::Event::Shortcuts => this.toggle_shortcuts(window, cx),
-                    settings_ui::Event::UserListsChanged(lists) => {
-                        this.save_user_lists(lists.clone(), window, cx)
-                    }
-                    settings_ui::Event::UnlockLists => this.unlock_projects(window, cx),
-                    settings_ui::Event::ShowRecoveryKey => this.show_recovery_key(cx),
-                    settings_ui::Event::CategoriesUnticked(categories) => {
-                        for view in this.tabs.iter().filter_map(|tab| tab.view().cloned()) {
-                            view.update(cx, |view, cx| {
-                                view.default_categories_unticked(categories, cx)
-                            });
-                        }
-                    }
-                }),
-            );
+                }
+            },
+        ));
         this
     }
 

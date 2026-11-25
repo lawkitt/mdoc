@@ -45,11 +45,23 @@ pub(crate) struct Running {
 }
 
 impl Drop for Running {
-    /// A connection the listener accepted holds its handler, and so the
-    /// connector, past the stop: from now on it is shared nothing, so such
-    /// a call reads and delivers nothing.
+    /// The listener stops first: from then on nothing reaches an AI app
+    /// (#1220). A call it accepted still holds its handler, and so the
+    /// connector: it is then shared nothing, so such a call reads and
+    /// delivers nothing more. That waits for a delivery being saved, so it
+    /// runs off the window's thread.
     fn drop(&mut self) {
-        self.connector.stop_sharing();
+        drop(self._listening.take());
+        let connector = self.connector.clone();
+        let stopped = std::thread::Builder::new()
+            .name("mdoc-connector-stop".into())
+            .spawn({
+                let connector = connector.clone();
+                move || connector.stop_sharing()
+            });
+        if stopped.is_err() {
+            connector.stop_sharing();
+        }
     }
 }
 
@@ -315,9 +327,9 @@ mod tests {
         );
     }
 
-    /// #1220: a read held at a hook while the preview turns off, then
-    /// released, writes nothing to the pipe: not the text, not even a
-    /// refusal.
+    /// #1220: a read of a Ready document, held at a hook once its text is
+    /// ready, while the preview turns off, then released, writes nothing
+    /// to the pipe.
     #[test]
     fn a_read_held_across_off_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
@@ -326,16 +338,32 @@ mod tests {
         let on = AiConnectorConfig { preview: true };
         let mut running = start_unlistened(vault.clone(), &on).unwrap();
         let project = vault.create_project(Default::default()).unwrap();
+        let document = vault
+            .create_document(mdoc_vault::NewDocument {
+                project: Some(project.id.clone()),
+                title: "Lease memo".into(),
+                source_kind: mdoc_vault::SourceKind::Markdown,
+                origin: mdoc_vault::DocumentOrigin::Ordinary,
+                markdown: "PERSON_1 rents.".into(),
+            })
+            .unwrap();
+        vault
+            .update_document(&document.id, |d| {
+                d.scanned = true;
+                d.set_ready(true);
+            })
+            .unwrap();
         running.connector.share(&project.id).unwrap();
-        // The hook: the read waits for its release, then is answered.
-        let (enter, entered) = channel();
+        // The hook: the answer is made, then waits for its release.
+        let (made, answered) = channel();
         let (release, released) = channel::<()>();
         let released = std::sync::Mutex::new(released);
         let inner = running.answer.clone();
         running.answer = Arc::new(move |line: &[u8]| {
-            let _ = enter.send(());
+            let answer = inner(line);
+            let _ = made.send(answer.clone());
             let _ = released.lock().unwrap().recv();
-            inner(line)
+            answer
         });
         let running = listen(running, &endpoint).unwrap();
         let caller = {
@@ -344,17 +372,20 @@ mod tests {
                 let request = Request {
                     v: mdoc_mcp::wire::VERSION,
                     app: "claude-ai".into(),
-                    call: Call::ListDocuments,
+                    call: Call::GetDocument {
+                        doc_id: document.id,
+                        part: None,
+                    },
                 };
                 ipc::call(&endpoint, &serde_json::to_vec(&request).unwrap())
             })
         };
-        entered
-            .recv_timeout(std::time::Duration::from_secs(10))
-            .unwrap();
-        // The preview turns off.
+        let held = (answered.recv_timeout(std::time::Duration::from_secs(10))).unwrap();
+        let held: Answer = serde_json::from_slice(&held).unwrap();
+        assert!(matches!(held, Answer::Ok(Done::Text { .. })), "{held:?}");
+        // The preview turns off, as Settings' switch does.
         drop(running);
-        release.send(()).unwrap();
+        // Let go at once, while the text is still held.
         if let Ok(written) = caller.join().unwrap() {
             assert!(
                 written.is_empty(),
@@ -362,6 +393,7 @@ mod tests {
                 String::from_utf8_lossy(&written)
             );
         }
+        release.send(()).unwrap();
     }
 
     /// Only a call that found nothing shared asks; a bad request or a
@@ -419,8 +451,19 @@ mod tests {
         let held = running.answer.clone();
         let answer = |line: &[u8]| serde_json::from_slice::<Answer>(&held(line)).unwrap();
         assert!(matches!(answer(&list), Answer::Ok(Done::Documents { .. })));
+        let connector = running.connector.clone();
         drop(running);
+        shares_nothing_soon(&connector);
         assert_eq!(answer(&list), Answer::Refused(Refusal::NothingShared));
+    }
+
+    /// Off shares nothing, off the window's thread: a moment later.
+    fn shares_nothing_soon(connector: &Connector) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while connector.ai_project().is_some() {
+            assert!(std::time::Instant::now() < deadline, "still shared");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
     }
 
     #[test]
