@@ -7,7 +7,9 @@ use super::{
     activity::{AiActivity, AiEvent, app_name},
 };
 use crate::{
-    ObjectKind, VaultError, new_id,
+    ObjectKind, VaultError,
+    manifest::reply_path,
+    new_id,
     records::{Document, Project, Reply, ReplyOwner, now},
 };
 use mdoc_pii::restore::RestoreMap;
@@ -55,7 +57,9 @@ impl Vault {
     /// mean in the Project's mapping now (so it restores by identity, as a
     /// pasted reply does), its app as the reply's `source_app`; then, when
     /// it asks, a Document promoted from it ([`Self::promote_reply`]); then
-    /// its line in the Project's AI activity. Refused, with nothing
+    /// its line in the Project's AI activity. When the Document or the line
+    /// can't be written, the reply and Document are taken back, so a retry
+    /// makes no second copy. Refused, with nothing
     /// written, when the Project is gone or a document it names is gone,
     /// in another Project or Unfiled ([`VaultError::NotFound`]) or excluded
     /// from AI ([`VaultError::ExcludedFromAi`]).
@@ -113,20 +117,39 @@ impl Vault {
             }
         }
         self.write_reply(&lock, &reply)?;
-        let document = match delivery.as_document {
-            true => Some(self.promote_locked(&lock, &reply)?.id),
-            false => None,
+        let mut document = None;
+        let rest = || -> Result<AiActivity, VaultError> {
+            if delivery.as_document {
+                document = Some(self.promote_locked(&lock, &reply)?.id);
+            }
+            let activity = AiActivity {
+                at: reply.created,
+                app,
+                event: AiEvent::Delivered {
+                    reply: reply.id.clone(),
+                    document: document.clone(),
+                    read: delivery.read,
+                },
+            };
+            self.record_locked(&lock, project, &activity)?;
+            Ok(activity)
         };
-        let activity = AiActivity {
-            at: reply.created,
-            app,
-            event: AiEvent::Delivered {
-                reply: reply.id.clone(),
-                document: document.clone(),
-                read: delivery.read,
-            },
+        let activity = match rest() {
+            Ok(activity) => activity,
+            Err(error) => {
+                // Take back what was written, so a retry saves no second
+                // copy; a handle stopped by a fault takes nothing back.
+                if let Some(id) = &document {
+                    let _ = self.delete_document_locked(&lock, id);
+                }
+                if self.check_alive().is_ok()
+                    && super::remove_sealed(&reply_path(&self.root, &reply.id)).is_ok()
+                {
+                    let _ = self.forget_deleted::<Reply>(&reply.id);
+                }
+                return Err(error);
+            }
         };
-        self.record_locked(&lock, project, &activity)?;
         Ok(Delivered {
             reply: reply.id,
             document,

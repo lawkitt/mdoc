@@ -42,6 +42,17 @@ pub struct AiRead {
     /// Its Markdown's length in characters, and its words.
     pub chars: usize,
     pub words: usize,
+    /// The revisions of the Document and of its Project's record read.
+    pub at: ReadAt,
+}
+
+/// The revisions a read of a Document checked: its own and its Project's.
+/// A write to either since then (an edit, a move, an exclusion, a name)
+/// bumps one of them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ReadAt {
+    pub document: u64,
+    pub project: u64,
 }
 
 /// A Ready Document's text for AI, the note apart:
@@ -133,7 +144,7 @@ impl Vault {
     /// are one moment's (#1198); the check runs once it is released. Its
     /// counts come from the record checked.
     pub fn text_for_ai_in(&self, project: &str, id: &str) -> Result<AiRead, VaultError> {
-        let (document, mapping) = {
+        let (document, mapping, at) = {
             let _lock = self.write_lock()?;
             let document = self.document(id)?;
             if document.project.as_deref() != Some(project) {
@@ -144,7 +155,15 @@ impl Vault {
             }
             #[cfg(test)]
             connector_read::between_reads();
-            self.checkable(document)?
+            if document.exclude_from_ai {
+                return Err(VaultError::ExcludedFromAi);
+            }
+            let project = self.project(project)?;
+            let at = ReadAt {
+                document: document.revision,
+                project: project.revision,
+            };
+            (document, project.mapping, at)
         };
         let chars = document.markdown.chars().count();
         let words = document.markdown.split_whitespace().count();
@@ -152,6 +171,7 @@ impl Vault {
             checked: checked_for_ai(document, &mapping),
             chars,
             words,
+            at,
         })
     }
 

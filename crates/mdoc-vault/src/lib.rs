@@ -39,7 +39,7 @@ pub use records::{
 };
 pub use vault::{
     ACTIVITY_KEPT, AiActivity, AiEvent, AiRead, AiText, Delivered, Exported, Fault, FaultHook,
-    ManifestCheck, MoveUndo, Moved, NewDelivery, ORIGINALS, ProjectDocuments, Readiness,
+    ManifestCheck, MoveUndo, Moved, NewDelivery, ORIGINALS, ProjectDocuments, ReadAt, Readiness,
     ReplyHandle, Saved, Stage, StagedImport, Vault, WriteStep,
 };
 

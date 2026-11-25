@@ -40,7 +40,9 @@ pub use mdoc_vault::{AiActivity, AiEvent, Delivered, Readiness};
 pub use parts::{Heading, LONG, MAX_OUTLINE_HEADINGS, MAX_PART_HEADINGS, PART_MAX, PartInfo};
 
 use mdoc_store::settings::AiConnectorConfig;
-use mdoc_vault::{AiRead, AiText, DocumentSummary, NewDelivery, ObjectKind, Vault, VaultError};
+use mdoc_vault::{
+    AiRead, AiText, DocumentSummary, NewDelivery, ObjectKind, ReadAt, Vault, VaultError,
+};
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex, MutexGuard},
@@ -207,9 +209,9 @@ struct Share {
     /// Bumped by every share and stop: a read whose share changed while it
     /// ran is read again, so nothing read after a stop is handed out.
     generation: u64,
-    /// The documents whose text was handed out under this generation, by
-    /// any app: a delivery names only these.
-    served: HashSet<String>,
+    /// The documents whose text was handed out under this generation, with
+    /// the app each was handed to: an app's delivery names only its own.
+    served: HashSet<(String, String)>,
 }
 
 impl Share {
@@ -255,7 +257,7 @@ impl Connector {
     /// `list_documents`: the AI project's documents not excluded from AI,
     /// oldest first, each checked now.
     pub fn list_documents(&self) -> Result<Vec<Listed>, ConnectorError> {
-        let keep = |_: &mut Share, _: &str, _: &Vec<Listed>| Ok(());
+        let keep = |_: &mut Share, _: &str, _: &Vec<Listed>| Ok(true);
         self.while_shared(keep, |project| {
             let mut listed = Vec::new();
             for entry in self.entries(project, None)? {
@@ -282,34 +284,38 @@ impl Connector {
     /// project, checked now. `part`: `None` for its text, or its outline
     /// above [`LONG`] characters; `Some(n)` for part n, from 1. A short
     /// document has one part, its text. A read that hands text out is a
-    /// line of the Project's AI activity first: when that can't be
-    /// written, nothing is handed out.
+    /// line of the Project's AI activity first, written only while the
+    /// Document and its Project are as they were checked (else it is read
+    /// again): when that can't be written, nothing is handed out.
     pub fn get_document(
         &self,
         app: &str,
         doc_id: &str,
         part: Option<usize>,
     ) -> Result<Read, ConnectorError> {
-        let keep = |share: &mut Share, project: &str, read: &Read| {
+        let keep = |share: &mut Share, project: &str, (read, at): &(Read, ReadAt)| {
             let Some((document, part)) = read.handed_out() else {
-                return Ok(());
+                return Ok(true);
             };
-            let event = AiEvent::Read {
-                document: document.to_string(),
-                part,
-            };
-            self.vault.record_ai_activity(project, app, event)?;
-            share.served.insert(document.to_string());
-            Ok(())
+            let vault = &self.vault;
+            if vault
+                .record_ai_read(project, app, document, part, *at)?
+                .is_none()
+            {
+                return Ok(false);
+            }
+            share.served.insert((app.to_string(), document.to_string()));
+            Ok(true)
         };
-        self.while_shared(keep, |project| self.read(project, doc_id, part))
+        let read = self.while_shared(keep, |project| self.read(project, doc_id, part))?;
+        Ok(read.0)
     }
 
     /// `deliver_reply` for AI app `app` (Decision 8): `delivery` saved as an
     /// AI Reply of the AI project, bound to the identities its aliases mean
     /// there now, and as a Document promoted from it for
     /// [`DeliveryKind::Document`] (`Vault::deliver_in`). Refused unless each
-    /// document it names was read since the Project was shared
+    /// document it names was read by `app` since the Project was shared
     /// ([`ConnectorError::NotRead`]) and is still in it
     /// ([`ConnectorError::NotShared`]). The answer holds ids and counts,
     /// and the aliases no identity answers: nothing restored.
@@ -338,7 +344,12 @@ impl Connector {
         let Some(project) = share.project.clone() else {
             return Err(ConnectorError::NothingShared);
         };
-        if named.is_empty() || !named.iter().all(|id| share.served.contains(id)) {
+        if let Err(VaultError::NotFound { .. }) = self.vault.project(&project) {
+            share.set(None);
+            return Err(ConnectorError::NothingShared);
+        }
+        let read_by_app = |id: &String| share.served.contains(&(app.to_string(), id.clone()));
+        if named.is_empty() || !named.iter().all(read_by_app) {
             return Err(ConnectorError::NotRead);
         }
         let new = NewDelivery {
@@ -369,14 +380,14 @@ impl Connector {
         project: &str,
         doc_id: &str,
         part: Option<usize>,
-    ) -> Result<Read, ConnectorError> {
+    ) -> Result<(Read, ReadAt), ConnectorError> {
         let entry = (self.entries(project, Some(doc_id))?.pop())
             .filter(|entry| entry.summary.id == doc_id)
             .ok_or(ConnectorError::NotShared)?;
         let doc_id = entry.summary.id;
         let label = entry.label;
-        let checked = match entry.read {
-            Ok(read) => read.checked,
+        let (checked, at) = match entry.read {
+            Ok(read) => (read.checked, read.at),
             Err(VaultError::NotFound { .. } | VaultError::ExcludedFromAi) => {
                 return Err(ConnectorError::NotShared);
             }
@@ -385,30 +396,44 @@ impl Connector {
         let AiText { note, markdown } = match checked {
             Ok(text) => text,
             Err(readiness) => {
-                return Ok(Read::NeedsReview {
+                let read = Read::NeedsReview {
                     doc_id,
                     label,
                     readiness,
-                });
+                };
+                return Ok((read, at));
             }
         };
+        let read = Self::text_or_part(doc_id, label, note, &markdown, part)?;
+        Ok((read, at))
+    }
+
+    /// A Ready document's text, or above [`LONG`] characters its outline or
+    /// part `part`.
+    fn text_or_part(
+        doc_id: String,
+        label: String,
+        note: String,
+        markdown: &str,
+        part: Option<usize>,
+    ) -> Result<Read, ConnectorError> {
         if markdown.chars().count() <= LONG {
             return match part {
                 None | Some(1) => Ok(Read::Text {
                     doc_id,
                     label,
-                    text: note + &markdown,
+                    text: note + markdown,
                 }),
                 Some(_) => Err(ConnectorError::NoSuchPart { of: 1 }),
             };
         }
-        let parts = parts::parts(&markdown);
+        let parts = parts::parts(markdown);
         let of = parts.len();
         match part {
             None => Ok(Read::Outline {
                 doc_id,
                 label,
-                size: Size::of(&markdown),
+                size: Size::of(markdown),
                 parts: parts::outline(&parts),
                 note,
             }),
@@ -427,18 +452,18 @@ impl Connector {
             Some(_) => Err(ConnectorError::NoSuchPart { of }),
         }
     }
-
     fn share_slot(&self) -> MutexGuard<'_, Share> {
         self.share.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// `read` of the AI project, if it still opens, handed back only if the
     /// share did not change while it ran, and read again if it did; `keep`
-    /// runs on it first, under the share's lock, and may still refuse it.
+    /// runs on it first, under the share's lock, and may still refuse it,
+    /// or have it read again (`false`: what it read changed since).
     /// A deleted Project is shared no more, unless the share changed since.
     fn while_shared<T>(
         &self,
-        keep: impl Fn(&mut Share, &str, &T) -> Result<(), ConnectorError>,
+        keep: impl Fn(&mut Share, &str, &T) -> Result<bool, ConnectorError>,
         read: impl Fn(&str) -> Result<T, ConnectorError>,
     ) -> Result<T, ConnectorError> {
         for _ in 0..ATTEMPTS {
@@ -466,8 +491,9 @@ impl Connector {
             let mut share = self.share_slot();
             if share.generation == generation {
                 let value = result?;
-                keep(&mut share, &project, &value)?;
-                return Ok(value);
+                if keep(&mut share, &project, &value)? {
+                    return Ok(value);
+                }
             }
         }
         Err(ConnectorError::ShareChanged)
@@ -512,7 +538,12 @@ impl Connector {
             // The exits suite took the check out: the stored text, unchecked.
             let document = self.vault.document(id)?;
             let size = Size::of(&document.markdown);
+            let at = ReadAt {
+                document: document.revision,
+                project: self.vault.project(project)?.revision,
+            };
             return Ok(AiRead {
+                at,
                 checked: Ok(AiText {
                     note: String::new(),
                     markdown: document.markdown,
@@ -607,5 +638,50 @@ mod tests {
             connector.list_documents(),
             Err(ConnectorError::NothingShared)
         ));
+    }
+
+    /// Review 2: a write between the check and the activity line (an
+    /// exclusion, a name the Project learns) makes the read start again,
+    /// so the text checked before it is not handed out, nor recorded.
+    #[test]
+    fn a_write_between_the_check_and_its_line_reads_again() {
+        let (_temp, connector, _, letter) = shared();
+        let case = connector.ai_project().unwrap();
+        let exclude = letter.clone();
+        meanwhile(move |connector| {
+            (connector.vault)
+                .update_document(&exclude, |d| d.exclude_from_ai = true)
+                .unwrap();
+        });
+        assert!(matches!(
+            connector.get_document(CLAUDE, &letter, None),
+            Err(ConnectorError::NotShared)
+        ));
+        (connector.vault)
+            .update_document(&letter, |d| {
+                d.exclude_from_ai = false;
+                d.markdown = "Anna Petrova signed.".into();
+                d.set_ready(true);
+            })
+            .unwrap();
+        let project = case.clone();
+        meanwhile(move |connector| {
+            let anna = mdoc_pii::restore::ExportedIdentity {
+                alias: "PERSON_1".into(),
+                previous: Vec::new(),
+                category: mdoc_pii::Category::Person,
+                custom: false,
+                originals: vec![Arc::from("Anna Petrova")],
+            };
+            (connector.vault)
+                .update_project(&project, |p| p.mapping.merge(&[anna]))
+                .unwrap();
+        });
+        assert!(matches!(
+            connector.get_document(CLAUDE, &letter, None).unwrap(),
+            Read::NeedsReview { .. }
+        ));
+        assert!(connector.vault.ai_activity(&case).unwrap().is_empty());
+        assert!(connector.share_slot().served.is_empty());
     }
 }

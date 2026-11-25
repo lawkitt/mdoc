@@ -12,11 +12,11 @@
 //!
 //! An entry a later build adds a kind of, or that does not parse, is
 //! passed over when read and kept as it was when the file is rewritten.
-use super::{Vault, WriteLock};
+use super::{ReadAt, Vault, WriteLock};
 use crate::{
     ObjectKind, VaultError,
     manifest::activity_path,
-    records::{Project, now},
+    records::{Document, Project, now},
     seal::{Unseal, read_limited},
 };
 use serde::{Deserialize, Serialize};
@@ -98,9 +98,49 @@ impl Vault {
         Ok(entries)
     }
 
-    /// Note that `app` did `event` in Project `project` now. `NotFound`
-    /// once the Project is gone; nothing is written then.
-    pub fn record_ai_activity(
+    /// Note that `app` read Document `document` of Project `project` now,
+    /// or its part `part`, as [`Vault::text_for_ai_in`] checked it `at`
+    /// ([`AiRead::at`](super::AiRead)): only while neither record changed
+    /// since, under the write lock, so no edit, move, exclusion or new name
+    /// lands between the check and the line. `Ok(None)`: one did, or the
+    /// Document is gone; nothing is written, and the caller reads again.
+    /// `NotFound` once the Project is gone.
+    pub fn record_ai_read(
+        &self,
+        project: &str,
+        app: &str,
+        document: &str,
+        part: Option<usize>,
+        at: ReadAt,
+    ) -> Result<Option<AiActivity>, VaultError> {
+        let lock = self.write_lock()?;
+        let stored = self.load_record::<Project>(project)?;
+        let read = match self.load_record::<Document>(document) {
+            Err(VaultError::NotFound { .. }) => return Ok(None),
+            read => read?,
+        };
+        let now_at = ReadAt {
+            document: read.revision,
+            project: stored.revision,
+        };
+        if read.project.as_deref() != Some(project) || read.exclude_from_ai || now_at != at {
+            return Ok(None);
+        }
+        let entry = AiActivity {
+            at: now(),
+            app: app_name(app),
+            event: AiEvent::Read {
+                document: document.to_string(),
+                part,
+            },
+        };
+        self.record_locked(&lock, project, &entry)?;
+        Ok(Some(entry))
+    }
+
+    /// Note that `app` did `event` in Project `project` now (tests).
+    #[cfg(test)]
+    fn record_ai_activity(
         &self,
         project: &str,
         app: &str,

@@ -14,7 +14,7 @@ pub use activity::{ACTIVITY_KEPT, AiActivity, AiEvent};
 pub use deliveries::{Delivered, NewDelivery};
 pub use export::{Exported, ORIGINALS};
 pub use moves::{MoveUndo, Moved, ProjectDocuments};
-pub use readiness::{AiRead, AiText, Readiness};
+pub use readiness::{AiRead, AiText, ReadAt, Readiness};
 pub use replies::ReplyHandle;
 pub use staging::StagedImport;
 

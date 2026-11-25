@@ -443,3 +443,93 @@ fn an_old_vault_has_no_activity_and_gains_it() {
     assert!(!root.join("activity").join(format!("{shared}.enc")).exists());
     drop(temp);
 }
+
+/// Review 5: a delivery names documents its own app read. Another app's
+/// read of the same document, in the Project shared after a move, does
+/// not let an answer about the first Project through.
+#[test]
+fn an_apps_delivery_names_only_what_that_app_read() {
+    let f = fixture();
+    let (_, letter) = f.shared_with_a_read_letter();
+    let other = f.project("Other");
+    f.vault.move_document(&letter, Some(&other)).unwrap();
+    (f.vault.update_document(&letter, |d| d.set_ready(true))).unwrap();
+    f.connector.share(&other).unwrap();
+    f.read("ChatGPT", &letter);
+    assert!(matches!(
+        f.deliver(reply(&[&letter], "PERSON_1 agrees.")),
+        Err(ConnectorError::NotRead)
+    ));
+    let theirs = f
+        .connector
+        .deliver("ChatGPT", reply(&[&letter], "PERSON_1 agrees."));
+    assert!(theirs.is_ok());
+    assert_eq!(f.vault.replies().len(), 1);
+}
+
+/// Review 4: a Project deleted before anything was read from it is shared
+/// no more once a delivery finds it gone.
+#[test]
+fn a_delivery_to_a_deleted_project_shares_nothing() {
+    let f = fixture();
+    let shared = f.project("Shared");
+    let letter = f.ready(Some(&shared), "Letter", "PERSON_1 signed.");
+    f.connector.share(&shared).unwrap();
+    f.vault
+        .delete_project(&shared, ProjectDocuments::MoveToUnfiled)
+        .unwrap();
+    assert!(matches!(
+        f.deliver(reply(&[&letter], "PERSON_1 agrees.")),
+        Err(ConnectorError::NothingShared)
+    ));
+    assert_eq!(f.connector.ai_project(), None);
+}
+
+/// Review 1: a delivery whose activity line can't be written takes back
+/// its reply and Document, so a retry makes no second copy.
+#[test]
+fn a_delivery_that_cannot_be_recorded_leaves_nothing() {
+    let f = fixture();
+    let (shared, letter) = f.shared_with_a_read_letter();
+    let file = (f.temp.path().join("vault/activity")).join(format!("{shared}.enc"));
+    std::fs::remove_file(&file).unwrap();
+    std::fs::create_dir_all(&file).unwrap();
+    let delivery = Delivery {
+        kind: DeliveryKind::Document,
+        title: Some("Draft".into()),
+        ..reply(&[&letter], "PERSON_1 agrees.")
+    };
+    assert!(matches!(
+        f.deliver(delivery.clone()),
+        Err(ConnectorError::Vault(_))
+    ));
+    assert!(f.vault.replies().is_empty());
+    assert_eq!(f.vault.documents_in(Some(&shared)).len(), 1);
+    std::fs::remove_dir(&file).unwrap();
+    let delivered = f.deliver(delivery).unwrap();
+    assert_eq!(f.vault.replies().len(), 1);
+    assert!(delivered.document.is_some());
+    let reopened = Vault::open(f.temp.path().join("vault"), &KEY).unwrap();
+    assert_eq!(reopened.replies().len(), 1);
+    assert_eq!(reopened.documents_in(Some(&shared)).len(), 2);
+}
+
+/// Review 3: deleting a Project whose activity can't be removed fails
+/// before any of its Documents or replies change.
+#[test]
+fn a_project_whose_activity_cannot_go_stays_whole() {
+    let f = fixture();
+    let (shared, letter) = f.shared_with_a_read_letter();
+    f.deliver(reply(&[&letter], "PERSON_1 agrees.")).unwrap();
+    let file = (f.temp.path().join("vault/activity")).join(format!("{shared}.enc"));
+    std::fs::remove_file(&file).unwrap();
+    std::fs::create_dir_all(file.join("held")).unwrap();
+    assert!(
+        f.vault
+            .delete_project(&shared, ProjectDocuments::Delete)
+            .is_err()
+    );
+    assert!(f.vault.project(&shared).is_ok());
+    assert_eq!(f.vault.documents_in(Some(&shared)).len(), 1);
+    assert_eq!(f.vault.project_replies(&shared).len(), 1);
+}
