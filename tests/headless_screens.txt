@@ -134,6 +134,7 @@ settings-vault
 settings-vault-recovery-key
 settings-ai-connector-off
 settings-ai-connector
+settings-ai-connector-failed
 settings-ai-connector-consent
 settings-ai-connector-consent-chatgpt
 vault-recovery-nudge

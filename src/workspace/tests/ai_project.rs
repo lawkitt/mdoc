@@ -507,6 +507,24 @@ fn the_project_page_lists_ai_activity(cx: &mut TestAppContext) {
             "Claude read “Lease memo”",
         ]
     );
+    // #1220: the delivered reply keeps the id the app gave itself; its
+    // pages name the product.
+    let detail = cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        let vault = tabs.opened_vault().unwrap();
+        let reply = vault.project_replies(&fixture.lease).pop().unwrap();
+        assert_eq!(reply.source_app.as_deref(), Some("claude-ai"));
+        crate::workspace::saved_replies::reply_detail(
+            &reply.owner,
+            reply.source_app.as_deref(),
+            reply.created,
+            &Default::default(),
+        )
+    });
+    assert!(
+        detail.starts_with("From the Project · Claude · "),
+        "{detail}"
+    );
     // Another Project's page lists only its own.
     show_page(&tabs, cx, &fixture.estate);
     click_toolbar(cx, "project-segment-activity");

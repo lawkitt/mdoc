@@ -1,6 +1,6 @@
 //! Settings › AI connector in the window: what each button shows and
 //! writes, against temp Claude Desktop and ChatGPT folders.
-use super::super::{Category, CloseSettings, Panel};
+use super::super::{Category, CloseSettings, Event, Panel};
 use crate::ai_connector::setup::{Host, Places, SHIM, Status, backup};
 use crate::style::Theme;
 use gpui::{TestAppContext, VisualTestContext, px, size};
@@ -357,4 +357,63 @@ fn a_failed_switch_save_shows_the_rows_again(cx: &mut TestAppContext) {
     assert!(shared.borrow().snapshot().unwrap().ai_connector.preview);
     assert_eq!(status(&panel, Host::Claude, cx), Some(Status::NotAdded));
     assert!(shown(cx, "ai-claude-add"));
+}
+
+/// #1220: a failed start shows under the switch while it is on, and not
+/// with the switch off.
+#[gpui::test]
+fn a_failed_start_shows_under_the_switch(cx: &mut TestAppContext) {
+    let apps = apps(Some(CLAUDE), Some(CODEX));
+    let (panel, _, cx) = page(&apps, true, cx);
+    assert!(!shown(cx, "ai-connector-failed"));
+    let why = "Couldn't start the connector: another copy of mdoc is using it.";
+    panel.update(cx, |p, cx| p.ai_connector_failed(Some(why.into()), cx));
+    draw(cx);
+    assert!(shown(cx, "ai-connector-failed"));
+    assert!(shown(cx, "ai-claude-add"), "the rest of the page stays");
+    click(cx, "ai-connector-preview");
+    assert!(!shown(cx, "ai-connector-failed"));
+}
+
+/// #1220: switched off, the page tells the window at once, before its
+/// save lands, so the connector stops while the switch shows off; a save
+/// that fails turns it back on.
+#[gpui::test]
+fn off_is_told_before_its_save_lands(cx: &mut TestAppContext) {
+    use std::{cell::RefCell, time::Duration};
+    let apps = apps(Some(CLAUDE), None);
+    let (panel, shared, cx) = page(&apps, true, cx);
+    let told = Rc::new(RefCell::new(Vec::new()));
+    let _told = cx.update(|_, cx| {
+        let told = told.clone();
+        cx.subscribe(&panel, move |_, event: &Event, _| {
+            if let Event::AiConnectorShown(on) = event {
+                told.borrow_mut().push(*on);
+            }
+        })
+    });
+    panel.update(cx, |p, cx| {
+        let gate = cx.background_executor().timer(Duration::from_secs(1));
+        p.save_gate = Some(cx.background_executor().spawn(gate));
+    });
+    click(cx, "ai-connector-preview");
+    assert_eq!(*told.borrow(), [false]);
+    assert!(
+        shared.borrow().snapshot().unwrap().ai_connector.preview,
+        "the save is still held"
+    );
+    cx.executor().advance_clock(Duration::from_secs(2));
+    cx.run_until_parked();
+    assert!(!shared.borrow().snapshot().unwrap().ai_connector.preview);
+    // On again saves; then an off whose save fails is on again.
+    click(cx, "ai-connector-preview");
+    assert!(shared.borrow().snapshot().unwrap().ai_connector.preview);
+    assert_eq!(*told.borrow(), [false]);
+    let dir = tempfile::tempdir().unwrap();
+    let blocked = dir.path().join("not-a-directory");
+    std::fs::write(&blocked, b"blocked").unwrap();
+    shared.borrow_mut().path = Some(blocked.join("settings.json"));
+    click(cx, "ai-connector-preview");
+    assert_eq!(*told.borrow(), [false, false, true]);
+    panel.update(cx, |p, _| assert!(p.draft.ai_connector.preview));
 }
