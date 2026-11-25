@@ -393,8 +393,61 @@ done. Desktop items 16–23 and 25 landed together from an integration branch
 The Vault ships as 0.4.0 ([#1153](https://github.com/lawkitt/mdoc/issues/1153)). Items 28–32, the
 GUI rows in [#1146](https://github.com/lawkitt/mdoc/issues/1146) and one day
 of real use by the maintainer on the landed build gate its next candidate;
-items 33–35 are polish and do not.
+items 33–35 are polish and do not. Items 36–39 gate it too; items 40–43
+follow them and gate nothing ([#1209](https://github.com/lawkitt/mdoc/issues/1209)).
 
+36. **[Desktop] A refusal offers the fix.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
+    A refused Copy for AI, Share or shelf row names its reason and carries
+    the one step that resolves it: "Replace 3 and copy", "Review" or "Find
+    names". The button shows the count before the click. ⌘C on a shelf row
+    that is not Ready says why, and "not reviewed" is no longer labelled
+    "Changed since review". *Done when:* workspace tests and headless renders
+    cover every refusal state, and one click from each ends in copied text or
+    the open review.
+37. **[iOS] Refusals in plain words.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
+    Changed since review, a known name written out and excluded from AI each
+    get their own sentence and the step that resolves them; no core error
+    text reaches a screen. Below the memory floor the bar and the title menu
+    agree. *Done when:* UI tests cover each refusal state and the floor case.
+38. **[Android] Refusals in plain words.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
+    The same sentences and steps as item 37. Copy and Share show disabled
+    with their reason, as on iOS, and are no longer hidden. *Done when:*
+    instrumented tests cover each refusal state.
+39. **[Check] Nothing to replace, and an edit with no new name.** *From
+    [#1209](https://github.com/lawkitt/mdoc/issues/1209).* Two behaviours to
+    confirm in running builds and fix where they fail: a scanned document with
+    nothing to replace is Ready and can use Copy for AI; an edit that adds no
+    new name returns to Ready without a click. *Done when:* a test pins both
+    on desktop, iOS and Android.
+40. **[Core] The clean-selection check.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209)
+    (ADR 0109, amended).* One call answers, for a range of a document: clean,
+    N names not replaced, or never scanned; a second accepts the proposals
+    inside a range as the review does, in one undoable step. Both reach the
+    mobile bindings. *Done when:* core tests cover each answer, text changed
+    since its scan, and a known name written out. *Blocks 41–43.*
+41. **[iOS] Copy a selection.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
+    The selection menu of `docs/specs/mobile.md`: Copy, or "Replace N and
+    copy" with "Copy with names". Table cells and edit mode copy to the
+    system clipboard, marked unless clean; a hardware ⌘C copies as written.
+    *Done when:* UI tests cover the three menu states, the marking and a
+    Ready document's plain Copy, and replace the tests that pin "no Copy".
+    *Blocked by 40.*
+42. **[Android] Copy a selection.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
+    The same menu and marking as item 41 in place of `NoCopyTextView`'s
+    refusals; Share and Assist on a selection stay off. *Done when:*
+    instrumented tests cover the three menu states and the marking. *Blocked
+    by 40.*
+43. **[Desktop] "Replace N and Copy", and marked hand copies.** *From
+    [#1209](https://github.com/lawkitt/mdoc/issues/1209).* The right-click
+    menu gains "Replace N and Copy" when a selection holds unreplaced names.
+    A copy not known to be clean, in any view, is marked concealed as a
+    restored reply's copy is; ⌘C stays silent. *Done when:* workspace tests
+    cover the menu item and the marking in Edit, Original and Side by side.
+    *Blocked by 40.*
+
+- **[Mobile] Later: drag a selection out.** It follows the copy menu's three
+  states once those have been used for a while. *From
+  [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
 
 - **[Desktop] Later: a horizontal tab strip.** Only if the tree proves short
   for working sets; needs no schema change. It would take the existing title
@@ -520,9 +573,6 @@ or ChatGPT apps themselves are the maintainer's.
     reply?" banner restores what the user pastes. *Done when:* the iOS job
     passes with tests of both, and a device check shares to an AI app and
     restores its answer.
-19. **[iOS] Shortcuts actions.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-    Pseudonymize text and Restore text as Shortcuts actions. *Done when:* the
-    iOS job passes with tests of each action's result.
 20. **[Android] Ask AI and the reply banner.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
     As item 18. *Blocked by:* item 18. *Done when:* the Android job passes
     with tests of both.

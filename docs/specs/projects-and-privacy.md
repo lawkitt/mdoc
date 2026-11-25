@@ -42,6 +42,11 @@ in [CONTEXT.md](../../CONTEXT.md).
   the release Vault.
 - Text leaves (Copy for AI, Share, shelf, MCP) only after a fresh check
   against the Project's names; a stored copy of AI-ready text is never served.
+- A selection the user copies by hand is their own copy, on every platform:
+  never blocked, with no note for the AI, and marked as a restored reply's
+  copy is unless the core finds it clean
+  ([#1209](https://github.com/lawkitt/mdoc/issues/1209)). "Excluded from AI"
+  does not stop it.
 - A saved AI reply restores by the identities its aliases meant when saved,
   whatever a later move or merge did to the aliases.
 - Mobile decrypts an original for viewing into a cache wiped on close and at

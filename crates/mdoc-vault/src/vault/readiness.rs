@@ -194,18 +194,28 @@ impl Vault {
         Ok((document, mapping))
     }
 
-    /// The Document `id`'s title as it leaves with [`Self::text_for_ai`]'s
-    /// text (a shared file's name, a share sheet's subject): every original
-    /// its Project knows now, or its own mapping while Unfiled, replaced by
-    /// its alias, as the desktop shelf shows titles. A name the Project
-    /// knows only from another Document is masked too (#1192). Whether the
+    /// The name Document `id` leaves under with [`Self::text_for_ai`]'s
+    /// text (a shared file's name, a share sheet's subject and preview
+    /// title): "Document 3 – 2026-11-25", nothing of its stored title,
+    /// which may hold a name nobody reviewed (#1205). The number is its
+    /// place among the Vault's Documents by creation, oldest first, so a
+    /// rename, edit or move keeps it and only deleting an older Document
+    /// changes it. Creation is stored in whole seconds, so Documents made in
+    /// one second sort by id: a newer one may take an older one's number
+    /// within that second, never after. The date is the day it was
+    /// created, in UTC. Whether the
     /// Document may leave is `text_for_ai`'s to decide.
-    pub fn title_for_ai(&self, id: &str) -> Result<String, VaultError> {
+    pub fn share_name(&self, id: &str) -> Result<String, VaultError> {
         let document = self.document(id)?;
-        let mapping = self.mapping_of(&document)?;
-        Ok(RestoreMap::new(mapping.exported())
-            .pseudonymize(&document.title)
-            .0)
+        let key = (document.created, document.id.as_str());
+        let older = (self.documents().iter())
+            .filter(|other| (other.created, other.id.as_str()) < key)
+            .count();
+        Ok(format!(
+            "Document {} – {}",
+            older + 1,
+            utc_date(document.created)
+        ))
     }
 
     /// The mapping `document`'s names live in: its Project's as stored now,
@@ -237,6 +247,21 @@ fn checked_for_ai(document: Document, mapping: &Mapping) -> Result<AiText, Readi
 
 #[cfg(test)]
 mod connector_read;
+
+/// `seconds` since the Unix epoch as a Gregorian date in UTC,
+/// "2026-11-25"; independent of locale and OS access.
+fn utc_date(seconds: u64) -> String {
+    let days = (seconds / 86_400).min(i32::MAX as u64) as i64 + 719_468;
+    let era = days / 146_097;
+    let doe = days - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
 
 #[cfg(test)]
 mod tests {
@@ -364,5 +389,16 @@ mod tests {
             vault.readiness(&letter).unwrap(),
             Readiness::ChangedSinceReview
         );
+    }
+
+    /// A share name's date: the creation day in UTC, across a leap day and
+    /// the turn of a century.
+    #[test]
+    fn a_share_date_is_the_utc_creation_day() {
+        assert_eq!(super::utc_date(0), "1970-01-01");
+        assert_eq!(super::utc_date(951_782_400), "2000-02-29");
+        assert_eq!(super::utc_date(1_795_651_199), "2026-11-25");
+        assert_eq!(super::utc_date(1_795_651_200), "2026-11-26");
+        assert_eq!(super::utc_date(4_107_542_400), "2100-03-01");
     }
 }

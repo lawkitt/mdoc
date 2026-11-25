@@ -202,6 +202,10 @@
     <string name="share">Share</string>
     <string name="copy">Copy</string>
     <string name="share_as_file">Share as Markdown file</string>
+    <string name="ask_ai">Ask AI</string>
+    <string name="paste_reply_question">Paste reply?</string>
+    <string name="paste_reply_banner">Copy the AI app\'s answer, then paste it here to read it with the real names.</string>
+    <string name="type_a_reply">Type a reply</string>
     <string name="copied_for_ai">Copied for AI</string>
     <string name="paste_reply">Paste reply</string>
     <string name="paste_another_reply">Paste another reply</string>
@@ -268,6 +272,9 @@
     <!-- Settings -->
     <string name="models">Models</string>
     <string name="models_explanation">Models download once, on Wi-Fi unless you allow cellular, and then run on this device.</string>
+    <string name="ai_connector">AI connector</string>
+    <string name="ai_connector_preview">AI connector (preview)</string>
+    <string name="ai_connector_explanation">Ask AI shares a ready document\'s text, names replaced, with an AI app. Back in mdoc, Paste reply? restores its answer.</string>
     <string name="stays_on_phone">mdoc\'s documents stay on this phone and are not in backups.</string>
     <string name="about_mdoc">About mdoc</string>
     <string name="version">Version</string>

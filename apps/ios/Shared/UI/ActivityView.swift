@@ -28,7 +28,7 @@ struct ActivityView: UIViewControllerRepresentable {
 /// first words, which are Copy for AI's placeholder note. The title leaves
 /// with the text, as Mail's subject and the preview's title, so it must
 /// hold no more than the text does: for Copy for AI's text, the file's
-/// pseudonymized name (#1188); for a restored reply, which holds the real
+/// neutral name (#1188, #1205); for a restored reply, which holds the real
 /// names by design, its document's title or its own.
 /// The text itself is unchanged. Save to Files gets `file`, the same text as
 /// a `.md` file, rather than a `.txt` the system would make of it.
