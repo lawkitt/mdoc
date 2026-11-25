@@ -84,7 +84,7 @@ pub(super) fn set_preview(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, 
 
 /// AI app "claude-ai" makes `call`, as through the pipe; the window hears
 /// of it at its next poll.
-fn call(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, call: Call) -> Answer {
+pub(super) fn call(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, call: Call) -> Answer {
     let answer = cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         let running = tabs.ai_connector.as_ref().expect("the connector runs");
@@ -561,10 +561,10 @@ fn with_the_setting_off_nothing_shows(cx: &mut TestAppContext) {
 use crate::workspace::ai_deliveries::{Note, Notifier};
 use std::{cell::RefCell, rc::Rc};
 
-type Notes = Rc<RefCell<Vec<Note>>>;
+pub(super) type Notes = Rc<RefCell<Vec<Note>>>;
 
 /// The window's notifications go to a recorder, never the OS.
-fn record_notes(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Notes {
+pub(super) fn record_notes(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Notes {
     let (notifier, notes) = Notifier::recording();
     tabs.update(cx, |tabs, _| tabs.notifier = notifier);
     notes

@@ -5,10 +5,11 @@
 //! Unfiled moves to a new Project first. No app launches: GPUI's test
 //! platform only records the link it was asked to open.
 use super::ai_project::{
-    Fixture, boot_fixture, fixture, open_member, set_preview, shared, show_page,
+    Fixture, boot_fixture, call, fixture, open_member, record_notes, set_preview, shared, show_page,
 };
 use super::*;
 use crate::ai_ask;
+use mdoc_mcp::wire::{Answer, Call, Done, Kind};
 use mdoc_store::settings::AskWith;
 
 /// The fixture, plus in "Lease" a Ready document whose title holds a real
@@ -255,11 +256,14 @@ fn ask_on_unfiled_moves_to_a_new_project_and_shares_it(cx: &mut TestAppContext) 
 #[gpui::test]
 fn ask_on_an_excluded_document_shares_nothing(cx: &mut TestAppContext) {
     let fixture = fixture();
+    let more = more_documents(&fixture);
     {
         let vault = mdoc_vault::Vault::open(fixture.dir.path().join("vault"), &[3; 32]).unwrap();
-        vault
-            .update_document(&fixture.lease_doc, |d| d.exclude_from_ai = true)
-            .unwrap();
+        for id in [&fixture.lease_doc, &more.unfiled] {
+            vault
+                .update_document(id, |d| d.exclude_from_ai = true)
+                .unwrap();
+        }
         vault.flush().unwrap();
     }
     let (tabs, cx) = boot_fixture(cx, &fixture);
@@ -269,6 +273,133 @@ fn ask_on_an_excluded_document_shares_nothing(cx: &mut TestAppContext) {
     assert_eq!(shared(&tabs, cx), None);
     assert_eq!(opened(cx), None);
     assert_eq!(notice(&tabs, cx).as_deref(), Some(ai_ask::EXCLUDED));
+    // Unfiled and excluded: no offer to move it either (review of #1237).
+    tabs.update(cx, |tabs, _| tabs.notices.dismiss());
+    open_member(&tabs, cx, &more.unfiled);
+    click_toolbar(cx, "header-ask");
+    assert!(!shown(cx, "ask-unfiled"));
+    assert_eq!(notice(&tabs, cx).as_deref(), Some(ai_ask::EXCLUDED));
+    assert_eq!(shared(&tabs, cx), None);
+}
+
+/// Done when: Ask on a document that needs review still asks, naming it
+/// "Document N" by the connector's own rule; the app's read then raises
+/// the review request's notification (Decision 4, item 9).
+#[gpui::test]
+fn ask_on_a_document_that_needs_review_leads_to_the_review_request(cx: &mut TestAppContext) {
+    let fixture = fixture();
+    {
+        let vault = mdoc_vault::Vault::open(fixture.dir.path().join("vault"), &[3; 32]).unwrap();
+        vault
+            .update_document(&fixture.lease_doc, |d| d.set_ready(false))
+            .unwrap();
+        vault.flush().unwrap();
+    }
+    let (tabs, cx) = boot_fixture(cx, &fixture);
+    let notes = record_notes(&tabs, cx);
+    set_preview(&tabs, cx, true);
+    open_member(&tabs, cx, &fixture.lease_doc);
+    click_toolbar(cx, "header-ask");
+    assert_eq!(shared(&tabs, cx), Some(fixture.lease.clone()));
+    let prompt = format!(
+        "Read “Document 1” in mdoc (doc_id {}). My question: ",
+        fixture.lease_doc
+    );
+    assert_eq!(opened(cx), Some(crate::ai_links::claude(&prompt)));
+    let read = call(
+        &tabs,
+        cx,
+        Call::GetDocument {
+            doc_id: fixture.lease_doc.clone(),
+            part: None,
+        },
+    );
+    assert!(
+        matches!(read, Answer::Ok(Done::NeedsReview { .. })),
+        "{read:?}"
+    );
+    let notes = notes.borrow();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(notes[0].tag.starts_with("ai-review-"), "{notes:?}");
+}
+
+/// Review of #1237: asking again in the Project already shared keeps what
+/// each app read, so a reply under way still lands.
+#[gpui::test]
+fn asking_in_the_shared_project_keeps_a_reply_under_way(cx: &mut TestAppContext) {
+    let fixture = fixture();
+    let (tabs, cx) = boot_fixture(cx, &fixture);
+    set_preview(&tabs, cx, true);
+    open_member(&tabs, cx, &fixture.lease_doc);
+    click_toolbar(cx, "header-ask");
+    assert_eq!(shared(&tabs, cx), Some(fixture.lease.clone()));
+    let read = call(
+        &tabs,
+        cx,
+        Call::GetDocument {
+            doc_id: fixture.lease_doc.clone(),
+            part: None,
+        },
+    );
+    assert!(matches!(read, Answer::Ok(Done::Text { .. })), "{read:?}");
+    // Ask ChatGPT in the same Project, then Claude delivers.
+    click_toolbar(cx, "header-ask-more");
+    click_toolbar(cx, "ask-chatgpt");
+    asked_about(cx, AskWith::ChatGpt, &fixture.lease_doc);
+    let delivered = call(
+        &tabs,
+        cx,
+        Call::Deliver {
+            kind: Kind::Reply,
+            title: None,
+            read: vec![fixture.lease_doc.clone()],
+            markdown: "PERSON_1 pays on time.".into(),
+        },
+    );
+    assert!(
+        matches!(delivered, Answer::Ok(Done::Delivered { .. })),
+        "{delivered:?}"
+    );
+}
+
+/// Review of #1237: Stop sharing, or a menu left over a page since left,
+/// shares nothing later.
+#[gpui::test]
+fn a_later_stop_or_another_page_shares_nothing(cx: &mut TestAppContext) {
+    let fixture = fixture();
+    let more = more_documents(&fixture);
+    let (tabs, cx) = boot_fixture(cx, &fixture);
+    set_preview(&tabs, cx, true);
+    // An Ask waiting for its move, then Stop sharing: the move lands and
+    // shares nothing.
+    open_member(&tabs, cx, &more.unfiled);
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update(cx, |tabs, cx| {
+        tabs.ai_ask.after_move(&more.unfiled, AskWith::Claude);
+        tabs.stop_sharing_with_ai(cx);
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.move_to_new_project(tab, window, cx)
+    });
+    wait(cx, 300);
+    assert!(
+        cx.update(|_, cx| tabs.read(cx).project_of(&more.unfiled))
+            .is_some()
+    );
+    assert_eq!(shared(&tabs, cx), None);
+    assert_eq!(opened(cx), None);
+    // The Project page's menu goes with the page.
+    show_page(&tabs, cx, &fixture.lease);
+    click_toolbar(cx, "project-page-ask-more");
+    assert!(shown(cx, "project-ask-menu"));
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_home(window, cx));
+    cx.run_until_parked();
+    assert!(!shown(cx, "project-ask-menu"));
+    tabs.update(cx, |tabs, cx| {
+        tabs.ask_about_project(&fixture.lease.clone(), AskWith::Claude, cx)
+    });
+    assert_eq!(shared(&tabs, cx), None);
+    assert_eq!(opened(cx), None);
 }
 
 /// Done when: with the setting off, Ask shows nowhere.

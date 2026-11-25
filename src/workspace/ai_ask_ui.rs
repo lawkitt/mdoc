@@ -79,13 +79,38 @@ impl Workspace {
         match project {
             Some(project) => self.ask_app(&project, Some(document.as_str()), with, cx),
             // Unfiled never leaves: it moves, then asks (`ask_after_move`).
-            None if move_to_new && self.can_move(tab, cx) => {
-                self.ai_ask.after_move(document.as_str(), with);
-                self.move_to_new_project(tab, window, cx);
+            None if move_to_new => self.move_then_ask(tab, document.as_str(), with, window, cx),
+            // The card asks first; Stop sharing or turning the preview off
+            // meanwhile cancels what waits (`ai_ask_cancelled`).
+            None => {
+                if let Some(view) = self.tab_view(tab) {
+                    view.update(cx, |view, cx| view.offer_move(with, window, cx));
+                }
             }
-            None => {}
         }
         cx.notify();
+    }
+
+    /// "Move to a new Project and share": tab `tab`'s document moves, and
+    /// asks once the move has landed.
+    fn move_then_ask(
+        &mut self,
+        tab: u64,
+        document: &str,
+        with: AskWith,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.can_move(tab, cx) {
+            self.ai_ask.after_move(document, with);
+            self.move_to_new_project(tab, window, cx);
+        }
+    }
+
+    /// Sharing stopped, or the connector did: an Ask waiting for a move
+    /// shares nothing when the move lands.
+    pub(super) fn ai_ask_cancelled(&mut self) {
+        self.ai_ask = Default::default();
     }
 
     /// Document `document` moved into Project `made`, which the move made
@@ -107,10 +132,15 @@ impl Workspace {
         with: AskWith,
         cx: &mut Context<Self>,
     ) {
-        let with = ai_ask::on_project_page(with);
-        self.remember_ask(with, cx);
         self.project_ui.ask_menu = None;
-        self.ask_app(project, None, with, cx);
+        // Only the page in view asks: a menu left over a page since left
+        // shares nothing.
+        let on_page = (self.project_ui.page.as_ref()).is_some_and(|page| page.id() == project);
+        if on_page {
+            let with = ai_ask::on_project_page(with);
+            self.remember_ask(with, cx);
+            self.ask_app(project, None, with, cx);
+        }
         cx.notify();
     }
 
@@ -123,7 +153,9 @@ impl Workspace {
         with: AskWith,
         cx: &mut Context<Self>,
     ) {
-        if !self.share_with_ai(project, cx) {
+        // Already shared: sharing again would forget what each app read,
+        // so a reply under way would be refused.
+        if self.ai_shared().as_deref() != Some(project) && !self.share_with_ai(project, cx) {
             return;
         }
         let prompt = match document {

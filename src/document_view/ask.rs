@@ -47,20 +47,33 @@ impl DocumentView {
         shown.then_some(ai.ask)
     }
 
-    /// Choice `with`, from the button or the menu: Unfiled asks first;
-    /// otherwise the window carries it out.
+    /// Choice `with`, from the button or the menu: the window carries it
+    /// out, or, for an Unfiled document, asks first ([`Self::offer_move`]).
     pub(crate) fn ask(&mut self, with: AskWith, window: &mut Window, cx: &mut Context<Self>) {
-        self.ask.open = false;
-        if with != AskWith::CopyForAi && self.project.link().is_none() {
-            self.ask.unfiled = Some(with);
-            window.focus(&self.ask.focus, cx);
-        } else {
-            self.ask.unfiled = None;
-            cx.emit(TabEvent::Ask {
-                with,
-                move_to_new: false,
-            });
+        // Chosen from the menu: focus goes back to its chevron.
+        if self.ask.open {
+            window.focus(&self.ask.more_focus, cx);
         }
+        self.ask.open = false;
+        self.ask.unfiled = None;
+        cx.emit(TabEvent::Ask {
+            with,
+            move_to_new: false,
+        });
+        cx.notify();
+    }
+
+    /// The window found the document Unfiled: the card offers to move it
+    /// to a new Project and share that, for `with`'s app.
+    pub(crate) fn offer_move(
+        &mut self,
+        with: AskWith,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ask.open = false;
+        self.ask.unfiled = Some(with);
+        window.focus(&self.ask.focus, cx);
         cx.notify();
     }
 

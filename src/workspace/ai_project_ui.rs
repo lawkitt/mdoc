@@ -95,6 +95,7 @@ impl Workspace {
         } else if self.ai_connector.take().is_some() {
             self.ai_poll = None;
             self.ai.stopped();
+            self.ai_ask_cancelled();
             if (self.project_ui.page.as_ref())
                 .is_some_and(|page| page.segment() == super::project_page::Segment::Activity)
             {
@@ -195,6 +196,8 @@ impl Workspace {
             running.connector.stop_sharing();
         }
         self.ai.sharing_stopped();
+        // A later Stop wins over an Ask still waiting for its move.
+        self.ai_ask_cancelled();
         cx.notify();
     }
 
