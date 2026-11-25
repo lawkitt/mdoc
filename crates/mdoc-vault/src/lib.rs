@@ -11,6 +11,7 @@
 //!   docs/<id>/doc.enc        Document record
 //!   docs/<id>/original.enc   the Document's Source Original, as imported
 //!   replies/<id>.enc         AI Reply record
+//!   activity/<id>.enc        a Project's AI activity, by the Project's id
 //!   staging/.import-*        an import sealed, not yet published
 //! ```
 //!
@@ -37,8 +38,9 @@ pub use records::{
     SharedFrom, SourceKind, UserLists,
 };
 pub use vault::{
-    AiRead, AiText, Exported, Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ORIGINALS,
-    ProjectDocuments, Readiness, ReplyHandle, Saved, Stage, StagedImport, Vault, WriteStep,
+    ACTIVITY_KEPT, AiActivity, AiEvent, AiRead, AiText, Delivered, Exported, Fault, FaultHook,
+    ManifestCheck, MoveUndo, Moved, NewDelivery, ORIGINALS, ProjectDocuments, ReadAt, Readiness,
+    ReplyHandle, Saved, Stage, StagedImport, Vault, WriteStep,
 };
 
 use std::io;
@@ -53,6 +55,8 @@ pub enum ObjectKind {
     UserLists,
     /// A Source Original's file key, sealed at the head of `original.enc`.
     Original,
+    /// A Project's AI activity (`activity/<project id>.enc`).
+    Activity,
 }
 
 impl ObjectKind {
@@ -65,6 +69,7 @@ impl ObjectKind {
             Self::Reply => 4,
             Self::UserLists => 5,
             Self::Original => 6,
+            Self::Activity => 7,
         }
     }
 
@@ -76,6 +81,7 @@ impl ObjectKind {
             Self::Reply => "AI Reply",
             Self::UserLists => "user-wide lists",
             Self::Original => "original",
+            Self::Activity => "AI activity",
         }
     }
 }

@@ -531,7 +531,7 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Vec<String> {
             // The connector reads the Vault: what a tab typed lands first.
             written(fixture.cx);
             let connector = connector(fixture);
-            match connector.get_document(fixture.document.as_str(), None) {
+            match connector.get_document("Claude", fixture.document.as_str(), None) {
                 Ok(mdoc_connector::Read::Text { text, .. }) => out.push(text),
                 Ok(mdoc_connector::Read::NeedsReview { .. }) => {}
                 read => panic!("the fixture's document is short and shared: {read:?}"),
