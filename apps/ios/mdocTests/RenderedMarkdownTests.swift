@@ -450,14 +450,4 @@ final class RenderedMarkdownTests: XCTestCase {
         let cellText = try XCTUnwrap(cell.textRange(from: cell.beginningOfDocument, to: cell.endOfDocument))
         XCTAssertEqual(cell.text(in: cellText), "**Maya Bennett**")
     }
-
-    @MainActor
-    func testTableCellsCannotBeCopied() {
-        let cell = CellTextView(usingTextLayoutManager: false)
-        cell.text = "Maya Bennett"
-        XCTAssertFalse(cell.canPerformAction(#selector(UIResponderStandardEditActions.copy(_:)), withSender: nil))
-        cell.allowsCopy = true
-        cell.selectedRange = NSRange(location: 0, length: 4)
-        XCTAssertTrue(cell.canPerformAction(#selector(UIResponderStandardEditActions.copy(_:)), withSender: nil))
-    }
 }

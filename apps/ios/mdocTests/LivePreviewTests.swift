@@ -267,7 +267,7 @@ final class LivePreviewTests: XCTestCase, TextViewHarnessTests {
         let bold = location(of: "**tenant**", in: harness)
         harness.view.selectedRange = NSRange(location: bold, length: 10)
         harness.view.copySelection()
-        XCTAssertEqual(InAppClipboard.shared.read(), "**tenant**")
+        XCTAssertEqual(EditClipboard.shared.read(), "**tenant**")
     }
 
     // MARK: Caret over hidden markers

@@ -357,25 +357,25 @@ final class EditModeTests: XCTestCase, TextViewHarnessTests {
 
     // MARK: Clipboard and menu
 
-    func testCutAndPasteStayInMdoc() throws {
+    /// Edit mode uses the system clipboard (#1209 decision 6): Cut writes
+    /// it, marked, and Paste reads it, rich text as the core's Markdown.
+    func testCutAndPasteUseTheSystemClipboard() throws {
         let harness = try harness()
         edit(harness)
-        let own = UIPasteboard.withUniqueName()
         let system = UIPasteboard.withUniqueName()
-        let clipboard = InAppClipboard(pasteboard: own, system: system)
-        clipboard.write("Maya")
-        XCTAssertEqual(clipboard.read(), "Maya")
-        XCTAssertNil(system.string, "a copy never reaches the system clipboard")
+        let clipboard = EditClipboard(pasteboard: system)
+        XCTAssertFalse(clipboard.hasText)
         system.string = "From another app"
-        XCTAssertEqual(clipboard.read(), "From another app", "a newer copy elsewhere pastes")
+        XCTAssertTrue(clipboard.hasText)
+        XCTAssertEqual(clipboard.read(), "From another app")
         system.setData(Data("<h1>Title</h1><p>Body</p>".utf8), forPasteboardType: "public.html")
         XCTAssertEqual(clipboard.read()?.hasPrefix("# Title"), true, "rich text pastes as the core's Markdown")
 
-        // Cut through the view: the in-app pasteboard has it, the core lost it.
+        // Cut through the view: the system clipboard has it, the core lost it.
         let range = (harness.shown as NSString).range(of: "first")
         harness.view.selectedRange = range
         harness.view.cutSelection()
-        XCTAssertEqual(InAppClipboard.shared.pasteboard.string, "first")
+        XCTAssertEqual(UIPasteboard.general.string, "first")
         XCTAssertFalse(harness.shown.contains("signs first"))
         XCTAssertEqual(coreText(harness), harness.shown)
         harness.view.selectedRange = NSRange(location: 0, length: 0)

@@ -4,8 +4,10 @@ import UniformTypeIdentifiers
 
 /// Copies restored text, which holds originals, so it stays on this device
 /// and leaves the clipboard after ten minutes: no Universal Clipboard hop to
-/// the user's other devices, and nothing lingering (#321). Copy for AI holds
-/// aliases only and is meant to leave the device, so it keeps a plain copy.
+/// the user's other devices, and nothing lingering (#321). A hand copy of a
+/// document's text not known to be clean is marked the same way (#1209).
+/// Copy for AI holds aliases only and is meant to leave the device, so it
+/// keeps a plain copy.
 enum RestoredPasteboard {
     static let lifetime: TimeInterval = 10 * 60
 
@@ -14,6 +16,7 @@ enum RestoredPasteboard {
     }
 
     static func options(now: Date) -> [UIPasteboard.OptionsKey: Any] {
-        [.localOnly: true, .expirationDate: now.addingTimeInterval(lifetime)]
+        let lifetime = LaunchConfiguration.current.markedCopyLifetime ?? lifetime
+        return [.localOnly: true, .expirationDate: now.addingTimeInterval(lifetime)]
     }
 }
