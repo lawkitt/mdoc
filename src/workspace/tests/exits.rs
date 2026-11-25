@@ -15,10 +15,16 @@
 //! tests take each gate's check out (`crate::exits`) and assert that its
 //! exits then fail and every other exit still passes.
 //!
-//! To add an exit (Milestone 2's connector is next), add its row to
-//! [`EXITS`] and its [`Via`]. The match in [`hand_out`] then needs its
-//! driver, and if it has a check of its own, `crate::exits::Gate` needs its
-//! gate.
+//! To add an exit, add its row to [`EXITS`] and its [`Via`]. The match in
+//! [`hand_out`] then needs its driver, and if it has a check of its own,
+//! `crate::exits::Gate` needs its gate.
+//!
+//! **The AI connector** (Milestone 2) joined first, over the window's Vault
+//! with the fixture's Project shared: `get_document`, and `list_documents`,
+//! whose Ready label is the heading of the text that passed its check. For
+//! the list the stored document gets a heading naming PERSON_1, so its label
+//! carries document text; a row that needs review hands out nothing but its
+//! "Document N".
 //!
 //! **Not exits.** These hand out text on purpose and are not checked:
 //! - Copy Markdown (⋯ menu, File menu, shortcut, palette) is the
@@ -78,7 +84,11 @@ enum Via {
     ShelfCopy(Placement),
     /// A drag from the shelf: its text and its `.md` file, name and all.
     ShelfDrag(Placement),
-    // Milestone 2: the connector joins here.
+    /// The AI connector's `get_document` (Milestone 2), the Project shared.
+    Connector(Placement),
+    /// The AI connector's `list_documents`: the document's label, from a
+    /// heading the stored document is given.
+    ConnectorList,
 }
 
 /// Where the shelf's row comes from.
@@ -137,7 +147,21 @@ const EXITS: &[Exit] = &[
         gate: Gate::ShelfDrag,
         via: Via::ShelfDrag(Placement::Stored),
     },
-    // Milestone 2: the connector's row goes here.
+    Exit {
+        name: "Connector › get_document, open document",
+        gate: Gate::Connector,
+        via: Via::Connector(Placement::Open),
+    },
+    Exit {
+        name: "Connector › get_document, stored document",
+        gate: Gate::Connector,
+        via: Via::Connector(Placement::Stored),
+    },
+    Exit {
+        name: "Connector › list_documents, the document's label",
+        gate: Gate::Connector,
+        via: Via::ConnectorList,
+    },
 ];
 
 /// How the document stands when its text is asked for.
@@ -185,7 +209,10 @@ impl Scenario {
 impl Via {
     fn placement(self) -> Placement {
         match self {
-            Via::ShelfCopy(placement) | Via::ShelfDrag(placement) => placement,
+            Via::ShelfCopy(placement) | Via::ShelfDrag(placement) | Via::Connector(placement) => {
+                placement
+            }
+            Via::ConnectorList => Placement::Stored,
             _ => Placement::Open,
         }
     }
@@ -271,6 +298,21 @@ fn ready(cx: &mut TestAppContext, via: Via) -> Fixture<'_> {
             None
         }
     };
+    if via == Via::ConnectorList {
+        // A heading, reviewed with the rest, names the document to an AI.
+        let store = vault(&tabs, cx);
+        (store.update_document(document.as_str(), |document| {
+            document.markdown = format!(
+                "# {LIST_HEADING}
+
+{}",
+                document.markdown
+            );
+            document.set_ready(true);
+        }))
+        .unwrap();
+        assert!(store.readiness(document.as_str()).unwrap().is_ready());
+    }
     let mut fixture = Fixture {
         tabs,
         cx,
@@ -391,6 +433,19 @@ impl Fixture<'_> {
     }
 }
 
+/// The heading [`Via::ConnectorList`]'s document is given: its label once
+/// Ready.
+const LIST_HEADING: &str = "PERSON_1's lease";
+
+/// A connector over the window's Vault, sharing the fixture's Project.
+fn connector(fixture: &mut Fixture<'_>) -> mdoc_connector::Connector {
+    let setting = mdoc_store::settings::AiConnectorConfig { preview: true };
+    let vault = vault(&fixture.tabs, fixture.cx);
+    let connector = mdoc_connector::Connector::start(vault, &setting).unwrap();
+    connector.share(&fixture.project).unwrap();
+    connector
+}
+
 /// Ask `via` for the document's text: everything it handed out.
 const BEFORE: &str = "the clipboard before";
 
@@ -470,6 +525,28 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Vec<String> {
                 out.push(text);
                 out.push(file.file_name().unwrap().to_string_lossy().into_owned());
                 out.push(std::fs::read_to_string(&file).unwrap());
+            }
+        }
+        Via::Connector(_) => {
+            // The connector reads the Vault: what a tab typed lands first.
+            written(fixture.cx);
+            let connector = connector(fixture);
+            match connector.get_document(fixture.document.as_str(), None) {
+                Ok(mdoc_connector::Read::Text { text, .. }) => out.push(text),
+                Ok(mdoc_connector::Read::NeedsReview { .. }) => {}
+                read => panic!("the fixture's document is short and shared: {read:?}"),
+            }
+        }
+        Via::ConnectorList => {
+            let rows = connector(fixture).list_documents().unwrap();
+            let row = rows
+                .into_iter()
+                .find(|row| row.doc_id == fixture.document.as_str());
+            let row = row.expect("the document is listed");
+            let fallback = (row.label.strip_prefix("Document "))
+                .is_some_and(|n| n.bytes().all(|b| b.is_ascii_digit()));
+            if row.state == mdoc_connector::State::Ready || !fallback {
+                out.push(row.label);
             }
         }
     }
@@ -627,4 +704,9 @@ fn taking_the_shelf_copys_check_out_fails_it(cx: &mut TestAppContext) {
 #[gpui::test]
 fn taking_the_shelf_drags_check_out_fails_it(cx: &mut TestAppContext) {
     taken_out_fails_only(cx, Gate::ShelfDrag);
+}
+
+#[gpui::test]
+fn taking_the_connectors_check_out_fails_it(cx: &mut TestAppContext) {
+    taken_out_fails_only(cx, Gate::Connector);
 }

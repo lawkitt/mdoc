@@ -10,7 +10,7 @@ mod staging;
 
 pub use export::{Exported, ORIGINALS};
 pub use moves::{MoveUndo, Moved, ProjectDocuments};
-pub use readiness::Readiness;
+pub use readiness::{AiRead, AiText, Readiness};
 pub use replies::ReplyHandle;
 pub use staging::StagedImport;
 

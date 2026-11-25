@@ -1,0 +1,31 @@
+[package]
+name = "mdoc-connector"
+version = "0.1.0"
+edition = "2024"
+description = "GUI-free AI connector service over the Vault: the one AI project, its documents' AI labels and states, and checked reads in parts (ADR 0126)."
+license = "GPL-3.0-or-later"
+publish = false
+repository = "https://github.com/lawkitt/mdoc"
+
+[features]
+# The exits suite's switch that takes the connector's check out
+# (`mdoc_connector::exits`); the app's dev-dependencies turn it on, as they
+# do mdoc-store's deny-os-services.
+exits-suite = []
+
+[dependencies]
+thiserror = "2"
+# Headings for labels and parts (`lines::heading_level`).
+mdoc-markdown = { path = "../mdoc-markdown" }
+# The note before a text for AI (`handoff`).
+mdoc-pii = { path = "../mdoc-pii" }
+# The "AI connector (preview)" setting.
+mdoc-store = { path = "../mdoc-store" }
+# Every read is the Vault's checked text (`Vault::text_for_ai_in`).
+mdoc-vault = { path = "../mdoc-vault" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

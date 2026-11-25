@@ -37,8 +37,8 @@ pub use records::{
     SharedFrom, SourceKind, UserLists,
 };
 pub use vault::{
-    Exported, Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ORIGINALS, ProjectDocuments,
-    Readiness, ReplyHandle, Saved, Stage, StagedImport, Vault, WriteStep,
+    AiRead, AiText, Exported, Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ORIGINALS,
+    ProjectDocuments, Readiness, ReplyHandle, Saved, Stage, StagedImport, Vault, WriteStep,
 };
 
 use std::io;
