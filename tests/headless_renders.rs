@@ -272,7 +272,28 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     "{theme}"
                 );
             }
-            if *name != "model-comparison" && !name.starts_with("shelf") {
+            // The companion (ADR 0128): what is shared is always named, and
+            // the restored reply shows only with the pointer over it.
+            if name.starts_with("companion") {
+                let state = &record["state"];
+                assert_eq!(state["companion"], true, "{theme}/{name}");
+                let shared = !matches!(*name, "companion-nothing-shared" | "companion-empty");
+                assert_eq!(state["shared"].is_string(), shared, "{theme}/{name}");
+                assert_eq!(
+                    state["reply_shown"],
+                    *name == "companion-reply-shown",
+                    "{theme}/{name}"
+                );
+                assert_eq!(
+                    state["review"].is_string(),
+                    *name == "companion-review",
+                    "{theme}/{name}"
+                );
+            }
+            if *name != "model-comparison"
+                && !name.starts_with("shelf")
+                && !name.starts_with("companion")
+            {
                 if matches!(
                     *name,
                     "home" | "document" | "navigation-disabled" | "navigation-enabled"

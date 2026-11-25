@@ -23,6 +23,9 @@
 //! scenario its step fixes, it may hand out text, but only what the
 //! Vault's check gives for the document then.
 //!
+//! **The companion window** (Milestone 2 item 14) hosts the shelf's rows:
+//! its Copy for AI and drag are the shelf's, behind the same gates.
+//!
 //! To add an exit, add its row to [`EXITS`] and its [`Via`]. The match in
 //! [`hand_out`] then needs its driver, and if it has a check of its own,
 //! `crate::exits::Gate` needs its gate.
@@ -48,9 +51,10 @@
 //! - Pseudonymize Clipboard (Edit menu, palette, shelf) only replaces
 //!   known names in text that was already on the clipboard. It hands out
 //!   no document text.
-//! - Restore Clipboard, the reply box's Copy reply and the Reply page's
-//!   Copy restore an AI's reply for the user, marked as restored text. The
-//!   reply box has no outbound path: Paste AI reply only comes in.
+//! - Restore Clipboard, the reply box's Copy reply, the Reply page's Copy
+//!   and the companion's Copy of the latest reply restore an AI's reply
+//!   for the user, marked as restored text. The reply box has no outbound
+//!   path: Paste AI reply only comes in.
 //! - Copying a selection (in the editor, a find field or a DOCX comment
 //!   card), the model comparison's export, and the crash report (masked,
 //!   with no document text) are the user's own copies. A hand copy of
@@ -59,6 +63,7 @@
 //!   review (#1209, `hand_copies.rs`).
 use super::*;
 use crate::{
+    companion::CompanionView,
     exits::{Gate, take_out},
     pii::ui::CopyForAi,
     refusal::Step,
@@ -99,6 +104,10 @@ enum Via {
     ShelfCopy(Placement),
     /// A drag from the shelf: its text and its `.md` file, name and all.
     ShelfDrag(Placement),
+    /// The companion window's shelf rows: Copy for AI on a row.
+    CompanionCopy(Placement),
+    /// A drag from the companion's shelf rows.
+    CompanionDrag(Placement),
     /// Copy for AI refused in the editor, then the "Not copied" notice's
     /// step.
     NoticeStep,
@@ -191,6 +200,30 @@ const EXITS: &[Exit] = &[
         name: "Shelf › drag, stored document",
         gate: Gate::ShelfDrag,
         via: Via::ShelfDrag(Placement::Stored),
+        resolves: false,
+    },
+    Exit {
+        name: "Companion › Copy for AI, open document",
+        gate: Gate::ShelfCopy,
+        via: Via::CompanionCopy(Placement::Open),
+        resolves: false,
+    },
+    Exit {
+        name: "Companion › Copy for AI, stored document",
+        gate: Gate::ShelfCopy,
+        via: Via::CompanionCopy(Placement::Stored),
+        resolves: false,
+    },
+    Exit {
+        name: "Companion › drag, open document",
+        gate: Gate::ShelfDrag,
+        via: Via::CompanionDrag(Placement::Open),
+        resolves: false,
+    },
+    Exit {
+        name: "Companion › drag, stored document",
+        gate: Gate::ShelfDrag,
+        via: Via::CompanionDrag(Placement::Stored),
         resolves: false,
     },
     Exit {
@@ -288,9 +321,11 @@ impl Scenario {
 impl Via {
     fn placement(self) -> Placement {
         match self {
-            Via::ShelfCopy(placement) | Via::ShelfDrag(placement) | Via::Connector(placement) => {
-                placement
-            }
+            Via::ShelfCopy(placement)
+            | Via::ShelfDrag(placement)
+            | Via::CompanionCopy(placement)
+            | Via::CompanionDrag(placement)
+            | Via::Connector(placement) => placement,
             Via::ConnectorList | Via::ConnectorWire => Placement::Stored,
             _ => Placement::Open,
         }
@@ -298,6 +333,15 @@ impl Via {
 
     fn on_shelf(self) -> bool {
         matches!(self, Via::ShelfCopy(_) | Via::ShelfDrag(_) | Via::ShelfStep)
+    }
+
+    fn on_companion(self) -> bool {
+        matches!(self, Via::CompanionCopy(_) | Via::CompanionDrag(_))
+    }
+
+    /// A drag that carries a `.md` file.
+    fn drags(self) -> bool {
+        matches!(self, Via::ShelfDrag(_) | Via::CompanionDrag(_))
     }
 }
 
@@ -312,6 +356,8 @@ struct Fixture<'a> {
     project: String,
     /// The shelf, opened while the row was ready, and the row's index.
     shelf: Option<(gpui::WindowHandle<ShelfView>, usize)>,
+    /// The companion, opened so, and the row's index in its shelf rows.
+    companion: Option<(gpui::WindowHandle<CompanionView>, usize)>,
     /// The Share tab's click never reached Copy for AI.
     missed_click: bool,
 }
@@ -383,6 +429,7 @@ fn ready(cx: &mut TestAppContext, via: Via, scenario: Scenario) -> Fixture<'_> {
         document,
         project,
         shelf: None,
+        companion: None,
         missed_click: false,
     };
     if via.on_shelf() {
@@ -397,6 +444,19 @@ fn ready(cx: &mut TestAppContext, via: Via, scenario: Scenario) -> Fixture<'_> {
             })
             .unwrap();
         fixture.shelf = Some((shelf, index));
+    }
+    if via.on_companion() {
+        let key = fixture.key();
+        let companion = open_companion(fixture.cx);
+        let index = companion
+            .read_with(fixture.cx, |view, cx| {
+                let rows = view.shelf_rows().read(cx).documents().to_vec();
+                let at = rows.iter().position(|row| row.key == key).unwrap();
+                assert_eq!(rows[at].readiness, Readiness::Ready);
+                at
+            })
+            .unwrap();
+        fixture.companion = Some((companion, index));
     }
     fixture
 }
@@ -686,6 +746,32 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Handed {
                 out.texts.push(std::fs::read_to_string(&file).unwrap());
             }
         }
+        Via::CompanionCopy(_) => {
+            let (companion, index) = fixture.companion.expect("the companion is open");
+            companion
+                .update(fixture.cx, |view, window, cx| {
+                    view.shelf_rows()
+                        .update(cx, |rows, cx| rows.copy(index, window, cx))
+                })
+                .unwrap();
+        }
+        Via::CompanionDrag(_) => {
+            let (companion, index) = fixture.companion.expect("the companion is open");
+            let dragged = companion
+                .update(fixture.cx, |view, window, cx| {
+                    view.shelf_rows().update(cx, |rows, cx| {
+                        rows.drag(index, window, cx);
+                        rows.dragged.take()
+                    })
+                })
+                .unwrap();
+            if let Some((text, file)) = dragged {
+                out.texts.push(text);
+                let name = file.file_name().unwrap().to_string_lossy();
+                out.file_names.push(name.into_owned());
+                out.texts.push(std::fs::read_to_string(&file).unwrap());
+            }
+        }
         Via::Connector(_) => {
             // The connector reads the Vault: what a tab typed lands first.
             written(fixture.cx);
@@ -934,8 +1020,8 @@ fn taking_the_connectors_check_out_fails_it(cx: &mut TestAppContext) {
     taken_out_fails_only(cx, Gate::Connector);
 }
 
-/// Done when (#1208): with the drag's neutral file name taken out, both
-/// drags fail for a Ready document, its file named after its title, and
+/// Done when (#1208): with the drag's neutral file name taken out, every
+/// drag fails for a Ready document, its file named after its title, and
 /// every other exit still passes.
 #[gpui::test]
 fn taking_the_shelf_drags_neutral_name_out_fails_it(cx: &mut TestAppContext) {
@@ -943,7 +1029,7 @@ fn taking_the_shelf_drags_neutral_name_out_fails_it(cx: &mut TestAppContext) {
     for exit in EXITS {
         for scenario in READY {
             let faults = run(cx, exit, scenario);
-            if matches!(exit.via, Via::ShelfDrag(_)) {
+            if exit.via.drags() {
                 assert!(
                     !faults.is_empty(),
                     "{} passed with its neutral name taken out ({scenario:?})",

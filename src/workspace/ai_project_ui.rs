@@ -18,7 +18,7 @@
 //! the Vault.
 use super::{Workspace, ai_project::Asked, navigation::Stop, project_page::Place};
 use crate::{ai_connector, style, ui};
-use gpui::{AnyElement, Context, SharedString, Window, div, prelude::*, px};
+use gpui::{AnyElement, App, Context, SharedString, Window, div, prelude::*, px};
 use mdoc_store::{document_id::VaultId, settings::AiConnectorConfig};
 use mdoc_vault::{AiActivity, AiEvent, Project, ReplyOwner};
 use std::{collections::HashMap, time::Duration};
@@ -35,6 +35,11 @@ impl Workspace {
         (self.preferences.borrow().current.as_ref())
             .map(|preferences| preferences.ai_connector)
             .unwrap_or_default()
+    }
+
+    /// "AI connector (preview)" is on, the Vault open or not.
+    pub(crate) fn ai_preview_setting(&self) -> bool {
+        self.ai_setting().preview
     }
 
     /// The connector runs: the setting is on and the Vault is open.
@@ -90,6 +95,8 @@ impl Workspace {
     /// Settings applied: the connector starts or stops with the setting.
     /// Stopping it shares nothing.
     pub(super) fn refresh_ai_connector(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // With the preview on, the menu bar item toggles the companion.
+        crate::menu_bar::set_companion(self.ai_setting().preview, cx);
         if self.ai_setting().preview {
             self.start_ai_connector(window, cx);
         } else if self.ai_connector.take().is_some() {
@@ -176,6 +183,7 @@ impl Workspace {
             Ok(()) => {
                 self.ai.shared();
                 self.scan_on_entry(cx);
+                crate::menu_bar::companion_changed(cx);
             }
             Err(error) => self
                 .notices
@@ -190,15 +198,17 @@ impl Workspace {
             running.connector.stop_sharing();
         }
         self.ai.sharing_stopped();
+        crate::menu_bar::companion_changed(cx);
         cx.notify();
     }
 
     /// Project `id` was deleted: it is shared no more, or offered.
-    pub(super) fn ai_project_gone(&mut self, id: &str) {
+    pub(super) fn ai_project_gone(&mut self, id: &str, cx: &mut App) {
         if let Some(running) = &self.ai_connector
             && running.connector.ai_project().as_deref() == Some(id)
         {
             running.connector.stop_sharing();
+            crate::menu_bar::companion_changed(cx);
         }
         self.ai.forget(id);
     }

@@ -2,9 +2,10 @@
 //! 4, 5 and 6; Milestone 2 items 8 and 9): the Project the user last
 //! viewed, the share prompt, the AI activity the Project page shows, and
 //! what arrived from AI apps that the user has not opened yet (the badge
-//! and the notifications). The share itself is
-//! the connector's, in memory only; nothing here changes it. The view
-//! carries out what each change returns. GPUI-free.
+//! and the notifications), and what the companion window shows of them:
+//! the latest delivered reply and the latest review request (item 14).
+//! The share itself is the connector's, in memory only; nothing here
+//! changes it. The view carries out what each change returns. GPUI-free.
 use mdoc_vault::AiActivity;
 use std::time::{Duration, Instant};
 
@@ -69,6 +70,27 @@ pub(super) struct Prompt {
     pub(super) chosen: usize,
 }
 
+/// The latest reply an AI app delivered, as the companion shows it: by
+/// id, never its text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct LatestReply {
+    pub(super) reply: String,
+    /// The AI app that delivered it, as it named itself.
+    pub(super) app: String,
+    /// Save as document ran on it from the companion.
+    pub(super) saved: bool,
+}
+
+/// The latest request for a document that needs review, as the
+/// companion shows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ReviewAsk {
+    pub(super) document: String,
+    /// Its AI label, as the AI app was told it.
+    pub(super) label: String,
+    pub(super) app: String,
+}
+
 /// What an ask asks of the window.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Asked {
@@ -106,6 +128,9 @@ pub(super) struct AiProject {
     reviews_quiet: std::collections::HashMap<String, Instant>,
     /// Documents opened for review whose Review panel opens once loaded.
     to_review: std::collections::HashSet<String>,
+    /// The companion's latest reply and review request.
+    latest_reply: Option<LatestReply>,
+    review_ask: Option<ReviewAsk>,
 }
 
 impl AiProject {
@@ -179,6 +204,7 @@ impl AiProject {
     pub(super) fn shared(&mut self) {
         self.prompt = None;
         self.entry_scans.clear();
+        self.review_ask = None;
     }
 
     /// `item` arrived at `now`: the badge counts it, newest last. `true`
@@ -201,6 +227,42 @@ impl AiProject {
         notify
     }
 
+    /// AI app `app` delivered reply `reply`: the companion's latest.
+    pub(super) fn delivered(&mut self, reply: String, app: String) {
+        self.latest_reply = Some(LatestReply {
+            reply,
+            app,
+            saved: false,
+        });
+    }
+
+    /// AI app `app` asked for `document`, named to it as `label`, which
+    /// needs review: the companion's latest request.
+    pub(super) fn review_asked(&mut self, document: String, label: String, app: String) {
+        self.review_ask = Some(ReviewAsk {
+            document,
+            label,
+            app,
+        });
+    }
+
+    pub(super) fn latest_reply(&self) -> Option<&LatestReply> {
+        self.latest_reply.as_ref()
+    }
+
+    pub(super) fn review_ask(&self) -> Option<&ReviewAsk> {
+        self.review_ask.as_ref()
+    }
+
+    /// Save as document ran on reply `reply`: it does not run twice.
+    pub(super) fn reply_saved(&mut self, reply: &str) {
+        if let Some(latest) = self.latest_reply.as_mut()
+            && latest.reply == reply
+        {
+            latest.saved = true;
+        }
+    }
+
     /// What arrived and is not opened yet, oldest first.
     pub(super) fn unseen(&self) -> &[Arrived] {
         &self.unseen
@@ -216,6 +278,13 @@ impl AiProject {
         });
         if let Some(document) = document {
             self.reviews_quiet.remove(document);
+            if self
+                .review_ask
+                .as_ref()
+                .is_some_and(|ask| ask.document == document)
+            {
+                self.review_ask = None;
+            }
         }
     }
 
@@ -235,6 +304,7 @@ impl AiProject {
         self.unseen
             .retain(|item| !matches!(item, Arrived::Review(_)));
         self.reviews_quiet.clear();
+        self.review_ask = None;
     }
 
     /// Project `id` was deleted.
@@ -346,6 +416,43 @@ mod tests {
         assert!(ai.arrived(Arrived::Review("x".into()), now));
         ai.stopped();
         assert!(ai.unseen().is_empty());
+    }
+
+    /// The companion's latest reply stays until another arrives; its
+    /// review request goes once opened or moot.
+    #[test]
+    fn the_companion_keeps_the_latest_reply_and_review_request() {
+        let mut ai = AiProject::default();
+        assert!(ai.latest_reply().is_none() && ai.review_ask().is_none());
+        ai.delivered("r1".into(), "claude-ai".into());
+        ai.delivered("r2".into(), "chatgpt".into());
+        assert_eq!(ai.latest_reply().unwrap().reply, "r2");
+        ai.reply_saved("r1");
+        assert!(!ai.latest_reply().unwrap().saved, "not the latest");
+        ai.reply_saved("r2");
+        assert!(ai.latest_reply().unwrap().saved);
+        // A new delivery can be saved again.
+        ai.delivered("r3".into(), "claude-ai".into());
+        assert!(!ai.latest_reply().unwrap().saved);
+
+        ai.review_asked("d".into(), "Document 1".into(), "claude-ai".into());
+        assert_eq!(ai.review_ask().unwrap().label, "Document 1");
+        ai.seen(None, Some("other"));
+        assert!(ai.review_ask().is_some());
+        ai.seen(None, Some("d"));
+        assert!(ai.review_ask().is_none());
+        ai.review_asked("d".into(), "Document 1".into(), "claude-ai".into());
+        ai.sharing_stopped();
+        assert!(ai.review_ask().is_none());
+        ai.review_asked("d".into(), "Document 1".into(), "claude-ai".into());
+        ai.shared();
+        assert!(ai.review_ask().is_none(), "another share makes it moot");
+        // Deliveries outlive a stop of the share, not of the connector.
+        ai.delivered("r4".into(), "claude-ai".into());
+        ai.sharing_stopped();
+        assert!(ai.latest_reply().is_some());
+        ai.stopped();
+        assert!(ai.latest_reply().is_none());
     }
 
     fn ids(names: &[&str]) -> Vec<String> {

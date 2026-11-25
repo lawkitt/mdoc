@@ -4620,6 +4620,7 @@ dependencies = [
  "mdoc-spell",
  "mdoc-store",
  "mdoc-vault",
+ "objc2 0.6.4",
  "pdf-inspector",
  "qrcode",
  "raw-window-handle",

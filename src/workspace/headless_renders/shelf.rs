@@ -104,7 +104,7 @@ fn at(hours: u64) -> SystemTime {
 /// Ready, not-ready and changed-since-review documents, three of them in
 /// one public, synthetic Project. Only their pseudonymized text ever
 /// reaches a row.
-fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
+pub(super) fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
     let names = vec![
         identity("PERSON_1", Category::Person, "Anna Petrova"),
         identity("ORG_1", Category::Organization, "Northwind Traders Ltd"),

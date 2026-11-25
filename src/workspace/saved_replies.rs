@@ -430,7 +430,7 @@ impl Workspace {
     /// What reply `reply` restores with now: each bound identity's
     /// originals in its owner's mapping, the window's copy of a Project
     /// first, so a change not written yet shows too.
-    fn reply_restore_map(&self, reply: &Reply) -> Result<RestoreMap, VaultError> {
+    pub(super) fn reply_restore_map(&self, reply: &Reply) -> Result<RestoreMap, VaultError> {
         let Some(vault) = self.vault.vault() else {
             return Ok(RestoreMap::new(Vec::new()));
         };

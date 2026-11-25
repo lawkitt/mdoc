@@ -885,7 +885,7 @@ impl Workspace {
                     && vault.delete_project(made, ProjectDocuments::Delete).is_ok()
                 {
                     self.projects.remove(made);
-                    self.ai_project_gone(made);
+                    self.ai_project_gone(made, cx);
                     self.navigation
                         .forget(&super::navigation::Stop::Project(made.clone()));
                 }
@@ -1378,7 +1378,7 @@ impl Workspace {
                 self.navigation
                     .forget(&super::navigation::Stop::Project(project_id.clone()));
                 self.projects.remove(&project_id);
-                self.ai_project_gone(&project_id);
+                self.ai_project_gone(&project_id, cx);
                 self.tree.forget_project(&project_id);
                 for (tab, member) in tabs {
                     match documents {

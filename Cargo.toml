@@ -106,6 +106,11 @@ qrcode = { version = "0.14", default-features = false }
 # The quit question (src/system_quit.rs) and the menu bar shelf
 # (src/menu_bar.rs).
 gpui_macos = { package = "gpui-pre-macos", version = "=0.3.12" }
+# The companion window's AppKit calls and its probe (src/companion/): its
+# sharing type and key status, which GPUI has no call for. Both are in the
+# lockfile already, through gpui-pre-macos.
+objc2 = "0.6"
+raw-window-handle = "0.6"
 
 [target.'cfg(windows)'.dependencies]
 # The headless renderer.

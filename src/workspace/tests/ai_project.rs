@@ -7,15 +7,15 @@ use mdoc_mcp::wire::{self, Answer, Call, Done, Kind, Refusal, Request};
 
 /// Two Projects in a Vault in `dir`, "Lease" (pinned) and "Estate", each
 /// with one Ready document: their ids and the documents'.
-struct Fixture {
-    dir: tempfile::TempDir,
-    lease: String,
-    lease_doc: String,
-    estate: String,
-    estate_doc: String,
+pub(super) struct Fixture {
+    pub(super) dir: tempfile::TempDir,
+    pub(super) lease: String,
+    pub(super) lease_doc: String,
+    pub(super) estate: String,
+    pub(super) estate_doc: String,
 }
 
-fn fixture() -> Fixture {
+pub(super) fn fixture() -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let vault = mdoc_vault::Vault::open(dir.path().join("vault"), &[3; 32]).unwrap();
     let mut made = Vec::new();
@@ -59,7 +59,7 @@ fn fixture() -> Fixture {
     }
 }
 
-fn boot_fixture<'a>(
+pub(super) fn boot_fixture<'a>(
     cx: &'a mut TestAppContext,
     fixture: &Fixture,
 ) -> (Entity<Workspace>, &'a mut VisualTestContext) {
@@ -71,7 +71,7 @@ fn boot_fixture<'a>(
 }
 
 /// Turn "AI connector (preview)" on or off, as Settings applying it does.
-fn set_preview(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, on: bool) {
+pub(super) fn set_preview(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, on: bool) {
     tabs.update_in(cx, |tabs, window, cx| {
         (tabs.preferences.borrow_mut().current.as_mut().unwrap())
             .ai_connector
@@ -84,7 +84,7 @@ fn set_preview(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, on: bool) {
 
 /// AI app "claude-ai" makes `call`, as through the pipe; the window hears
 /// of it at its next poll.
-fn call(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, call: Call) -> Answer {
+pub(super) fn call(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, call: Call) -> Answer {
     let answer = cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         let running = tabs.ai_connector.as_ref().expect("the connector runs");
@@ -102,7 +102,7 @@ fn list(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Answer {
     call(tabs, cx, Call::ListDocuments)
 }
 
-fn shared(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<String> {
+pub(super) fn shared(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<String> {
     cx.update(|_, cx| tabs.read(cx).ai_connector.as_ref()?.connector.ai_project())
 }
 
@@ -561,10 +561,10 @@ fn with_the_setting_off_nothing_shows(cx: &mut TestAppContext) {
 use crate::workspace::ai_deliveries::{Note, Notifier};
 use std::{cell::RefCell, rc::Rc};
 
-type Notes = Rc<RefCell<Vec<Note>>>;
+pub(super) type Notes = Rc<RefCell<Vec<Note>>>;
 
 /// The window's notifications go to a recorder, never the OS.
-fn record_notes(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Notes {
+pub(super) fn record_notes(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Notes {
     let (notifier, notes) = Notifier::recording();
     tabs.update(cx, |tabs, _| tabs.notifier = notifier);
     notes
@@ -572,7 +572,7 @@ fn record_notes(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Notes {
 
 /// The connector on, "Lease" shared, the sidebar open, and the window in
 /// the background, as while the user is in the AI app.
-fn shared_lease<'a>(
+pub(super) fn shared_lease<'a>(
     cx: &'a mut TestAppContext,
     fixture: &Fixture,
 ) -> (Entity<Workspace>, &'a mut VisualTestContext, Notes) {
@@ -588,7 +588,7 @@ fn shared_lease<'a>(
     (tabs, cx, notes)
 }
 
-fn deliver(
+pub(super) fn deliver(
     tabs: &Entity<Workspace>,
     cx: &mut VisualTestContext,
     fixture: &Fixture,
@@ -622,7 +622,7 @@ fn deliver(
     (reply, document)
 }
 
-fn window_active(cx: &mut VisualTestContext) -> bool {
+pub(super) fn window_active(cx: &mut VisualTestContext) -> bool {
     cx.update(|window, _| window.is_window_active())
 }
 
@@ -630,7 +630,10 @@ fn reply_shown(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<S
     cx.update(|_, cx| Some(tabs.read(cx).reply_page.as_ref()?.id().to_string()))
 }
 
-fn document_shown(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<String> {
+pub(super) fn document_shown(
+    tabs: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+) -> Option<String> {
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         if tabs.reply_page.is_some() || tabs.project_ui.page.is_some() {
@@ -644,7 +647,7 @@ fn document_shown(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Optio
 
 /// The document in front shows its Review panel, as Pseudonymize opens
 /// it.
-fn review_open(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
+pub(super) fn review_open(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
     cx.update(|_, cx| {
         let view = tabs.read(cx).active_view();
         view.is_some_and(|view| {

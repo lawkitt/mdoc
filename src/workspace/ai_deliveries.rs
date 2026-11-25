@@ -9,7 +9,9 @@
 //! - the AI card's badge counts what arrived and is not opened yet, and
 //!   opens the newest;
 //! - mdoc never takes focus by itself unless "Open deliveries when they
-//!   arrive" is on: then a delivery opens where it lands, in front.
+//!   arrive" is on: then a delivery opens where it lands, in front;
+//! - the companion window (item 14) opens by itself for each, without
+//!   taking focus, and shows the latest reply and review request.
 //!
 //! A notification names only the AI app and the AI label of the document
 //! asked for: never a title, a restored name or document text. Its tag
@@ -164,6 +166,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.ai.delivered(reply.clone(), app.to_string());
         let item = match document {
             Some(document) => Arrived::Document(document),
             None => Arrived::Reply(reply),
@@ -171,6 +174,7 @@ impl Workspace {
         if self.ai.arrived(item.clone(), Instant::now()) {
             self.notify_os(&Note::of(&item, app, ""), cx);
         }
+        crate::menu_bar::ai_arrived(true, cx);
         // A dialog or sheet up keeps it on the badge: nothing moves under
         // it.
         if self.ai_setting().open_deliveries && !self.modal_up(window, cx) {
@@ -201,10 +205,16 @@ impl Workspace {
         if !member {
             return;
         }
+        self.ai
+            .review_asked(document.clone(), label.to_string(), app.to_string());
         let item = Arrived::Review(document);
-        if self.ai.arrived(item.clone(), Instant::now()) {
+        // The companion opens as the notification shows: not again for a
+        // request repeated within the quiet time.
+        let new = self.ai.arrived(item.clone(), Instant::now());
+        if new {
             self.notify_os(&Note::of(&item, app, label), cx);
         }
+        crate::menu_bar::ai_arrived(new, cx);
         cx.notify();
     }
 
@@ -262,6 +272,8 @@ impl Workspace {
                 }
             }
         }
+        // Opened: the companion drops its request.
+        crate::menu_bar::companion_changed(cx);
         cx.notify();
     }
 
