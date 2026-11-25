@@ -24,6 +24,7 @@ mod pdf_comments;
 mod perf_tests;
 mod pii;
 mod preview;
+mod refusal;
 mod restored_clipboard;
 mod search_session;
 mod self_test;

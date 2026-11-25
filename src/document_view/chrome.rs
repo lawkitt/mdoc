@@ -452,6 +452,9 @@ impl DocumentView {
         let has_text = copy && !self.editor.read(cx).text().is_empty();
         let alias_reason = self.alias_actions_reason();
         let aliases = copy && alias_reason.is_none();
+        // A refusal with a step is offered, not greyed out: its notice
+        // carries the step.
+        let for_ai = aliases || (copy && self.copy_step(cx).is_some());
         // Notes live in the Inspector, beside the text.
         let notes = copy && self.notes_available();
         let spelling_on = !self.spelling_control_off() && !self.spelling.off_here();
@@ -571,13 +574,13 @@ impl DocumentView {
                                 Some(modifier("⇧⌘C", "Ctrl+Shift+C")),
                                 None,
                                 theme,
-                                aliases,
-                                alias_reason.map(Into::into),
+                                for_ai,
+                                alias_reason.filter(|_| !for_ai).map(Into::into),
                             )
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "more-copy-for-ai".into())
                             })
-                            .on_click(cx.listener(guard(aliases, || Box::new(CopyForAi)))),
+                            .on_click(cx.listener(guard(for_ai, || Box::new(CopyForAi)))),
                         )
                         .child(
                             ui::menu_row_because(

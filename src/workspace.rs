@@ -144,6 +144,9 @@ pub(super) enum TabEvent {
         with: mdoc_store::settings::AskWith,
         move_to_new: bool,
     },
+    /// A refused Copy for AI's step, from its notice or the Share tab: the
+    /// window runs it unless the document is kept from AI.
+    CopyStep(crate::refusal::Step),
     ToggleTheme,
     /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
     /// Source follows and Settings keeps it.
@@ -1737,6 +1740,9 @@ impl Workspace {
             TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
             TabEvent::Ask { with, move_to_new } => {
                 self.ask_from_tab(id, *with, *move_to_new, window, cx)
+            }
+            TabEvent::CopyStep(step) => {
+                self.run_tab_step(id, *step, window, cx);
             }
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
             TabEvent::SourceDisplay(display) => {
