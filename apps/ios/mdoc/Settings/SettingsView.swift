@@ -1,8 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// Settings (ADR 0099): Appearance, Review, Models, Privacy and About, as
-/// inset-grouped rows with icon tiles.
+/// Settings (ADR 0099): Appearance, Review, Models, AI connector, Privacy
+/// and About, as inset-grouped rows with icon tiles.
 struct SettingsView: View {
     @Bindable var setup: SetupViewModel
     @Bindable var preferences: Preferences
@@ -37,6 +37,17 @@ struct SettingsView: View {
                     }
                 }
                 models
+                // Milestone 2's phone loop (#1164), off by default.
+                Section {
+                    Toggle(isOn: $preferences.aiConnectorPreview) {
+                        SettingsLabel("AI connector (preview)", systemImage: "sparkles", color: .purple)
+                    }
+                    .accessibilityIdentifier("settings-ai-connector-preview")
+                } header: {
+                    Text("AI connector")
+                } footer: {
+                    Text("Ask AI shares a ready document's text, names replaced, with an AI app. Back in mdoc, Paste reply? restores its answer.")
+                }
                 Section {
                     NavigationLink {
                         PrivacyView()

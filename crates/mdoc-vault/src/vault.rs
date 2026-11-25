@@ -902,6 +902,12 @@ impl Vault {
 
     fn write_lock(&self) -> Result<WriteLock<'_>, VaultError> {
         self.check_alive()?;
+        self.held_lock()
+    }
+
+    /// The write lock, held for a read that must see one moment's records
+    /// (#1198); a crashed handle still reads, as it did without it.
+    fn held_lock(&self) -> Result<WriteLock<'_>, VaultError> {
         let file = self.lock_file.lock().unwrap_or_else(|e| e.into_inner());
         file.lock()?;
         Ok(WriteLock { file })

@@ -41,7 +41,7 @@ impl Stage {
             });
         };
         let shelf = shelf.read(cx);
-        let content = shelf.content();
+        let content = shelf.content(cx);
         json!({
             "shelf": true,
             "rows": content.documents.iter().map(|d| json!({
@@ -51,7 +51,7 @@ impl Stage {
                 "replaced": d.replaced_count(),
                 "names": d.names_count(),
             })).collect::<Vec<_>>(),
-            "copied": shelf.copied(),
+            "copied": shelf.copied(cx),
             "drag_hint": content.drag_hint,
             "source_line": shelf.source_line(),
             "clipboard_locked": shelf.clipboard_locked(cx),
@@ -316,7 +316,7 @@ fn hover_count(
             let center = stage
                 .shelf
                 .as_ref()
-                .and_then(|shelf| shelf.read(cx).count_center(row))
+                .and_then(|shelf| shelf.read(cx).count_center(row, cx))
                 .ok_or("the row's count")?;
             window.simulate_mouse_move(center, cx);
             Ok::<_, String>(())
@@ -347,7 +347,7 @@ fn shelf_hovering(
             let shelf = cx.new(|cx| {
                 let mut view = ShelfView::new(workspace, content, window, cx);
                 if let Some(row) = copied {
-                    view.show_copied(row);
+                    view.show_copied(row, cx);
                 }
                 view
             });
