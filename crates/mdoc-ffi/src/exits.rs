@@ -17,7 +17,9 @@
 //! What each carries: the text (the clipboard, the share sheet's text, the
 //! `.md` file's contents), the file's name, and the share sheet's subject
 //! and preview title. Both apps take the subject from the file's name
-//! without `.md`. **iOS Share as text: its title** was found unchecked by
+//! without `.md`. **Ask AI** (Milestone 2 items 18 and 20, behind the AI
+//! connector preview) sends what Share as text sends, the text and that
+//! title, through the same calls: its rows reuse [`Gate::TextForAi`]. **iOS Share as text: its title** was found unchecked by
 //! item 29's review: it was the raw document title. Since #1188,
 //! `DocumentViewModel.share(asFile: false)` sends the file's name, and the
 //! XCTest `testShareCarriesNoOriginalInItsSubjectPreviewTitleOrFileName`
@@ -102,6 +104,16 @@ const EXITS: &[Exit] = &[
         gate: Gate::TextForAi,
         send: android,
     },
+    Exit {
+        name: "iOS Ask AI: text, title",
+        gate: Gate::TextForAi,
+        send: ios_ask_ai,
+    },
+    Exit {
+        name: "Android Ask AI: text, title",
+        gate: Gate::TextForAi,
+        send: android_ask_ai,
+    },
     // Milestone 2: the connector's row goes here.
 ];
 
@@ -117,6 +129,20 @@ fn ios(letter: &Letter) -> Option<Vec<String>> {
     let text = letter.vault.text_for_ai(letter.id.clone()).ok()?;
     let subject = subject(&hand_off.file_name);
     Some(vec![text, hand_off.file_name, subject])
+}
+
+/// `DocumentViewModel.askAI()`: `RealCore.copyForAI`'s text, titled by
+/// the file's name without `.md`, with no file attached.
+fn ios_ask_ai(letter: &Letter) -> Option<Vec<String>> {
+    let [text, _file_name, title] = <[String; 3]>::try_from(ios(letter)?).ok()?;
+    Some(vec![text, title])
+}
+
+/// `askAiIntent`: `Documents.copyForAi`'s hand-off as Share as text sends
+/// it (`SharedText`), EXTRA_TEXT and EXTRA_TITLE, the chooser's title.
+fn android_ask_ai(letter: &Letter) -> Option<Vec<String>> {
+    let [text, _file_name, title] = <[String; 3]>::try_from(android(letter)?).ok()?;
+    Some(vec![text, title])
 }
 
 /// The share sheet's subject and preview title: the file's name without
