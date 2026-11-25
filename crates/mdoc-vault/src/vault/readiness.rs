@@ -129,7 +129,10 @@ impl Vault {
     /// which may hold a name nobody reviewed (#1205). The number is its
     /// place among the Vault's Documents by creation, oldest first, so a
     /// rename, edit or move keeps it and only deleting an older Document
-    /// changes it; the date is the day it was created, in UTC. Whether the
+    /// changes it. Creation is stored in whole seconds, so Documents made in
+    /// one second sort by id: a newer one may take an older one's number
+    /// within that second, never after. The date is the day it was
+    /// created, in UTC. Whether the
     /// Document may leave is `text_for_ai`'s to decide.
     pub fn share_name(&self, id: &str) -> Result<String, VaultError> {
         let document = self.document(id)?;
