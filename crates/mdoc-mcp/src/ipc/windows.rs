@@ -141,9 +141,10 @@ impl TokenUserSid {
         unsafe { (*self.0.as_ptr().cast::<TOKEN_USER>()).User.Sid }
     }
 
-    fn equals(&self, other: &Self) -> bool {
-        // SAFETY: both SIDs are valid for their buffers' lives.
-        unsafe { EqualSid(self.sid(), other.sid()) != 0 }
+    /// Whether `sid`, valid for the call, is this token's user.
+    fn is(&self, sid: PSID) -> bool {
+        // SAFETY: both SIDs are valid for the call.
+        unsafe { EqualSid(self.sid(), sid) != 0 }
     }
 
     fn string(&self) -> io::Result<String> {
@@ -347,7 +348,7 @@ pub(super) fn runs_as_us(pid: u32) -> bool {
         TokenUserSid::of_process(process.0),
         TokenUserSid::this_process(),
     ) {
-        (Ok(theirs), Ok(ours)) => theirs.equals(&ours),
+        (Ok(theirs), Ok(ours)) => ours.is(theirs.sid()),
         _ => false,
     }
 }
@@ -495,6 +496,23 @@ mod tests {
     fn a_server_of_another_account_is_not_ours() {
         assert!(!runs_as_us(4));
         assert!(runs_as_us(std::process::id()));
+    }
+
+    /// Done when: the user check tells another account's SID (System's)
+    /// from this user's.
+    #[test]
+    fn another_accounts_sid_is_not_ours() {
+        use windows_sys::Win32::Security::Authorization::ConvertStringSidToSidW;
+        let us = TokenUserSid::this_process().unwrap();
+        let system = wide("S-1-5-18");
+        let mut sid = std::ptr::null_mut();
+        // SAFETY: `system` is NUL-terminated; `sid` is LocalFree'd below.
+        let converted = unsafe { ConvertStringSidToSidW(system.as_ptr(), &mut sid) };
+        assert_ne!(converted, 0);
+        assert!(!us.is(sid), "System's SID taken for ours");
+        assert!(us.is(us.sid()));
+        // SAFETY: allocated by the call above, freed once.
+        unsafe { LocalFree(sid) };
     }
 
     /// Done when: a name already held makes mdoc not listen.
