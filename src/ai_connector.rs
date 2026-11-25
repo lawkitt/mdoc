@@ -4,6 +4,8 @@
 //! (`mdoc_mcp::ipc`). Each call is answered by `mdoc_connector::serve`,
 //! so every read and delivery is the service's. With the setting off
 //! there is no service and no listener at all.
+pub(crate) mod setup;
+
 use mdoc_connector::Connector;
 use mdoc_mcp::ipc::{self, Endpoint, Listening};
 use mdoc_store::settings::AiConnectorConfig;

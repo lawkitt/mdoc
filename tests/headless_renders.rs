@@ -488,6 +488,10 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     "settings-spelling" | "dictionary" => Some("Spelling"),
                     "settings-vault" | "settings-vault-recovery-key" => Some("Vault"),
                     "settings-about" => Some("About"),
+                    "settings-ai-connector-off"
+                    | "settings-ai-connector"
+                    | "settings-ai-connector-consent"
+                    | "settings-ai-connector-consent-chatgpt" => Some("AI connector"),
                     _ => None,
                 };
                 if let Some(category) = expected_category {

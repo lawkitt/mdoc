@@ -122,6 +122,10 @@ home-vault-unavailable
 home-vault-unavailable-notice
 settings-vault
 settings-vault-recovery-key
+settings-ai-connector-off
+settings-ai-connector
+settings-ai-connector-consent
+settings-ai-connector-consent-chatgpt
 vault-recovery-nudge
 home-vault-wrong-key
 home-vault-wrong-key-error

@@ -655,6 +655,8 @@ impl Workspace {
                     settings_ui::Event::Applied | settings_ui::Event::Checked => {
                         this.refresh_model_settings(cx);
                         crate::menu_bar::set_enabled(this.menu_bar_setting(), cx);
+                        // Settings › AI connector's switch starts or stops it.
+                        this.start_ai_connector();
                         // Spelling choices apply at once; views re-read them on render.
                         for view in this.tabs.iter().filter_map(|tab| tab.view()) {
                             view.update(cx, |_, cx| cx.notify());
