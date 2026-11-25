@@ -136,6 +136,9 @@ pub(super) enum TabEvent {
     /// Copy for AI, from the Share tab, the menu or its shortcut: the
     /// window checks it as the shelf does before anything is copied.
     CopyForAi,
+    /// A refused Copy for AI's step, from its notice or the Share tab: the
+    /// window runs it unless the document is kept from AI.
+    CopyStep(crate::refusal::Step),
     ToggleTheme,
     /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
     /// Source follows and Settings keeps it.
@@ -1718,6 +1721,9 @@ impl Workspace {
             }
             TabEvent::Project(ProjectEvent::MoveToNew) => self.move_to_new_project(id, window, cx),
             TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
+            TabEvent::CopyStep(step) => {
+                self.run_tab_step(id, *step, window, cx);
+            }
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
             TabEvent::SourceDisplay(display) => {
                 let display = *display;

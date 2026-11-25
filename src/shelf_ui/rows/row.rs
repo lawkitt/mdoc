@@ -2,7 +2,8 @@
 //! label (readiness in the same style, amber), an outlined Copy for AI on
 //! ready rows, the preview of two wrapped lines with alias chips, and the
 //! meta line "5 min ago · 1,297 words · 24 replaced". A row that is not
-//! ready starts its meta line with its state, so the title keeps its room.
+//! ready starts its meta line with its state, so the title keeps its room,
+//! and has its step's button where Copy for AI would be.
 
 use super::{ShelfRows, ShelfRowsEvent};
 use crate::{
@@ -34,6 +35,7 @@ const TITLE_SIZE: f32 = 13.;
 /// wide, and the Copy for AI button; a long Project label gives way first.
 const PROJECT_LABEL_MIN: f32 = 64.;
 const COPY_BUTTON: f32 = 92.;
+const BUTTON_SIZE: f32 = 12.;
 const HEADER_GAP: f32 = 6.;
 const ROW_INNER_GAP: f32 = 3.;
 
@@ -137,7 +139,7 @@ pub(crate) fn row_label(document: &ShelfDocument) -> String {
         label.push_str(name);
     }
     label.push_str(", ");
-    label.push_str(&document.readiness.label());
+    label.push_str(&document.state());
     label
 }
 
@@ -219,13 +221,18 @@ pub(crate) fn wrapped_lines(preview: &Preview, width: f32, window: &Window) -> u
 
 /// How wide `text` is in the title's font, on one line.
 fn title_width(text: &str, window: &Window) -> f32 {
+    text_width(text, TITLE_SIZE, FontWeight::SEMIBOLD, window)
+}
+
+/// How wide `text` is at `size` and `weight`, on one line.
+fn text_width(text: &str, size: f32, weight: FontWeight, window: &Window) -> f32 {
     let mut style = window.text_style();
-    style.font_size = px(TITLE_SIZE).into();
-    style.font_weight = FontWeight::SEMIBOLD;
+    style.font_size = px(size).into();
+    style.font_weight = weight;
     let runs = [style.to_run(text.len())];
     window
         .text_system()
-        .shape_text(text.to_string().into(), px(TITLE_SIZE), &runs, None, None)
+        .shape_text(text.to_string().into(), px(size), &runs, None, None)
         .ok()
         .and_then(|lines| {
             lines
@@ -233,6 +240,12 @@ fn title_width(text: &str, window: &Window) -> f32 {
                 .map(|line| line.size(px(TITLE_LINE)).width.as_f32())
         })
         .unwrap_or(0.)
+}
+
+/// The width a step's button takes: its label, padding and border.
+fn step_width(document: &ShelfDocument, window: &Window) -> Option<f32> {
+    let label = document.step()?.label();
+    Some((text_width(&label, BUTTON_SIZE, FontWeight::NORMAL, window) + 2. * 8. + 2.).ceil())
 }
 
 /// `title` as the row draws it, measured, and its width: whole when it
@@ -244,6 +257,8 @@ pub(crate) fn fit_title(document: &ShelfDocument, window: &Window) -> (String, f
     }
     if document.readiness.is_ready() {
         room -= COPY_BUTTON + HEADER_GAP;
+    } else if let Some(width) = step_width(document, window) {
+        room -= width + HEADER_GAP;
     }
     let title = document.display_title();
     let width = title_width(title, window);
@@ -354,6 +369,8 @@ impl ShelfRows {
         let document = &self.documents[index];
         let ready = document.readiness.is_ready();
         let copied = self.copied == Some(index);
+        let step = document.step().filter(|_| !ready);
+        let refused = self.refused == Some(index);
         let (title, title_width) = self
             .titles
             .get(index)
@@ -428,6 +445,33 @@ impl ShelfRows {
                             this.copy(index, window, cx);
                         })),
                 )
+            })
+            .when_some(step, |header, step| {
+                let label = step.label();
+                header.child(
+                    ui::focus_ring(("shelf-step", index), theme)
+                        .track_focus(&self.steps[index])
+                        .role(gpui::Role::Button)
+                        .aria_label(label.clone())
+                        .key_context("UiControl")
+                        .flex_shrink_0()
+                        .h(px(22.))
+                        .px(px(8.))
+                        .flex()
+                        .items_center()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(p.border)
+                        .text_size(px(BUTTON_SIZE))
+                        .text_color(p.header_fg)
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(p.placeholder_bg))
+                        .child(label)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.step(index, cx);
+                        })),
+                )
             });
         let fitted = self.fitted.get(index).and_then(Option::as_ref);
         let preview = fitted.filter(|_| ready).map(|preview| {
@@ -492,8 +536,18 @@ impl ShelfRows {
             .text_size(px(11.))
             .text_color(p.header_muted)
             .whitespace_nowrap()
+            // Listed ready, gone or kept from AI by the time it was asked.
+            .when(ready && refused, |line| {
+                line.child(label("Not copied", theme.proposed()).mr(px(6.)))
+            })
             .when(!ready, |line| {
-                line.child(label(document.readiness.label(), theme.proposed()).mr(px(6.)))
+                let state = document.state();
+                let state = if refused {
+                    format!("Not copied · {state}")
+                } else {
+                    state
+                };
+                line.child(label(state, theme.proposed()).mr(px(6.)))
             })
             .child(meta)
             .children(count);

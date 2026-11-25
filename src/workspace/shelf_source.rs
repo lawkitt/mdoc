@@ -6,6 +6,7 @@
 use super::{ProjectLink, Workspace, document_writer::Target, navigation::Arrival};
 use crate::{
     document_view::DocumentView,
+    refusal::{Refusal, Step},
     shelf::{self, OpenTab, Outbound, ShelfDocument, ShelfKey, StoredDocument},
 };
 use gpui::{App, Context, Window};
@@ -113,6 +114,20 @@ impl Workspace {
         Some(checked(vault.text_for_ai(document.as_str())))
     }
 
+    /// The name row `key`'s document leaves under as a drag's file,
+    /// nothing of its title (#1208): its `Vault::share_name`. `None` outside
+    /// the Vault, where a tab is never ready.
+    pub(crate) fn shelf_share_name(&self, key: &ShelfKey, cx: &App) -> Option<String> {
+        let vault = self.vault.vault()?;
+        match key {
+            ShelfKey::Tab(id) => match self.tabs.get(*id)?.view()?.read(cx).session.document.id() {
+                Some(DocumentId::Vault(document)) => vault.share_name(document.as_str()).ok(),
+                _ => None,
+            },
+            ShelfKey::Document(id) => vault.share_name(id.as_str()).ok(),
+        }
+    }
+
     /// A stored document's row, with the names it lives with as stored;
     /// `None` when it can't be read or holds no alias.
     fn stored_row(
@@ -143,6 +158,7 @@ impl Workspace {
             names,
             project,
             edited: SystemTime::UNIX_EPOCH + Duration::from_secs(document.updated),
+            scanned: document.scanned || document.review.is_some(),
             outbound: (!unwritten).then(|| checked(vault.text_for_ai(&summary.id))),
         })
     }
@@ -191,9 +207,13 @@ impl Workspace {
                     self.copy_for_ai_waiting = Some((id, clipboard));
                     return;
                 }
-                (None, readiness) => Err(not_copied(readiness, self.unsaved.contains(&id))),
+                (None, readiness) => Err(Refusal::of(
+                    readiness,
+                    row.scanned,
+                    self.unsaved.contains(&id),
+                )),
             },
-            None => Err(self.no_row_reason(&view, cx)),
+            None => Err(self.no_row_refusal(&view, cx)),
         };
         view.update(cx, |view, cx| match outcome {
             Ok(text) => view.copy_checked_for_ai(text, cx),
@@ -201,17 +221,44 @@ impl Workspace {
         });
     }
 
-    /// Why a tab has no shelf row to copy.
-    fn no_row_reason(&self, view: &gpui::Entity<DocumentView>, cx: &App) -> String {
-        let excluded = match (self.vault.vault(), view.read(cx).session.document.id()) {
+    /// Run a refused Copy for AI's step in tab `id`, unless its document is
+    /// kept from AI: then nothing changes in it ("Replace N and copy" would
+    /// edit it to copy nothing) and the notice says why. Returns whether the
+    /// step found what it shows (`DocumentView::run_copy_step`).
+    pub(super) fn run_tab_step(
+        &mut self,
+        id: u64,
+        step: Step,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
+            return true;
+        };
+        if self.excluded(&view, cx) {
+            view.update(cx, |view, cx| {
+                view.copy_for_ai_refused(Refusal::excluded(), cx)
+            });
+            return true;
+        }
+        view.update(cx, |view, cx| view.run_copy_step(step, window, cx))
+    }
+
+    /// Whether tab `view`'s Vault document is kept from AI.
+    fn excluded(&self, view: &gpui::Entity<DocumentView>, cx: &App) -> bool {
+        match (self.vault.vault(), view.read(cx).session.document.id()) {
             (Some(vault), Some(DocumentId::Vault(document))) => (vault.documents().iter())
                 .any(|summary| summary.id == document.as_str() && summary.exclude_from_ai),
             _ => false,
-        };
-        if excluded {
-            "Not copied: this document is excluded from AI.".into()
+        }
+    }
+
+    /// Why a tab has no shelf row to copy, and what resolves it.
+    fn no_row_refusal(&self, view: &gpui::Entity<DocumentView>, cx: &App) -> Refusal {
+        if self.excluded(view, cx) {
+            Refusal::excluded()
         } else {
-            "Not copied: pseudonymize the document first.".into()
+            view.read(cx).no_alias_refusal()
         }
     }
 
@@ -242,26 +289,6 @@ fn checked(outbound: Result<String, VaultError>) -> Outbound {
 /// The clipboard's text now, if it holds any.
 fn clipboard_text(cx: &App) -> Option<String> {
     cx.read_from_clipboard().and_then(|item| item.text())
-}
-
-/// Why Copy for AI copied nothing, as the shelf's row would say it.
-/// `failed`: the tab's last write failed, so the check can't see its text.
-fn not_copied(readiness: shelf::Readiness, failed: bool) -> String {
-    use shelf::Readiness::*;
-    match readiness {
-        LeftToReview(1) => "Not copied: 1 proposal is left to review.".into(),
-        LeftToReview(n) => format!("Not copied: {n} proposals are left to review."),
-        NamesNotReplaced(1) => "Not copied: 1 known name is still written out in the text.                                 It may be a name another document added to the Project."
-            .into(),
-        NamesNotReplaced(n) => format!(
-            "Not copied: {n} known names are still written out in the text. They may be              names another document added to the Project."
-        ),
-        ChangedSinceReview => "Not copied: the text changed since its review.".into(),
-        Checking if failed => "Not copied: its last change could not be saved, so its names                                can't be checked."
-            .into(),
-        Checking => "Not copied: mdoc is still checking its names. Try again in a moment.".into(),
-        Ready => "Not copied.".into(),
-    }
 }
 
 /// A tab's review is ready as a write records it: an applied alias,
@@ -418,11 +445,13 @@ impl Workspace {
 
     /// A shelf row's click: the tab comes forward in its current view, a
     /// stored document opens in a tab, and a document that is not ready
-    /// shows its first pending proposal once it has loaded.
+    /// shows its first pending proposal once it has loaded. With `step`
+    /// (a refused row's button), that step runs instead once it has loaded.
     pub(crate) fn open_from_shelf(
         &mut self,
         key: &ShelfKey,
         ready: bool,
+        step: Option<Step>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -443,7 +472,7 @@ impl Workspace {
                 }
             }
         };
-        if ready {
+        if ready && step.is_none() {
             self.focus_active(window, cx);
             return;
         }
@@ -460,7 +489,12 @@ impl Workspace {
                         if !view.read(cx).lifecycle.ready() {
                             return false;
                         }
-                        view.update(cx, |view, cx| view.select_first_proposal(window, cx))
+                        match step {
+                            Some(step) => this.run_tab_step(tab, step, window, cx),
+                            None => {
+                                view.update(cx, |view, cx| view.select_first_proposal(window, cx))
+                            }
+                        }
                     })
                     .unwrap_or(true);
                 if shown {
