@@ -89,10 +89,14 @@ extension DocumentViewModel {
         Task {
             await discoverNow()
             let session = session
+            let revision = typing.revision
             let scanned = await Task.detached(priority: .userInitiated) {
                 try? session.scanEdits()
             }.value
-            if let scanned { applyReview(scanned) }
+            // Edit again meanwhile: the snapshot is older than the text.
+            if let scanned, !isEditing, revision == typing.revision, scanned.textRevision == revision {
+                applyReview(scanned)
+            }
             do {
                 try session.saveChanges()
             } catch {

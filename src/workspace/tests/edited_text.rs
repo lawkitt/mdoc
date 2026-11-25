@@ -84,6 +84,47 @@ fn a_scanned_document_with_nothing_to_replace_is_ready(cx: &mut TestAppContext) 
     view.update(cx, |view, cx| view.scan_finding(Vec::new(), cx));
     written(cx);
     assert_eq!(readiness(&tabs, id, cx), mdoc_vault::Readiness::Ready);
+    // The ⋯ menu's Copy for AI is on, and copies it.
+    assert_eq!(
+        view.read_with(cx, |view, _| view.copy_for_ai_reason()),
+        None
+    );
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("before".into()));
+    cx.update(|window, cx| window.focus(&view.read(cx).editor.read(cx).focus_handle(cx), cx));
+    more(cx, "more-copy-for-ai");
+    paused(cx);
+    let copied = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
+    assert_eq!(copied, "The lease ends in May.");
+    let (copied, why) = copy(&view, cx);
+    assert_eq!(why, None);
+    assert_eq!(copied, "The lease ends in May.");
+}
+
+/// Typing in a document with no names, then Undo before the pause: the
+/// text is the scanned one again, and Copy for AI copies it rather than
+/// waiting on a discovery with nothing to find.
+#[gpui::test]
+fn undo_before_the_pause_leaves_a_document_with_no_names_ready(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let id = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "note.md",
+        "The lease ends in May.",
+        &[],
+    );
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| view.scan_finding(Vec::new(), cx));
+    written(cx);
+    type_at_end(&tabs, cx, id, " x");
+    cx.run_until_parked();
+    view.update_in(cx, |view, window, cx| {
+        view.editor
+            .update(cx, |editor, cx| editor.undo(&mdoc_editor::Undo, window, cx))
+    });
+    cx.run_until_parked();
     let (copied, why) = copy(&view, cx);
     assert_eq!(why, None);
     assert_eq!(copied, "The lease ends in May.");
@@ -263,8 +304,8 @@ fn a_document_left_mid_edit_reopens_owing_a_scan(cx: &mut TestAppContext) {
 }
 
 /// With no alias, a record saved mid-edit is not reviewed when it reopens:
-/// "scanned" is only a record whose text was all scanned. Its pause scan
-/// is its Find names, after which it is Ready again.
+/// "scanned" is only a record whose text was all scanned. With no review
+/// to restore it waits for Find names, then is Ready again.
 #[gpui::test]
 fn a_record_saved_mid_edit_is_not_reviewed_until_scanned(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -290,6 +331,49 @@ fn a_record_saved_mid_edit_is_not_reviewed_until_scanned(cx: &mut TestAppContext
     };
     assert!(!reviewed(cx), "not Ready before its scan");
     paused(cx);
+    assert!(!reviewed(cx), "the pause is no Find names");
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| view.scan_finding(Vec::new(), cx));
+    written(cx);
     assert!(reviewed(cx));
     assert_eq!(readiness(&tabs, id, cx), mdoc_vault::Readiness::Ready);
+}
+
+/// A Project member saved mid-edit and then moved, which clears its review
+/// but keeps its aliases, still owes the scan of all its text when it
+/// opens: its typed name never leaves as typed.
+#[gpui::test]
+fn a_document_moved_after_a_save_mid_edit_owes_a_scan(cx: &mut TestAppContext) {
+    *TEST_SCAN.lock().unwrap() = Some(clara);
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let id = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "lease.md",
+        "Anna Petrova signed the lease.",
+        &[("Anna Petrova", Person)],
+    );
+    new_project(&tabs, cx, id);
+    written(cx);
+    type_at_end(&tabs, cx, id, " Clara Moss agreed.");
+    wait(cx, 1000);
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(id, cx).unwrap());
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(id, window, cx));
+    written(cx);
+    vault(&tabs, cx)
+        .move_document(document.as_str(), None)
+        .unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_vault_document(document, window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    let (copied, why) = copy(&view, cx);
+    assert_eq!(copied, "before");
+    assert_eq!(
+        why.as_deref(),
+        Some("Not copied: 1 proposal is left to review.")
+    );
 }

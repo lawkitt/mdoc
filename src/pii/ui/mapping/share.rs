@@ -70,6 +70,7 @@ impl DocumentView {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let aliases = self.has_applied_aliases();
+        let copy_for_ai = self.copy_for_ai_reason().is_none();
         let copied = self.copy_feedback.is_some();
         let entities = self.replacement_entity_count(cx);
         let section = |title: &'static str| {
@@ -131,12 +132,12 @@ impl DocumentView {
                             "share-copy-for-ai",
                             if copied && self.copied_for_ai { "Copied" } else { "Copy for AI" },
                             theme,
-                            aliases,
+                            copy_for_ai,
                         )
                         .when(cfg!(test), |v| v.debug_selector(|| "share-copy-for-ai".into()))
                         .h(px(32.))
                         .on_click(cx.listener(move |this, _, window, cx| {
-                            if aliases {
+                            if copy_for_ai {
                                 this.copy_for_ai(&CopyForAi, window, cx)
                             }
                         })),
