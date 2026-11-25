@@ -98,9 +98,13 @@ impl Workspace {
         }
     }
 
-    /// The connector and its listener stop; nothing is shared any more.
+    /// The connector and its listener stop; nothing is shared any more. The
+    /// share goes first: a call already accepted, which still holds the
+    /// connector, then finds nothing shared.
     pub(super) fn stop_ai_connector(&mut self) {
-        self.ai_connector = None;
+        if let Some(running) = self.ai_connector.take() {
+            running.connector.stop_sharing();
+        }
     }
 
     /// Tests and headless renders: use `vault`, as if launch opened it.

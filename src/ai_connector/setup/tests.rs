@@ -418,3 +418,103 @@ fn test_connection_prefills_a_new_claude_chat() {
     );
     assert_eq!(percent_encoded("a+b/ü"), "a%2Bb%2F%C3%BC");
 }
+
+/// A config that is a link (into a dotfiles repository, say) is refused:
+/// replacing it would break the link.
+#[test]
+fn a_linked_config_is_refused() {
+    let home = fresh();
+    let real = home.dir.path().join("dotfiles-config.toml");
+    std::fs::write(&real, CODEX).unwrap();
+    let link = home.dir.path().join("User/.codex/config.toml");
+    #[cfg(unix)]
+    let made = std::os::unix::fs::symlink(&real, &link);
+    #[cfg(windows)]
+    let made = std::os::windows::fs::symlink_file(&real, &link);
+    if made.is_err() {
+        // Windows without Developer Mode can't make one; Linux and macOS run it.
+        eprintln!("skipped: this account can't make a symbolic link");
+        return;
+    }
+    assert_eq!(
+        status(&home.places, Host::ChatGpt),
+        Status::Unreadable(Refusal::Linked)
+    );
+    assert_eq!(plan_add(&home.places, Host::ChatGpt), Err(Refusal::Linked));
+    assert_eq!(
+        plan_remove(&home.places, Host::ChatGpt),
+        Err(Refusal::Linked)
+    );
+    assert!(
+        std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(std::fs::read_to_string(&real).unwrap(), CODEX);
+}
+
+/// A file planned unlinked but linked by the yes is not replaced either.
+#[test]
+fn a_config_linked_after_the_card_is_not_replaced() {
+    let home = with(Host::ChatGpt, CODEX);
+    let change = plan_add(&home.places, Host::ChatGpt).unwrap();
+    let real = home.dir.path().join("dotfiles-config.toml");
+    std::fs::write(&real, CODEX).unwrap();
+    let link = home.config(Host::ChatGpt);
+    std::fs::remove_file(&link).unwrap();
+    #[cfg(unix)]
+    let made = std::os::unix::fs::symlink(&real, &link);
+    #[cfg(windows)]
+    let made = std::os::windows::fs::symlink_file(&real, &link);
+    if made.is_err() {
+        eprintln!("skipped: this account can't make a symbolic link");
+        return;
+    }
+    assert_eq!(apply(&change), Err(Refusal::Linked));
+    assert!(
+        std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}
+
+/// A Windows config with CRLF lines keeps them; only mdoc's table is new.
+#[test]
+fn a_crlf_codex_config_keeps_its_line_ends() {
+    let original = CODEX.replace('\n', "\r\n");
+    let home = with(Host::ChatGpt, &original);
+    apply(&plan_add(&home.places, Host::ChatGpt).unwrap()).unwrap();
+    let written = home.text(Host::ChatGpt);
+    assert!(!written.replace("\r\n", "").contains('\n'), "{written:?}");
+    assert!(written.starts_with(&original[..original.find("[profiles").unwrap()]));
+    apply(&plan_remove(&home.places, Host::ChatGpt).unwrap()).unwrap();
+    assert_eq!(home.text(Host::ChatGpt).trim_end(), original.trim_end());
+}
+
+/// Update keeps the comments above mdoc's table and its place; Remove
+/// shows those comments on the card, since they go with it.
+#[test]
+fn comments_above_mdocs_table_are_kept_or_shown() {
+    let text = "model = \"gpt\"\n\n# mdoc, added by hand\n[mcp_servers.mdoc]\ncommand = \"/old/mdoc-mcp\"\n\n[mcp_servers.docs]\ncommand = \"docs\"\n";
+    let home = with(Host::ChatGpt, text);
+    let change = plan_remove(&home.places, Host::ChatGpt).unwrap();
+    assert!(
+        change
+            .shown()
+            .starts_with("# mdoc, added by hand\n[mcp_servers.mdoc]\n"),
+        "{}",
+        change.shown()
+    );
+    apply(&plan_add(&home.places, Host::ChatGpt).unwrap()).unwrap();
+    let written = home.text(Host::ChatGpt);
+    let comment = written
+        .find("# mdoc, added by hand\n[mcp_servers.mdoc]\n")
+        .unwrap();
+    assert!(
+        comment < written.find("[mcp_servers.docs]").unwrap(),
+        "{written}"
+    );
+    assert!(!written.contains("/old/"));
+}

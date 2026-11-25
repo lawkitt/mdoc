@@ -342,3 +342,19 @@ fn without_an_installed_shim_add_does_nothing(cx: &mut TestAppContext) {
     assert_eq!(apps.text(Host::Claude), None);
     assert_eq!(apps.text(Host::ChatGpt), None);
 }
+
+/// A switch save that fails puts the switch back on, and the apps' rows
+/// with it.
+#[gpui::test]
+fn a_failed_switch_save_shows_the_rows_again(cx: &mut TestAppContext) {
+    let apps = apps(Some(CLAUDE), None);
+    let (panel, shared, cx) = page(&apps, true, cx);
+    let dir = tempfile::tempdir().unwrap();
+    let blocked = dir.path().join("not-a-directory");
+    std::fs::write(&blocked, b"blocked").unwrap();
+    shared.borrow_mut().path = Some(blocked.join("settings.json"));
+    click(cx, "ai-connector-preview");
+    assert!(shared.borrow().snapshot().unwrap().ai_connector.preview);
+    assert_eq!(status(&panel, Host::Claude, cx), Some(Status::NotAdded));
+    assert!(shown(cx, "ai-claude-add"));
+}

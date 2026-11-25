@@ -946,6 +946,9 @@ impl Panel {
                         this.save_pending = false;
                         this.draft = this.shared.borrow().current.clone().unwrap_or_default();
                         this.update_fields(cx);
+                        if this.category == Category::AiConnector {
+                            this.refresh_ai(cx);
+                        }
                         this.error = Some(format!(
                             "Could not save settings: {e}. Previous defaults remain active."
                         ));

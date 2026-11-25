@@ -207,6 +207,9 @@ pub(crate) enum Refusal {
     NotAdded,
     /// The file changed after the user saw the change.
     Changed,
+    /// The file is a link to another file: replacing it would break the
+    /// link.
+    Linked,
     /// Reading or writing failed.
     Io { writing: bool, error: String },
 }
@@ -235,6 +238,10 @@ impl Refusal {
             ),
             Self::AlreadyAdded => format!("mdoc is already in {app}'s settings."),
             Self::NotAdded => format!("mdoc isn't in {app}'s settings."),
+            Self::Linked => format!(
+                "{app}'s settings file is a link to another file, so mdoc won't replace it. \
+                 Add the entry where the link points, by hand."
+            ),
             Self::Changed => format!(
                 "{app}'s settings file changed since mdoc showed it. Nothing was written; look \
                  at the change again."
@@ -279,10 +286,15 @@ struct Snapshot {
     /// Its bytes, `None` when there is no file yet.
     bytes: Option<Vec<u8>>,
     doc: Doc,
+    /// The TOML file's lines end in CRLF: the written file keeps them.
+    crlf: bool,
 }
 
 impl Snapshot {
     fn read(path: &Path, host: Host) -> Result<Self, Refusal> {
+        if is_link(path) {
+            return Err(Refusal::Linked);
+        }
         let bytes = match std::fs::read(path) {
             Ok(bytes) => Some(bytes),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -296,6 +308,7 @@ impl Snapshot {
         // No file, or an empty one, holds nothing to keep.
         let text = bytes.as_deref().unwrap_or_default();
         let empty = text.iter().all(u8::is_ascii_whitespace);
+        let mut crlf = false;
         let doc = match host {
             Host::Claude => Doc::Json(if empty {
                 Map::new()
@@ -312,6 +325,7 @@ impl Snapshot {
             }),
             Host::ChatGpt => {
                 let text = std::str::from_utf8(text).map_err(|_| Refusal::Unparsable)?;
+                crlf = text.contains("\r\n");
                 let doc: toml_edit::DocumentMut = text.parse().map_err(|_| Refusal::Unparsable)?;
                 // A table of tables mdoc can add one to, written as
                 // `[mcp_servers.<name>]` sections.
@@ -329,7 +343,23 @@ impl Snapshot {
                 Doc::Toml(doc)
             }
         };
-        Ok(Self { bytes, doc })
+        Ok(Self { bytes, doc, crlf })
+    }
+
+    /// The comment lines written just above mdoc's own TOML table: they go
+    /// with it on Remove, so the card shows them.
+    fn entry_comments(&self) -> Option<String> {
+        let Doc::Toml(doc) = &self.doc else {
+            return None;
+        };
+        let table = doc.get("mcp_servers")?.get(SERVER)?.as_table()?;
+        let prefix = table.decor().prefix()?.as_str()?;
+        let comments: Vec<&str> = prefix
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with('#'))
+            .collect();
+        (!comments.is_empty()).then(|| comments.join("\n"))
     }
 
     /// The `mdoc` entry, as JSON.
@@ -371,14 +401,31 @@ impl Snapshot {
                 if let toml_edit::Item::Table(servers) = servers {
                     match entry {
                         Some(entry) => {
-                            servers.insert(SERVER, toml_edit::Item::Table(toml_table(entry)));
+                            let mut table = toml_table(entry);
+                            // A replaced table keeps its place and the
+                            // comments above it.
+                            if let Some(old) = servers.get(SERVER).and_then(|item| item.as_table())
+                            {
+                                *table.decor_mut() = old.decor().clone();
+                                if let Some(position) = old.position() {
+                                    table.set_position(Some(position));
+                                }
+                            }
+                            servers.insert(SERVER, toml_edit::Item::Table(table));
                         }
                         None => {
                             servers.remove(SERVER);
                         }
                     }
                 }
-                doc.to_string().into_bytes()
+                let text = doc.to_string();
+                if self.crlf {
+                    text.replace("\r\n", "\n")
+                        .replace('\n', "\r\n")
+                        .into_bytes()
+                } else {
+                    text.into_bytes()
+                }
             }
         }
     }
@@ -489,14 +536,21 @@ pub(crate) struct Change {
     pub path: PathBuf,
     /// The entry added, or removed.
     pub entry: Value,
+    /// Comment lines Remove takes out with the entry: those just above
+    /// its TOML table.
+    comments: Option<String>,
     before: Option<Vec<u8>>,
     after: Vec<u8>,
 }
 
 impl Change {
-    /// The entry as the card shows it: as it reads in the file.
+    /// The entry as the card shows it: as it reads in the file, with the
+    /// comments that go with it.
     pub(crate) fn shown(&self) -> String {
-        shown(self.host, &self.entry)
+        match &self.comments {
+            Some(comments) => format!("{comments}\n{}", shown(self.host, &self.entry)),
+            None => shown(self.host, &self.entry),
+        }
     }
 
     /// The other entry a replace takes out, as the card shows it.
@@ -561,6 +615,7 @@ pub(crate) fn plan_add(places: &Places, host: Host) -> Result<Change, Refusal> {
         kind,
         path,
         entry,
+        comments: None,
         before,
         after,
     })
@@ -571,6 +626,7 @@ pub(crate) fn plan_remove(places: &Places, host: Host) -> Result<Change, Refusal
     let path = places.config(host).ok_or(Refusal::NotInstalled)?;
     let snapshot = Snapshot::read(&path, host)?;
     let entry = snapshot.entry().ok_or(Refusal::NotAdded)?;
+    let comments = snapshot.entry_comments();
     let before = snapshot.bytes.clone();
     let after = snapshot.with(None);
     Ok(Change {
@@ -578,16 +634,34 @@ pub(crate) fn plan_remove(places: &Places, host: Host) -> Result<Change, Refusal
         kind: Kind::Remove,
         path,
         entry,
+        comments,
         before,
         after,
     })
 }
 
 /// Write `change`, the user having said yes to it: only if the file is
-/// still what it was planned from, through a temp file in the same folder
+/// still what it was planned from, through temp files in the same folder
 /// so the AI app never reads half of it. The file as it was is kept once
-/// beside it.
+/// beside it. Both files are staged first, so the check is the last step
+/// before they land; a new file never replaces one that appeared since.
 pub(crate) fn apply(change: &Change) -> Result<(), Refusal> {
+    let folder = change.path.parent().ok_or(Refusal::NotInstalled)?;
+    if !folder.is_dir() {
+        return Err(Refusal::NotInstalled);
+    }
+    if is_link(&change.path) {
+        return Err(Refusal::Linked);
+    }
+    let failed = |error: std::io::Error| Refusal::Io {
+        writing: true,
+        error: error.to_string(),
+    };
+    let staged = stage(&change.path, folder, &change.after).map_err(failed)?;
+    let kept = (change.before.as_deref())
+        .map(|before| stage(&change.path, folder, before))
+        .transpose()
+        .map_err(failed)?;
     let now = match std::fs::read(&change.path) {
         Ok(bytes) => Some(bytes),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -601,19 +675,19 @@ pub(crate) fn apply(change: &Change) -> Result<(), Refusal> {
     if now != change.before {
         return Err(Refusal::Changed);
     }
-    let folder = change.path.parent().ok_or(Refusal::NotInstalled)?;
-    if !folder.is_dir() {
-        return Err(Refusal::NotInstalled);
-    }
-    let failed = |error: std::io::Error| Refusal::Io {
-        writing: true,
-        error: error.to_string(),
-    };
     // The file as it was, once, beside it; the next change replaces it.
-    if let Some(before) = &change.before {
-        write(&backup(&change.path), folder, before).map_err(failed)?;
+    if let Some(kept) = kept {
+        kept.persist(backup(&change.path))
+            .map_err(|error| failed(error.error))?;
     }
-    write(&change.path, folder, &change.after).map_err(failed)
+    match change.before {
+        Some(_) => staged.persist(&change.path).map(drop),
+        None => staged.persist_noclobber(&change.path).map(drop),
+    }
+    .map_err(|error| match error.error.kind() {
+        std::io::ErrorKind::AlreadyExists => Refusal::Changed,
+        _ => failed(error.error),
+    })
 }
 
 /// Where [`apply`] keeps the file as it was before its change.
@@ -623,7 +697,13 @@ pub(crate) fn backup(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-fn write(path: &Path, folder: &Path, bytes: &[u8]) -> std::io::Result<()> {
+/// Whether `path` is a symbolic link (a dotfiles repository's, say).
+fn is_link(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
+}
+
+/// `bytes` in a temp file in `folder`, synced, with `path`'s mode on Unix.
+fn stage(path: &Path, folder: &Path, bytes: &[u8]) -> std::io::Result<tempfile::NamedTempFile> {
     use std::io::Write;
     let mut file = tempfile::NamedTempFile::new_in(folder)?;
     file.write_all(bytes)?;
@@ -632,9 +712,10 @@ fn write(path: &Path, folder: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Ok(old) = std::fs::metadata(path) {
         file.as_file().set_permissions(old.permissions())?;
     }
+    #[cfg(not(unix))]
+    let _ = path;
     file.as_file().sync_all()?;
-    file.persist(path).map_err(|error| error.error)?;
-    Ok(())
+    Ok(file)
 }
 
 /// The link Claude's Test connection opens: a new chat with the first

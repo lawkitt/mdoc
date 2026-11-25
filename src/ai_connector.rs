@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 /// The connector and its listener; dropping it stops listening.
 pub(crate) struct Running {
-    /// Shared with the window: what it shares, Stop sharing (item 8).
-    #[cfg_attr(not(test), expect(dead_code))]
+    /// Shared with the window: what it shares, Stop sharing (item 8);
+    /// turning the preview off stops sharing through it.
     pub(crate) connector: Arc<Connector>,
     _listening: Listening,
 }
@@ -32,17 +32,32 @@ pub(crate) fn start(
     let serving = connector.clone();
     let answer: ipc::Handler =
         Arc::new(move |line: &[u8]| mdoc_connector::serve::answer_line(&serving, line));
-    match ipc::listen(endpoint, answer) {
-        Ok(listening) => Some(Running {
-            connector,
-            _listening: listening,
-        }),
-        Err(error) => {
-            eprintln!("mdoc: the AI connector can't listen at {endpoint}: {error}");
-            None
+    // Turned off and on again quickly, the listener that just stopped may
+    // still hold the name for a moment (Settings › AI connector): try again
+    // a few times before giving up.
+    let mut tries = 1;
+    loop {
+        match ipc::listen(endpoint, answer.clone()) {
+            Ok(listening) => {
+                return Some(Running {
+                    connector,
+                    _listening: listening,
+                });
+            }
+            Err(_) if tries < LISTEN_TRIES => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(error) => {
+                eprintln!("mdoc: the AI connector can't listen at {endpoint}: {error}");
+                return None;
+            }
         }
     }
 }
+
+/// How many times [`start`] tries to listen, 50 ms apart.
+const LISTEN_TRIES: u32 = 10;
 
 /// This profile's endpoint: the dev profile's when there is one.
 pub(crate) fn endpoint() -> Option<Endpoint> {
@@ -87,6 +102,29 @@ mod tests {
             assert!(std::time::Instant::now() < deadline, "still listening");
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+    }
+
+    /// Turned off and on again quickly (Settings › AI connector), the
+    /// listener that just stopped may hold the name a moment longer: the
+    /// new one waits for it rather than giving up.
+    #[test]
+    fn a_name_freed_moments_later_is_taken() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
+        let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
+        let held = ipc::listen(&endpoint, Arc::new(|_: &[u8]| Vec::new())).unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            drop(held);
+        });
+        let on = AiConnectorConfig { preview: true };
+        let running = start(vault, &on, &endpoint);
+        release.join().unwrap();
+        assert!(running.is_some(), "gave up while the old listener stopped");
+        assert_eq!(
+            ask(&endpoint).unwrap(),
+            Answer::Refused(Refusal::NothingShared)
+        );
     }
 
     /// The shim reads the dev profile as mdoc does.
