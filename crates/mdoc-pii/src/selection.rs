@@ -42,15 +42,22 @@ pub struct SelectionPlans {
     pub plans: Vec<ReplacementPlan>,
     /// How many of `plans` are proposals.
     pub proposals: usize,
-    /// The selection once `plans` are made: widened over a proposal across
-    /// its edge, so the copy holds that alias whole.
+    /// The selection once `plans` are made: widened to whole words and over
+    /// a proposal across its edge, so the copy holds that alias whole.
     pub after: Range<usize>,
 }
 
-/// `range` widened to whole words: a selection that cuts into a word is
-/// checked as that word. It never shrinks, and never crosses a line break.
+/// `range` widened to whole words as detection reads them: a selection
+/// that cuts into a word is checked as that word, a character reference
+/// ("Marin&#97;") or a soft hyphen inside it included, while a note marker
+/// after a word ("Durnell¹") is a word of its own. It never shrinks, and
+/// never crosses a space or a line break.
 pub fn whole_words(source: &str, range: Range<usize>) -> Range<usize> {
-    let word = |c: char| c.is_alphanumeric() || unicode_normalization::char::is_combining_mark(c);
+    let word = |c: char| {
+        (c.is_alphanumeric() && !crate::view::note_marker(c))
+            || unicode_normalization::char::is_combining_mark(c)
+            || matches!(c, '&' | '#' | ';' | '\u{ad}')
+    };
     let mut start = range.start;
     let mut end = range.end;
     if source[start..].chars().next().is_some_and(word) {
@@ -82,10 +89,9 @@ impl Review {
         if !scanned {
             return Ok(SelectionCheck::NeverScanned);
         }
-        let words = whole_words(source, range);
-        let planned = self.selection_plans(source, words.clone())?;
+        let planned = self.selection_plans(source, range.clone())?;
         // The words as "Replace N and copy" would leave them.
-        let reach = planned.reach(words);
+        let reach = planned.reach(whole_words(source, range));
         let mut after = source[reach.clone()].to_owned();
         for plan in planned.plans.iter().rev() {
             let at = plan.range.start - reach.start..plan.range.end - reach.start;
@@ -93,8 +99,12 @@ impl Review {
         }
         let not = NotClean {
             proposals: planned.proposals,
-            // Text the review does not hold counts as changed.
-            changed_since_scan: *self.source != *source || self.unscanned_in(&reach),
+            // Text the review does not hold counts as changed, as does an
+            // edit whose proposals wait for discovery: a pasted paragraph
+            // can drop a proposal its scanned hash still covers.
+            changed_since_scan: *self.source != *source
+                || self.awaiting_discovery()
+                || self.unscanned_in(&reach),
             known_names: known.known_names(&after),
         };
         Ok(if not == NotClean::default() {
@@ -105,15 +115,17 @@ impl Review {
     }
 
     /// The plans that accept `range`'s proposals as Replace all would:
-    /// every pending proposal in it or across its edges, with the applied
-    /// aliases there whose identity was renamed since. Refuses a range
-    /// outside the text, inside a character, or plans that overlap.
+    /// every pending proposal in its whole words ([`whole_words`], as
+    /// [`Self::check_selection`] counts them) or across their edges, with
+    /// the applied aliases there whose identity was renamed since. Refuses
+    /// a range outside the text, inside a character, or plans that overlap.
     pub fn selection_plans(
         &self,
         source: &str,
         range: Range<usize>,
     ) -> Result<SelectionPlans, String> {
         checked(source, &range)?;
+        let range = whole_words(source, range);
         let touches = |plan: &ReplacementPlan| {
             overlaps(&plan.range, &range) || (range.is_empty() && plan.range.contains(&range.start))
         };

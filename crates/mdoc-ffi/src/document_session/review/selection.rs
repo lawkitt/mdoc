@@ -53,7 +53,7 @@ impl ReviewText {
     }
 
     /// Refuses a selection outside the text or inside a character.
-    fn in_text(&self, range: &Range<usize>) -> Result<(), CoreError> {
+    pub(crate) fn in_text(&self, range: &Range<usize>) -> Result<(), CoreError> {
         match self.text.get(range.clone()) {
             Some(_) => Ok(()),
             None => Err(CoreError::invalid("The selection is not in the text.")),

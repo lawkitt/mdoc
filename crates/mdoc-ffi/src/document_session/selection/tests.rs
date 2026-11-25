@@ -136,6 +136,48 @@ fn never_scanned_unless_decided_by_hand() {
     assert_eq!(check.unwrap(), SelectionCheck::Clean);
 }
 
+/// Until discovery runs after an edit, no selection is clean: a pasted
+/// paragraph can drop a proposal its scanned hash still covers.
+#[test]
+fn an_edit_waiting_for_discovery_is_not_clean() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let session = scanned(LETTER, &["Ann Lee"]);
+    session.replace_all().unwrap();
+    let text = session.snapshot().unwrap().text;
+    let end = TextRange {
+        start: text.len() as u64,
+        end: text.len() as u64,
+    };
+    session.type_text(end, " Ok.".into()).unwrap();
+    let check = |session: &DocumentSession| {
+        session.check_selection(vault.clone(), at(&text, "PERSON_1 signed"))
+    };
+    assert_eq!(check(&session).unwrap(), not_clean(0, true, 0));
+    session.discover().unwrap();
+    assert_eq!(check(&session).unwrap(), SelectionCheck::Clean);
+}
+
+/// Never scanned is answered before the Vault is read: a record gone from
+/// it does not turn the answer into an error.
+#[test]
+fn never_scanned_needs_no_vault_record() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let session = DocumentSession::new();
+    session.import_text(LETTER.into(), "Letter".into()).unwrap();
+    let id = session.save_into_vault(vault.clone()).unwrap().id;
+    vault.delete_document(id).unwrap();
+    let check = session.check_selection(vault.clone(), at(LETTER, "Ann"));
+    assert_eq!(check.unwrap(), SelectionCheck::NeverScanned);
+    let outside = TextRange { start: 0, end: 999 };
+    let refused = session.check_selection(vault.clone(), outside);
+    assert!(
+        matches!(refused, Err(CoreError::Invalid { .. })),
+        "{refused:?}"
+    );
+}
+
 /// A selection outside the text, or inside a character, is refused.
 #[test]
 fn a_selection_outside_the_text_is_refused() {

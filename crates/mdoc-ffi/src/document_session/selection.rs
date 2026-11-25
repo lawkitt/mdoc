@@ -67,30 +67,49 @@ impl DocumentSession {
     /// name its Project knows is written out in it: the names
     /// `Vault::readiness` checks, read now, with this review's own. A range
     /// cutting into a word is checked as the whole word. Excluded from AI
-    /// does not matter here. Writes nothing.
+    /// does not matter here. Writes nothing. The Vault is read without the
+    /// document's lock; a document opened or moved meanwhile is read again.
     pub fn check_selection(
         &self,
         vault: Arc<Vault>,
         range: TextRange,
     ) -> Result<SelectionCheck, CoreError> {
-        let place = self.read_document(|document| document.vault.clone())?;
-        let mut identities: Vec<ExportedIdentity> = match place {
-            Some(place) => match (place.id, place.project) {
-                (Some(id), _) => vault.store().known_identities(&id)?,
-                (None, Some(project)) => vault.store().project(&project)?.mapping.exported(),
-                (None, None) => Vec::new(),
-            },
-            None => Vec::new(),
-        };
+        let range = span(range);
         let by_hand = self.by_hand.load(Ordering::Relaxed);
-        let guard = self.lock_document();
-        let document = guard.as_ref().ok_or_else(no_document)?;
-        identities.extend(document.review.review.export_identities());
-        let known = RestoreMap::new(identities);
-        let scanned = document.scanned || by_hand;
-        (document.review)
-            .check_selection(span(range), scanned, &known)
-            .map(Into::into)
+        // Where the document is, and which: the names are read for that one.
+        let at = |document: &super::Document| {
+            let place = (document.vault.as_ref()).map(|p| (p.id.clone(), p.project.clone()));
+            (document.generation, place)
+        };
+        for _ in 0..3 {
+            let read = {
+                let guard = self.lock_document();
+                let document = guard.as_ref().ok_or_else(no_document)?;
+                document.review.in_text(&range)?;
+                if !(document.scanned || by_hand) {
+                    return Ok(SelectionCheck::NeverScanned);
+                }
+                at(document)
+            };
+            let mut identities: Vec<ExportedIdentity> = match &read.1 {
+                Some((Some(id), _)) => vault.store().known_identities(id)?,
+                Some((None, Some(project))) => vault.store().project(project)?.mapping.exported(),
+                _ => Vec::new(),
+            };
+            let guard = self.lock_document();
+            let document = guard.as_ref().ok_or_else(no_document)?;
+            if at(document) != read {
+                continue;
+            }
+            identities.extend(document.review.review.export_identities());
+            let known = RestoreMap::new(identities);
+            return (document.review)
+                .check_selection(range, true, &known)
+                .map(Into::into);
+        }
+        Err(CoreError::review(
+            "The document changed. Select the text again.",
+        ))
     }
 
     /// "Replace N and copy": the proposals in `range` or across its edges

@@ -29,6 +29,8 @@ fn proposed() -> Review {
 fn replaced() -> (Review, String) {
     let mut review = proposed();
     let text = apply_pending(&mut review, LETTER, 1);
+    // As the hosts refresh after a replacement: discovery runs again.
+    review.refresh(&text);
     assert_eq!(
         text,
         "PERSON_1 signed the lease.\n\nPERSON_2 paid the rent.\n\nThe term ends in May."
@@ -224,6 +226,32 @@ fn a_known_name_written_out_is_not_clean() {
         Ok(not_clean(0, false, 1)),
         "written out, not proposed"
     );
+}
+
+/// Words are read as detection reads them: a character reference inside a
+/// name is part of it, and a note marker after a name is a word of its own,
+/// so the check and the accept count the same proposals.
+#[test]
+fn words_are_read_as_detection_reads_them() {
+    let text = "Marin&#97; signed.";
+    let mut review = Review::default();
+    review.refresh(text);
+    let map = known(&[("PERSON_1", "Marina")]);
+    let check = review.check_selection(text, at(text, "Marin"), true, &map);
+    assert_eq!(check, Ok(not_clean(0, false, 1)));
+
+    let noted = "Avelina Durnell¹ wrote.";
+    let mut review = Review::default();
+    review
+        .ingest(noted, vec![person(noted, "Avelina Durnell")])
+        .unwrap();
+    let none = RestoreMap::default();
+    let check = |words| review.check_selection(noted, at(noted, words), true, &none);
+    assert_eq!(check("¹"), Ok(SelectionCheck::Clean));
+    assert_eq!(check("Durnel"), Ok(not_clean(1, false, 0)));
+    let plans = |words| review.selection_plans(noted, at(noted, words)).unwrap();
+    assert_eq!(plans("¹").proposals, 0);
+    assert_eq!(plans("Durnel").proposals, 1);
 }
 
 /// Widening to whole words never shrinks a selection nor adds a line break.
