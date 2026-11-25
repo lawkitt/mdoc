@@ -137,9 +137,8 @@ fn edit_marks_a_copy_holding_a_name_and_offers_replace_and_copy(cx: &mut TestApp
     assert_eq!(menu_item(&editor, "PERSON_1 met ORG_1", cx), None);
 
     propose_boris(&view, cx);
-    assert_eq!(
-        copy(&editor, "PERSON_1 met ORG_1", cx).1,
-        false,
+    assert!(
+        !copy(&editor, "PERSON_1 met ORG_1", cx).1,
         "outside the proposal"
     );
     assert_eq!(
@@ -212,7 +211,7 @@ fn a_kept_name_and_a_document_never_scanned_copy_marked(cx: &mut TestAppContext)
         view.review_changed(cx);
     });
     cx.run_until_parked();
-    assert_eq!(copy(&editor, "Boris Ivanov", cx).1, true);
+    assert!(copy(&editor, "Boris Ivanov", cx).1);
     assert_eq!(
         menu_item(&editor, "Boris Ivanov", cx),
         None,
@@ -250,16 +249,12 @@ fn original_marks_a_copy_holding_a_restored_name(cx: &mut TestAppContext) {
         ("Anna Petrova met".into(), true)
     );
     assert_eq!(copy(&original, " met ", cx), (" met ".into(), false));
-    assert_eq!(
-        copy(&original, "Boris Ivanov", cx).1,
-        false,
-        "not a name yet"
-    );
+    assert!(!copy(&original, "Boris Ivanov", cx).1, "not a name yet");
 
     propose_boris(&view, cx);
     let (original, _) = columns(&view, cx);
-    assert_eq!(copy(&original, "Boris Ivanov", cx).1, true, "pending");
-    assert_eq!(copy(&original, " met ", cx).1, false);
+    assert!(copy(&original, "Boris Ivanov", cx).1, "pending");
+    assert!(!copy(&original, " met ", cx).1);
     assert_eq!(menu_item(&original, "Boris Ivanov", cx), None);
     assert_eq!(menu_item(&original, "Anna Petrova", cx), None);
 }
@@ -279,8 +274,8 @@ fn side_by_side_marks_each_column_and_replaces_from_the_pseudonymized(cx: &mut T
         Some(CompareMode::Side)
     );
     let (original, current) = columns(&view, cx);
-    assert_eq!(copy(&original, "Northwind Traders Ltd", cx).1, true);
-    assert_eq!(copy(&original, " met ", cx).1, false);
+    assert!(copy(&original, "Northwind Traders Ltd", cx).1);
+    assert!(!copy(&original, " met ", cx).1);
     assert_eq!(
         copy(&current, "PERSON_1 met ORG_1", cx),
         ("PERSON_1 met ORG_1".into(), false)
@@ -308,6 +303,6 @@ fn side_by_side_marks_each_column_and_replaces_from_the_pseudonymized(cx: &mut T
     });
     // The Original column now restores Boris Ivanov too.
     let (original, current) = columns(&view, cx);
-    assert_eq!(copy(&original, "Boris Ivanov", cx).1, true);
-    assert_eq!(copy(&current, "PERSON_2 signed", cx).1, false);
+    assert!(copy(&original, "Boris Ivanov", cx).1);
+    assert!(!copy(&current, "PERSON_2 signed", cx).1);
 }
