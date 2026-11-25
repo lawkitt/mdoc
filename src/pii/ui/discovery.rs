@@ -58,6 +58,11 @@ impl DocumentView {
                 }
                 if this.pii.discovery_pending {
                     this.schedule_pii_discovery(cx);
+                } else {
+                    this.resume_edit_scan(cx);
+                }
+                if !this.pii.finding_names() {
+                    cx.emit(crate::workspace::TabEvent::NamesFound);
                 }
             });
         })

@@ -313,6 +313,7 @@ impl Workspace {
             // running one may hold text this view has since undone.
             if !view.unsaved(cx)
                 && review == view.session.document.review
+                && !ready_unwritten(view, cx)
                 && !self.document_writer.has(&target)
                 && !view.project_save_pending()
             {
@@ -752,7 +753,10 @@ impl Workspace {
             let review = view.saved_review();
             // Unchanged since its last write: its text is the Vault's, and
             // writing it again could only undo a newer revision.
-            (view.unsaved(cx) || review != view.session.document.review).then(|| {
+            (view.unsaved(cx)
+                || review != view.session.document.review
+                || ready_unwritten(view, cx))
+            .then(|| {
                 let text = view.editor.read(cx).text().to_string();
                 Box::new(vault_save(view, text, review, cx))
             })
@@ -785,6 +789,8 @@ impl Workspace {
             let member = view.update(cx, |view, cx| {
                 view.session.document.saved = save.markdown.clone();
                 view.session.document.review = save.review.clone();
+                view.session.document.ready = save.ready;
+                view.session.document.scanned |= save.ready;
                 view.session.write_due = false;
                 if let Some(title) = &save.title {
                     view.session.name = Some(title.clone());
@@ -860,6 +866,12 @@ impl Workspace {
             || document
                 .is_some_and(|document| self.document_writer.has(&Target::Document(document)))
     }
+}
+
+/// Whether `view`'s review is Ready where its last write said it was not,
+/// or the other way round: a write is due though nothing else changed.
+pub(super) fn ready_unwritten(view: &crate::document_view::DocumentView, cx: &gpui::App) -> bool {
+    super::shelf_source::ready(view, cx) != view.session.document.ready
 }
 
 /// The save of `view`'s Vault document showing `text`.

@@ -225,6 +225,12 @@ impl ShelfDocument {
         if tab.aliases.is_empty() {
             return None;
         }
+        Some(Self::of_any_tab(tab))
+    }
+
+    /// An open tab's row even with no alias, which the shelf does not list:
+    /// the editor's Copy for AI of a document scanned with nothing found.
+    pub(crate) fn of_any_tab(tab: OpenTab<'_>) -> Self {
         let names = RestoreMap::new(tab.names.clone());
         let (readiness, for_ai) = match (tab.review_readiness_with(&names), tab.stored) {
             (Readiness::Ready, Some(Ok(text))) => (Readiness::Ready, Some(text)),
@@ -233,7 +239,7 @@ impl ShelfDocument {
             (Readiness::Ready, None) => (Readiness::Checking, None),
             (readiness, _) => (readiness, None),
         };
-        Some(Self::new(
+        Self::new(
             ShelfKey::Tab(tab.id),
             tab.title,
             tab.text,
@@ -242,7 +248,7 @@ impl ShelfDocument {
             readiness,
             tab.edited,
             for_ai,
-        ))
+        )
     }
 
     /// A stored document's row: ready only when the outbound check passes,

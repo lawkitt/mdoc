@@ -81,6 +81,8 @@ impl DocumentView {
         if !self.can_copy_markdown() {
             return;
         }
+        // Edited text is scanned before anything leaves; the copy waits.
+        self.scan_edits_now(cx);
         cx.emit(crate::workspace::TabEvent::CopyForAi);
     }
     /// The outbound check passed: `text` is what leaves.

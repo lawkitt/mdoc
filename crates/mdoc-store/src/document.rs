@@ -14,6 +14,9 @@ pub struct Document {
     pub saved: String,
     /// A Vault document's review as last saved with `saved`.
     pub review: Option<mdoc_pii::saved::SavedReview>,
+    /// Whether that save recorded it Ready, and scanned.
+    pub ready: bool,
+    pub scanned: bool,
 }
 
 impl Document {
@@ -23,6 +26,8 @@ impl Document {
             vault: Some(id),
             saved,
             review: None,
+            ready: false,
+            scanned: false,
         }
     }
 

@@ -531,6 +531,9 @@ fn a_save_during_a_scan_is_written_again_once_the_scan_ends(cx: &mut TestAppCont
     });
     cx.run_until_parked();
     written(cx);
+    // The edited paragraph's scan follows the typing pause.
+    wait(cx, 1600);
+    written(cx);
     assert_eq!(row_of(&tabs, id, cx).readiness, Readiness::Ready);
 }
 

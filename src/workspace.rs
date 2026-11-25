@@ -134,6 +134,9 @@ pub(super) enum TabEvent {
     /// Copy for AI, from the Share tab, the menu or its shortcut: the
     /// window checks it as the shelf does before anything is copied.
     CopyForAi,
+    /// Discovery or the edited paragraphs' scan finished: a Copy for AI
+    /// waiting for it is checked again.
+    NamesFound,
     ToggleTheme,
     /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
     /// Source follows and Settings keeps it.
@@ -1696,6 +1699,7 @@ impl Workspace {
             }
             TabEvent::Project(ProjectEvent::MoveToNew) => self.move_to_new_project(id, window, cx),
             TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
+            TabEvent::NamesFound => self.copy_for_ai_after_write(cx),
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
             TabEvent::SourceDisplay(display) => {
                 let display = *display;
@@ -3088,6 +3092,8 @@ fn load_from_vault(
     });
     let mut document = Document::in_vault(id, stored.markdown);
     document.review = stored.review;
+    document.ready = stored.ready_fingerprint.is_some();
+    document.scanned = stored.scanned;
     Ok(Loaded {
         document,
         vault: Some(VaultLoaded {

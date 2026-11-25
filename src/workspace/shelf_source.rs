@@ -95,6 +95,23 @@ impl Workspace {
         ShelfDocument::of_tab(tab)
     }
 
+    /// Tab `id`'s row for the editor's Copy for AI when the shelf lists
+    /// none: scanned with nothing found to replace (no alias), checked as a
+    /// listed row is.
+    fn unlisted_tab_row(&self, id: u64, cx: &App) -> Option<ShelfDocument> {
+        let view = self.tabs.get(id)?.view()?.read(cx);
+        if !view.pii.review().applied().is_empty() {
+            return None;
+        }
+        let names = view.known_identities();
+        let title = view.display_name();
+        let mut tab = open_tab(id, view, &title, &names, cx)?;
+        if tab.review_readiness().is_ready() {
+            tab.stored = self.outbound(id, view, cx);
+        }
+        Some(ShelfDocument::of_any_tab(tab))
+    }
+
     /// The outbound check of tab `id`'s Vault document, once what it shows
     /// is written; `None` until then.
     fn outbound(&self, id: u64, view: &DocumentView, cx: &App) -> Option<Outbound> {
@@ -106,6 +123,7 @@ impl Workspace {
             || self.moving.contains(&document)
             || self.write_pending_for(id, cx)
             || view.saved_review() != view.session.document.review
+            || super::autosave::ready_unwritten(view, cx)
             || (view.project.link()).is_some_and(|link| self.project_unwritten(&link.id, cx));
         if unwritten {
             return None;
@@ -184,10 +202,14 @@ impl Workspace {
             view.update(cx, |view, cx| view.copy_checked_for_ai(text, cx));
             return;
         }
-        let outcome = match self.shelf_row(&ShelfKey::Tab(id), cx) {
+        let outcome = match (self.shelf_row(&ShelfKey::Tab(id), cx))
+            .or_else(|| self.unlisted_tab_row(id, cx))
+        {
             Some(row) => match (row.text_for_ai(), row.readiness) {
                 (Some(text), _) => Ok(text.to_owned()),
-                (None, shelf::Readiness::Checking) if self.document_writer.busy() => {
+                (None, shelf::Readiness::Checking)
+                    if self.document_writer.busy() || view.read(cx).finding_names() =>
+                {
                     self.copy_for_ai_waiting = Some((id, clipboard));
                     return;
                 }
@@ -282,7 +304,11 @@ fn open_tab<'a>(
     cx: &'a App,
 ) -> Option<OpenTab<'a>> {
     let review = view.pii.review();
-    if review.applied().is_empty() || !view.lifecycle.ready() {
+    // Scanned with nothing found to replace is reviewed too.
+    let reviewed = !review.applied().is_empty()
+        || !view.pii.scans().is_empty()
+        || view.session.document.scanned;
+    if !reviewed || !view.lifecycle.ready() {
         return None;
     }
     Some(OpenTab {
@@ -295,7 +321,7 @@ fn open_tab<'a>(
             .map(|applied| applied.step.after.as_ref())
             .collect(),
         pending: review.remaining(),
-        checking: review.awaiting_discovery(),
+        checking: review.awaiting_discovery() || review.edits_unscanned(),
         names: names.to_vec(),
         project: view.project.link().cloned(),
         edited: view.lifecycle.edited_at().unwrap_or(SystemTime::UNIX_EPOCH),
