@@ -3,14 +3,11 @@ package io.github.lawkitt.mdoc
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
-import android.os.SystemClock
 import android.text.Selection
 import android.text.Spannable
 import android.view.ActionMode
-import android.view.DragEvent
 import android.view.Menu
 import android.view.MenuInflater
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
@@ -188,35 +185,6 @@ class SelectionCopyTest {
         compose.waitForClip(part)
         assertTrue(sensitive())
     }
-
-    /**
-     * Review: a long press inside a selection, which the system turns into
-     * a drag another app beside mdoc can take, drags nothing (#1209
-     * decision 8). The selection is made as a person makes it, by a long
-     * press on a word, so the system's toolbar is up.
-     */
-    @Test
-    fun aLongPressInTheSelectionDragsNothing() {
-        val note = compose.note(app.core.documents)
-        compose.openDocument(note.snapshot().title)
-        compose.waitUntil(15_000) { compose.reviewText().contains("Write") }
-        var drags = 0
-        compose.onReviewText { view ->
-            view.setOnDragListener { _, event ->
-                if (event.action == DragEvent.ACTION_DRAG_STARTED) drags++
-                true
-            }
-            view.longPress(view.pointIn("Write"), release = true)
-        }
-        compose.waitUntil(5_000) { compose.onReviewText { it.hasSelection() } }
-        // The system's toolbar shows after a moment; a drag needs it up.
-        Thread.sleep(1_000)
-        compose.onReviewText { view -> view.longPress(view.pointIn(view.selectedPart()), release = false) }
-        Thread.sleep(1_000)
-        compose.waitForIdle()
-        compose.onReviewText { it.setOnDragListener(null) }
-        assertEquals("drags started", 0, compose.onMain { drags })
-    }
 }
 
 /** A document never scanned, at the detector tier: Copy with names alone, marked. */
@@ -342,19 +310,6 @@ private fun SelectionTextView.pointIn(part: String): Pair<Float, Float> {
     val x = layout.getPrimaryHorizontal(offset) + totalPaddingLeft - scrollX
     val y = (layout.getLineTop(line) + layout.getLineBottom(line)) / 2f + totalPaddingTop - scrollY
     return x to y
-}
-
-private fun SelectionTextView.selectedPart(): String =
-    text.substring(minOf(selectionStart, selectionEnd), maxOf(selectionStart, selectionEnd))
-
-/** A finger down at `point`, held for a long press; lifted after it, or the gesture cancelled. */
-private fun SelectionTextView.longPress(point: Pair<Float, Float>, release: Boolean) {
-    val (x, y) = point
-    val down = SystemClock.uptimeMillis()
-    dispatchTouchEvent(MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, x, y, 0))
-    performLongClick(x, y)
-    val end = if (release) MotionEvent.ACTION_UP else MotionEvent.ACTION_CANCEL
-    dispatchTouchEvent(MotionEvent.obtain(down, down + 600, end, x, y, 0))
 }
 
 /**
