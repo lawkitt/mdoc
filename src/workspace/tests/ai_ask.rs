@@ -299,8 +299,13 @@ fn ask_on_a_document_that_needs_review_leads_to_the_review_request(cx: &mut Test
     let fixture = fixture();
     {
         let vault = mdoc_vault::Vault::open(fixture.dir.path().join("vault"), &[3; 32]).unwrap();
+        // Never scanned, so opening it doesn't make it Ready (item 39's
+        // nothing-to-replace rule needs a scan).
         vault
-            .update_document(&fixture.lease_doc, |d| d.set_ready(false))
+            .update_document(&fixture.lease_doc, |d| {
+                d.scanned = false;
+                d.set_ready(false);
+            })
             .unwrap();
         vault.flush().unwrap();
     }
