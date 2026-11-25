@@ -9,7 +9,7 @@
 //! its file.
 use super::Vault;
 use crate::{VaultError, mapping::Mapping, records::Document};
-use mdoc_pii::restore::RestoreMap;
+use mdoc_pii::restore::{ExportedIdentity, RestoreMap};
 use sha2::Digest;
 
 /// Whether a Document may leave for an AI now: Copy for AI, Share, the
@@ -88,19 +88,39 @@ impl Document {
 /// it took off as Not a name that the mapping keeps for another Document's
 /// sake, as it reopens without them.
 fn known_names(document: &Document, mapping: &Mapping) -> RestoreMap {
+    RestoreMap::new(known_identities(document, mapping))
+}
+
+/// [`known_names`]' identities.
+fn known_identities(document: &Document, mapping: &Mapping) -> Vec<ExportedIdentity> {
     let left_off = mapping.not_names_of(&document.id);
-    let identities = (mapping.exported().into_iter())
+    (mapping.exported().into_iter())
         .filter_map(|mut identity| {
             let alias = identity.alias.clone();
             (identity.originals)
                 .retain(|o| !left_off.iter().any(|(a, w)| *a == alias && w == o.as_ref()));
             (!identity.originals.is_empty()).then_some(identity)
         })
-        .collect();
-    RestoreMap::new(identities)
+        .collect()
 }
 
 impl Vault {
+    /// The names [`Self::readiness`] checks the Document `id` against: its
+    /// Project's, or its own mapping's while Unfiled, without the wordings
+    /// it took off as Not a name. A selection copied by hand is checked
+    /// against them (`mdoc_pii::selection`); excluded from AI does not stop
+    /// that. The Document and the names are read under the write lock, so
+    /// they are one moment's (#1198).
+    pub fn known_identities(&self, id: &str) -> Result<Vec<ExportedIdentity>, VaultError> {
+        let (document, mapping) = {
+            let _lock = self.held_lock()?;
+            let document = self.document(id)?;
+            let mapping = self.mapping_of(&document)?;
+            (document, mapping)
+        };
+        Ok(known_identities(&document, &mapping))
+    }
+
     /// Whether the Document `id`, as stored, may leave for an AI now:
     /// checked against the names its Project, or its own mapping while
     /// Unfiled, holds now. Writes nothing. A Project that does not open
@@ -369,6 +389,54 @@ mod tests {
             vault.readiness(&letter).unwrap(),
             Readiness::ChangedSinceReview
         );
+    }
+
+    /// A hand copy is checked against the names readiness checks: the
+    /// Project's, or an Unfiled Document's own; excluded from AI or not.
+    #[test]
+    fn known_identities_are_the_names_readiness_checks() {
+        let temp = tempfile::tempdir().unwrap();
+        let vault = Vault::open(&temp.path().join("vault"), &[7; 32]).unwrap();
+        let project = (vault.create_project(NewProject {
+            name: "Case".into(),
+            ..NewProject::default()
+        }))
+        .unwrap()
+        .id;
+        (vault.update_project(&project, |p| {
+            p.mapping.merge(&[person("PERSON_1", "Anna Petrova")])
+        }))
+        .unwrap();
+        let new = |project: Option<String>| {
+            (vault.create_document(NewDocument {
+                project,
+                title: "Letter".into(),
+                source_kind: SourceKind::Text,
+                origin: DocumentOrigin::Ordinary,
+                markdown: "Anna Petrova met Boris Ivanov.".into(),
+            }))
+            .unwrap()
+            .id
+        };
+        let filed = new(Some(project));
+        (vault.update_document(&filed, |d| d.exclude_from_ai = true)).unwrap();
+        let unfiled = new(None);
+        (vault.update_document(&unfiled, |d| {
+            d.mapping.merge(&[person("PERSON_1", "Boris Ivanov")])
+        }))
+        .unwrap();
+        let originals = |id: &str| -> Vec<String> {
+            (vault.known_identities(id).unwrap().into_iter())
+                .flat_map(|i| i.originals)
+                .map(|o| o.to_string())
+                .collect()
+        };
+        assert_eq!(originals(&filed), ["Anna Petrova"]);
+        assert_eq!(originals(&unfiled), ["Boris Ivanov"]);
+        assert!(matches!(
+            vault.known_identities("missing"),
+            Err(VaultError::NotFound { .. })
+        ));
     }
 
     /// A share name's date: the creation day in UTC, across a leap day and

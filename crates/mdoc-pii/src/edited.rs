@@ -153,6 +153,13 @@ impl Review {
         !self.edited_paragraphs().is_empty()
     }
 
+    /// Whether a paragraph `range` touches changed since it was scanned
+    /// (`crate::selection`).
+    pub fn unscanned_in(&self, range: &Range<usize>) -> bool {
+        (self.edited_paragraphs().iter())
+            .any(|p| super::overlaps(p, range) || (range.is_empty() && p.contains(&range.start)))
+    }
+
     /// The changed paragraphs to scan, as [`Self::ingest_edited`] takes
     /// them; `None` when none changed.
     pub fn edited_text(&self) -> Option<EditedText> {

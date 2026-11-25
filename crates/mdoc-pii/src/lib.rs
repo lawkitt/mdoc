@@ -17,6 +17,7 @@ pub use identities::{Identity, IdentitySnapshot};
 pub use propagation::{lone_initials, nicknames, person_forms_in, placed_initials};
 pub mod restore;
 pub mod saved;
+pub mod selection;
 mod syntax;
 pub mod tracking;
 pub mod view;
