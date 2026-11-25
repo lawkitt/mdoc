@@ -3,13 +3,16 @@ package io.github.lawkitt.mdoc
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
+import android.os.SystemClock
 import android.text.Selection
 import android.text.Spannable
 import android.view.ActionMode
+import android.view.KeyEvent
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.textclassifier.TextClassifier
 import android.widget.PopupMenu
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -38,8 +41,8 @@ import uniffi.mdoc_ffi.JobStage
  * #1228): it holds the user's real names again, so a copy of a selection
  * is marked sensitive, as Copy reply's is, and Share, Assist, Translate
  * and Search are never offered nor acted on. Through the document's Reply
- * pane; the menu is the view's own selection callback, driven with a real
- * menu that holds the system's items first.
+ * pane: the view's selection callback driven with a menu that holds the
+ * system's items first, Ctrl+C sent as keys, and accessibility's actions.
  */
 @RunWith(AndroidJUnit4::class)
 class RestoredSelectionTest {
@@ -62,15 +65,8 @@ class RestoredSelectionTest {
     /** Done when: Copy and Ctrl+C on a restored reply copy it marked; Share, Assist, Translate and Cut are gone and do nothing. */
     @Test
     fun aRestoredReplysSelectionCopiesMarkedAndNeverShares() {
-        val letter = shared(app.core.documents)
-        letter.restoreReply("Thank you, PERSON_1. The claim is filed.")
-        compose.activityRule.scenario.onActivity { it.recreate() }
-        compose.waitForIdle()
-        compose.openDocument(letter.snapshot().title)
-        compose.waitForShown(hasText("Reply") and hasClickAction())
-        compose.shown(hasText("Reply") and hasClickAction()).performClick()
+        openReply()
         val part = "Thank you, Maya Bennett"
-        compose.waitUntil(15_000) { onReply { it != null } }
 
         // The menu: the system's items first, then the view's callback.
         val ids = onMain {
@@ -111,6 +107,51 @@ class RestoredSelectionTest {
         }
         compose.waitForIdle()
         assertEquals("Share, Assist and Cut do nothing", STALE, clip())
+
+        // Accessibility offers none of TextView's own actions (Share,
+        // Translate, smart actions), and refuses Share's if asked.
+        onMain {
+            val view = reply()
+            view.select(part)
+            assertTrue("no text classifier reads it", view.textClassifier === TextClassifier.NO_OP)
+            val info = view.createAccessibilityNodeInfo()
+            val own = info.actionList.map { it.id }.filter { SelectionTextView.textViewsOwn(it) }
+            assertEquals("TextView's own actions", emptyList<Int>(), own)
+            assertFalse(view.performAccessibilityAction(TEXT_VIEW_SHARE, null))
+        }
+        compose.waitForIdle()
+        assertEquals("accessibility's Share does nothing", STALE, clip())
+    }
+
+    /** Review: a keyboard's Ctrl+C, sent as keys to the focused reply, copies marked. */
+    @Test
+    fun ctrlCOnTheReplyCopiesMarked() {
+        openReply()
+        val part = "Thank you, Maya Bennett"
+        stale()
+        onMain {
+            val view = reply()
+            view.requestFocus()
+            view.select(part)
+        }
+        val down = SystemClock.uptimeMillis()
+        val meta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
+        instrumentation.sendKeySync(KeyEvent(down, down, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_C, 0, meta))
+        instrumentation.sendKeySync(KeyEvent(down, down + 50, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_C, 0, meta))
+        compose.waitUntil(10_000) { clip() == part }
+        assertTrue(sensitive())
+    }
+
+    /** The document's Reply pane, its restored reply shown. */
+    private fun openReply() {
+        val letter = shared(app.core.documents)
+        letter.restoreReply("Thank you, PERSON_1. The claim is filed.")
+        compose.activityRule.scenario.onActivity { it.recreate() }
+        compose.waitForIdle()
+        compose.openDocument(letter.snapshot().title)
+        compose.waitForShown(hasText("Reply") and hasClickAction())
+        compose.shown(hasText("Reply") and hasClickAction()).performClick()
+        compose.waitUntil(15_000) { onReply { it != null } }
     }
 
     private fun <T> onMain(body: () -> T): T {
@@ -196,6 +237,9 @@ class RestoredSelectionTest {
 
     private companion object {
         const val STALE = "before"
+
+        /** TextView's own Share action for accessibility (TextView.ACCESSIBILITY_ACTION_SHARE). */
+        const val TEXT_VIEW_SHARE = 0x10000000
 
         /** A Translate or Search item: the system's text-processing apps. */
         val PROCESS_TEXT = View.generateViewId()

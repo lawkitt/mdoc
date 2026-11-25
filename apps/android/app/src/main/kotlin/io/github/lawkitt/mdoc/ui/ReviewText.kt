@@ -21,11 +21,14 @@ import android.text.style.TypefaceSpan
 import android.text.style.UnderlineSpan
 import android.view.ActionMode
 import android.view.ContextMenu
+import android.view.InputDevice
 import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.textclassifier.TextClassifier
+import android.widget.Toast
 import android.widget.TextView
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -206,12 +209,33 @@ class SelectionTextView(context: Context) : TextView(context) {
     /** A copy of the selection as written, with the text it reads. */
     var onCopyAsWritten: ((SourceRange, String) -> Unit)? = null
 
+    init {
+        // The system's text classifier reads a selection and the text
+        // around it, for Assist's smart actions, which stay off.
+        setTextClassifier(TextClassifier.NO_OP)
+    }
+
     /** Where the last touch went down, as a text offset; -1 before any. */
     private var downAt = -1
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) downAt = getOffsetForPosition(event.x, event.y)
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            downAt = getOffsetForPosition(event.x, event.y)
+            // A mouse pressed inside the selection and moved drags its text
+            // out to another app: the press starts a new selection instead.
+            // A right-click keeps the selection, for its menu's Copy.
+            val primary = event.buttonState and MotionEvent.BUTTON_PRIMARY != 0
+            if (event.isFromSource(InputDevice.SOURCE_MOUSE) && primary && inSelection(downAt)) {
+                Selection.setSelection(text as Spannable, downAt)
+            }
+        }
         return super.onTouchEvent(event)
+    }
+
+    private fun inSelection(offset: Int): Boolean {
+        val start = minOf(selectionStart, selectionEnd)
+        val end = maxOf(selectionStart, selectionEnd)
+        return start in 0 until end && offset in start until end
     }
 
     /**
@@ -220,9 +244,7 @@ class SelectionTextView(context: Context) : TextView(context) {
      * nothing (#1209 decision 8).
      */
     override fun performLongClick(): Boolean {
-        val start = minOf(selectionStart, selectionEnd)
-        val end = maxOf(selectionStart, selectionEnd)
-        if (start in 0 until end && downAt in start until end) return true
+        if (inSelection(downAt)) return true
         return super.performLongClick()
     }
 
@@ -252,19 +274,30 @@ class SelectionTextView(context: Context) : TextView(context) {
         super.onInitializeAccessibilityNodeInfo(info)
         info.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CUT)
         info.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_PASTE)
+        // TextView's own actions: Share, Translate and the like, Assist's smart actions.
+        info.actionList.filter { textViewsOwn(it.id) }.forEach(info::removeAction)
     }
 
-    override fun performAccessibilityAction(action: Int, arguments: android.os.Bundle?): Boolean = when (action) {
-        AccessibilityNodeInfo.ACTION_COPY -> copyAsWritten()
-        AccessibilityNodeInfo.ACTION_CUT, AccessibilityNodeInfo.ACTION_PASTE -> false
+    override fun performAccessibilityAction(action: Int, arguments: android.os.Bundle?): Boolean = when {
+        action == AccessibilityNodeInfo.ACTION_COPY -> copyAsWritten()
+        action == AccessibilityNodeInfo.ACTION_CUT || action == AccessibilityNodeInfo.ACTION_PASTE -> false
+        textViewsOwn(action) -> false
         else -> super.performAccessibilityAction(action, arguments)
     }
 
-    private companion object {
-        val BLOCKED = setOf(
+    internal companion object {
+        private val BLOCKED = setOf(
             android.R.id.cut, android.R.id.paste, android.R.id.pasteAsPlainText,
             android.R.id.shareText, android.R.id.textAssist,
         )
+
+        /**
+         * An accessibility action of TextView's own (0x1xxxxxxx): Share,
+         * a text-processing app such as Translate, or a smart action.
+         * The platform's standard actions are bit flags below 2^22 or
+         * android.R.id values (0x01xxxxxx).
+         */
+        fun textViewsOwn(action: Int): Boolean = action ushr 28 == 1
     }
 }
 
@@ -527,7 +560,7 @@ fun RestoredText(result: RestoreResult, styling: MarkdownStyling?, modifier: Mod
                 hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
                 breakStrategy = Layout.BREAK_STRATEGY_SIMPLE
                 customSelectionActionModeCallback = RestoredActions
-                onCopyAsWritten = { _, shown -> copy(context, shown, sensitive = true) }
+                onCopyAsWritten = { _, shown -> copyOrSay(context, shown, sensitive = true) }
             }
         },
         update = { view ->
@@ -558,6 +591,15 @@ fun RestoredText(result: RestoreResult, styling: MarkdownStyling?, modifier: Mod
             view.tag = key
         },
     )
+}
+
+/**
+ * Copies to the clipboard; a copy the clipboard refuses (a selection too
+ * long for it) says so instead of ending the app.
+ */
+fun copyOrSay(context: Context, text: String, sensitive: Boolean) {
+    runCatching { copy(context, text, sensitive) }
+        .onFailure { Toast.makeText(context, R.string.copy_failed, Toast.LENGTH_SHORT).show() }
 }
 
 /**
