@@ -84,6 +84,15 @@ impl Workspace {
             }
         }));
         self.scan_on_entry(cx);
+        // The real-model check (`scripts/dev/connector-real-model.sh`) has
+        // no one to click Share: a debug build on a dev profile shares the
+        // Project this variable names, as the prompt's Share would.
+        #[cfg(debug_assertions)]
+        if mdoc_store::app_paths::dev_profile().is_some()
+            && let Ok(project) = std::env::var("MDOC_DEV_AI_PROJECT")
+        {
+            self.share_with_ai(&project, cx);
+        }
         cx.notify();
     }
 
