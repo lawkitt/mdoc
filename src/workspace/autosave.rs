@@ -125,6 +125,12 @@ pub(super) struct Save {
     names: Names,
     /// Scanned, and no proposals left: its text is Ready.
     ready: bool,
+    /// An edit changed paragraphs not scanned since: saved unscanned, so
+    /// a document left mid-edit reopens owing a scan of all of it.
+    edits_unscanned: bool,
+    /// All of its text was scanned before: this tab scanned it, or it
+    /// opened scanned.
+    scanned: bool,
     /// What its review counts now, for lists without a live view.
     counts: Option<ReviewCounts>,
 }
@@ -907,6 +913,8 @@ fn vault_save(
             not_names: names.not_a_name_pairs(),
         },
         ready: super::shelf_source::ready(view, cx),
+        edits_unscanned: names.edits_unscanned(),
+        scanned: view.session.document.scanned || !view.pii.scans().is_empty(),
         counts,
     }
 }
@@ -957,7 +965,9 @@ fn save_vault(vault: &mdoc_vault::Vault, id: &VaultId, save: &Save) -> Result<()
                     |_| false,
                 );
             }
-            document.scanned |= save.ready;
+            // `scanned`: all of its text was scanned.
+            document.scanned =
+                !save.edits_unscanned && (document.scanned || save.scanned || save.ready);
             document.set_ready(save.ready);
         })
         .map(|_| ())

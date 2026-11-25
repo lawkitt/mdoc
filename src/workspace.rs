@@ -1302,6 +1302,11 @@ impl Workspace {
                             // document's own names come back.
                             if let Some(review) = review {
                                 view.restore_review(review, cx);
+                                // Saved unscanned and not Ready: it may have been
+                                // left mid-edit, so it owes a scan of all its text.
+                                if !view.session.document.scanned && !view.session.document.ready {
+                                    view.owe_whole_text(cx);
+                                }
                             } else if let Some(names) = names {
                                 view.open_names(&names.identities, &names.reserved, cx);
                                 view.pii.review_mut().leave_off(&names.not_names);

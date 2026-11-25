@@ -23,6 +23,9 @@ const PAUSE: Duration = Duration::from_millis(1500);
 pub(crate) struct EditScan {
     pause: Option<Task<()>>,
     cancel: Option<Arc<AtomicBool>>,
+    /// All of the text is owed (`owe_whole_text`): its scan is this tab's
+    /// Find names.
+    whole: bool,
 }
 
 impl EditScan {
@@ -61,6 +64,14 @@ impl DocumentView {
                 this.start_edit_scan(cx);
             });
         }));
+    }
+
+    /// A document opened that may have been left mid-edit: none of its text
+    /// counts as scanned, and its scan follows the pause.
+    pub(crate) fn owe_whole_text(&mut self, cx: &mut Context<Self>) {
+        self.pii.review.owe_whole_text();
+        self.pii.edit_scan.whole = true;
+        self.schedule_edit_scan(cx);
     }
 
     /// Copy for AI: scan the edited paragraphs now rather than after the
@@ -106,6 +117,7 @@ impl DocumentView {
             return;
         }
         let lists = self.scan_lists(cx);
+        let found_as = (self.pii.edit_scan.whole).then(|| config.clone());
         let revision = self.editor.read(cx).revision();
         let identity = self.session.generation;
         let cancel = Arc::new(AtomicBool::new(false));
@@ -131,7 +143,7 @@ impl DocumentView {
                     return;
                 }
                 this.pii.edit_scan.cancel = None;
-                this.take_edit_scan(revision, identity, &edited, found, cx);
+                this.take_edit_scan(revision, identity, &edited, found, found_as, cx);
                 cx.emit(crate::workspace::TabEvent::NamesFound);
             });
         })
@@ -145,6 +157,7 @@ impl DocumentView {
         identity: u64,
         edited: &mdoc_pii::EditedText,
         found: Result<Vec<mdoc_pii::Detection>, mdoc_detect::DetectError>,
+        found_as: Option<settings::PiiConfig>,
         cx: &mut Context<Self>,
     ) {
         if revision != self.editor.read(cx).revision() || identity != self.session.generation {
@@ -160,6 +173,11 @@ impl DocumentView {
             .ingest_edited(&source, edited, found)
             .is_ok_and(|taken| taken)
         {
+            if let Some(config) = found_as {
+                // All of its text scanned, as Find names would.
+                self.pii.edit_scan.whole = false;
+                self.pii.scans.push(config);
+            }
             self.review_changed(cx);
             self.fade_in_candidates(cx);
             self.schedule_autosave(cx);

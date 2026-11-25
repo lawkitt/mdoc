@@ -346,6 +346,9 @@ struct Pending {
     /// A look for names is owed (`owed`): the counts may miss a name, so it
     /// is not Ready.
     owed: bool,
+    /// An edit changed paragraphs not scanned since: the record is saved
+    /// unscanned, so a document left mid-edit reopens owing a scan.
+    edits_unscanned: bool,
     scanned: bool,
     /// The phone is below the name finder's floor (`set_no_name_finder`).
     by_hand: bool,
@@ -380,6 +383,7 @@ impl Document {
             dismissed: self.review.dismissed_pairs(),
             counts: self.review.counts(),
             owed: owed(&self.review.review),
+            edits_unscanned: self.review.review.edits_unscanned(),
             scanned: self.scanned,
             by_hand: false,
             review: self.review.saved_review(),
@@ -512,6 +516,11 @@ impl Document {
         } = from;
         open_review(&mut self.review, &stored, project.as_ref());
         self.scanned = stored.scanned;
+        // Saved unscanned and not Ready: it may have been left mid-edit, so
+        // none of its text counts as scanned.
+        if !stored.scanned && stored.ready_fingerprint.is_none() {
+            self.review.review.owe_whole_text();
+        }
         self.notes.clone_from(&stored.notes);
         self.from_reply.clone_from(&stored.from_reply);
         if let Some(project) = &project {
@@ -683,7 +692,8 @@ impl Pending {
             if self.source.is_some() {
                 record.unconverted = false;
             }
-            record.scanned = self.scanned;
+            // `scanned`: all of its text was scanned.
+            record.scanned = self.scanned && !self.edits_unscanned;
             record.review = Some(self.review.clone());
             record.counts = Some(self.counts.into());
             if record.project.is_none() {

@@ -200,3 +200,96 @@ fn a_typed_new_name_does_not_leave_unreplaced(cx: &mut TestAppContext) {
     );
     assert!(!copied.contains("Clara"));
 }
+
+/// Close tab `id` before its pause ends, as quitting mid-edit would, and
+/// open its document again: the new tab's id.
+fn reopen_mid_edit(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: u64) -> u64 {
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(id, cx).unwrap());
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(id, window, cx));
+    written(cx);
+    let stored = vault(tabs, cx).document(document.as_str()).unwrap();
+    assert!(!stored.scanned, "saved mid-edit: not all of it scanned");
+    assert!(stored.ready_fingerprint.is_none());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_vault_document(document, window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| tabs.read(cx).tabs.active())
+}
+
+/// Q2 (b) of item 44: a document left mid-edit is saved unscanned and
+/// reopens owing a scan of all its text, which the pause runs; its typed
+/// name is proposed then, and scanned comes back once it is replaced.
+#[gpui::test]
+fn a_document_left_mid_edit_reopens_owing_a_scan(cx: &mut TestAppContext) {
+    *TEST_SCAN.lock().unwrap() = Some(clara);
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let id = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "lease.md",
+        "Anna Petrova signed the lease.",
+        &[("Anna Petrova", Person)],
+    );
+    written(cx);
+    type_at_end(&tabs, cx, id, " Clara Moss agreed.");
+    wait(cx, 1000);
+    let id = reopen_mid_edit(&tabs, cx, id);
+    let view = active(&tabs, cx);
+    assert!(view.read_with(cx, |view, _| view.pii.review().edits_unscanned()));
+    let (copied, why) = copy(&view, cx);
+    assert_eq!(copied, "before");
+    assert_eq!(
+        why.as_deref(),
+        Some("Not copied: 1 proposal is left to review.")
+    );
+    view.update_in(cx, |view, window, cx| {
+        view.apply_all_pii(&PiiApplyAll, window, cx)
+    });
+    cx.run_until_parked();
+    written(cx);
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(id, cx).unwrap());
+    assert!(
+        vault(&tabs, cx)
+            .document(document.as_str())
+            .unwrap()
+            .scanned
+    );
+    let (copied, why) = copy(&view, cx);
+    assert_eq!(why, None);
+    assert!(!copied.contains("Clara"), "{copied}");
+}
+
+/// With no alias, a record saved mid-edit is not reviewed when it reopens:
+/// "scanned" is only a record whose text was all scanned. Its pause scan
+/// is its Find names, after which it is Ready again.
+#[gpui::test]
+fn a_record_saved_mid_edit_is_not_reviewed_until_scanned(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let id = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "note.md",
+        "The lease ends in May.",
+        &[],
+    );
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| view.scan_finding(Vec::new(), cx));
+    written(cx);
+    assert_eq!(readiness(&tabs, id, cx), mdoc_vault::Readiness::Ready);
+    type_at_end(&tabs, cx, id, " It renews.");
+    wait(cx, 1000);
+    let id = reopen_mid_edit(&tabs, cx, id);
+    let reviewed = |cx: &mut VisualTestContext| {
+        let view = active(&tabs, cx);
+        cx.update(|_, cx| super::super::shelf_source::ready(view.read(cx), cx))
+    };
+    assert!(!reviewed(cx), "not Ready before its scan");
+    paused(cx);
+    assert!(reviewed(cx));
+    assert_eq!(readiness(&tabs, id, cx), mdoc_vault::Readiness::Ready);
+}
