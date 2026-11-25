@@ -13,6 +13,7 @@ DeviceLongJobsUITests	0	22
 DeviceTapTimingUITests	0	22
 EditModeUITests	168	25
 EditToolbarUITests	96	25
+HandOffRefusalUITests	254	1
 IdentitiesGesturesUITests	315	23
 IdentitiesHeaderUITests	144	23
 IdentitiesSelectUITests	68	23
@@ -23,6 +24,7 @@ OCRResumeUITests	0	23
 OriginalChromeUITests	78	22
 OriginalSidebarUITests	0	22
 PanesRowUITests	51	23
+ReadyChecksUITests	66	1
 RenderedMarkdownUITests	0	22
 ReviewFlowUITests	20	21
 ReviewPagerUITests	80	25

@@ -136,6 +136,15 @@ final class DocumentViewModel {
     /// has been in another app.
     @ObservationIgnored var leftSinceAsk = false
     var errorMessage: String?
+    /// Copy for AI or Share refused on a tap: why, and the step that
+    /// resolves it (#1209).
+    var refusal: HandOffRefusal?
+    /// What the Vault says of the document as last saved, checked after
+    /// each save (`checkSaved`); nil until then, and again once the text or
+    /// its review changes, until the next save.
+    var savedReadiness: SavedReadiness?
+    /// The latest `checkSaved`, so an older one never overwrites it.
+    @ObservationIgnored var savedCheck: Task<Void, Never>?
     /// A short confirmation such as "Copied for AI".
     private(set) var notice: String?
     /// The notice's symbol: a check, or an hourglass while review waits.
@@ -369,6 +378,8 @@ final class DocumentViewModel {
             return
         }
         finish(outcome)
+        // The scan's own save went into the Vault.
+        checkSaved()
         // A scan that finds nothing says so, rather than going quietly to
         // Share (ADR 0087).
         if case .finished(let scanned) = outcome {
@@ -502,7 +513,7 @@ final class DocumentViewModel {
             say(String(localized: "Copied for AI"))
             onChange()
         } catch {
-            errorMessage = error.localizedDescription
+            refused(error)
         }
     }
 
@@ -510,8 +521,8 @@ final class DocumentViewModel {
     /// gets the file either way. The file stays until the next share or
     /// launch: an app such as Telegram reads it after the sheet closes.
     /// As text, the sheet's subject and preview title are the file's
-    /// pseudonymized name without `.md`, as Android's are: never the
-    /// document's title, which holds its names as written (#1188).
+    /// neutral name without `.md`, as Android's are: never the document's
+    /// title, which may hold names as written (#1188, #1205).
     func share(asFile: Bool) {
         do {
             let handOff = try session.copyForAI()
@@ -525,7 +536,7 @@ final class DocumentViewModel {
             }
             onChange()
         } catch {
-            errorMessage = error.localizedDescription
+            refused(error)
         }
     }
 
@@ -725,6 +736,7 @@ final class DocumentViewModel {
 
     func refresh() {
         applyReview(session.snapshot())
+        checkSaved()
     }
 
     /// The one change runner: runs a core change, shows the new snapshot
@@ -775,6 +787,11 @@ final class DocumentViewModel {
         // The draft was of the text before this change; a snapshot of the
         // same text and history (discovery, a job's tick) keeps it.
         if new.textRevision != snapshot.textRevision || new.undoStep != snapshot.undoStep { wordsFix = nil }
+        // The record is of the text before this change until it saves.
+        if new.textRevision != snapshot.textRevision || new.undoStep != snapshot.undoStep
+            || new.phase != snapshot.phase {
+            savedReadiness = nil
+        }
         snapshot = new
         // The snapshot is the core's latest: typing's own answers are older.
         typing.settled(at: new)

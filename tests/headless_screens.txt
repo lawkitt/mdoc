@@ -37,6 +37,13 @@ share-reply
 document-notes-empty
 document-notes
 share-leftover
+copy-refused-replace
+copy-refused-find-names
+copy-refused-known-name
+copy-refused-changed
+copy-refused-not-reviewed
+copy-refused-excluded
+copy-refused-checking
 decision-history
 open-project
 project-move-toast
@@ -102,6 +109,8 @@ pdf-original-password
 pdf-original-password-wrong
 docx-source
 shelf
+shelf-refusals
+shelf-refused
 shelf-demos
 shelf-demos-count
 shelf-copied

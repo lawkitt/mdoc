@@ -118,15 +118,16 @@ final class RealCoreTests: XCTestCase {
         let session = try reviewed(core)
         // The core refuses while proposals wait, with how many.
         let pending = session.snapshot().pendingCount
+        let names = session.snapshot().identities.filter { $0.state == .proposed }.count
         XCTAssertThrowsError(try session.copyForAI()) { error in
-            XCTAssertEqual(error as? CoreError, .pendingReview(pending))
+            XCTAssertEqual(error as? CoreError, .handOffRefused(.namesToDecide(names: names, proposals: pending)))
         }
         let ready = try session.replaceAllPending()
         XCTAssertEqual(ready.phase, .ready)
         let handOff = try session.copyForAI()
         XCTAssertTrue(handOff.text.hasPrefix("Note: names and other identifying details"))
         XCTAssertFalse(handOff.text.contains("maya.ellison@example.com"))
-        XCTAssertEqual(handOff.fileName, "Letter.md")
+        XCTAssertNeutralShareName(handOff.fileName, asFile: true)
 
         let alias = try XCTUnwrap(ready.candidates.first { $0.category == .email }?.alias)
         let restored = try session.restoreReply("Write to \(alias) by Friday. \(alias.dropLast())9 is new.")
@@ -551,7 +552,7 @@ final class RealCoreTests: XCTestCase {
         _ = try session.replaceAllPending()
         let handOff = try session.copyForAI()
         XCTAssertFalse(handOff.text.contains("Ms Ellison"))
-        XCTAssertEqual(handOff.fileName, "Note.md")
+        XCTAssertNeutralShareName(handOff.fileName, asFile: true)
     }
 
     /// A fresh import is never Ready before a scan on a phone that can find
