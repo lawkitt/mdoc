@@ -61,10 +61,13 @@ claude=${MDOC_CLAUDE:-$(command -v claude || true)}
 model=${MDOC_REAL_MODEL:-claude-sonnet-5-5}
 if [ -n "$claude_config" ]; then
   [ -d "$claude_config" ] || die "no folder $claude_config"
-  claude_config=$(cd "$claude_config" && pwd)
-  case "$claude_config" in
-    "$HOME/.claude" | "$HOME") die "--claude-config must be a folder of its own, not $claude_config" ;;
-  esac
+  # Physical paths, so a link to ~/.claude is refused too.
+  claude_config=$(cd "$claude_config" && pwd -P)
+  for own in "$HOME" "$HOME/.claude"; do
+    if [ -d "$own" ] && [ "$claude_config" = "$(cd "$own" && pwd -P)" ]; then
+      die "--claude-config must be a folder of its own, not $own"
+    fi
+  done
 fi
 
 # Short, so the connector's socket path stays under macOS's 104 bytes.
@@ -123,9 +126,17 @@ fi
 echo "Building mdoc, mdoc-mcp and the Vault helper…"
 cargo build --locked -p mdoc -p mdoc-mcp
 cargo build --locked -p mdoc-connector --example real_model
-bin=$PWD/target/debug
+# Where cargo put them, even with a target folder set elsewhere: a stale
+# mdoc that ignores the dev profile would open the real one.
+target=$(cargo metadata --locked --no-deps --format-version 1 |
+  sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+[ -n "$target" ] || die "cargo named no target folder"
+bin=$target/debug
 helper=$bin/examples/real_model
 shim=$bin/mdoc-mcp
+for built in "$bin/mdoc" "$shim" "$helper"; do
+  [ -x "$built" ] || die "no $built after the build"
+done
 case "$shim$profile" in
   *\"* | *\\*) die "a path holds a quote or backslash, which the MCP config can't take: $shim" ;;
 esac

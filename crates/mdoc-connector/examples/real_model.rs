@@ -112,6 +112,36 @@ fn leaks(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Every string in `value`, decoded, keys included: a name written with
+/// JSON escapes is found too.
+fn strings(value: &Value, out: &mut String) {
+    match value {
+        Value::String(s) => {
+            out.push_str(s);
+            out.push('\n');
+        }
+        Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
+        Value::Object(map) => {
+            for (key, item) in map {
+                out.push_str(key);
+                out.push('\n');
+                strings(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The lease's answer: both aliases and the rent.
+fn answers(text: &str) -> bool {
+    PEOPLE.iter().all(|(alias, _)| text.contains(alias)) && text.contains("900")
+}
+
+/// `text` with its whitespace runs as single spaces.
+fn squeezed(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn check(transcript: &Path) -> Result<bool, String> {
     let vault = vault()?;
     let projects = vault.projects();
@@ -129,33 +159,46 @@ fn check(transcript: &Path) -> Result<bool, String> {
         ok &= passed;
     };
 
-    // What the model did, from the transcript's tool calls and text.
-    let mut tools = Vec::new();
+    // What the model did, from the transcript: its tool calls by id, the
+    // ones answered without an error, and its text.
+    let mut calls = std::collections::HashMap::new();
+    let mut succeeded = Vec::new();
     let mut texts = Vec::new();
-    for line in transcript.lines() {
+    let mut decoded = String::new();
+    let mut malformed = 0;
+    for line in transcript.lines().filter(|line| !line.trim().is_empty()) {
         let Ok(event) = serde_json::from_str::<Value>(line) else {
+            malformed += 1;
             continue;
         };
-        if event["type"] != "assistant" {
-            continue;
-        }
+        strings(&event, &mut decoded);
         for block in event["message"]["content"].as_array().into_iter().flatten() {
-            match block["type"].as_str() {
-                Some("tool_use") => tools.push(block["name"].as_str().unwrap_or("").to_string()),
-                Some("text") => texts.push(block["text"].as_str().unwrap_or("").to_string()),
+            match (event["type"].as_str(), block["type"].as_str()) {
+                (Some("assistant"), Some("tool_use")) => {
+                    let id = block["id"].as_str().unwrap_or("").to_string();
+                    calls.insert(id, block["name"].as_str().unwrap_or("").to_string());
+                }
+                (Some("assistant"), Some("text")) => {
+                    texts.push(block["text"].as_str().unwrap_or("").to_string());
+                }
+                (Some("user"), Some("tool_result")) if block["is_error"] != true => {
+                    let id = block["tool_use_id"].as_str().unwrap_or("");
+                    succeeded.extend(calls.get(id).cloned());
+                }
                 _ => {}
             }
         }
     }
-    let called = |tool: &str| tools.iter().any(|t| t == &format!("mcp__mdoc__{tool}"));
+    report(malformed == 0, "the transcript is all stream-json");
+    let called = |tool: &str| (succeeded.iter()).any(|t| t == &format!("mcp__mdoc__{tool}"));
     report(
         called("list_documents"),
         "the model listed the shared documents",
     );
     report(called("get_document"), "the model read a document");
     report(
-        texts.iter().any(|t| t.contains("PERSON_")),
-        "the model showed its answer with aliases",
+        texts.iter().any(|t| answers(t)),
+        "the model showed its answer with both aliases and the rent",
     );
     report(called("deliver_reply"), "the model delivered its answer");
 
@@ -175,17 +218,24 @@ fn check(transcript: &Path) -> Result<bool, String> {
         let received = vault.reply(reply).map_err(|e| e.to_string())?.markdown;
         let restored = vault.restore_reply(reply).map_err(|e| e.to_string())?.text;
         report(
-            received.contains("PERSON_") && leaks(&received).is_empty(),
-            "the reply arrived with aliases and no real name",
+            answers(&received) && leaks(&received).is_empty(),
+            "the reply arrived with both aliases, the rent and no real name",
+        );
+        report(
+            (texts.iter()).any(|t| squeezed(t).contains(&squeezed(&received))),
+            "the reply is the answer the model showed",
         );
         report(
             PEOPLE
                 .iter()
-                .any(|(_, original)| restored.contains(original)),
-            "the reply restores to real names in mdoc",
+                .all(|(_, original)| restored.contains(original)),
+            "the reply restores to both real names in mdoc",
         );
     }
-    let leaked = leaks(&transcript);
+    let mut leaked = leaks(&transcript);
+    leaked.extend(leaks(&decoded));
+    leaked.sort();
+    leaked.dedup();
     report(
         leaked.is_empty(),
         &format!("no real name in the transcript (found: {leaked:?})"),

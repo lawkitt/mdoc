@@ -29,6 +29,10 @@ const POLL: Duration = Duration::from_millis(250);
 /// The newest activity lines the Project page lists.
 pub(super) const ACTIVITY_SHOWN: usize = 100;
 
+/// Whether `MDOC_DEV_AI_PROJECT` was shared already in this process.
+#[cfg(debug_assertions)]
+static DEV_SHARED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 impl Workspace {
     /// "AI connector (preview)" as Settings holds it.
     pub(super) fn ai_setting(&self) -> AiConnectorConfig {
@@ -86,10 +90,12 @@ impl Workspace {
         self.scan_on_entry(cx);
         // The real-model check (`scripts/dev/connector-real-model.sh`) has
         // no one to click Share: a debug build on a dev profile shares the
-        // Project this variable names, as the prompt's Share would.
+        // Project this variable names, as the prompt's Share would. Only
+        // the first start: turned off and on in Settings, it shares nothing.
         #[cfg(debug_assertions)]
         if mdoc_store::app_paths::dev_profile().is_some()
             && let Ok(project) = std::env::var("MDOC_DEV_AI_PROJECT")
+            && !DEV_SHARED.swap(true, std::sync::atomic::Ordering::Relaxed)
         {
             self.share_with_ai(&project, cx);
         }
