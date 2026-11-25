@@ -153,6 +153,11 @@ protocol DocumentSession: AnyObject, Sendable {
     /// last. Saves the document first, so the Project the Restore extension
     /// reads has every alias the text has.
     func copyForAI() throws -> HandOff
+    /// What the Vault says of the document as last saved: whether it may
+    /// leave for an AI now, checked against its Project's names as they
+    /// are now. Nil before its first save. Reads the record: call it off
+    /// the main thread.
+    func savedReadiness() -> SavedReadiness?
     /// Saves now what review taps left for their save (ADR 0104): before
     /// the document is left for another, or mdoc leaves the foreground.
     func saveChanges() throws
@@ -301,6 +306,8 @@ extension DocumentSession {
     func closeOriginal() {}
 
     func scanEstimate() -> Int? { nil }
+
+    func savedReadiness() -> SavedReadiness? { nil }
 
     /// Hide name in the core's guessed category.
     func markSelection(_ range: SourceRange) throws -> DocumentSnapshot {

@@ -128,6 +128,19 @@ struct DocumentScreen: View {
                 default: break
                 }
             }
+            // Copy for AI or Share refused on a tap: why, and its step (#1209).
+            .alert(
+                Text(model.refusal?.reason ?? ""),
+                isPresented: Binding(get: { model.refusal != nil }, set: { if !$0 { model.refusal = nil } }),
+                presenting: model.refusal
+            ) { refusal in
+                if let step = model.step(for: refusal) {
+                    Button(step.title) { model.take(step) }
+                }
+                Button("OK", role: .cancel) { model.refusal = nil }
+            } message: { refusal in
+                Text(refusal.detail)
+            }
             .alert(
                 "Something went wrong",
                 isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } }),
@@ -565,9 +578,11 @@ struct DocumentScreen: View {
         // The review bar takes the action bar's place while reviewing, so
         // these are here too (ADR 0114).
         // Always listed; until the document is ready, disabled with why,
-        // as Find names again is (ADR 0115).
+        // as Find names again is (ADR 0115), and the step that resolves it
+        // after them (#1209).
         Section {
-            let blocked = model.handOffBlockedReason
+            let refusal = model.handOffRefusal
+            let blocked = refusal?.reason
             if preferences.aiConnectorPreview {
                 Button {
                     model.askAI()
@@ -592,6 +607,14 @@ struct DocumentScreen: View {
             .accessibilityIdentifier("copy-for-ai")
             if let app, let document {
                 DocumentShareButton(app: app, document: document, blockedReason: blocked, alwaysListed: true)
+            }
+            if let refusal, let step = model.step(for: refusal) {
+                Button {
+                    model.take(step)
+                } label: {
+                    Label(step.title, systemImage: step.systemImage)
+                }
+                .accessibilityIdentifier("hand-off-step")
             }
         }
         if let app, let document {

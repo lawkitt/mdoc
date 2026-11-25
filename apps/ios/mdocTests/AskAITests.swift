@@ -62,7 +62,7 @@ final class AskAITests: XCTestCase {
         model.askAI()
 
         XCTAssertNil(model.askAIShare)
-        XCTAssertNotNil(model.errorMessage)
+        XCTAssertNotNil(model.refusal)
         XCTAssertNil(model.replyOffer)
         model.appLeft()
         model.appReturned()

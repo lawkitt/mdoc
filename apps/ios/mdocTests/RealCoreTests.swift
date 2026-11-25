@@ -118,8 +118,9 @@ final class RealCoreTests: XCTestCase {
         let session = try reviewed(core)
         // The core refuses while proposals wait, with how many.
         let pending = session.snapshot().pendingCount
+        let names = session.snapshot().identities.filter { $0.state == .proposed }.count
         XCTAssertThrowsError(try session.copyForAI()) { error in
-            XCTAssertEqual(error as? CoreError, .pendingReview(pending))
+            XCTAssertEqual(error as? CoreError, .handOffRefused(.namesToDecide(names: names, proposals: pending)))
         }
         let ready = try session.replaceAllPending()
         XCTAssertEqual(ready.phase, .ready)
