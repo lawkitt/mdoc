@@ -642,6 +642,18 @@ fn document_shown(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Optio
     })
 }
 
+/// The document in front shows its Review panel, as Pseudonymize opens
+/// it.
+fn review_open(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
+    cx.update(|_, cx| {
+        let view = tabs.read(cx).active_view();
+        view.is_some_and(|view| {
+            let view = view.read(cx);
+            view.replacements_open() && view.inspector == crate::document_view::Inspector::Review
+        })
+    })
+}
+
 /// The user clicks the notification tagged `tag`, as the OS reports it.
 fn click_note(cx: &mut VisualTestContext, tag: &str) {
     cx.simulate_system_notification_response(gpui::SystemNotificationResponse {
@@ -703,6 +715,7 @@ fn a_delivered_reply_notifies_and_its_click_opens_the_reply_page(cx: &mut TestAp
 /// review, from the badge as from the notification.
 #[gpui::test]
 fn a_delivered_document_opens_for_review(cx: &mut TestAppContext) {
+    crate::document_view::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, notes) = shared_lease(cx, &fixture);
     let (_, document) = deliver(&tabs, cx, &fixture, Kind::Document);
@@ -721,14 +734,22 @@ fn a_delivered_document_opens_for_review(cx: &mut TestAppContext) {
         document_shown(&tabs, cx).as_deref(),
         Some(document.as_str())
     );
+    assert!(review_open(&tabs, cx), "it opens for review");
     assert!(cx.debug_bounds("ai-badge").is_none());
-    // Its notification, clicked later, comes back to it.
+    // Closed, with sharing stopped, its notification still opens it for
+    // review: the scan on entry no longer would.
+    click_toolbar(cx, "ai-stop-sharing");
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
     show_page(&tabs, cx, &fixture.estate);
     click_note(cx, &note.tag);
     assert_eq!(
         document_shown(&tabs, cx).as_deref(),
         Some(document.as_str())
     );
+    assert!(review_open(&tabs, cx), "it opens for review once loaded");
+    crate::document_view::DocumentView::hold_scans(false);
 }
 
 /// Done when: a request for a document that needs review notifies by its
@@ -736,6 +757,7 @@ fn a_delivered_document_opens_for_review(cx: &mut TestAppContext) {
 /// nothing opens by itself.
 #[gpui::test]
 fn a_review_request_notifies_once_and_opens_the_review(cx: &mut TestAppContext) {
+    crate::document_view::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, notes) = shared_lease(cx, &fixture);
     cx.update(|_, cx| {
@@ -775,15 +797,35 @@ fn a_review_request_notifies_once_and_opens_the_review(cx: &mut TestAppContext) 
         document_shown(&tabs, cx).as_deref(),
         Some(fixture.lease_doc.as_str())
     );
+    assert!(review_open(&tabs, cx), "it opens for review");
     assert!(cx.debug_bounds("ai-badge").is_none());
     // Opened, it may ask again.
-    call(&tabs, cx, read);
+    call(&tabs, cx, read.clone());
     assert_eq!(notes.borrow().len(), 2);
     assert!(cx.debug_bounds("ai-badge").is_some());
     // Stop sharing: the request is moot and the badge goes.
     click_toolbar(cx, "ai-stop-sharing");
     draw(cx);
     assert!(cx.debug_bounds("ai-badge").is_none());
+    // A request answered before Stop sharing and heard after it raises
+    // nothing.
+    tabs.update(cx, |tabs, cx| {
+        tabs.share_with_ai(&fixture.lease.clone(), cx)
+    });
+    let answer = cx.update(|_, cx| {
+        let running = tabs.read(cx).ai_connector.as_ref().unwrap();
+        running.call(&Request {
+            v: wire::VERSION,
+            app: "claude-ai".into(),
+            call: read,
+        })
+    });
+    assert!(matches!(answer, Answer::Ok(Done::NeedsReview { .. })));
+    tabs.update(cx, |tabs, cx| tabs.stop_sharing_with_ai(cx));
+    wait(cx, 300);
+    assert_eq!(notes.borrow().len(), 2);
+    assert!(cx.debug_bounds("ai-badge").is_none());
+    crate::document_view::DocumentView::hold_scans(false);
 }
 
 /// Done when: with "Open deliveries when they arrive" on, a delivery opens
@@ -798,10 +840,32 @@ fn the_setting_opens_deliveries_in_front(cx: &mut TestAppContext) {
             .ai_connector
             .open_deliveries = true;
     });
+    // Settings up: the delivery waits on the badge, and nothing moves.
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_settings(window, cx));
+    cx.deactivate_window();
+    draw(cx);
+    let (waiting, _) = deliver(&tabs, cx, &fixture, Kind::Reply);
+    assert_eq!(reply_shown(&tabs, cx), None);
+    assert!(!window_active(cx));
+    // Its notification's click brings the window forward to Settings,
+    // which stays.
+    click_note(cx, &format!("ai-reply-{waiting}"));
+    assert!(window_active(cx));
+    assert!(cx.update(|_, cx| tabs.read(cx).settings.read(cx).open));
+    assert_eq!(reply_shown(&tabs, cx), None);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.settings
+            .update(cx, |panel, cx| panel.close(window, cx))
+    });
+    cx.deactivate_window();
+    draw(cx);
+    notes.borrow_mut().clear();
     let (reply, _) = deliver(&tabs, cx, &fixture, Kind::Reply);
     assert!(window_active(cx));
     assert_eq!(reply_shown(&tabs, cx).as_deref(), Some(reply.as_str()));
-    assert!(cx.debug_bounds("ai-badge").is_none());
+    // Opened as it landed, it isn't counted; the one that waited still is.
+    let unseen = cx.update(|_, cx| tabs.read(cx).ai.unseen().len());
+    assert_eq!(unseen, 1);
     assert_eq!(notes.borrow().len(), 1);
     let (_, document) = deliver(&tabs, cx, &fixture, Kind::Document);
     assert_eq!(document_shown(&tabs, cx), document);

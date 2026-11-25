@@ -196,24 +196,7 @@ impl DocumentView {
                         theme,
                     ))
                     .when(cfg!(test), |v| v.debug_selector(|| "Pseudonymize".into()))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        // Pseudonymize scans once and opens the panel; it never
-                        // closes it.
-                        let review = &this.pii.review();
-                        let fresh = !this.pii.reviewing()
-                            && review.variants().is_empty()
-                            && review.applied().is_empty();
-                        if fresh {
-                            this.start_pii_scan(cx);
-                        }
-                        // A scan is reviewed in Review, not beside Notes.
-                        if this.inspector == super::Inspector::Notes {
-                            this.inspector = super::Inspector::Review;
-                        }
-                        if !this.replacements_open() {
-                            this.toggle_replacements_panel(window, cx);
-                        }
-                    }))
+                    .on_click(cx.listener(|this, _, window, cx| this.open_review(window, cx)))
                     .into_any_element()
             }
             Primary::Apply(n) => {

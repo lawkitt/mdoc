@@ -104,6 +104,8 @@ pub(super) struct AiProject {
     unseen: Vec<Arrived>,
     /// Review requests notified lately, by document: no other before then.
     reviews_quiet: std::collections::HashMap<String, Instant>,
+    /// Documents opened for review whose Review panel opens once loaded.
+    to_review: std::collections::HashSet<String>,
 }
 
 impl AiProject {
@@ -215,6 +217,17 @@ impl AiProject {
         if let Some(document) = document {
             self.reviews_quiet.remove(document);
         }
+    }
+
+    /// Document `id` opens for review: its Review panel opens once its tab
+    /// has loaded ([`Self::take_review`]).
+    pub(super) fn review_on_load(&mut self, id: &str) {
+        self.to_review.insert(id.to_string());
+    }
+
+    /// `true` once for a document opened for review.
+    pub(super) fn take_review(&mut self, id: &str) -> bool {
+        self.to_review.remove(id)
     }
 
     /// Sharing stopped: review requests are moot, deliveries stay.

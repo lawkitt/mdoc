@@ -41,7 +41,8 @@ impl Note {
     /// `item` from AI app `app`, as it sent itself; `label`, a review
     /// request's AI label.
     pub(super) fn of(item: &Arrived, app: &str, label: &str) -> Self {
-        let app = ai_connector::display_name(app);
+        // A product's name, never the client's own free text.
+        let app = ai_connector::product_name(app).unwrap_or("An AI app");
         let (title, body) = match item {
             Arrived::Reply(_) => (
                 format!("{app} sent a reply"),
@@ -170,7 +171,9 @@ impl Workspace {
         if self.ai.arrived(item.clone(), Instant::now()) {
             self.notify_os(&Note::of(&item, app, ""), cx);
         }
-        if self.ai_setting().open_deliveries {
+        // A dialog or sheet up keeps it on the badge: nothing moves under
+        // it.
+        if self.ai_setting().open_deliveries && !self.modal_up(window, cx) {
             crate::menu_bar::reveal_window(window, cx);
             self.open_arrived(&item, window, cx);
         }
@@ -188,6 +191,16 @@ impl Workspace {
         label: &str,
         cx: &mut Context<Self>,
     ) {
+        // Heard after Stop sharing, or after another Project was shared:
+        // the request is moot.
+        let member = self.ai_shared().is_some_and(|shared| {
+            (self.vault.vault().into_iter())
+                .flat_map(|vault| vault.documents_in(Some(&shared)))
+                .any(|summary| summary.id == document)
+        });
+        if !member {
+            return;
+        }
         let item = Arrived::Review(document);
         if self.ai.arrived(item.clone(), Instant::now()) {
             self.notify_os(&Note::of(&item, app, label), cx);
@@ -208,7 +221,10 @@ impl Workspace {
             return;
         }
         crate::menu_bar::reveal_window(window, cx);
-        self.open_arrived(item, window, cx);
+        // A dialog or sheet up answers first; it stays on the badge.
+        if !self.modal_up(window, cx) {
+            self.open_arrived(item, window, cx);
+        }
     }
 
     /// Open `item` where it lands: a reply on its Reply page, a document
@@ -234,12 +250,51 @@ impl Workspace {
             Arrived::Document(id) | Arrived::Review(id) => {
                 self.ai.seen(None, Some(id));
                 match VaultId::parse(id).filter(|_| vault.document(id).is_ok()) {
-                    Some(document) => self.open_project_member(document, window, cx),
+                    Some(document) => {
+                        // For review: its Review panel opens, now or once
+                        // it has loaded.
+                        self.ai.review_on_load(id);
+                        self.open_project_member(document, window, cx);
+                        let tab = self.tabs.active();
+                        self.review_if_asked(tab, window, cx);
+                    }
                     None => self.notices.post("That document was deleted.".to_string()),
                 }
             }
         }
         cx.notify();
+    }
+
+    /// Tab `id`, loaded, holds a document opened for review: its Review
+    /// panel opens, as Pseudonymize opens it.
+    pub(super) fn review_if_asked(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(view) = self.tab_view(id) else {
+            return;
+        };
+        let (document, loaded) = {
+            let view = view.read(cx);
+            let lifecycle = &view.lifecycle;
+            (
+                view.session.document.vault.clone(),
+                !lifecycle.loading() && !lifecycle.unavailable(),
+            )
+        };
+        let Some(document) = document else {
+            return;
+        };
+        if !loaded || !self.ai.take_review(document.as_str()) {
+            return;
+        }
+        view.update(cx, |view, cx| view.open_review(window, cx));
+    }
+
+    /// A dialog, sheet or Settings is up: nothing navigates under it.
+    pub(super) fn modal_up(&self, window: &Window, cx: &App) -> bool {
+        self.settings.read(cx).open
+            || window.has_active_prompt()
+            || self.new_project.is_some()
+            || self.folder_sheets.open()
+            || self.project_ui.explainer
     }
 
     // ---- What the window shows --------------------------------------------
@@ -335,6 +390,9 @@ mod tests {
         assert_eq!(document.title, "ChatGPT sent a document");
         assert_eq!(document.body, "Open it in mdoc to review it.");
         assert_eq!(document.tag, "ai-document-d1");
+        // A name the client made up is not shown.
+        let other = Note::of(&Arrived::Reply("r".into()), "Maria Lopez's lease", "");
+        assert_eq!(other.title, "An AI app sent a reply");
         let review = Note::of(&Arrived::Review("d2".into()), "", "Document\n3");
         assert_eq!(
             review.title,

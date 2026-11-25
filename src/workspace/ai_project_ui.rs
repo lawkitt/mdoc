@@ -438,12 +438,7 @@ impl Workspace {
     ) -> Option<AnyElement> {
         self.ai_connector.as_ref()?;
         let prompt = self.ai.prompt()?;
-        if self.settings.read(cx).open
-            || window.has_active_prompt()
-            || self.new_project.is_some()
-            || self.folder_sheets.open()
-            || self.project_ui.explainer
-        {
+        if self.modal_up(window, cx) {
             return None;
         }
         let theme = self.theme.get();

@@ -185,13 +185,24 @@ pub(crate) fn display_name(app: &str) -> String {
         .collect();
     let line: String = line.trim().chars().take(64).collect();
     let app = line.trim_end();
-    match app.to_ascii_lowercase().as_str() {
-        "" | "ai app" => "An AI app".into(),
-        "claude-ai" | "claude" => "Claude".into(),
-        "claude-code" => "Claude Code".into(),
-        "chatgpt" | "openai-chatgpt" => "ChatGPT".into(),
-        "codex" | "codex-mcp-client" => "Codex".into(),
-        _ => app.into(),
+    match product_name(app) {
+        Some(name) => name.into(),
+        None if app.is_empty() => "An AI app".into(),
+        None => app.into(),
+    }
+}
+
+/// The product an AI app's own name (`clientInfo.name`) stands for, when
+/// mdoc knows it; "An AI app" for none. A system notification names only
+/// these: any other name is the client's free text (item 9 review).
+pub(crate) fn product_name(app: &str) -> Option<&'static str> {
+    match app.trim().to_ascii_lowercase().as_str() {
+        "" | "ai app" => Some("An AI app"),
+        "claude-ai" | "claude" => Some("Claude"),
+        "claude-code" => Some("Claude Code"),
+        "chatgpt" | "openai-chatgpt" => Some("ChatGPT"),
+        "codex" | "codex-mcp-client" => Some("Codex"),
+        _ => None,
     }
 }
 

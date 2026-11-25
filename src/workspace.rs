@@ -1364,6 +1364,8 @@ impl Workspace {
                     cx.notify();
                 });
                 this.attach_project(id, cx);
+                // Opened from an AI notification: for review.
+                this.review_if_asked(id, window, cx);
                 this.refresh_saved_replies(cx);
                 // A view kept while it loaded may be evicted now.
                 this.evict(window, cx);
