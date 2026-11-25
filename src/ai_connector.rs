@@ -284,7 +284,10 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(100));
             drop(held);
         });
-        let on = AiConnectorConfig { preview: true };
+        let on = AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
         let running = start(vault, &on, &endpoint);
         release.join().unwrap();
         assert!(running.is_some(), "gave up while the old listener stopped");
