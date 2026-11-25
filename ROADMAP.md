@@ -398,19 +398,6 @@ of real use by the maintainer on the landed build gate its next candidate;
 items 33–35 are polish and do not. Items 36–39 and 44 gate it too; items
 40–43 follow them and gate nothing ([#1209](https://github.com/lawkitt/mdoc/issues/1209)).
 
-42. **[Android] Copy a selection.** *From [#1209](https://github.com/lawkitt/mdoc/issues/1209).*
-    The same menu and marking as iOS has
-    ([#1241](https://github.com/lawkitt/mdoc/pull/1241)) in place of `NoCopyTextView`'s
-    refusals; Share and Assist on a selection stay off. *Done when:*
-    instrumented tests cover the three menu states and the marking. *Blocked
-    by 40.*
-43. **[Desktop] "Replace N and Copy", and marked hand copies.** *From
-    [#1209](https://github.com/lawkitt/mdoc/issues/1209).* The right-click
-    menu gains "Replace N and Copy" when a selection holds unreplaced names.
-    A copy not known to be clean, in any view, is marked concealed as a
-    restored reply's copy is; ⌘C stays silent. *Done when:* workspace tests
-    cover the menu item and the marking in Edit, Original and Side by side.
-    *Blocked by 40.*
 
 - **[Mobile] Later: drag a selection out.** It follows the copy menu's three
   states once those have been used for a while. *From
@@ -451,20 +438,6 @@ or ChatGPT apps themselves are the maintainer's.
    launcher for a binary inside an installed app? The maintainer runs it,
    since the install can restart Claude Desktop. *Done when:* the answer is a
    comment on the issue.
-9. **[Desktop] Notifications and where a reply lands.** *From
-   [#1164](https://github.com/lawkitt/mdoc/issues/1164).* A delivery and a request for
-   an unreviewed document each raise an OS notification that opens the Reply
-   page or the review; mdoc never takes focus unless a setting says so. A
-   delivered Document opens for review. *Blocked by:* items 6, 7. *Done
-   when:* workspace tests with an injected notifier; headless renders of the
-   badge and the Reply page from a delivery.
-10. **[Desktop] Ask.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-    On the document header and the Project page: Ask Claude, Ask ChatGPT and
-    Copy for AI, remembering the last choice. It shares that Project as part
-    of the click, offers "Move to a new Project and share" for Unfiled, and
-    opens the AI app with a prompt naming the document by its AI label.
-    *Blocked by:* items 1, 2, 8. *Done when:* workspace tests of each path
-    and of the prompt's text; headless renders of the menu.
 12. **[Check] A real model end to end.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
     A script runs the Claude command-line app with a throwaway config and
     the dev profile against the built shim: the model lists, reads, shows its
