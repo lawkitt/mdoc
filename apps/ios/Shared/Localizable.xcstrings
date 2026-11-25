@@ -325,6 +325,9 @@
     "AI reply" : {
 
     },
+    "Adds the text to mdoc as a new document in a Project, or in Unfiled when no Project is chosen, and opens it for review. Its text with names replaced comes back only once it is reviewed." : {
+
+    },
     "Alias" : {
 
     },
@@ -350,6 +353,36 @@
 
     },
     "All Projects…" : {
+
+    },
+    "Leave empty for a new Unfiled document." : {
+
+    },
+    "Leave empty for the last document or Project you shared." : {
+
+    },
+    "Pseudonymize text" : {
+
+    },
+    "Restore text" : {
+
+    },
+    "Restores an AI reply with the real names, using a Project's names, or those of the last document or Project you shared. Nothing is saved; the restored text goes wherever the shortcut sends it next." : {
+
+    },
+    "That Project is no longer in mdoc." : {
+
+    },
+    "The text needs review in mdoc. It is open there as a new document; once it is reviewed, Copy for AI gives its text." : {
+
+    },
+    "There is no reply to restore." : {
+
+    },
+    "There is no text to pseudonymize." : {
+
+    },
+    "Turn on AI connector (preview) in Settings" : {
 
     },
     "all decided" : {

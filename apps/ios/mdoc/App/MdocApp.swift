@@ -19,6 +19,8 @@ struct MdocApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(app: app)
+                // Pseudonymize text runs on the window's model.
+                .task(id: ObjectIdentifier(app)) { ShortcutsHost.shared.attach(app) }
                 .onOpenURL { url in
                     // "Open in mdoc" from the share sheet's app row.
                     app.openInMdoc(url)
