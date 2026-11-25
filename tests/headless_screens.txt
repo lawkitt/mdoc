@@ -130,5 +130,7 @@ import-repeated-several
 document-original-missing
 ai-share-prompt
 ai-project-shared
+ai-delivery-badge
+ai-reply-delivered
 project-page-activity
 ai-project-rail

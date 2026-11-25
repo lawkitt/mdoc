@@ -348,6 +348,11 @@ impl GeneralConfig {
 pub struct AiConnectorConfig {
     #[serde(default)]
     pub preview: bool,
+    /// "Open deliveries when they arrive": a delivery opens its Reply page,
+    /// or its Document for review, and brings the window forward. Off, mdoc
+    /// only notifies and never takes focus (#1164 Decision 6).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub open_deliveries: bool,
 }
 impl AiConnectorConfig {
     fn is_default(&self) -> bool {
@@ -762,6 +767,15 @@ mod tests {
         prefs.ai_connector.preview = true;
         save(&path, &prefs).unwrap();
         assert_eq!(load(&path).unwrap(), prefs);
+        // Opening deliveries is off by default, and kept once on.
+        let written = serde_json::to_value(&prefs).unwrap();
+        assert_eq!(
+            written["ai_connector"],
+            serde_json::json!({ "preview": true })
+        );
+        prefs.ai_connector.open_deliveries = true;
+        save(&path, &prefs).unwrap();
+        assert!(load(&path).unwrap().ai_connector.open_deliveries);
     }
     #[test]
     fn default_categories_detect_everything_and_unticked_ones_roundtrip() {

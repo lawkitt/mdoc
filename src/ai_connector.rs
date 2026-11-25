@@ -6,8 +6,9 @@
 //! there is no service and no listener at all.
 //!
 //! Each call also tells the window what it needs to know ([`Event`]): an
-//! AI app asked while nothing is shared (the share prompt, item 8), or a
-//! read or delivery was recorded (the Project page's AI activity).
+//! AI app asked while nothing is shared (the share prompt, item 8), a read
+//! or delivery was recorded (the Project page's AI activity), or a document
+//! it asked for needs review (item 9's notifications).
 use mdoc_connector::Connector;
 use mdoc_mcp::ipc::{self, Endpoint, Listening};
 use mdoc_mcp::wire::{self, Answer, Done, Refusal, Request};
@@ -24,8 +25,22 @@ pub(crate) enum Event {
     /// AI app `app` asked while nothing was shared: mdoc asks the user to
     /// share a Project (#1164 Decision 2).
     Asked { app: String },
-    /// A read or a delivery was recorded in the AI project's activity.
+    /// A read was recorded in the AI project's activity.
     Activity,
+    /// AI app `app` delivered: an AI Reply, and the Document it landed as
+    /// when it asked for one (item 9). Recorded in the activity too.
+    Delivered {
+        app: String,
+        reply: String,
+        document: Option<String>,
+    },
+    /// AI app `app` asked for a document of the AI project that needs
+    /// review, named to it as `label` (#1164 Decision 4; item 9).
+    NeedsReview {
+        app: String,
+        document: String,
+        label: String,
+    },
 }
 
 /// The connector, its events and its listener; dropping it stops
@@ -140,9 +155,21 @@ fn answer_line(connector: &Connector, events: &Sender<Event>, line: &[u8]) -> Ve
 fn event_of(app: String, answer: &Answer) -> Option<Event> {
     match answer {
         Answer::Refused(Refusal::NothingShared) => Some(Event::Asked { app }),
-        Answer::Ok(
-            Done::Text { .. } | Done::Outline { .. } | Done::Part { .. } | Done::Delivered { .. },
-        ) => Some(Event::Activity),
+        Answer::Ok(Done::Text { .. } | Done::Outline { .. } | Done::Part { .. }) => {
+            Some(Event::Activity)
+        }
+        Answer::Ok(Done::Delivered {
+            reply, document, ..
+        }) => Some(Event::Delivered {
+            app,
+            reply: reply.clone(),
+            document: document.clone(),
+        }),
+        Answer::Ok(Done::NeedsReview { doc_id, label, .. }) => Some(Event::NeedsReview {
+            app,
+            document: doc_id.clone(),
+            label: label.clone(),
+        }),
         _ => None,
     }
 }
@@ -193,7 +220,10 @@ mod tests {
         let off = AiConnectorConfig::default();
         assert!(start(vault.clone(), &off, &endpoint).is_none());
         assert!(matches!(ask(&endpoint), Err(ipc::CallError::NotListening)));
-        let on = AiConnectorConfig { preview: true };
+        let on = AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
         let running = start(vault, &on, &endpoint).unwrap();
         assert!(running.connector.ai_project().is_none());
         assert_eq!(
@@ -221,7 +251,10 @@ mod tests {
     fn only_a_call_finding_nothing_shared_asks() {
         let dir = tempfile::tempdir().unwrap();
         let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
-        let on = AiConnectorConfig { preview: true };
+        let on = AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
         let running = start_unlistened(vault.clone(), &on).unwrap();
         assert!(running.events().is_empty());
         (running.answer)(b"not json");
@@ -257,7 +290,10 @@ mod tests {
     fn a_connection_held_across_the_stop_reads_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
-        let on = AiConnectorConfig { preview: true };
+        let on = AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
         let running = start_unlistened(vault.clone(), &on).unwrap();
         let project = vault.create_project(Default::default()).unwrap();
         running.connector.share(&project.id).unwrap();
