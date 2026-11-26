@@ -268,7 +268,12 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
             }
             if *name == "shelf-note" {
                 assert_eq!(
-                    record["state"]["title"], "mdoc is still in the menu bar.",
+                    record["state"]["title"],
+                    if cfg!(windows) {
+                        "mdoc is still in the system tray."
+                    } else {
+                        "mdoc is still in the menu bar."
+                    },
                     "{theme}"
                 );
             }

@@ -115,17 +115,26 @@ raw-window-handle = "0.6"
 [target.'cfg(windows)'.dependencies]
 # The headless renderer.
 gpui_windows = { package = "gpui-pre-windows", version = "=0.3.12" }
+# The companion window's HWND (src/companion/windows.rs); in the lockfile
+# already, through GPUI.
+raw-window-handle = "0.6"
 # Single-instance launch (src/single_instance.rs) uses the pipe, session and
-# foreground features; src/crash.rs sets the error mode (Diagnostics_Debug).
+# foreground features; src/crash.rs sets the error mode (Diagnostics_Debug);
+# the tray icon (src/tray/) and the companion's probe use Shell, Gdi,
+# LibraryLoader and KeyboardAndMouse.
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Graphics_Gdi",
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_Diagnostics_Debug",
     "Win32_System_IO",
+    "Win32_System_LibraryLoader",
     "Win32_System_Pipes",
     "Win32_System_RemoteDesktop",
     "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

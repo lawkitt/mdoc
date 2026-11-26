@@ -68,6 +68,7 @@ mod shelf;
 mod shortcuts_sheet;
 mod sidebar;
 mod tab_set;
+mod tray;
 mod user_lists;
 mod vault_documents;
 mod vault_tree;

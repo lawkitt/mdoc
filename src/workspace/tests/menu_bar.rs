@@ -64,7 +64,8 @@ fn with_the_item_off_closing_the_window_quits_as_before(cx: &mut TestAppContext)
     assert!(quit(cx));
 }
 
-/// Windows has no tray yet: the setting changes nothing there.
+/// Windows has its tray only while the preview is on (`tray.rs` tests
+/// that), and Linux none: with the preview off the setting changes nothing.
 #[cfg(not(target_os = "macos"))]
 #[gpui::test]
 fn the_setting_does_nothing_outside_macos(cx: &mut TestAppContext) {
