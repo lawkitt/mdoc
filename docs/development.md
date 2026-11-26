@@ -174,7 +174,9 @@ Bash 3.2 compatible for macOS's `/bin/bash`.
   into the branch; its findings go to a running fix list
   ([#1153](https://github.com/lawkitt/mdoc/issues/1153)).
 - A test that takes two unrelated PRs out of the merge queue is quarantined,
-  with an issue; a hub does this without asking.
+  with an issue; a hub does this without asking. The list is capped at 16:
+  adding a test means fixing or deleting one
+  ([#1264](https://github.com/lawkitt/mdoc/issues/1264)).
 
 **Profile.** The fleet tools in the maintainer's config repository read
 this block; change it with the rules above.
