@@ -286,9 +286,25 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 );
                 assert_eq!(
                     state["review"].is_string(),
-                    *name == "companion-review",
+                    name.starts_with("companion-review"),
                     "{theme}/{name}"
                 );
+                // A review's proposals are names: shown only with the
+                // pointer over them.
+                assert_eq!(
+                    state["proposals_shown"],
+                    *name == "companion-review-proposals-shown",
+                    "{theme}/{name}"
+                );
+                let step = match *name {
+                    "companion-review" | "companion-review-proposals-shown" => "proposals",
+                    "companion-review-ready" => "ready",
+                    "companion-review-in-mdoc" => "in-mdoc",
+                    _ => "",
+                };
+                if !step.is_empty() {
+                    assert_eq!(state["review_step"], step, "{theme}/{name}");
+                }
             }
             if *name != "model-comparison"
                 && !name.starts_with("shelf")

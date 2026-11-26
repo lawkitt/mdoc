@@ -208,7 +208,7 @@ fn it_opens_by_itself_only_for_a_delivery_or_a_review_request(cx: &mut TestAppCo
     // Its Review in mdoc opens the document for review, in front.
     click_item(cx);
     let open = companion(cx).unwrap();
-    update(open, cx, |view, _, cx| view.review(cx));
+    update(open, cx, |view, _, cx| view.open_in_mdoc(cx));
     assert!(window_active(cx));
     assert_eq!(
         document_shown(&tabs, cx).as_deref(),
@@ -497,4 +497,328 @@ fn its_shelf_rows_copy_and_drag_only_what_is_ready(cx: &mut TestAppContext) {
         view(open, cx, |view, cx| view.shelf_rows().read(cx).refused()),
         Some(index)
     );
+}
+
+// ---- Review in the companion (Milestone 2 item 16) -------------------------
+
+/// Lease's memo now reads `text` and needs review: its saved review
+/// proposes each of `proposed` and keeps each of `kept`, as a scan and the
+/// window's own decisions would leave it.
+fn needs_review(
+    tabs: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+    fixture: &Fixture,
+    text: &str,
+    proposed: &[&str],
+    kept: &[&str],
+) {
+    let mut review = mdoc_pii::Review::default();
+    for name in proposed.iter().chain(kept) {
+        let at = text.find(name).unwrap();
+        let id = review
+            .add_manual(text, at..at + name.len(), Person)
+            .unwrap();
+        if kept.contains(name) {
+            review.keep(id, None);
+        }
+    }
+    let saved = review.save();
+    vault(tabs, cx)
+        .update_document(&fixture.lease_doc, |d| {
+            d.markdown = text.into();
+            d.scanned = true;
+            d.review = Some(saved.clone());
+            d.set_ready(false);
+        })
+        .unwrap();
+}
+
+/// Claude asks for Lease's memo: it needs review, and the companion opens
+/// with its request.
+fn asked(
+    tabs: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+    fixture: &Fixture,
+) -> (gpui::WindowHandle<CompanionView>, Answer) {
+    let answer = call(tabs, cx, read_lease(fixture));
+    assert!(
+        matches!(answer, Answer::Ok(Done::NeedsReview { .. })),
+        "{answer:?}"
+    );
+    (companion(cx).expect("a review request opens it"), answer)
+}
+
+fn read_lease(fixture: &Fixture) -> Call {
+    Call::GetDocument {
+        doc_id: fixture.lease_doc.clone(),
+        part: None,
+    }
+}
+
+fn step(
+    open: gpui::WindowHandle<CompanionView>,
+    cx: &mut VisualTestContext,
+) -> Option<crate::workspace::ReviewStep> {
+    view(open, cx, |view, _| {
+        view.content().review.clone().map(|review| review.step)
+    })
+}
+
+/// What the tab holding Lease's memo says of its review: Ready as its
+/// save would write it, and the proposals left.
+fn tab_review(
+    tabs: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+    fixture: &Fixture,
+) -> Option<(bool, usize)> {
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        let tab = tabs.companion_tab(&fixture.lease_doc, cx)?;
+        let view = tabs.tab_view(tab)?;
+        let view = view.read(cx);
+        Some((
+            crate::workspace::shelf_source::ready(view, cx),
+            view.pii.review().remaining(),
+        ))
+    })
+}
+
+/// Done when: a document that needs review lists its pending proposals,
+/// hidden until the pointer is over them; Replace all replaces them all
+/// in mdoc's window, which stays behind, and the save makes it Ready as
+/// the window's rules do; the AI app's next read is answered, and the
+/// request goes.
+#[gpui::test]
+fn replace_all_in_the_companion_makes_the_document_ready(cx: &mut TestAppContext) {
+    crate::document_view::DocumentView::hold_scans(true);
+    let fixture = fixture();
+    let (tabs, cx, _notes) = shared_lease(cx, &fixture);
+    install_menu_bar(&tabs, cx);
+    let text = "Anna Petrova rents from Boris Ivanov. Anna Petrova pays.";
+    needs_review(
+        &tabs,
+        cx,
+        &fixture,
+        text,
+        &["Anna Petrova", "Boris Ivanov"],
+        &[],
+    );
+    let front = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let (open, _) = asked(&tabs, cx, &fixture);
+    let Some(crate::workspace::ReviewStep::Proposals(proposals)) = step(open, cx) else {
+        panic!("its proposals");
+    };
+    let listed: Vec<_> = (proposals.iter())
+        .map(|p| (p.original.as_str(), p.mentions))
+        .collect();
+    assert_eq!(listed, [("Anna Petrova", 2), ("Boris Ivanov", 1)]);
+    assert!(proposals.iter().all(|p| !p.alias.is_empty()));
+    // Real names: hidden until the pointer is over them.
+    let mut window = VisualTestContext::from_window(open.into(), &cx.cx);
+    window.run_until_parked();
+    assert!(!view(open, &mut window, |view, _| view.proposals_shown()));
+    let bounds = (window.debug_bounds("companion-proposals")).expect("the proposals");
+    window.simulate_mouse_move(bounds.center(), None, gpui::Modifiers::none());
+    window.run_until_parked();
+    assert!(view(open, &mut window, |view, _| view.proposals_shown()));
+    window.simulate_event(gpui::MouseExitEvent {
+        position: bounds.center(),
+        pressed_button: None,
+        modifiers: gpui::Modifiers::none(),
+    });
+    window.run_until_parked();
+    assert!(!view(open, &mut window, |view, _| view.proposals_shown()));
+    // Replace all: in mdoc's window, which stays where it is.
+    update(open, cx, |view, _, cx| view.replace_all(cx));
+    wait(cx, 3000);
+    assert!(!window_active(cx), "nothing took focus");
+    assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), front);
+    let stored = vault(&tabs, cx).document(&fixture.lease_doc).unwrap();
+    let expected = format!(
+        "{a} rents from {b}. {a} pays.",
+        a = proposals[0].alias,
+        b = proposals[1].alias
+    );
+    assert_eq!(stored.markdown, expected);
+    // Ready exactly as the window's rules say: its tab would save it so.
+    assert_eq!(tab_review(&tabs, cx, &fixture), Some((true, 0)));
+    assert_eq!(
+        vault(&tabs, cx).readiness(&fixture.lease_doc).unwrap(),
+        mdoc_vault::Readiness::Ready
+    );
+    assert_eq!(step(open, cx), Some(crate::workspace::ReviewStep::Ready));
+    // The AI app's retry reads it, and that answers the request.
+    let read = call(&tabs, cx, read_lease(&fixture));
+    let Answer::Ok(Done::Text { text, .. }) = read else {
+        panic!("readable now: {read:?}");
+    };
+    assert!(text.contains(&expected), "{text}");
+    assert_eq!(step(open, cx), None);
+    crate::document_view::DocumentView::hold_scans(false);
+}
+
+/// Done when: what only the window decides stays there: a Keep left in
+/// the review keeps it not Ready after Replace all, as the window's rules
+/// say, and the card offers Open in mdoc, which opens its review in
+/// front; a document never reviewed offers only Open in mdoc.
+#[gpui::test]
+fn what_only_mdoc_decides_offers_open_in_mdoc(cx: &mut TestAppContext) {
+    crate::document_view::DocumentView::hold_scans(true);
+    let fixture = fixture();
+    let (tabs, cx, _notes) = shared_lease(cx, &fixture);
+    install_menu_bar(&tabs, cx);
+    needs_review(
+        &tabs,
+        cx,
+        &fixture,
+        "Anna Petrova rents from Boris Ivanov.",
+        &["Anna Petrova"],
+        &["Boris Ivanov"],
+    );
+    let (open, _) = asked(&tabs, cx, &fixture);
+    let Some(crate::workspace::ReviewStep::Proposals(proposals)) = step(open, cx) else {
+        panic!("its proposals");
+    };
+    assert_eq!(proposals.len(), 1, "a Keep is no proposal");
+    update(open, cx, |view, _, cx| view.replace_all(cx));
+    wait(cx, 3000);
+    assert!(!window_active(cx));
+    let (ready, left) = tab_review(&tabs, cx, &fixture).unwrap();
+    assert_eq!(left, 0);
+    let readiness = vault(&tabs, cx).readiness(&fixture.lease_doc).unwrap();
+    assert_eq!(ready, readiness.is_ready(), "as the window's rules say");
+    assert!(!ready, "{readiness:?}");
+    let Some(crate::workspace::ReviewStep::InMdoc(state)) = step(open, cx) else {
+        panic!("Open in mdoc");
+    };
+    assert!(state.starts_with("Needs review"), "{state}");
+    assert!(matches!(
+        call(&tabs, cx, read_lease(&fixture)),
+        Answer::Ok(Done::NeedsReview { .. })
+    ));
+    // Open in mdoc: its review, in front, where the window's own Replace
+    // all leaves it.
+    update(open, cx, |view, _, cx| view.open_in_mdoc(cx));
+    assert!(window_active(cx));
+    assert_eq!(
+        document_shown(&tabs, cx).as_deref(),
+        Some(fixture.lease_doc.as_str())
+    );
+    let inspector = cx.update(|_, cx| {
+        let view = tabs.read(cx).active_view().unwrap();
+        let view = view.read(cx);
+        view.replacements_open().then_some(view.inspector)
+    });
+    assert_eq!(inspector, Some(crate::document_view::Inspector::Share));
+    crate::document_view::DocumentView::hold_scans(false);
+}
+
+/// Done when: Open in mdoc on a request the companion has not touched
+/// opens its review in front, at its proposals.
+#[gpui::test]
+fn open_in_mdoc_opens_the_documents_review(cx: &mut TestAppContext) {
+    crate::document_view::DocumentView::hold_scans(true);
+    let fixture = fixture();
+    let (tabs, cx, _notes) = shared_lease(cx, &fixture);
+    install_menu_bar(&tabs, cx);
+    needs_review(
+        &tabs,
+        cx,
+        &fixture,
+        "Anna Petrova rents.",
+        &["Anna Petrova"],
+        &[],
+    );
+    let (open, _) = asked(&tabs, cx, &fixture);
+    assert!(matches!(
+        step(open, cx),
+        Some(crate::workspace::ReviewStep::Proposals(_))
+    ));
+    update(open, cx, |view, _, cx| view.open_in_mdoc(cx));
+    assert!(window_active(cx));
+    assert_eq!(
+        document_shown(&tabs, cx).as_deref(),
+        Some(fixture.lease_doc.as_str())
+    );
+    assert!(review_open(&tabs, cx));
+    // Opened in mdoc: the card goes, and nothing was replaced.
+    assert_eq!(step(open, cx), None);
+    let stored = vault(&tabs, cx).document(&fixture.lease_doc).unwrap();
+    assert_eq!(stored.markdown, "Anna Petrova rents.");
+    crate::document_view::DocumentView::hold_scans(false);
+}
+
+/// Done when: a document with no review yet has nothing the companion
+/// can replace: it offers Open in mdoc alone, and Replace all does
+/// nothing.
+#[gpui::test]
+fn a_document_never_reviewed_goes_to_mdoc(cx: &mut TestAppContext) {
+    crate::document_view::DocumentView::hold_scans(true);
+    let fixture = fixture();
+    let (tabs, cx, _notes) = shared_lease(cx, &fixture);
+    install_menu_bar(&tabs, cx);
+    vault(&tabs, cx)
+        .update_document(&fixture.lease_doc, |d| d.set_ready(false))
+        .unwrap();
+    let (open, _) = asked(&tabs, cx, &fixture);
+    assert_eq!(
+        step(open, cx),
+        Some(crate::workspace::ReviewStep::InMdoc(
+            "Needs review · Not reviewed".into()
+        ))
+    );
+    let mut window = VisualTestContext::from_window(open.into(), &cx.cx);
+    window.run_until_parked();
+    assert!(window.debug_bounds("companion-review-open").is_some());
+    assert!(window.debug_bounds("companion-replace-all").is_none());
+    assert!(window.debug_bounds("companion-proposals").is_none());
+    let tabs_before = cx.update(|_, cx| tabs.read(cx).tabs.iter().count());
+    update(open, cx, |view, _, cx| view.replace_all(cx));
+    wait(cx, 1000);
+    assert_eq!(
+        cx.update(|_, cx| tabs.read(cx).tabs.iter().count()),
+        tabs_before,
+        "no tab opened"
+    );
+    crate::document_view::DocumentView::hold_scans(false);
+}
+
+/// Done when: Replace all replaces only what the card listed: when the
+/// review proposes anything else by the time its tab has settled, nothing
+/// is replaced and the card lists what it proposes now.
+#[gpui::test]
+fn replace_all_replaces_only_what_the_card_listed(cx: &mut TestAppContext) {
+    crate::document_view::DocumentView::hold_scans(true);
+    let fixture = fixture();
+    let (tabs, cx, _notes) = shared_lease(cx, &fixture);
+    install_menu_bar(&tabs, cx);
+    let text = "Anna Petrova rents from Boris Ivanov.";
+    needs_review(
+        &tabs,
+        cx,
+        &fixture,
+        text,
+        &["Anna Petrova", "Boris Ivanov"],
+        &[],
+    );
+    let (open, _) = asked(&tabs, cx, &fixture);
+    let Some(crate::workspace::ReviewStep::Proposals(mut proposals)) = step(open, cx) else {
+        panic!("its proposals");
+    };
+    // The card showed one fewer than the review holds.
+    proposals.pop();
+    let document = fixture.lease_doc.clone();
+    cx.update(|window, cx| {
+        tabs.update(cx, |tabs, cx| {
+            tabs.companion_replace_all(&document, proposals, window, cx)
+        })
+    });
+    wait(cx, 3000);
+    let stored = vault(&tabs, cx).document(&fixture.lease_doc).unwrap();
+    assert_eq!(stored.markdown, text);
+    let Some(crate::workspace::ReviewStep::Proposals(now)) = step(open, cx) else {
+        panic!("its proposals again");
+    };
+    assert_eq!(now.len(), 2);
+    crate::document_view::DocumentView::hold_scans(false);
 }

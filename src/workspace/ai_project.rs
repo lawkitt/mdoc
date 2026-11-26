@@ -94,6 +94,21 @@ pub(super) struct ReviewAsk {
     /// Its AI label, as the AI app was told it.
     pub(super) label: String,
     pub(super) app: String,
+    /// Where the companion's Replace all on it stands.
+    pub(super) replace: Replace,
+}
+
+/// The companion's Replace all on the requested document (item 16): it
+/// runs in the document's tab, as the window's own Replace all, and the
+/// save decides Ready.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum Replace {
+    #[default]
+    Not,
+    /// The tab loads, replaces or saves.
+    Running,
+    /// It replaced and saved: Ready now, or what is left is the window's.
+    Ran,
 }
 
 /// What an ask asks of the window.
@@ -246,12 +261,33 @@ impl AiProject {
 
     /// AI app `app` asked for `document`, named to it as `label`, which
     /// needs review: the companion's latest request.
+    /// The AI app asking again for the same document keeps the
+    /// companion's Replace all where it stands.
     pub(super) fn review_asked(&mut self, document: String, label: String, app: String) {
+        let replace = (self.review_ask.as_ref())
+            .filter(|ask| ask.document == document)
+            .map_or(Replace::Not, |ask| ask.replace);
         self.review_ask = Some(ReviewAsk {
             document,
             label,
             app,
+            replace,
         });
+    }
+
+    /// The companion's Replace all on `document`, if it is the one asked
+    /// for, is now `replace`.
+    pub(super) fn review_replace(&mut self, document: &str, replace: Replace) {
+        if let Some(ask) = (self.review_ask.as_mut()).filter(|ask| ask.document == document) {
+            ask.replace = replace;
+        }
+    }
+
+    /// An AI app read `document`: a request for it is answered.
+    pub(super) fn read(&mut self, document: &str) {
+        if (self.review_ask.as_ref()).is_some_and(|ask| ask.document == document) {
+            self.review_ask = None;
+        }
     }
 
     pub(super) fn latest_reply(&self) -> Option<&LatestReply> {
@@ -485,6 +521,20 @@ mod tests {
         ai.seen(None, Some("other"));
         assert!(ai.review_ask().is_some());
         ai.seen(None, Some("d"));
+        assert!(ai.review_ask().is_none());
+        // Asked again, the companion's Replace all stays where it is; a
+        // read answers the request.
+        ai.review_asked("d".into(), "Document 1".into(), "claude-ai".into());
+        ai.review_replace("other", Replace::Running);
+        assert_eq!(ai.review_ask().unwrap().replace, Replace::Not);
+        ai.review_replace("d", Replace::Running);
+        ai.review_asked("d".into(), "Document 1".into(), "claude-ai".into());
+        assert_eq!(ai.review_ask().unwrap().replace, Replace::Running);
+        ai.review_asked("e".into(), "Document 2".into(), "claude-ai".into());
+        assert_eq!(ai.review_ask().unwrap().replace, Replace::Not);
+        ai.read("d");
+        assert!(ai.review_ask().is_some());
+        ai.read("e");
         assert!(ai.review_ask().is_none());
         ai.review_asked("d".into(), "Document 1".into(), "claude-ai".into());
         ai.sharing_stopped();

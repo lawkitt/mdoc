@@ -154,6 +154,9 @@ companion-shared
 companion-reply-hidden
 companion-reply-shown
 companion-review
+companion-review-proposals-shown
+companion-review-ready
+companion-review-in-mdoc
 companion-empty
 ask-menu
 ask-unfiled

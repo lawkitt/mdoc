@@ -167,7 +167,15 @@ impl Workspace {
         for event in running.events() {
             match event {
                 ai_connector::Event::Asked { app } => self.ai_app_asked(app, window, cx),
-                ai_connector::Event::Activity => activity = true,
+                ai_connector::Event::Activity { document } => {
+                    activity = true;
+                    // Ready since, it is read: the companion's request is
+                    // answered.
+                    if (self.ai.review_ask()).is_some_and(|ask| ask.document == document) {
+                        self.ai.read(&document);
+                        crate::menu_bar::companion_changed(cx);
+                    }
+                }
                 ai_connector::Event::Delivered {
                     app,
                     reply,

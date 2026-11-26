@@ -4,7 +4,8 @@
 //! toggles it in place of the shelf popup. It holds a fixed set:
 //!
 //! - the AI project, with Stop sharing, or that nothing is shared;
-//! - the latest review request, with Review in mdoc;
+//! - the latest review request: its proposals and Replace all, or Open in
+//!   mdoc for the rest (item 16);
 //! - the AI project's documents by AI label, with their state;
 //! - the latest reply, restored, with Copy and Save as document;
 //! - a drop target, which imports into the AI project;
@@ -13,11 +14,13 @@
 //!
 //! It opens by itself only for a delivery or a review request, and never
 //! takes focus: a click on it leaves the app the user is in active and
-//! keeps its keyboard, and only what opens mdoc (a row, Review in mdoc,
-//! Open mdoc, Settings, a drop) brings mdoc forward. It asks to be left out
+//! keeps its keyboard, and only what opens mdoc (a row, Open in mdoc,
+//! Open mdoc, Settings, a drop) brings mdoc forward; Replace all runs in
+//! mdoc's window behind other apps. It asks to be left out
 //! of screen capture (`NSWindowSharingNone`, which not every capture path
-//! honours), and the restored reply shows only while the pointer is over
-//! it: until then the window holds a placeholder, not the text.
+//! honours), and the restored reply and a review's proposals show only
+//! while the pointer is over them: until then the window holds a
+//! placeholder, not the names.
 //! `native.rs` makes the window; Personal and search (ADR 0128) are not
 //! here yet.
 
@@ -32,7 +35,7 @@ use crate::{
     shelf_ui::{COPIED_FOR, Fit, ShelfRows, ShelfRowsEvent},
     style::{self, Theme},
     ui,
-    workspace::{CompanionContent, Quit, Workspace},
+    workspace::{CompanionContent, CompanionProposal, Quit, ReviewStep, Workspace},
 };
 use gpui::{
     AnyElement, App, Bounds, Context, DispatchPhase, DisplayId, Entity, ExternalPaths, FocusHandle,
@@ -51,7 +54,16 @@ const PROJECT_LINE: f32 = 30.;
 const SECTION_GAP: f32 = 6.;
 const HEADING: f32 = 22.;
 const DOCUMENT_ROW: f32 = 22.;
-const REVIEW: f32 = 92.;
+const REVIEW: f32 = 100.;
+/// A review card with nothing to do: its title and one line.
+const REVIEW_READY: f32 = 60.;
+const PROPOSAL_ROW: f32 = 20.;
+/// Proposals shown at once; more scroll.
+const PROPOSAL_ROWS: usize = 5;
+const PROPOSALS_PADDING: f32 = 6.;
+/// A review's proposals are real names: they show only while the pointer
+/// is over them, as the restored reply does. The one switch for it.
+const PROPOSALS_HIDDEN_UNTIL_HOVER: bool = true;
 const REPLY_TEXT: f32 = 120.;
 const BUTTONS: f32 = 32.;
 const DROP: f32 = 44.;
@@ -94,6 +106,22 @@ pub(crate) fn window_options(bounds: Bounds<Pixels>, display: DisplayId) -> Wind
     }
 }
 
+/// The review card's height in `step`.
+fn review_height(step: &ReviewStep) -> f32 {
+    match step {
+        ReviewStep::Proposals(proposals) | ReviewStep::Replacing(proposals) => {
+            REVIEW + SECTION_GAP + proposals_height(proposals)
+        }
+        ReviewStep::Ready => REVIEW_READY,
+        ReviewStep::InMdoc(_) => REVIEW,
+    }
+}
+
+/// The proposals' box, hidden or shown alike, so a hover never moves it.
+fn proposals_height(proposals: &[CompanionProposal]) -> f32 {
+    2. * PROPOSALS_PADDING + proposals.len().clamp(1, PROPOSAL_ROWS) as f32 * PROPOSAL_ROW
+}
+
 /// The companion's height for `content`, before the screen limits it and
 /// before its first layout corrects it.
 pub(crate) fn height(content: &CompanionContent) -> f32 {
@@ -107,7 +135,7 @@ pub(crate) fn height(content: &CompanionContent) -> f32 {
     2. * PADDING
         + HEADER
         + PROJECT_LINE
-        + section(content.review.is_some(), REVIEW)
+        + (content.review.as_ref()).map_or(0., |review| SECTION_GAP + review_height(&review.step))
         + section(
             content.shared.is_some(),
             HEADING + documents as f32 * DOCUMENT_ROW,
@@ -133,6 +161,9 @@ pub(crate) struct CompanionView {
     /// GPUI keeps its last place, so a redraw could find the reply under
     /// it and show it again.
     pointer_away: bool,
+    /// The pointer is over the review's proposals: they show, unless the
+    /// pointer has left the window since.
+    proposals_hovered: bool,
     /// What the window last shared and asked to review: when either
     /// changes, the companion reads the window again.
     marks: (Option<String>, Option<String>),
@@ -162,6 +193,14 @@ pub(crate) struct CompanionView {
         any(target_os = "macos", target_os = "windows")
     ))]
     reply_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    /// Where the review's proposals were last painted, for renders to
+    /// hover.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    proposals_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
 }
 
 impl CompanionView {
@@ -201,6 +240,7 @@ impl CompanionView {
             _rows_events: rows_events,
             reply_shown: false,
             pointer_away: false,
+            proposals_hovered: false,
             marks,
             _workspace_changes: workspace_changes,
             copied: None,
@@ -219,6 +259,12 @@ impl CompanionView {
                 any(target_os = "macos", target_os = "windows")
             ))]
             reply_bounds: Rc::default(),
+            #[cfg(all(
+                debug_assertions,
+                feature = "headless-renders",
+                any(target_os = "macos", target_os = "windows")
+            ))]
+            proposals_bounds: Rc::default(),
         }
     }
 
@@ -290,6 +336,29 @@ impl CompanionView {
     ))]
     pub(crate) fn content(&self) -> &CompanionContent {
         &self.content
+    }
+
+    /// Whether the review's proposals show.
+    #[cfg(any(
+        all(test, target_os = "macos"),
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
+    pub(crate) fn proposals_shown(&self) -> bool {
+        self.shows_proposals()
+    }
+
+    /// The middle of the review's proposals as last painted, for renders.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn proposals_center(&self) -> Option<gpui::Point<Pixels>> {
+        self.proposals_bounds.get().map(|bounds| bounds.center())
     }
 
     /// Whether the restored reply shows (the pointer is over it).
@@ -423,8 +492,9 @@ impl CompanionView {
         cx.notify();
     }
 
-    /// Review in mdoc on the review request.
-    pub(crate) fn review(&mut self, cx: &mut Context<Self>) {
+    /// Open in mdoc on the review request: its review in mdoc's window,
+    /// brought forward, for whatever the companion does not decide.
+    pub(crate) fn open_in_mdoc(&mut self, cx: &mut Context<Self>) {
         let Some(review) = &self.content.review else {
             return;
         };
@@ -432,6 +502,24 @@ impl CompanionView {
         self.in_window(cx, move |workspace, window, cx| {
             workspace.companion_review(&document, window, cx)
         });
+    }
+
+    /// Replace all on the review request: every proposal it lists, in
+    /// mdoc's window, which stays where it is.
+    pub(crate) fn replace_all(&mut self, cx: &mut Context<Self>) {
+        let Some(review) = self.content.review.as_mut() else {
+            return;
+        };
+        let ReviewStep::Proposals(proposals) = &review.step else {
+            return;
+        };
+        let listed = proposals.clone();
+        review.step = ReviewStep::Replacing(listed.clone());
+        let document = review.document.clone();
+        self.in_window(cx, move |workspace, window, cx| {
+            workspace.companion_replace_all(&document, listed, window, cx)
+        });
+        cx.notify();
     }
 
     /// Files dropped on the drop target. A row's own drag coming back is
@@ -469,11 +557,24 @@ impl CompanionView {
         self.reply_shown && !self.pointer_away
     }
 
+    fn set_proposals_hovered(&mut self, hovered: bool, cx: &mut Context<Self>) {
+        if self.proposals_hovered != hovered {
+            self.proposals_hovered = hovered;
+            cx.notify();
+        }
+    }
+
+    /// Whether the review's proposals are in the window now.
+    fn shows_proposals(&self) -> bool {
+        !PROPOSALS_HIDDEN_UNTIL_HOVER || (self.proposals_hovered && !self.pointer_away)
+    }
+
     /// The pointer left the window: the reply hides until it moves inside
     /// again.
     fn pointer_left(&mut self, cx: &mut Context<Self>) {
         self.pointer_away = true;
         self.reply_shown = false;
+        self.proposals_hovered = false;
         cx.notify();
     }
 
@@ -614,12 +715,68 @@ impl CompanionView {
             .into_any_element()
     }
 
-    /// The latest review request: who asked for which document.
+    /// The latest review request: who asked for which document, then its
+    /// proposals with Replace all, that it is Ready, or Open in mdoc for
+    /// what only mdoc decides.
     fn review_card(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let review = self.content.review.as_ref()?;
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let title = format!("{} asked for \u{201c}{}\u{201d}", review.from, review.label);
+        let (title, line) = match &review.step {
+            ReviewStep::Ready => (
+                format!("\u{201c}{}\u{201d} is Ready", review.label),
+                format!("{} can read it now.", review.from),
+            ),
+            ReviewStep::InMdoc(state) => (
+                format!("{} asked for \u{201c}{}\u{201d}", review.from, review.label),
+                match state.strip_prefix("Needs review · ") {
+                    Some(why) => format!("Finish its review in mdoc · {why}"),
+                    None => "Finish its review in mdoc.".to_string(),
+                },
+            ),
+            ReviewStep::Proposals(_) | ReviewStep::Replacing(_) => (
+                format!("{} asked for \u{201c}{}\u{201d}", review.from, review.label),
+                "It needs review before AI apps can read it.".to_string(),
+            ),
+        };
+        let open = |primary: bool, cx: &mut Context<Self>| {
+            let id = "companion-review-open";
+            let button = match primary {
+                true => ui::primary_button(id, "Open in mdoc", theme, true),
+                false => ui::action_control(id, "Open in mdoc", theme, true, false),
+            };
+            button
+                .when(cfg!(test), |v| {
+                    v.debug_selector(|| "companion-review-open".into())
+                })
+                .on_click(cx.listener(|this, _, _, cx| this.open_in_mdoc(cx)))
+        };
+        let buttons = div().flex().justify_end().items_center().gap_2();
+        let (proposals, buttons) = match &review.step {
+            ReviewStep::Proposals(proposals) => (
+                Some(self.proposals(proposals, cx)),
+                Some(
+                    buttons.child(open(false, cx)).child(
+                        ui::primary_button("companion-replace-all", "Replace all", theme, true)
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "companion-replace-all".into())
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| this.replace_all(cx))),
+                    ),
+                ),
+            ),
+            ReviewStep::Replacing(proposals) => (
+                Some(self.proposals(proposals, cx)),
+                Some(buttons.child(open(false, cx)).child(ui::primary_button(
+                    "companion-replace-all",
+                    "Replacing…",
+                    theme,
+                    false,
+                ))),
+            ),
+            ReviewStep::InMdoc(_) => (None, Some(buttons.child(open(true, cx)))),
+            ReviewStep::Ready => (None, None),
+        };
         Some(
             div()
                 .id("companion-review")
@@ -628,7 +785,7 @@ impl CompanionView {
                 })
                 .role(gpui::Role::Group)
                 .aria_label(title.clone())
-                .h(px(REVIEW))
+                .h(px(review_height(&review.step)))
                 .p_2()
                 .flex()
                 .flex_col()
@@ -645,18 +802,119 @@ impl CompanionView {
                 )
                 .child(
                     div()
+                        .truncate()
                         .text_size(px(12.))
                         .text_color(p.header_muted)
-                        .child("It needs review before AI apps can read it."),
+                        .child(line),
                 )
-                .child(
-                    div().flex().justify_end().child(
-                        ui::primary_button("companion-review-open", "Review in mdoc", theme, true)
-                            .on_click(cx.listener(|this, _, _, cx| this.review(cx))),
-                    ),
-                )
+                .children(proposals)
+                .when_some(buttons, |card, buttons| {
+                    card.child(div().flex_1()).child(buttons)
+                })
                 .into_any_element(),
         )
+    }
+
+    /// A review's proposals, each wording with the alias Replace all
+    /// writes for it: a placeholder until the pointer is over them.
+    fn proposals(&self, proposals: &[CompanionProposal], cx: &mut Context<Self>) -> AnyElement {
+        let p = self.theme.get().pdf_style();
+        let shown = self.shows_proposals();
+        let names = match proposals.len() {
+            1 => "1 name to replace".to_string(),
+            n => format!("{n} names to replace"),
+        };
+        let list = div()
+            .id("companion-proposals")
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "companion-proposals".into())
+            })
+            .role(gpui::Role::List)
+            .aria_label(match shown {
+                true => "Proposals".to_string(),
+                false => format!("{names}, hidden. Point at them to see them."),
+            })
+            .h(px(proposals_height(proposals)))
+            .p(px(PROPOSALS_PADDING))
+            .rounded_md()
+            .border_1()
+            .border_color(p.border)
+            .text_size(px(12.))
+            .overflow_y_scroll()
+            .on_hover(
+                cx.listener(|this, hovered: &bool, _, cx| this.set_proposals_hovered(*hovered, cx)),
+            );
+        let list = match shown {
+            // The names are in the window only while shown.
+            true => list.children(proposals.iter().enumerate().map(|(i, proposal)| {
+                div()
+                    .id(("companion-proposal", i))
+                    .role(gpui::Role::ListItem)
+                    .aria_label(format!(
+                        "{} becomes {}, {} {}",
+                        proposal.original,
+                        proposal.alias,
+                        proposal.mentions,
+                        if proposal.mentions == 1 {
+                            "mention"
+                        } else {
+                            "mentions"
+                        }
+                    ))
+                    .h(px(PROPOSAL_ROW))
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(div().min_w_0().truncate().child(proposal.original.clone()))
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_color(p.header_muted)
+                            .child("\u{2192}"),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_color(p.header_muted)
+                            .child(proposal.alias.clone()),
+                    )
+                    .when(proposal.mentions > 1, |row| {
+                        row.child(
+                            div()
+                                .flex_shrink_0()
+                                .text_color(p.header_muted)
+                                .child(format!("\u{d7}{}", proposal.mentions)),
+                        )
+                    })
+            })),
+            false => list.child(
+                div()
+                    .size_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(p.header_muted)
+                    .child(format!("{names}. Point here to see them.")),
+            ),
+        };
+        #[cfg(all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        ))]
+        let list = {
+            let bounds = self.proposals_bounds.clone();
+            list.child(
+                gpui::canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {})
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+            )
+        };
+        div().relative().child(list).into_any_element()
     }
 
     /// The AI project's documents, by AI label, with their state.

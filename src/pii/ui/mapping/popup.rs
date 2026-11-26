@@ -539,7 +539,7 @@ impl DocumentView {
             .collect();
         (candidates, applied)
     }
-    fn alias_draft_changed(&self, cx: &App) -> bool {
+    pub(in crate::pii::ui) fn alias_draft_changed(&self, cx: &App) -> bool {
         self.selected_entity()
             .and_then(|id| self.pii.review.identity(id))
             .is_some_and(|i| i.alias != self.pii.mapping.alias.read(cx).value().trim())
