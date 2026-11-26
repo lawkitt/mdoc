@@ -61,8 +61,7 @@ final class IdentitiesHeaderUITests: XCTestCase {
         // The reason under the title ("1 name left to decide") is the
         // menu item's subtitle, which XCUITest doesn't expose: the PR's
         // screenshots show it.
-        // Close the menu.
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)).tap()
+        MdocUITest.closeMenu(app)
         XCTAssertTrue(copy.waitForNonExistence(timeout: 5))
         return (copy, share)
     }

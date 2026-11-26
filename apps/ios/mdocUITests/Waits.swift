@@ -194,14 +194,16 @@ extension MdocUITest {
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(field.wait(until: NSPredicate(format: "hasKeyboardFocus == true"), timeout: 10))
-        // The Simulator drops a keystroke now and then while matches load:
-        // type again until the field holds the whole word.
+        // The Simulator drops a keystroke now and then while matches load,
+        // and the field's value can lag what it shows: a retype after a
+        // short wait, sized by that value, once doubled the word (#1255).
+        // So wait for the whole word, and only then type it again, into
+        // the field its clear button emptied.
         let typed = NSPredicate(format: "value == %@", word)
-        for _ in 0..<3 where !field.wait(until: typed, timeout: 0.5) {
-            let current = (field.value as? String) ?? ""
-            let placeholder = field.placeholderValue ?? ""
-            let length = current == placeholder ? 0 : current.count
-            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: length) + word)
+        field.typeText(word)
+        for _ in 0..<2 where !field.wait(until: typed, timeout: MdocUITest.timeout) {
+            clear(field)
+            field.typeText(word)
         }
         XCTAssertEqual(field.value as? String, word)
         let hide = app.buttons["find-hide-name"]
@@ -210,6 +212,24 @@ extension MdocUITest {
         let end = app.buttons["review-end"]
         XCTAssertTrue(end.waitForExistence(timeout: 10))
         end.tap()
+    }
+
+    /// Empties a search field by its clear button and waits until it
+    /// shows its placeholder alone.
+    @MainActor
+    static func clear(_ field: XCUIElement) {
+        let clear = field.buttons.firstMatch
+        if clear.exists { clear.tap() }
+        let empty = NSPredicate(format: "value == nil OR value == '' OR value == %@", field.placeholderValue ?? "")
+        XCTAssertTrue(field.wait(until: empty, timeout: MdocUITest.timeout), "the field holds \(field.value ?? "")")
+    }
+
+    /// Closes the open title menu with a tap beside it, in the text's
+    /// margin: a tap lower down can reach the bottom bar through the menu,
+    /// as one on Replace 1 did (#1255).
+    @MainActor
+    static func closeMenu(_ app: XCUIApplication) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.6)).tap()
     }
 
     /// Closes the Identities drawer by its sliver; on iPad, where the list

@@ -184,6 +184,42 @@ final class NewDocumentTests: XCTestCase {
         XCTAssertTrue(candidates.contains { $0.original == first.original && $0.state == .replaced })
     }
 
+    /// Find names again tapped right after Done, while Done's discovery and
+    /// edit scan run off the main thread (#1255). Here Done's discovery is
+    /// slow, as on a phone: it goes on once the core's scan has begun, or
+    /// after half a second. Find names again waits for Done's work, so
+    /// Done's edit scan, a newer core job, never stops the scan, which
+    /// would end it as failed with the typed name maybe not yet proposed,
+    /// and Done's older snapshot never replaces the scan's.
+    func testFindNamesAgainRightAfterDoneWaitsForDonesScan() async throws {
+        seeded = try Fixture.seeded()
+        let session = SlowJobs(try seeded.session(seeded.letter), seconds: 0)
+        let started = Signal()
+        let editsScanned = Signal()
+        session.beforeDiscover = { started.wait(timeout: 0.5) }
+        session.afterScanEdits = { editsScanned.raise() }
+        // The core's scan, once begun, gives Done's edit scan the time to start.
+        session.coreScanStarted = {
+            started.raise()
+            editsScanned.wait(timeout: 5)
+        }
+        let letter = DocumentViewModel(
+            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()),
+            storage: seeded.storage, findsNames: true)
+        letter.enterEditMode()
+        type("\n\nCopy to new.person@example.com.", in: letter)
+        letter.doneEditing()
+        await letter.findNamesAgain()
+
+        XCTAssertNil(letter.errorMessage, "Done's edit scan stopped the scan")
+        XCTAssertTrue(letter.notice?.hasSuffix("to review: tap underlined text") ?? false, letter.notice ?? "no notice")
+        let typed = { letter.snapshot.candidates.contains { $0.original == "new.person@example.com" && $0.state == .proposed } }
+        XCTAssertTrue(typed())
+        await letter.doneWork?.value
+        XCTAssertTrue(typed(), "Done's snapshot replaced the scan's")
+        XCTAssertEqual(letter.snapshot.candidates, session.snapshot().candidates)
+    }
+
     // MARK: The sample
 
     /// No restore while a job runs for the document: the edit would throw

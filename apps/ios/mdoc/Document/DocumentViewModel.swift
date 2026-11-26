@@ -98,6 +98,9 @@ final class DocumentViewModel {
     /// Typing's state between snapshots. Not observed: a keystroke never
     /// draws the screen again.
     @ObservationIgnored var typing = TypingState()
+    /// Done's work off the main thread (discovery, the edit scan, the
+    /// save), the last Done's: Find names waits for it (#1255).
+    @ObservationIgnored var doneWork: Task<Void, Never>?
     /// Bumped to show the system find bar over the text (ADR 0109).
     var findBarRequest = 0
     /// Edit mode's link sheet (ADR 0109): the Link key, ⌘K or the link
@@ -368,6 +371,17 @@ final class DocumentViewModel {
     }
 
     func findNames() async {
+        // Done's work first (#1255): its edit scan, started after this scan,
+        // would stop it, as a newer core job stops the one before, and its
+        // snapshot, older than this scan's, would replace it.
+        if let done = doneWork {
+            await done.value
+            // Edit again, or another job, meanwhile.
+            if let reason = findNamesAgainBlockedReason {
+                say(reason, symbol: "hourglass")
+                return
+            }
+        }
         waitingForSetup = nil
         let session = session
         let outcome = await jobs.run(.scan, documentID: id, title: Self.findNamesTaskTitle) { observer in

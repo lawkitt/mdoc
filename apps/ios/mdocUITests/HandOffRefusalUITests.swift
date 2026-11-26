@@ -50,7 +50,7 @@ final class HandOffRefusalUITests: XCTestCase {
     /// Closes the open title menu with a tap beside it.
     @MainActor
     private func closeMenu(_ app: XCUIApplication) {
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.6)).tap()
+        MdocUITest.closeMenu(app)
         XCTAssertTrue(MdocUITest.menuItem("Copy for AI", app).waitForNonExistence(timeout: 5))
     }
 
