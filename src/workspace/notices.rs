@@ -96,11 +96,11 @@ impl Notices {
         project_banner: bool,
         project_needed: bool,
     ) -> (usize, Option<NoticesEffect>) {
-        // The first-Project nudge opens the bell once, like a message.
-        let own = usize::from(self.crash.is_some())
-            + usize::from(self.message.is_some())
-            + usize::from(self.recovery_nudge);
-        let shown = own + usize::from(project_banner);
+        let own = usize::from(self.crash.is_some()) + usize::from(self.message.is_some());
+        // The recovery-key nudge only counts on the bell: opened by itself,
+        // the popover covered the new Project's header, on every launch
+        // until answered (#1286).
+        let shown = own + usize::from(self.recovery_nudge) + usize::from(project_banner);
         let opening = own + usize::from(project_needed);
         let effect = if opening > self.opening {
             Some(NoticesEffect::OpenBell)
@@ -214,13 +214,11 @@ mod tests {
     }
 
     #[test]
-    fn the_recovery_nudge_opens_the_bell_once_and_counts_until_it_goes() {
+    fn the_recovery_nudge_counts_until_it_goes_and_never_opens_the_bell() {
         let mut notices = Notices::default();
         notices.set_recovery_nudge(true);
-        assert_eq!(
-            notices.count(false, false),
-            (1, Some(NoticesEffect::OpenBell))
-        );
+        // Counted on the bell's badge, the popover left as it is (#1286).
+        assert_eq!(notices.count(false, false), (1, None));
         assert_eq!(notices.count(false, false), (1, None));
         notices.post("Exported 3 documents.");
         assert_eq!(
