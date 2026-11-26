@@ -1,4 +1,4 @@
-- **A link's deleted old address no longer reaches the AI.** In an RTF file
-  with tracked changes, a link whose address was changed kept its deleted old
-  address in the imported text, so a name in it could reach Copy for AI. The
-  link now points where the accepted change says (fixes #373).
+- **Deleted text in an RTF file no longer reaches the AI.** With tracked
+  changes, a link's deleted old address, a table cell marked deleted and a
+  deleted list label kept their text in the import, so a name in them could
+  reach Copy for AI. They are now left out (fixes #373).

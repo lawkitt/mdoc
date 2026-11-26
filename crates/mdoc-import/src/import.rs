@@ -3134,11 +3134,13 @@ EMC\n";
     }
 
     /// #373: an RTF's tracked deletions (`\deleted` revisions: a run, a
-    /// whole paragraph, an inline switch, a table cell's text and a link's
-    /// old target) naming a made-up person never reach the Markdown; the
-    /// insertions are accepted, the link's new target among them. AnyDoc
-    /// drops them (ADR 0092's grill, round 3 decision 1, as #370 checked
-    /// for DOCX); the link's target since lawkitt/anydoc#13.
+    /// whole paragraph, an inline switch, a table cell's text, a link's
+    /// old target and a list label, and a cell deleted with `\cldel`)
+    /// naming a made-up person never reach the Markdown; the insertions are
+    /// accepted, the link's new target among them, and the deleted cell
+    /// keeps its place, empty. AnyDoc drops them (ADR 0092's grill, round 3
+    /// decision 1, as #370 checked for DOCX); the link's target since
+    /// lawkitt/anydoc#13, the cell and the label since #14.
     #[test]
     fn tracked_rtf_deletions_never_reach_the_markdown() {
         let path = fixture("handmade-deleted-revisions.rtf");
@@ -3158,6 +3160,8 @@ EMC\n";
             "Guarantor",
             "none",
             "[the register](https://example.com/register)",
+            "| Witness |  | signed |",
+            "The keys are returned.",
         ] {
             assert!(markdown.contains(kept), "{kept} not in {markdown}");
         }
