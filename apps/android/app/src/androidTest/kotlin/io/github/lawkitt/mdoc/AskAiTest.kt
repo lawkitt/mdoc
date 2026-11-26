@@ -210,20 +210,12 @@ class AskAiTest {
         compose.waitForShown(hasTestTag("reply-banner"))
         assertTrue(shows("Paste reply?", substring = true))
         // Paste is on for the answer copied while mdoc was away. Android
-        // hands the clipboard only to the window with focus: a tap that
-        // lands while focus is still on its way back reads nothing, and a
-        // person taps again, as this does (#1233).
+        // hands the clipboard only to the window with focus, so it is
+        // tapped once that is back (#1233). One tap: no retry (ADR 0095).
+        awaitWindowFocus()
         val paste = hasText("Paste") and isEnabled() and hasAnyAncestor(hasTestTag("reply-banner-paste"))
-        val restored = hasText("1 value restored") and onScreen
-        for (attempt in 1..3) {
-            awaitWindowFocus()
-            compose.waitForShown(paste)
-            compose.shown(paste).performClick()
-            // Taken: the banner goes and the Reply pane shows; else tapped again.
-            val taken = { compose.exists(restored) || !compose.exists(hasTestTag("reply-banner")) }
-            runCatching { compose.waitUntil(HOST_STALLS, taken) }
-            if (taken()) break
-        }
+        compose.waitForShown(paste)
+        compose.shown(paste).performClick()
         // The Reply pane, restored (its text is a TextView's).
         compose.waitForText("1 value restored")
         compose.waitUntil(HOST_STALLS) { !compose.exists(hasTestTag("reply-banner")) }

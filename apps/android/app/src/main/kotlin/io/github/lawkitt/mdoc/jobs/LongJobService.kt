@@ -36,12 +36,14 @@ class LongJobService : Service() {
         // Always, once started with startForegroundService: Android ends an app
         // whose service does not, even when the job finished first.
         startForeground(NOTIFICATION, notification(title), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        job = intent?.getLongExtra(EXTRA_JOB, 0L) ?: 0L
-        started = job
-        // Its job ended already, or another took its place: this start
-        // stops, never a newer one (#689).
-        if (wanted != job) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
+        val number = intent?.getLongExtra(EXTRA_JOB, 0L) ?: 0L
+        if (wanted == number) {
+            job = number
+            started = number
+        } else {
+            // Its job ended already, or another took its place: this start
+            // stops the service only when no newer start waits, and never
+            // takes the foreground from a newer job (#689).
             stopSelf(startId)
         }
         return START_NOT_STICKY
