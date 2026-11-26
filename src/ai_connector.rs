@@ -165,6 +165,12 @@ pub(crate) fn failed_start(error: &std::io::Error) -> String {
                 copy, then turn AI connector (preview) off and on."
             .into();
     }
+    // A socket's path the system can't take (#1311): no retry helps.
+    if error.kind() == std::io::ErrorKind::InvalidFilename {
+        return "Couldn't start the connector: the path to its folder is too long for this \
+                computer."
+            .into();
+    }
     let why = error.to_string();
     let why = why.trim_end().trim_end_matches('.');
     format!(
@@ -374,6 +380,50 @@ mod tests {
             "Couldn't start the connector: Access is denied. (os error 5). Turn AI connector \
              (preview) off and on to try again."
         );
+    }
+
+    /// #1311: a socket path too long for the system is said in plain
+    /// words, with no retry that can't help.
+    #[test]
+    fn a_path_too_long_is_a_plain_failed_start() {
+        let too_long = std::io::Error::new(
+            std::io::ErrorKind::InvalidFilename,
+            "/a/long/path/mcp.sock is too long for a socket's path",
+        );
+        let why = failed_start(&too_long);
+        assert_eq!(
+            why,
+            "Couldn't start the connector: the path to its folder is too long for this computer."
+        );
+        assert!(
+            !why.contains("SUN_LEN") && !why.contains("off and on"),
+            "{why}"
+        );
+    }
+
+    /// #1311: a profile whose data folder is too deep for the usual
+    /// socket path still starts, and the shim's calls reach it.
+    #[cfg(unix)]
+    #[test]
+    fn a_long_profile_path_starts() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Arc::new(Vault::open(dir.path().join("vault"), &[3; 32]).unwrap());
+        let profile = dir.path().join("p".repeat(110)).join("profile");
+        let endpoint = Endpoint::for_profile(Some(&profile)).unwrap();
+        let on = AiConnectorConfig {
+            preview: true,
+            ..Default::default()
+        };
+        let running = start(vault, &on, Some(&endpoint)).unwrap().unwrap();
+        assert_eq!(
+            ask(&endpoint).unwrap(),
+            Answer::Refused(Refusal::NothingShared)
+        );
+        drop(running);
+        // The short folder, outside the temp folder: leave nothing there.
+        let socket = std::path::PathBuf::from(endpoint.to_string());
+        assert!(!socket.starts_with(dir.path()), "{}", socket.display());
+        let _ = std::fs::remove_dir_all(socket.parent().unwrap());
     }
 
     /// #1220: a read of a Ready document, held at a hook once its text is

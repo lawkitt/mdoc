@@ -7,7 +7,11 @@
 //! (`getpeereid`, `SO_PEERCRED`). A lock file held while listening keeps
 //! two mdocs of one profile from replacing each other's socket; the
 //! socket goes when the listener stops.
-#![allow(unsafe_code)] // geteuid, flock and the peer's credentials (#897).
+//!
+//! A socket's path has to fit `sun_path`, about 104 bytes on macOS and 108
+//! on Linux. A data folder too deep for the usual path gets a short folder
+//! of its own instead (#1311), made and checked the same way.
+#![allow(unsafe_code)] // geteuid, flock, the peer's credentials (#897), confstr.
 
 use super::{CallError, Calls, Handler};
 use std::{
@@ -28,13 +32,77 @@ use std::{
 pub type Address = PathBuf;
 
 /// `<data>/mdoc/connector/mcp.sock`, under the folder the Vault lives in:
-/// the dev profile's `data`, or the system's local data folder.
+/// the dev profile's `data`, or the system's local data folder. When that
+/// path is too long for a socket, `<base>/mdoc-<name>/mcp.sock` instead
+/// ([`short_base`], [`short_name`]; #1311). mdoc and the shim each work it
+/// out by this one rule, so they agree.
 pub fn address(dev_profile: Option<&Path>) -> Option<Address> {
     let data = match dev_profile {
         Some(profile) => profile.join("data"),
         None => dirs::data_local_dir()?,
     };
-    Some(data.join("mdoc").join("connector").join("mcp.sock"))
+    Some(address_in(&data, short_base))
+}
+
+/// The address of the profile whose data folder is `data`, the short
+/// folder going under `base` when it is needed.
+fn address_in(data: &Path, base: impl FnOnce() -> PathBuf) -> Address {
+    let usual = data.join("mdoc").join("connector").join("mcp.sock");
+    if fits(&usual) {
+        return usual;
+    }
+    base()
+        .join(format!("mdoc-{}", short_name(data)))
+        .join("mcp.sock")
+}
+
+/// The short folder's name for `data`: the first 16 hex digits of the
+/// SHA-256 of its path, as `printf %s "$data" | shasum -a 256` prints it.
+fn short_name(data: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    use std::os::unix::ffi::OsStrExt;
+    let digest = Sha256::digest(data.as_os_str().as_bytes());
+    digest[..8].iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Where short folders go: on macOS the user's own cache folder
+/// (`/var/folders/…/C`, which, unlike `$TMPDIR`, the system doesn't clear
+/// of files left unused), read from the system rather than the
+/// environment, which the AI app may change for the shim. Otherwise, or
+/// failing that, `$XDG_RUNTIME_DIR`, else `/tmp`.
+fn short_base() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    if let Some(cache) = darwin_user_cache_dir() {
+        return cache;
+    }
+    match std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from) {
+        Some(runtime) if runtime.is_absolute() => runtime,
+        _ => PathBuf::from("/tmp"),
+    }
+}
+
+/// `confstr(_CS_DARWIN_USER_CACHE_DIR)`: the user's cache folder under
+/// `/var/folders`, made by the system and the user's alone.
+#[cfg(target_os = "macos")]
+fn darwin_user_cache_dir() -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStringExt;
+    let mut buf = vec![0u8; libc::PATH_MAX as usize];
+    // SAFETY: `buf` is valid for `buf.len()` bytes for confstr to fill.
+    let len = unsafe {
+        libc::confstr(
+            libc::_CS_DARWIN_USER_CACHE_DIR,
+            buf.as_mut_ptr().cast(),
+            buf.len(),
+        )
+    };
+    // `len` counts the closing NUL; 0 is a failure, more than the buffer
+    // a path cut short.
+    if len == 0 || len > buf.len() {
+        return None;
+    }
+    buf.truncate(len - 1);
+    let dir = PathBuf::from(std::ffi::OsString::from_vec(buf));
+    dir.is_absolute().then_some(dir)
 }
 
 pub fn show(address: &Address, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -147,7 +215,21 @@ pub struct Listener {
     _lock: File,
 }
 
+/// Whether the system takes `socket` as a socket's path: `sun_path`
+/// holds it with its closing NUL (#1311).
+fn fits(socket: &Path) -> bool {
+    let room = size_of::<libc::sockaddr_un>() - std::mem::offset_of!(libc::sockaddr_un, sun_path);
+    socket.as_os_str().len() < room
+}
+
 pub fn listen(socket: &Address, answer: Handler) -> io::Result<Listener> {
+    if !fits(socket) {
+        // Told apart, so Settings can say so plainly (#1311).
+        return Err(io::Error::new(
+            ErrorKind::InvalidFilename,
+            format!("{} is too long for a socket's path", socket.display()),
+        ));
+    }
     let folder = folder(socket)?;
     if let Some(parent) = folder.parent() {
         fs::create_dir_all(parent)?;
@@ -282,6 +364,88 @@ mod tests {
         let _theirs = UnixListener::bind(&socket).unwrap();
         assert!(listen(&socket, handler()).is_err());
         assert!(socket.exists(), "the other mdoc's socket was removed");
+    }
+
+    /// A data folder whose usual socket path is too long: over 110 bytes.
+    fn long_data(profile: &Path) -> PathBuf {
+        let data = profile.join("p".repeat(110)).join("data");
+        assert!(data.as_os_str().len() > 110);
+        data
+    }
+
+    /// Done when (#1311): a data folder too deep for the usual socket
+    /// path listens in its short folder, and a call is answered there.
+    #[test]
+    fn a_long_data_folder_listens_in_its_short_folder() {
+        let profile = tempfile::tempdir().unwrap();
+        let data = long_data(profile.path());
+        let socket = address_in(&data, short_base);
+        assert!(socket.starts_with(short_base()), "{}", socket.display());
+        assert!(fits(&socket), "{}", socket.display());
+        let folder = socket.parent().unwrap().to_path_buf();
+        let listening = listen(&socket, handler()).unwrap();
+        assert_eq!(fs::metadata(&folder).unwrap().mode() & 0o777, 0o700);
+        assert_eq!(fs::metadata(&socket).unwrap().mode() & 0o777, 0o600);
+        let endpoint = super::super::Endpoint(socket);
+        assert_eq!(super::super::call(&endpoint, b"hi").unwrap(), b"hi");
+        drop(listening);
+        let _ = fs::remove_dir_all(folder);
+    }
+
+    /// #1311: a data folder that fits keeps the usual path, and the short
+    /// folder's name is the SHA-256 a script works out.
+    #[test]
+    fn a_short_data_folder_keeps_the_usual_path() {
+        let profile = tempfile::tempdir().unwrap();
+        let data = profile.path().join("data");
+        assert_eq!(
+            address(Some(profile.path())).unwrap(),
+            data.join("mdoc").join("connector").join("mcp.sock")
+        );
+        // printf %s abc | shasum -a 256
+        assert_eq!(short_name(Path::new("abc")), "ba7816bf8f01cfea");
+        let (one, two) = (
+            long_data(profile.path()),
+            profile.path().join("q".repeat(120)),
+        );
+        let base = || PathBuf::from("/b");
+        assert_ne!(address_in(&one, base), address_in(&two, base));
+    }
+
+    /// #1311: when even the short folder's path is too long, the listener
+    /// refuses before making anything, told apart from other failures and
+    /// without std's "SUN_LEN".
+    #[test]
+    fn a_base_too_long_is_refused_plainly() {
+        let profile = tempfile::tempdir().unwrap();
+        let base = profile.path().join("b".repeat(120));
+        let socket = address_in(&long_data(profile.path()), || base.clone());
+        assert!(socket.starts_with(&base));
+        let refused = listen(&socket, handler()).err().unwrap();
+        assert_eq!(refused.kind(), ErrorKind::InvalidFilename, "{refused}");
+        assert!(!refused.to_string().contains("SUN_LEN"), "{refused}");
+        assert!(!base.exists(), "made a folder it can't use");
+    }
+
+    /// #1311: a short folder made beforehand that others can enter, or a
+    /// symlink in its place, is refused by the listener and the shim.
+    #[test]
+    fn a_short_folder_others_can_reach_is_refused() {
+        let profile = tempfile::tempdir().unwrap();
+        let base = tempfile::tempdir().unwrap();
+        let socket = address_in(&long_data(profile.path()), || base.path().to_path_buf());
+        let folder = socket.parent().unwrap();
+        fs::DirBuilder::new().mode(0o755).create(folder).unwrap();
+        fs::set_permissions(folder, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(listen(&socket, handler()).is_err());
+        assert!(matches!(connect(&socket), Err(CallError::NotOurs)));
+
+        let elsewhere = tempfile::tempdir().unwrap();
+        fs::set_permissions(elsewhere.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        fs::remove_dir(folder).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), folder).unwrap();
+        assert!(listen(&socket, handler()).is_err());
+        assert!(matches!(connect(&socket), Err(CallError::NotOurs)));
     }
 
     /// Done when: a socket left by a crash is replaced.
