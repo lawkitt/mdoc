@@ -33,7 +33,7 @@ Shapes seen:
 
 | File | Contents |
 | --- | --- |
-| `sent.md` | Exactly what **Copy for AI** put on the clipboard, note included |
+| `sent.md` | Exactly what **Copy for AI** put on the clipboard, note included; the note stays as it was sent when its wording changes later |
 | `identities.json` | The mapping used, written by hand from the reviewed panel |
 | `reply.md` | The assistant's answer as its Copy button gave it, never edited |
 | `expected.md` | `reply.md` with every alias replaced by its primary wording, by hand |
