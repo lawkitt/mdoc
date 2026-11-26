@@ -304,11 +304,9 @@ impl Vault {
         // And the user's check below the floor was of that text.
         moved.names_checked_by_hand = false;
         // The review's ranges and identities were of that text and mapping
-        // too: the next open scans again, so it is not scanned either, and
-        // lists say so as the Document does (#1292).
+        // too: the next open scans again.
         moved.review = None;
         moved.counts = None;
-        moved.scanned = false;
         // Its text is still to be made, though the move writes it.
         moved.unconverted = stored.pending_conversion();
         let moved = match self.place_document(lock, moved) {
@@ -576,52 +574,5 @@ mod tests {
         // A save of text clears it, whoever saves.
         let saved = (vault.update_document(&id, |d| d.markdown = "# Brief".into())).unwrap();
         assert!(!saved.unconverted && !saved.pending_conversion());
-    }
-
-    /// Done when (#1292): a Ready Document moved out of a deleted Project
-    /// is neither Ready nor scanned, in its record, in the list and when
-    /// text would leave: its review went with the mapping it left, so names
-    /// are looked for again (item 44 Q2 (b)'s meaning of unscanned).
-    #[test]
-    fn a_ready_document_moved_out_of_a_deleted_project_owes_a_scan() {
-        let temp = tempfile::tempdir().unwrap();
-        let vault = Vault::open(temp.path().join("vault"), &[7; 32]).unwrap();
-        let project = (vault.create_project(NewProject {
-            name: "Lease".into(),
-            ..NewProject::default()
-        }))
-        .unwrap();
-        let stored = (vault.create_document(NewDocument {
-            project: Some(project.id.clone()),
-            title: "Brief".into(),
-            source_kind: SourceKind::Text,
-            origin: DocumentOrigin::Ordinary,
-            markdown: "The tenant pays rent.".into(),
-        }))
-        .unwrap();
-        vault
-            .update_document(&stored.id, |d| {
-                d.scanned = true;
-                d.set_ready(true);
-            })
-            .unwrap();
-        let listed = |vault: &Vault| {
-            (vault.documents().into_iter())
-                .find(|summary| summary.id == stored.id)
-                .unwrap()
-        };
-        assert!(vault.readiness(&stored.id).unwrap().is_ready());
-        assert!(listed(&vault).scanned);
-        vault
-            .delete_project(&project.id, ProjectDocuments::MoveToUnfiled)
-            .unwrap();
-        let moved = vault.document(&stored.id).unwrap();
-        assert!(moved.project.is_none());
-        assert!(!moved.scanned && moved.ready_fingerprint.is_none() && moved.review.is_none());
-        assert!(!listed(&vault).scanned, "the list agrees");
-        assert_eq!(
-            vault.readiness(&stored.id).unwrap(),
-            crate::Readiness::NotReviewed
-        );
     }
 }

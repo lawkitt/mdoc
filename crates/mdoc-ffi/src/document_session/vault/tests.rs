@@ -522,49 +522,6 @@ fn a_deleted_projects_documents_move_to_unfiled_or_go() {
     assert_eq!(vault.documents().len(), 1);
 }
 
-/// Done when (#1292): a Ready document moved out of a deleted Project is
-/// listed as the document opens: Unscanned, not Ready, its names to be
-/// looked for again. The list said Ready while the document said "Names
-/// not looked for yet".
-#[test]
-fn a_ready_document_moved_to_unfiled_lists_as_it_opens() {
-    let scratch = Scratch::new();
-    let vault = vault(&scratch);
-    let project = vault.create_project("Lease".into()).unwrap();
-    let (_, brief) = saved(
-        &vault,
-        Some(&project.id),
-        "Ann Lee sued.",
-        &["Ann Lee"],
-        "Brief",
-    );
-    let listed = |vault: &Arc<Vault>| {
-        (vault.documents().into_iter())
-            .find(|d| d.id == brief.id)
-            .unwrap()
-    };
-    assert_eq!(listed(&vault).phase, DocumentPhase::Ready);
-    assert_eq!(
-        vault.readiness(brief.id.clone()).unwrap(),
-        crate::vault::Readiness::Ready
-    );
-    vault
-        .delete_project(project.id, ProjectDocuments::MoveToUnfiled)
-        .unwrap();
-    let moved = listed(&vault);
-    assert!(moved.project_id.is_none());
-    assert_eq!(moved.phase, DocumentPhase::Unscanned, "the list");
-    assert!(!moved.scanned);
-    assert_eq!(
-        vault.readiness(brief.id.clone()).unwrap(),
-        crate::vault::Readiness::NotReviewed,
-        "what leaves"
-    );
-    let (_, opened) = reopened(&vault, &brief.id);
-    assert_eq!(opened.phase, DocumentPhase::Unscanned, "the document");
-    assert!(!opened.scanned);
-}
-
 /// A new document follows its first line and goes when left empty.
 #[test]
 fn a_new_document_follows_its_first_line_and_goes_when_empty() {

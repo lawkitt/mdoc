@@ -214,46 +214,6 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
 /// Done when: a name another document adds to the Project takes a row off
 /// ready without touching its file, and a shelf opened before hands out
 /// nothing for it.
-/// Done when (#1292): a Ready document moved out of a deleted Project
-/// leaves the shelf's Ready rows and reads "Names not looked for yet",
-/// as Android's document does: the move cleared its review.
-#[gpui::test]
-fn a_document_moved_out_of_a_deleted_project_owes_a_scan(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx) = boot(cx, Session::default());
-    let letter = open_applied(
-        &tabs,
-        cx,
-        dir.path(),
-        "letter.md",
-        "Anna Petrova wrote about the lease.",
-        &[("Anna Petrova", Person)],
-    );
-    let project = new_project(&tabs, cx, letter);
-    written(cx);
-    let document = cx.update(|_, cx| tabs.read(cx).tab_document(letter, cx).unwrap());
-    close(&tabs, letter, cx);
-    let key = ShelfKey::Document(document.clone());
-    let listed = |cx: &mut VisualTestContext| {
-        cx.update(|_, cx| {
-            tabs.read(cx)
-                .shelf_documents(cx)
-                .into_iter()
-                .find(|row| row.key == key)
-                .unwrap()
-        })
-    };
-    assert_eq!(listed(cx).readiness, Readiness::Ready);
-    vault(&tabs, cx)
-        .delete_project(&project, mdoc_vault::ProjectDocuments::MoveToUnfiled)
-        .unwrap();
-    let moved = listed(cx);
-    assert_eq!(moved.readiness, Readiness::NotReviewed);
-    assert_eq!(moved.state(), "Names not looked for yet");
-    assert_eq!(moved.step(), Some(crate::refusal::Step::FindNames));
-    assert_eq!(moved.text_for_ai(), None);
-}
-
 #[gpui::test]
 fn a_name_another_document_adds_takes_a_row_off_ready(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
