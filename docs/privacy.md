@@ -41,26 +41,33 @@ out of Windows Error Reporting, so a crash files nothing with Microsoft.
 Settings › AI connector › **AI connector (preview)** is off by default. With
 it off, nothing listens and no AI app can reach mdoc. With it on, Claude
 Desktop or ChatGPT's desktop app can read from mdoc through the `mdoc-mcp`
-connector, on your computer.
+connector, on your computer. Settings › AI connector adds it to Claude
+Desktop, or to ChatGPT, where only Work threads call it and Codex reads the
+same setting.
 
 - **One Project at a time.** An AI app reads only the AI project: the one
   Project you share, from the sidebar, a Project page, Ask, or the card mdoc
   shows when an AI app asks. Nothing is shared when mdoc starts, moving
   between documents never changes what is shared, and **Stop sharing** ends
   it.
-- **What a connected AI app can read:** the shared Project's documents, by
-  the label AI apps know them by, never their titles, with their size and
-  whether each is Ready; a Ready document's text, with aliases in place of
-  the names you replaced; and, for a document that isn't Ready, only that
-  it needs review. Each read checks the document against its Project's
-  names again.
-- **What it never gets:** original files, real names, notes, documents
-  excluded from AI, other Projects or Unfiled documents.
+- **What a connected AI app can read:** the shared Project's documents,
+  each by a label (the first heading of its reviewed text, or "Document
+  N", never its title), with their size and whether each is Ready; a Ready
+  document's text, with aliases in place of the names you replaced; and,
+  for a document that isn't Ready, only that it needs review. Each read
+  checks the document against its Project's names again.
+- **What it never gets:** original files, the replacement mapping, restored
+  replies, notes, documents excluded from AI, other Projects or Unfiled
+  documents. A name that detection and your review both missed stays in
+  the text and its heading, and can reach the app, as with Copy for AI.
+- **Ask** opens the AI app with a prompt naming the document by its label
+  and id; nothing is sent until you send it.
 - **Replies:** an AI app can deliver its answer as an AI reply of the shared
   Project or as a new document. mdoc restores the names on your computer,
   and nothing restored goes back to the app.
-- **AI activity:** each read and delivery is recorded in the Vault with the
-  app and the time, on the Project page's AI activity list.
+- **AI activity:** each read of a document's text and each delivery is
+  recorded in the Vault with the app and the time, on the Project page's AI
+  activity list. Listing the documents and their labels is not recorded.
 - **Programs running as you can read the same.** The connector listens on a
   socket (macOS) or named pipe (Windows) that only your user account can
   open, with no password. Any program running under your account can
