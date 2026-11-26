@@ -2133,7 +2133,10 @@ fn share_counts_a_lone_first_name_left_after_apply(cx: &mut gpui::TestAppContext
     app.read_with(cx, |app, cx| {
         assert!(app.editor.read(cx).text().contains("Марина обратилась"));
         assert_eq!(app.names_not_replaced(cx), 1);
-        assert_eq!(app.share_status(cx), "1 replaced. 1 name not replaced.");
+        assert_eq!(
+            app.share_status(cx),
+            "1 name replaced. 1 name not replaced."
+        );
     });
     // Replacing the leftover by hand makes the line true again.
     app.update(cx, |app, cx| {
@@ -2705,5 +2708,54 @@ fn a_running_scan_shows_skeleton_rows_and_keeps_rescan_off(cx: &mut gpui::TestAp
         let job = app.pii.job.as_ref().expect("the scan keeps running");
         assert_eq!(job.generation, generation);
         assert!(!job.cancel.load(std::sync::atomic::Ordering::Relaxed));
+    });
+}
+
+/// #1314: one unit in the panel. A name that appears twice counts once in
+/// the Review tab, the Share status and the header's Apply, and the status
+/// says the places apart; after Apply the status counts the names replaced.
+#[gpui::test]
+fn the_panel_counts_names_and_says_the_places_apart(cx: &mut gpui::TestAppContext) {
+    use mdoc_pii::Category;
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1200.), px(800.)));
+    app.update(cx, |app, cx| {
+        let source = "Anna Petrova met Bob Stone. Anna Petrova left.";
+        app.editor.update(cx, |e, cx| e.set_text(source, cx));
+        app.pii.reviewing = true;
+        let review = app.pii.review_mut();
+        review.add_manual(source, 0..12, Category::Person).unwrap();
+        review.add_manual(source, 17..26, Category::Person).unwrap();
+        app.review_changed(cx);
+    });
+    cx.run_until_parked();
+    app.read_with(cx, |app, cx| {
+        assert_eq!(
+            app.pii.review.remaining(),
+            3,
+            "Anna Petrova twice, Bob once"
+        );
+        assert_eq!(app.review_tab_label(cx), "Review · 2");
+        assert_eq!(
+            app.share_status(cx),
+            "2 names in 3 places still to replace — apply them first."
+        );
+        assert_eq!(app.apply_label(cx).as_deref(), Some("Apply 2"));
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let apply = cx.debug_bounds("primary-apply").unwrap();
+    cx.simulate_click(apply.center(), gpui::Modifiers::none());
+    cx.run_until_parked();
+    app.read_with(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "PERSON_1 met PERSON_2. PERSON_1 left."
+        );
+        assert_eq!(app.review_tab_label(cx), "Review · 2");
+        assert_eq!(
+            app.share_status(cx),
+            "2 names replaced. Names in the text are aliases now."
+        );
+        assert_eq!(app.apply_label(cx), None);
     });
 }

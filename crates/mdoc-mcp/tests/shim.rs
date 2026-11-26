@@ -347,7 +347,10 @@ fn session(era: Era) {
     // One naming what was read lands, restored in mdoc only.
     let delivered = shim.call("deliver_reply", deliver(&[&app.letter]));
     assert_eq!(delivered["isError"], false, "{delivered}");
-    assert!(text(&delivered).contains("restored 1 name"), "{delivered}");
+    assert!(
+        text(&delivered).contains("restored 1 value."),
+        "{delivered}"
+    );
     let replies = app.vault.replies();
     assert_eq!(replies.len(), 1);
     let restored = app.vault.restore_reply(&replies[0].id).unwrap();

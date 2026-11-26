@@ -42,7 +42,8 @@ pub struct Delivered {
     pub reply: String,
     /// The Document it landed as, when it asked for one.
     pub document: Option<String>,
-    /// Aliases the reply restores now.
+    /// Values the reply restores now: each identity once, however often
+    /// it is named, as the Reply page counts (#1314).
     pub restored: usize,
     /// The alias-shaped tokens in its text that no identity answers, each
     /// once, in order: the app's own text, never a name.
@@ -153,7 +154,7 @@ impl Vault {
         Ok(Delivered {
             reply: reply.id,
             document,
-            restored: restored.restored.len(),
+            restored: restored.values,
             unresolved,
             activity,
         })

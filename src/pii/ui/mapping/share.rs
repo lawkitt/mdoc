@@ -57,7 +57,7 @@ impl DocumentView {
                     .bg(p.placeholder_bg)
                     .child(tab(
                         "inspector-review",
-                        format!("Review · {entities}"),
+                        review_tab_label(entities),
                         Inspector::Review,
                     ))
                     .child(tab("inspector-share", "Share".into(), Inspector::Share))
@@ -194,7 +194,18 @@ impl DocumentView {
     }
 }
 
+/// The Review tab's label: the names in the list (#1314).
+fn review_tab_label(names: usize) -> String {
+    format!("Review · {names}")
+}
+
 impl DocumentView {
+    /// The Review tab's label as the Share tab shows it, for tests.
+    #[cfg(test)]
+    pub(in crate::pii::ui) fn review_tab_label(&self, cx: &App) -> String {
+        review_tab_label(self.replacement_entity_count(cx))
+    }
+
     /// The Share tab's status line. It says the names are aliases only
     /// while readiness finds none left as written (#301).
     pub(in crate::pii::ui) fn share_status(&self, cx: &App) -> String {
@@ -205,7 +216,12 @@ impl DocumentView {
         } else {
             0
         };
-        share_status(pending, applied, self.kept_mention_count(cx), left)
+        let names = if pending > 0 {
+            self.pending_name_count(cx)
+        } else {
+            self.applied_name_count(cx)
+        };
+        share_status(names, pending, applied, self.kept_mention_count(cx), left)
     }
 
     /// The "AI reply" box under Copy for AI: pasting restores at
@@ -493,14 +509,22 @@ impl DocumentView {
 }
 
 /// The Share status for `pending` proposals, `applied` replacements, `kept`
-/// mentions and `left` known names still in the text as written.
-fn share_status(pending: usize, applied: usize, kept: usize, left: usize) -> String {
+/// mentions and `left` known names still in the text as written. It counts
+/// `names`, the Review tab's unit: those still to replace while any is,
+/// then those replaced (#1314).
+fn share_status(names: usize, pending: usize, applied: usize, kept: usize, left: usize) -> String {
+    let unit = if names == 1 { "name" } else { "names" };
     if pending > 0 {
-        return format!("{pending} still to replace — apply them first.");
+        let them = if names == 1 { "it" } else { "them" };
+        return format!(
+            "{} still to replace — apply {them} first.",
+            super::panel::names_in_places(names, pending)
+        );
     }
     if applied == 0 {
         return "Nothing is replaced yet.".to_string();
     }
+    let applied = format!("{names} {unit}");
     let kept = if kept > 0 {
         format!(" · {kept} kept")
     } else {
@@ -520,21 +544,25 @@ mod tests {
     #[test]
     fn the_share_line_says_aliases_only_without_leftovers() {
         assert_eq!(
-            share_status(0, 18, 0, 0),
-            "18 replaced. Names in the text are aliases now."
+            share_status(6, 0, 18, 0, 0),
+            "6 names replaced. Names in the text are aliases now."
         );
         assert_eq!(
-            share_status(0, 18, 0, 1),
-            "18 replaced. 1 name not replaced."
+            share_status(1, 0, 2, 0, 1),
+            "1 name replaced. 1 name not replaced."
         );
         assert_eq!(
-            share_status(0, 18, 2, 3),
-            "18 replaced · 2 kept. 3 names not replaced."
+            share_status(6, 0, 18, 2, 3),
+            "6 names replaced · 2 kept. 3 names not replaced."
         );
         assert_eq!(
-            share_status(4, 18, 0, 1),
-            "4 still to replace — apply them first."
+            share_status(3, 4, 18, 0, 1),
+            "3 names in 4 places still to replace — apply them first."
         );
-        assert_eq!(share_status(0, 0, 0, 0), "Nothing is replaced yet.");
+        assert_eq!(
+            share_status(1, 1, 0, 0, 0),
+            "1 name still to replace — apply it first."
+        );
+        assert_eq!(share_status(0, 0, 0, 0, 0), "Nothing is replaced yet.");
     }
 }
