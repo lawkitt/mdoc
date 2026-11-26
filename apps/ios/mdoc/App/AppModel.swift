@@ -211,10 +211,13 @@ final class AppModel {
     /// Lets go of the models of documents not open, but those with work
     /// still to do: a job running, a job waiting for its model's download
     /// (Download & continue holds the model), or what a finished job has to
-    /// say that the document has not shown yet ("3 to review", an error).
+    /// say that the document has not shown yet ("3 to review", an error), or
+    /// Done's work still running, which Find names waits for (#1255).
     private func evictClosedDocuments() {
         var kept = Set([navigator.openDocument, jobs.current?.documentID].compactMap { $0 })
-        kept.formUnion(documents.all.filter { $0.needsSetup || $0.notice != nil || $0.errorMessage != nil }.map(\.id))
+        kept.formUnion(documents.all.filter {
+            $0.needsSetup || $0.notice != nil || $0.errorMessage != nil || $0.donesLeft > 0
+        }.map(\.id))
         documents.evict(keeping: kept)
     }
 

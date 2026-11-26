@@ -72,7 +72,8 @@ extension DocumentViewModel {
 
     /// Done: back to review. Discovery runs now rather than after the
     /// pause, then the scan of the paragraphs edited (a new name becomes a
-    /// proposal), and the typing is saved then rather than after it.
+    /// proposal), and the typing is saved then rather than after it. Find
+    /// names waits for that work (`doneWork`).
     func doneEditing() {
         guard isEditing else { return }
         linkDraft = nil
@@ -86,7 +87,12 @@ extension DocumentViewModel {
         session.endTyping()
         typing.discovery?.cancel()
         typing.discovery = nil
-        Task {
+        let previous = doneWork
+        donesLeft += 1
+        doneWork = Task {
+            defer { donesLeft -= 1 }
+            // The last Done's work first: this edit scan would stop that one.
+            await previous?.value
             await discoverNow()
             let session = session
             let revision = typing.revision
@@ -178,7 +184,9 @@ extension DocumentViewModel {
         }.value
         // The lists show the new title now, not at the save.
         if retitled { onChange() }
-        guard let found, revision == typing.revision, found.textRevision == revision else { return }
+        // Done cancelled the pause's discovery: its snapshot may be older
+        // than one shown since, such as Find names again's (#1255).
+        guard !Task.isCancelled, let found, revision == typing.revision, found.textRevision == revision else { return }
         applyReview(found)
     }
 

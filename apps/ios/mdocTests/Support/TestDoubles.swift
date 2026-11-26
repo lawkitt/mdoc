@@ -11,6 +11,13 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
     let seconds: Double
     /// What `scanEstimate` answers, as a timed phone's core would.
     var estimate: Int?
+    /// Hooks a race test sets before the calls, each run on the call's own
+    /// thread: before `discover`, after `scanEdits` returns, and as the
+    /// core's scan reports its stage, once its job has begun and before its
+    /// cancel check.
+    var beforeDiscover: (@Sendable () -> Void)?
+    var afterScanEdits: (@Sendable () -> Void)?
+    var coreScanStarted: (@Sendable () -> Void)?
 
     init(_ base: any mdoc.DocumentSession, seconds: Double) {
         self.base = base
@@ -36,7 +43,8 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
 
     func scan(observer: any JobObserver) throws -> DocumentSnapshot {
         try wait(observer, stage: .scanning)
-        return try base.scan(observer: observer)
+        guard let coreScanStarted else { return try base.scan(observer: observer) }
+        return try base.scan(observer: StageHook(observer, scanning: coreScanStarted))
     }
 
     func scanEstimate() -> Int? { estimate }
@@ -56,8 +64,14 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
     func type(_ range: SourceRange, _ text: String) throws -> Typed { try base.type(range, text) }
     func format(_ edits: [EditorEdit]) throws -> Typed { try base.format(edits) }
     func endTyping() { base.endTyping() }
-    func discover() throws -> DocumentSnapshot { try base.discover() }
-    func scanEdits() throws -> DocumentSnapshot { try base.scanEdits() }
+    func discover() throws -> DocumentSnapshot {
+        beforeDiscover?()
+        return try base.discover()
+    }
+    func scanEdits() throws -> DocumentSnapshot {
+        defer { afterScanEdits?() }
+        return try base.scanEdits()
+    }
     func followFirstLine() throws -> String? { try base.followFirstLine() }
     func undo() throws -> DocumentSnapshot { try base.undo() }
     func redo() throws -> DocumentSnapshot { try base.redo() }
@@ -96,6 +110,65 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
         try base.setOwner(identity, to: owner)
     }
     func dismissHint(_ hint: LinkHint) throws -> DocumentSnapshot { try base.dismissHint(hint) }
+}
+
+/// An observer that runs `scanning` the first time the core reports the
+/// scanning stage, and passes everything on.
+private final class StageHook: JobObserver, @unchecked Sendable {
+    private let observer: any JobObserver
+    private var scanning: (@Sendable () -> Void)?
+    private let lock = NSLock()
+
+    init(_ observer: any JobObserver, scanning: @escaping @Sendable () -> Void) {
+        self.observer = observer
+        self.scanning = scanning
+    }
+
+    func progress(_ update: JobUpdate) {
+        if update.stage == .scanning, let hook = lock.withLock({ scanning.take() }) { hook() }
+        observer.progress(update)
+    }
+
+    func isCancelled() -> Bool { observer.isCancelled() }
+    func onCancel(_ handler: @escaping @Sendable () -> Void) { observer.onCancel(handler) }
+}
+
+/// A one-way signal between threads: `wait` returns once it is raised, or
+/// false after `timeout`.
+final class Signal: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var raised = false
+
+    var isRaised: Bool { condition.withLock { raised } }
+
+    func raise() {
+        condition.withLock {
+            raised = true
+            condition.broadcast()
+        }
+    }
+
+    @discardableResult
+    func wait(timeout: TimeInterval) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        return condition.withLock {
+            while !raised && condition.wait(until: end) {}
+            return raised
+        }
+    }
+}
+
+/// Counts calls from any thread: `next` answers 1 for the first.
+final class Calls: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func next() -> Int {
+        lock.withLock {
+            count += 1
+            return count
+        }
+    }
 }
 
 /// Model setup without the real files: the setup tests' downloads are
