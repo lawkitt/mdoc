@@ -492,11 +492,40 @@ fn the_menu_bar_switch_is_on_by_default_and_saves_at_once(cx: &mut TestAppContex
     cx.run_until_parked();
     let switch = cx.debug_bounds("general-menu-bar");
     if !cfg!(target_os = "macos") {
-        assert!(switch.is_none(), "no tray outside macOS yet");
+        assert!(
+            switch.is_none(),
+            "no tray outside macOS while the preview is off"
+        );
         return;
     }
     assert!(shared.borrow().snapshot().unwrap().general.menu_bar);
     cx.simulate_click(switch.unwrap().center(), gpui::Modifiers::none());
+    cx.run_until_parked();
+    assert!(!shared.borrow().snapshot().unwrap().general.menu_bar);
+}
+
+/// Settings › General › "Keep mdoc in the system tray" (Windows, item
+/// 17): shown only while "AI connector (preview)" is on, on by default,
+/// saved on change.
+#[cfg(windows)]
+#[gpui::test]
+fn the_tray_switch_shows_with_the_preview_and_saves_at_once(cx: &mut TestAppContext) {
+    let shared = Store::in_memory();
+    let mut preferences = mdoc_store::settings::Preferences::default();
+    preferences.ai_connector.preview = true;
+    shared.borrow_mut().current = Some(preferences);
+    let (panel, cx) = cx.add_window_view(|_, cx| {
+        Panel::new(shared.clone(), Rc::new(Cell::new(Theme::default())), cx)
+    });
+    cx.simulate_resize(size(px(800.), px(2400.)));
+    panel.update(cx, |panel, cx| {
+        panel.open = true;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let switch = cx.debug_bounds("general-menu-bar").expect("the switch");
+    assert!(shared.borrow().snapshot().unwrap().general.menu_bar);
+    cx.simulate_click(switch.center(), gpui::Modifiers::none());
     cx.run_until_parked();
     assert!(!shared.borrow().snapshot().unwrap().general.menu_bar);
 }

@@ -15,6 +15,8 @@ const ON: AiConnectorConfig = AiConnectorConfig {
     preview: true,
     open_deliveries: false,
     ask: mdoc_store::settings::AskWith::Claude,
+    hotkey: mdoc_store::settings::Hotkey::COMPANION,
+    hotkey_off: false,
 };
 
 struct Fixture {

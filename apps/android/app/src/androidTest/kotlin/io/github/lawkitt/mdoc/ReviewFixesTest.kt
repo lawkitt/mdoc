@@ -59,6 +59,8 @@ class ReviewFixesTest {
         session.recognize(quiet)
         val start = text.indexOf("Maya Bennett")
         session.addReplacement(SourceRange(start, start + 12), Category.Person)
+        // Below the floor: "I checked the names myself" (item 48).
+        session.confirmNamesChecked()
         val handOff = session.copyForAi()
         for (asFile in listOf(false, true)) {
             val chooser = shareIntent(handOff.text, handOff.fileName, asFile, context)

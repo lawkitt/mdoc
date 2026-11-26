@@ -90,10 +90,15 @@ data class DocumentState(
     val saved: SavedReadiness? = null,
     /** Copy for AI or Share refused on a tap: its dialog shows (#1209). */
     val refusal: HandOffRefusal? = null,
+    /** The hand-off last tapped, which "I checked the names myself" goes on with (item 48). */
+    val tapped: HandOffKind? = null,
 ) {
     /** "Paste reply?" shows, back from the AI app Ask AI shared to. */
     val showsReplyBanner: Boolean get() = replyOffer == ReplyOffer.Offered
 }
+
+/** The ways out "I checked the names myself" goes on with: the one tapped (item 48). */
+enum class HandOffKind { Copy, Share, ShareFile, AskAi }
 
 enum class PasswordPrompt {
     Needed,
@@ -336,6 +341,24 @@ class DocumentViewModel(
             .onFailure { refused(AppError.HandOffRefused(HandOffRefusal.Failed)) }.getOrNull() ?: return null
         mutable.update { it.copy(snapshot = replaced) }
         return handOff()
+    }
+
+    /** A hand-off tapped: kept here, so the screen made again still knows it. */
+    fun tapped(kind: HandOffKind) = mutable.update { it.copy(tapped = kind) }
+
+    /**
+     * "I checked the names myself" (item 48): said of the text the
+     * question was asked of, and saved; the hand-off tapped, which then
+     * goes on, or null. Text changed since asks again; a save that fails
+     * is a refusal in plain words.
+     */
+    suspend fun confirmNamesChecked(): HandOffKind? {
+        mutable.update { it.copy(refusal = null) }
+        val checked = withContext(Dispatchers.IO) { runCatching { session.confirmNamesChecked() } }
+            .onFailure { refused(it as? AppError.HandOffRefused ?: AppError.HandOffRefused(HandOffRefusal.Failed)) }
+            .getOrNull() ?: return null
+        mutable.update { it.copy(snapshot = checked) }
+        return mutable.value.tapped
     }
 
     /**

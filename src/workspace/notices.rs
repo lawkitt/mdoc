@@ -63,6 +63,14 @@ impl Notices {
         self.message = None;
     }
 
+    /// Dismiss `message` if it is still the one shown: it is no longer
+    /// true. A later message stays.
+    pub(super) fn withdraw(&mut self, message: &str) {
+        if self.message.as_deref() == Some(message) {
+            self.message = None;
+        }
+    }
+
     /// The last run's report, read at launch.
     pub(super) fn load_crash(&mut self, report: Option<String>) {
         self.crash = report.map(|report| (report, false));
@@ -88,11 +96,11 @@ impl Notices {
         project_banner: bool,
         project_needed: bool,
     ) -> (usize, Option<NoticesEffect>) {
-        // The first-Project nudge opens the bell once, like a message.
-        let own = usize::from(self.crash.is_some())
-            + usize::from(self.message.is_some())
-            + usize::from(self.recovery_nudge);
-        let shown = own + usize::from(project_banner);
+        let own = usize::from(self.crash.is_some()) + usize::from(self.message.is_some());
+        // The recovery-key nudge only counts on the bell: opened by itself,
+        // the popover covered the new Project's header, on every launch
+        // until answered (#1286).
+        let shown = own + usize::from(self.recovery_nudge) + usize::from(project_banner);
         let opening = own + usize::from(project_needed);
         let effect = if opening > self.opening {
             Some(NoticesEffect::OpenBell)
@@ -136,6 +144,19 @@ mod tests {
             notices.count(false, false),
             (0, Some(NoticesEffect::CloseBell))
         );
+    }
+
+    #[test]
+    fn a_withdrawn_notice_goes_only_while_it_is_the_one_shown() {
+        let mut notices = Notices::default();
+        notices.post("Documents can't be added yet.");
+        notices.withdraw("Something else.");
+        assert_eq!(notices.message(), Some("Documents can't be added yet."));
+        notices.withdraw("Documents can't be added yet.");
+        assert_eq!(notices.message(), None);
+        notices.post("Exported 3 documents.");
+        notices.withdraw("Documents can't be added yet.");
+        assert_eq!(notices.message(), Some("Exported 3 documents."));
     }
 
     #[test]
@@ -193,13 +214,11 @@ mod tests {
     }
 
     #[test]
-    fn the_recovery_nudge_opens_the_bell_once_and_counts_until_it_goes() {
+    fn the_recovery_nudge_counts_until_it_goes_and_never_opens_the_bell() {
         let mut notices = Notices::default();
         notices.set_recovery_nudge(true);
-        assert_eq!(
-            notices.count(false, false),
-            (1, Some(NoticesEffect::OpenBell))
-        );
+        // Counted on the bell's badge, the popover left as it is (#1286).
+        assert_eq!(notices.count(false, false), (1, None));
         assert_eq!(notices.count(false, false), (1, None));
         notices.post("Exported 3 documents.");
         assert_eq!(

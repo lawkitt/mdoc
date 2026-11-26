@@ -940,6 +940,11 @@ fn write_captured(vault: &mdoc_vault::Vault, captured: &Captured) -> Result<(), 
 fn save_vault(vault: &mdoc_vault::Vault, id: &VaultId, save: &Save) -> Result<(), String> {
     vault
         .update_document(id.as_str(), |document| {
+            // A phone's "I checked the names myself" was of the text as it
+            // was (item 48): new text was never checked.
+            if document.markdown != save.markdown {
+                document.names_checked_by_hand = false;
+            }
             document.markdown.clone_from(&save.markdown);
             // Its text is written: it opens as text from now on.
             document.unconverted = false;

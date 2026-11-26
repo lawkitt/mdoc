@@ -191,7 +191,8 @@ pub(super) fn recovery_key(d: &mut Driver) -> Result<()> {
     d.capture("settings-vault")?;
     d.change(|w, _, cx| w.show_recovery_key(cx))?;
     d.capture("settings-vault-recovery-key")?;
-    // The first Project brings the nudge, which opens the bell.
+    // The first Project brings the nudge, counted on the bell, which the
+    // scene opens: the nudge doesn't open it by itself (#1286).
     let project = d.change(|w, window, cx| {
         w.settings.update(cx, |p, cx| p.close(window, cx));
         w.show_home(window, cx);
@@ -207,6 +208,7 @@ pub(super) fn recovery_key(d: &mut Driver) -> Result<()> {
         // Every other scene renders with the nudge closed.
         w.update_general(|g| g.recovery_key_nudge_dismissed = false, cx)
             .map_err(|e| e.to_string())?;
+        w.title.notices_open.set(true);
         cx.notify();
         Ok::<_, String>((vault, id))
     })??;

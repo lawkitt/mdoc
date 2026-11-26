@@ -482,7 +482,8 @@ class Documents(
     /**
      * Below the name finder's floor no name is found (ADR 0088): a save
      * with no proposals left then records the document Ready, its names
-     * decided by hand (#1091 Q4, the maintainer's (b)). A phone at the
+     * decided by hand (#1091 Q4, the maintainer's (b)), once the user said
+     * "I checked the names myself" of its text (item 48). A phone at the
      * detector tier is offered Find names, even before its model is in.
      */
     private fun findsNoNames(): Boolean = models?.snapshot()?.tier != DeviceTier.Detector
@@ -942,7 +943,19 @@ class Documents(
             if (savedReadiness() == SavedReadiness.NotReviewed) runCatching { save() }.onFailure { refused(HandOffRefusal.Failed) }
             when (val saved = savedReadiness()) {
                 // At the detector tier: names marked by hand, never scanned.
-                SavedReadiness.NotReviewed -> refused(if (findsNames) HandOffRefusal.NotScanned else HandOffRefusal.NotChecked)
+                // Below the floor: asked whether the names were checked
+                // (item 48), unless they were and it still is not Ready.
+                SavedReadiness.NotReviewed -> refused(
+                    when {
+                        findsNames -> HandOffRefusal.NotScanned
+                        !ffi.namesChecked() -> {
+                            // The text the question is asked of: its answer checks this one only.
+                            asked = core { ffi.snapshot() }.text
+                            HandOffRefusal.NamesNotChecked
+                        }
+                        else -> HandOffRefusal.NotChecked
+                    },
+                )
                 null -> Unit
                 else -> HandOffRefusal.of(saved)?.let(::refused)
             }
@@ -953,6 +966,24 @@ class Documents(
                 .getOrElse { refused(savedReadiness()?.let(HandOffRefusal::of) ?: HandOffRefusal.Failed) }
             lastShared.set(projectId?.let { Place.Project(ProjectId(it)) } ?: Place.Unfiled(vaultId))
             HandOff(text, fileName)
+        }
+
+        /** The text Copy for AI last asked "I checked the names myself" of. */
+        @Volatile private var asked: String? = null
+
+        /**
+         * "I checked the names myself" (item 48): the user says so of the
+         * text the question was asked of (the text as it is now, when none
+         * was), and the document is saved, Ready below the floor once
+         * nothing is left to decide. Refused, so it asks again, when a move
+         * or a join changed the text since the question. Any change to the
+         * text takes the check back, so the next Copy for AI asks again.
+         */
+        fun confirmNamesChecked(): DocumentSnapshot = change(null) {
+            val text = asked ?: ffi.snapshot().text
+            if (!ffi.confirmNamesChecked(text)) throw AppError.HandOffRefused(HandOffRefusal.NamesNotChecked)
+            asked = null
+            ffi.snapshot()
         }
 
         /**

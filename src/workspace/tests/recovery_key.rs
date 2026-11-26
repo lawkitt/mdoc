@@ -107,13 +107,19 @@ fn the_first_project_brings_one_nudge_that_stays_closed(cx: &mut TestAppContext)
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     new_project(&tabs, cx, tab);
     draw(cx);
+    // Counted on the bell, which it leaves closed over the new Project's
+    // header (#1286); the bell shows it.
+    draw(cx);
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert!(tabs.recovery_nudge());
-        // It opens the bell by itself.
-        assert!(tabs.title.notices_open.get());
+        assert!(!tabs.title.notices_open.get());
         assert!(tabs.title.notices.get() >= 1);
     });
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    click(cx, "header-notices");
+    draw(cx);
+    assert!(cx.debug_bounds("recovery-nudge").is_some());
     click(cx, "recovery-nudge-later");
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
@@ -131,6 +137,33 @@ fn the_first_project_brings_one_nudge_that_stays_closed(cx: &mut TestAppContext)
     assert!(cx.debug_bounds("recovery-nudge").is_none());
 }
 
+/// Done when (#1286): a launch with the nudge still due, on a Vault that
+/// has a Project, counts it on the bell and leaves the popover closed.
+#[gpui::test]
+fn a_launch_with_the_nudge_due_leaves_the_popover_closed(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("vault");
+    Vault::open(&root, &[3; 32])
+        .unwrap()
+        .create_project(mdoc_vault::NewProject {
+            name: "Lease".into(),
+            ..mdoc_vault::NewProject::default()
+        })
+        .unwrap();
+    let (tabs, cx) = boot_on_vault(cx, Session::default(), &root);
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    draw(cx);
+    draw(cx);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.recovery_nudge(), "the nudge is due");
+        assert!(!tabs.title.notices_open.get());
+        assert!(tabs.title.notices.get() >= 1);
+    });
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    assert!(cx.debug_bounds("header-notices").is_some());
+}
+
 #[gpui::test]
 fn the_nudges_show_opens_settings_with_the_key_and_retires_it(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -138,6 +171,9 @@ fn the_nudges_show_opens_settings_with_the_key_and_retires_it(cx: &mut TestAppCo
     tabs.update(cx, |tabs, _| tabs.use_key_store(key_store(Some(KEY))));
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     new_project(&tabs, cx, tab);
+    draw(cx);
+    // The bell shows the nudge; it doesn't open by itself (#1286).
+    click(cx, "header-notices");
     draw(cx);
     click(cx, "recovery-nudge-show");
     let panel = panel(&tabs, cx);
@@ -309,6 +345,37 @@ fn a_vault_copied_to_a_fresh_profile_opens_with_its_recovery_key(cx: &mut TestAp
     assert_eq!(stored, vec![sealed_with]);
     let root = dir.path().join("vault");
     assert!(Vault::open(&root, &store.lock().unwrap().key.unwrap()).is_ok());
+}
+
+/// Done when (#1161): the recovery key opening the Vault takes both
+/// wrong-key notices away, the banner and the refused intake's, without a
+/// relaunch.
+#[gpui::test]
+fn the_recovery_key_takes_both_wrong_key_notices_away(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let sealed_with = [3; 32];
+    let (root, session, _) = sealed_vault(dir.path(), &sealed_with);
+    let store = key_store(Some([2; 32]));
+    let (tabs, cx) = boot_home_with(cx, session, launch_with(root, [2; 32], store));
+    tabs.update_in(cx, |tabs, window, cx| {
+        assert!(tabs.intake_refused(window, cx));
+        assert!(tabs.vault_banner().is_some());
+        assert_eq!(
+            tabs.notice_text().as_deref(),
+            Some(super::super::vault_ui::WAITS_FOR_RECOVERY_KEY)
+        );
+    });
+    draw(cx);
+    type_key(&tabs, &recovery::format(&sealed_with), cx);
+    click(cx, "home-recovery-open");
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| {
+        assert!(tabs.vault.vault().is_some());
+        assert!(tabs.vault_banner().is_none());
+        assert_eq!(tabs.notice_text(), None);
+        // Documents can be added again.
+        assert!(!tabs.intake_refused(window, cx));
+    });
 }
 
 #[gpui::test]

@@ -153,6 +153,12 @@ protocol DocumentSession: AnyObject, Sendable {
     /// last. Saves the document first, so the Project the Restore extension
     /// reads has every alias the text has.
     func copyForAI() throws -> HandOff
+    /// "I checked the names myself" (item 48): below the floor, the user
+    /// says so of the text `copyForAI` last refused with `namesNotChecked`,
+    /// and it is saved; it refuses so until then, and again once the text
+    /// changes. False, with nothing checked, when the text changed since
+    /// that refusal: ask again.
+    func confirmNamesChecked() throws -> Bool
     /// What the Vault says of the document as last saved: whether it may
     /// leave for an AI now, checked against its Project's names as they
     /// are now. Nil before its first save. Reads the record: call it off

@@ -128,6 +128,7 @@ impl Workspace {
     pub(super) fn refresh_ai_connector(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // With the preview on, the menu bar item toggles the companion.
         crate::menu_bar::set_companion(self.ai_setting().preview, cx);
+        self.refresh_hotkey(cx);
         if self.ai_setting().preview {
             self.start_ai_connector(window, cx);
         } else {
@@ -135,11 +136,30 @@ impl Workspace {
         }
     }
 
+    /// The companion's hotkey follows the saved setting: registered only
+    /// while the companion can open (the preview and the menu bar item
+    /// on), and Settings shows why it couldn't be. The preview shown off in
+    /// open Settings, its save not landed yet (#1220), counts as off.
+    pub(crate) fn refresh_hotkey(&mut self, cx: &mut Context<Self>) {
+        let setting = self.ai_setting();
+        let panel = self.settings.read(cx);
+        let shown_off = panel.open && !panel.draft.ai_connector.preview;
+        let item = self.menu_bar_setting() && crate::menu_bar::keeps_running(cx);
+        let wanted = (setting.preview && !shown_off && !setting.hotkey_off && item)
+            .then_some(setting.hotkey);
+        let failed = crate::companion::hotkey::set(wanted, cx);
+        self.settings
+            .update(cx, |panel, cx| panel.hotkey_failed(failed, cx));
+    }
+
     /// The switch shows off, saved or not yet (#1220): nothing more
     /// reaches an AI app, and nothing is shared.
     pub(super) fn stop_ai_connector(&mut self, cx: &mut Context<Self>) {
         self.settings
             .update(cx, |panel, cx| panel.ai_connector_failed(None, cx));
+        crate::companion::hotkey::set(None, cx);
+        self.settings
+            .update(cx, |panel, cx| panel.hotkey_failed(None, cx));
         if self.ai_connector.take().is_some() {
             self.ai_poll = None;
             self.ai.stopped();
@@ -160,6 +180,11 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        // A picker that ended since the last poll may have been up when a
+        // delivery in this batch arrived: that one waits on the badge too.
+        let ended = crate::native_picker::ended(cx);
+        let picker_was_up = ended != self.pickers_ended;
+        self.pickers_ended = ended;
         let Some(running) = &self.ai_connector else {
             return false;
         };
@@ -174,7 +199,7 @@ impl Workspace {
                     document,
                 } => {
                     activity = true;
-                    self.ai_delivered(&app, reply, document, window, cx);
+                    self.ai_delivered(&app, reply, document, picker_was_up, window, cx);
                 }
                 ai_connector::Event::NeedsReview {
                     app,
@@ -489,7 +514,8 @@ impl Workspace {
     /// The share prompt: a card at the window's bottom left, over the
     /// sidebar's foot. It takes no focus. While a dialog or sheet is up it
     /// waits, and shows once that closes: it is drawn above the window's
-    /// own layers.
+    /// own layers. A system file picker is its own window: the card shows
+    /// under it, so nothing need redraw when the picker closes.
     pub(super) fn ai_prompt_view(
         &self,
         window: &Window,
@@ -497,7 +523,7 @@ impl Workspace {
     ) -> Option<AnyElement> {
         self.ai_connector.as_ref()?;
         let prompt = self.ai.prompt()?;
-        if self.modal_up(window, cx) {
+        if self.drawn_modal_up(window, cx) {
             return None;
         }
         let theme = self.theme.get();

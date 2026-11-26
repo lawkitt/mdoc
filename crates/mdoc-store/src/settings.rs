@@ -3,6 +3,8 @@
 //! Models are plain IDs here; their manifests, languages and downloads live
 //! with their engines.
 use serde::{Deserialize, Serialize};
+mod hotkey;
+pub use hotkey::Hotkey;
 use std::{
     cell::RefCell,
     collections::BTreeSet,
@@ -343,7 +345,7 @@ impl GeneralConfig {
 /// "AI connector (preview)": Milestone 2's local MCP connector (ADR 0126).
 /// Off by default until 0.5.0; while off nothing of the connector runs or
 /// shows.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AiConnectorConfig {
     #[serde(default)]
@@ -357,6 +359,33 @@ pub struct AiConnectorConfig {
     /// Decision 22). Claude until another is chosen.
     #[serde(default, skip_serializing_if = "AskWith::is_default")]
     pub ask: AskWith,
+    /// The companion's system-wide hotkey (ADR 0128), ⌥M until changed;
+    /// kept while it is off, so turning it on again brings it back.
+    #[serde(
+        default = "companion_hotkey",
+        skip_serializing_if = "is_companion_hotkey"
+    )]
+    pub hotkey: Hotkey,
+    /// The hotkey is off: nothing is registered.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hotkey_off: bool,
+}
+fn companion_hotkey() -> Hotkey {
+    Hotkey::COMPANION
+}
+fn is_companion_hotkey(hotkey: &Hotkey) -> bool {
+    *hotkey == Hotkey::COMPANION
+}
+impl Default for AiConnectorConfig {
+    fn default() -> Self {
+        Self {
+            preview: false,
+            open_deliveries: false,
+            ask: AskWith::Claude,
+            hotkey: Hotkey::COMPANION,
+            hotkey_off: false,
+        }
+    }
 }
 /// Where the Ask button sends a document or a Project.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -800,6 +829,39 @@ mod tests {
     }
     /// Ask's last choice is Claude until another is chosen, and is written
     /// only then (#1164 Decision 22).
+    /// The companion's hotkey is ⌥M and on until changed, absent from the
+    /// file until then, and kept while turned off.
+    #[test]
+    fn the_hotkey_is_option_m_until_changed_and_kept_while_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut prefs = Preferences::default();
+        prefs.ai_connector.preview = true;
+        assert_eq!(prefs.ai_connector.hotkey, Hotkey::COMPANION);
+        assert!(!prefs.ai_connector.hotkey_off);
+        let written = serde_json::to_value(&prefs).unwrap();
+        assert_eq!(
+            written["ai_connector"],
+            serde_json::json!({ "preview": true })
+        );
+        let changed = Hotkey::new(true, false, true, false, "Space").unwrap();
+        prefs.ai_connector.hotkey = changed;
+        save(&path, &prefs).unwrap();
+        assert_eq!(load(&path).unwrap().ai_connector.hotkey, changed);
+        let written = serde_json::to_value(&prefs).unwrap();
+        assert_eq!(written["ai_connector"]["hotkey"], "ctrl+shift+Space");
+        prefs.ai_connector.hotkey_off = true;
+        save(&path, &prefs).unwrap();
+        let off = load(&path).unwrap().ai_connector;
+        assert!(off.hotkey_off);
+        assert_eq!(off.hotkey, changed, "kept while off");
+        // A hand-edited shortcut mdoc can't register is refused, as any
+        // invalid setting is.
+        let mut text = serde_json::to_value(&prefs).unwrap();
+        text["ai_connector"]["hotkey"] = "KeyM".into();
+        std::fs::write(&path, text.to_string()).unwrap();
+        assert!(load(&path).is_err());
+    }
     #[test]
     fn asks_last_choice_is_written_only_once_it_is_not_claude() {
         let dir = tempfile::tempdir().unwrap();

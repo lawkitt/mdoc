@@ -8,8 +8,6 @@ fn home(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTestContext) 
     cx.update(crate::bind_all_keys);
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
-    // The recovery key nudge opens the bell over the page's header.
-    tabs.update(cx, |tabs, _| tabs.title.notices_open.set(false));
     draw(cx);
     (tabs, cx)
 }

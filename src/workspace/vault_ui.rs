@@ -8,6 +8,12 @@ use gpui::{Context, SharedString, Window};
 use mdoc_store::os_key::{self, KeyError};
 use mdoc_vault::Vault;
 
+/// Intake refused while the Vault waits for its recovery key. The key
+/// opening the Vault withdraws it (#1161).
+pub(super) const WAITS_FOR_RECOVERY_KEY: &str = "Documents can't be added until your recovery \
+                                                 key opens the documents you have. Enter it on \
+                                                 Home.";
+
 impl Workspace {
     /// Read the key quietly and open the Vault; off the main thread.
     pub(super) fn open_vault_at_launch() -> Opening {
@@ -224,10 +230,7 @@ impl Workspace {
             return true;
         }
         if self.vault.wrong_key_root().is_some() {
-            self.notices.post(
-                "Documents can't be added until your recovery key opens the documents you \
-                 have. Enter it on Home.",
-            );
+            self.notices.post(WAITS_FOR_RECOVERY_KEY);
             cx.notify();
             return true;
         }

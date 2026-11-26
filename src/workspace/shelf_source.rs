@@ -557,7 +557,8 @@ impl Workspace {
             crate::menu_bar::reveal_if_hidden(window, cx);
             self.notices.post(format!(
                 "Could not save \u{201c}Quit when windows close\u{201d}: {error}. \
-                 Turn off Settings \u{203a} General \u{203a} Show mdoc in the menu bar to try again."
+                 Turn off Settings \u{203a} General \u{203a} {} to try again.",
+                crate::tray::SETTING
             ));
             cx.notify();
             return;

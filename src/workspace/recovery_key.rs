@@ -443,6 +443,9 @@ impl Workspace {
                             field.update(cx, |field, cx| drop(field.take_secret(cx)));
                         }
                         this.recovery.error = None;
+                        // Documents can be added now.
+                        this.notices
+                            .withdraw(super::vault_ui::WAITS_FOR_RECOVERY_KEY);
                         if let Err(why) = kept {
                             this.notices.post(format!(
                                 "Your documents are open, but this computer couldn't keep the \

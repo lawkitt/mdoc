@@ -79,7 +79,7 @@ impl Panel {
         self.category = category;
         self.dictionary = None;
         self.recovery.forget();
-        self.ai.forget();
+        self.ai.forget(cx);
         if category == Category::AiConnector {
             self.refresh_ai(cx);
         }
@@ -466,8 +466,8 @@ impl Panel {
     fn category_body(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
         let body = match self.category() {
             Category::General => div().child(self.appearance_section(theme, cx))
-                // MacOS only; Windows has no tray yet.
-                .when(cfg!(target_os = "macos"), |v| v.child(self.setting_row("Show mdoc in the menu bar", "mdoc keeps running after you close its windows.", self.switch("general-menu-bar", "Show mdoc in the menu bar", self.draft.general.menu_bar, true, |p| p.general.menu_bar = !p.general.menu_bar, theme, cx), theme)))
+                // MacOS; Windows only while the preview is on (its tray).
+                .when(crate::tray::setting_shown(self.draft.ai_connector.preview), |v| v.child(self.setting_row(crate::tray::SETTING, "mdoc keeps running after you close its windows.", self.switch("general-menu-bar", crate::tray::SETTING, self.draft.general.menu_bar, true, |p| p.general.menu_bar = !p.general.menu_bar, theme, cx), theme)))
                 .child(self.updates_section(theme, cx))
                 .child(self.setting_row("Keyboard shortcuts", "Browse the keys available in each part of mdoc.", self.scrolled_quiet("settings-shortcuts", "Show", theme, true, cx).when(cfg!(test), |v| v.debug_selector(|| "settings-shortcuts".into())).aria_label("Keyboard shortcuts").on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Shortcuts))), theme)),
             Category::Detection => div()

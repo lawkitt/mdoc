@@ -204,6 +204,7 @@ class RestoredSelectionTest {
         session.recognize(Quiet)
         val start = text.indexOf("Maya Bennett")
         session.addReplacement(SourceRange(start, start + 12), Category.Person)
+        session.confirmNamesChecked()
         session.copyForAi()
         return session
     }

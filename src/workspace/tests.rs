@@ -39,6 +39,7 @@ mod ai_connector_setting;
 mod ai_project;
 mod comment_rail;
 mod companion;
+mod companion_hotkey;
 mod decision_history;
 mod default_categories;
 mod document_notes;
@@ -68,6 +69,7 @@ mod shelf;
 mod shortcuts_sheet;
 mod sidebar;
 mod tab_set;
+mod tray;
 mod user_lists;
 mod vault_documents;
 mod vault_tree;
@@ -85,6 +87,29 @@ fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Workspace>, &mut V
         cx.run_until_parked();
     }
     (tabs, cx)
+}
+
+/// The Window menu's live views as set on the menu bar: (title, the live
+/// view it shows) (#1160).
+fn window_menu_views(cx: &mut VisualTestContext) -> Vec<(String, u64)> {
+    cx.update(|_, cx| {
+        let menus = cx.get_menus().unwrap_or_default();
+        let window = menus.into_iter().find(|menu| menu.name == "Window");
+        (window
+            .map(|menu| menu.items)
+            .unwrap_or_default()
+            .into_iter())
+        .filter_map(|item| match item {
+            gpui::OwnedMenuItem::Action { name, action, .. } => {
+                let show = action
+                    .as_any()
+                    .downcast_ref::<crate::menus::ShowLiveView>()?;
+                Some((name, show.0))
+            }
+            _ => None,
+        })
+        .collect()
+    })
 }
 
 /// Boot `session` on the Vault in `root`, as a restart does.

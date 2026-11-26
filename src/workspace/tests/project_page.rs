@@ -13,8 +13,6 @@ fn in_project<'a>(
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let id = new_project(&tabs, cx, tab);
     tabs.update(cx, |tabs, cx| tabs.dismiss_toast(cx));
-    // The recovery key nudge opens the bell over the page's header.
-    tabs.update(cx, |tabs, _| tabs.title.notices_open.set(false));
     (tabs, cx, tab, id)
 }
 

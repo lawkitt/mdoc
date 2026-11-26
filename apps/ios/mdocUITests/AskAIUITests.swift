@@ -53,13 +53,16 @@ final class AskAIUITests: XCTestCase {
         let banner = app.descendants(matching: .any)["reply-banner"].firstMatch
         XCTAssertFalse(banner.exists, "not before mdoc is left")
 
-        // To another app and back: "Paste reply?".
+        // To the AI app, where its answer is copied, and back: "Paste
+        // reply?". The copy is made while mdoc is away, as a person makes
+        // it. Made with the banner up, it replaced Copy's text under a
+        // Paste already enabled for that text, and a tap there pasted
+        // nothing on a hosted runner (queue run 45647970097).
         XCUIDevice.shared.press(.home)
         XCTAssertTrue(app.wait(for: .runningBackground, timeout: MdocUITest.timeout))
+        MdocUITest.copy("Write to EMAIL_1 today.")
         app.activate()
         XCTAssertTrue(banner.waitForExistence(timeout: MdocUITest.timeout))
-
-        MdocUITest.copy("Write to EMAIL_1 today.")
         MdocUITest.tapWhenEnabled(app.descendants(matching: .any)["reply-banner-paste"].firstMatch)
         let restored = app.textViews["restored-text"]
         XCTAssertTrue(restored.waitForExistence(timeout: 10))

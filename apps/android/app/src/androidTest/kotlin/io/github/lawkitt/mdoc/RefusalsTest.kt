@@ -118,6 +118,7 @@ class RefusalsTest {
         val project = documents.createProject("Harbour ${System.nanoTime()}").id
         val call = documents.importDocument(ImportSource.Text("Ann Lee called back."), "Call ${System.nanoTime()}", project)
         call.recognize(Quiet)
+        call.confirmNamesChecked()
         compose.activityRule.scenario.onActivity { it.recreate() }
         compose.openDocument(call.snapshot().title)
         compose.waitForShown(hasText("Share") and hasClickAction())
@@ -230,7 +231,11 @@ class RefusalsTest {
         compose.noCoreText()
     }
 
-    /** Done when: below the floor a document with nothing to replace goes: the bar and the menu agree. */
+    /**
+     * Done when: below the floor a document with nothing to replace lists
+     * its hand-offs, the bar and the menu alike, and the menu's Copy for
+     * AI asks "I checked the names myself" first (Vault & Projects item 48).
+     */
     @Test
     fun belowTheFloorTheBarAndTheMenuAgree() {
         val documents = app.core.documents
@@ -241,8 +246,86 @@ class RefusalsTest {
         compose.waitForShown(hasText("Share") and hasClickAction())
         compose.openMenu()
         for (tag in MENU_ITEMS) compose.waitForShown(hasTestTag(tag) and isEnabled())
-        compose.menuClose()
+        compose.shown(hasTestTag("menu-copy-for-ai")).performClick()
+        compose.waitForShown(hasTestTag("refusal-dialog"))
+        compose.waitForText("Check the names yourself")
+        compose.waitForShown(hasTestTag("refusal-step") and hasText("I checked the names myself"))
         compose.noCoreText()
+    }
+
+    /**
+     * Done when (Vault & Projects item 48): below the floor a fresh paste
+     * has its email proposed; with it replaced, Copy asks "I checked the
+     * names myself". Cancel copies nothing; the answer copies the Vault's
+     * checked text; a second Copy, the text unchanged, asks nothing.
+     */
+    @Test
+    fun belowTheFloorAPasteAsksBeforeItsFirstCopy() {
+        val documents = app.core.documents
+        val text = "Dear Maya Bennett, write to $EMAIL with questions."
+        val letter = documents.importDocument(ImportSource.Text(text), "Letter ${System.nanoTime()}")
+        letter.recognize(Quiet)
+        compose.recreate()
+        compose.openDocument(letter.snapshot().title)
+        assertEquals("the rule pack proposed the email", 1, letter.snapshot().pendingCount)
+        tap("Replace 1")
+        compose.waitForShown(hasText("Copy") and hasClickAction())
+
+        setClipboard("before")
+        tap("Copy")
+        compose.waitForShown(hasTestTag("refusal-dialog"))
+        compose.waitForText("Check the names yourself")
+        compose.waitForText("This phone can't find names. Read the text and mark any name still in it before it goes to an AI.")
+        tap("Cancel")
+        compose.waitUntil(10_000) { !compose.exists(hasTestTag("refusal-dialog")) }
+        awaitWindowFocus()
+        assertEquals("Cancel copies nothing", "before", clipboard())
+
+        tap("Copy")
+        compose.waitForShown(hasTestTag("refusal-step") and hasText("I checked the names myself"))
+        compose.shown(hasTestTag("refusal-step")).performClick()
+        compose.waitForText("Copied for AI")
+        awaitWindowFocus()
+        assertEquals(app.core.vault.textForAi(letter.vaultId!!), clipboard())
+        assertFalse(clipboard().contains(EMAIL))
+
+        setClipboard("again")
+        tap("Copy")
+        awaitWindowFocus()
+        val deadline = System.currentTimeMillis() + 10_000
+        while (clipboard() == "again" && System.currentTimeMillis() < deadline) Thread.sleep(100)
+        assertEquals(app.core.vault.textForAi(letter.vaultId!!), clipboard())
+        assertFalse("no question for unchanged text", compose.exists(hasTestTag("refusal-dialog")))
+        compose.noCoreText()
+    }
+
+    /**
+     * Done when (item 48's review): the screen made again while the
+     * question shows (a rotation) still goes on with the hand-off tapped
+     * once it is answered.
+     */
+    @Test
+    fun theQuestionOutlivesTheScreenMadeAgain() {
+        val documents = app.core.documents
+        val memo = documents.importDocument(ImportSource.Text("Nothing to hide here."), "Memo ${System.nanoTime()}")
+        memo.recognize(Quiet)
+        compose.recreate()
+        compose.openDocument(memo.snapshot().title)
+        setClipboard("before")
+        tap("Copy")
+        compose.waitForShown(hasTestTag("refusal-step") and hasText("I checked the names myself"))
+        compose.recreate()
+        compose.waitForShown(hasTestTag("refusal-step") and hasText("I checked the names myself"))
+        compose.shown(hasTestTag("refusal-step")).performClick()
+        compose.waitForText("Copied for AI")
+        awaitWindowFocus()
+        assertEquals(app.core.vault.textForAi(memo.vaultId!!), clipboard())
+    }
+
+    private fun setClipboard(text: String) {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            app.getSystemService(ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("test", text))
+        }
     }
 
     private fun tap(text: String) {
@@ -369,6 +452,8 @@ private fun MainRule.ready(documents: Documents): Documents.Session {
     session.recognize(Quiet)
     val start = text.indexOf("Maya Bennett")
     session.addReplacement(SourceRange(start, start + 12), Category.Person)
+    // Below the floor: "I checked the names myself" (item 48).
+    session.confirmNamesChecked()
     recreate()
     return session
 }

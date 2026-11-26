@@ -37,7 +37,7 @@ extension DocumentViewModel {
             onChange()
         } catch {
             replyOffer = nil
-            refused(error)
+            refused(error) { [weak self] in self?.askAI() }
         }
     }
 

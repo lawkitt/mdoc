@@ -18,13 +18,21 @@
 //! of screen capture (`NSWindowSharingNone`, which not every capture path
 //! honours), and the restored reply shows only while the pointer is over
 //! it: until then the window holds a placeholder, not the text.
-//! `native.rs` makes the window; Personal and search (ADR 0128) are not
-//! here yet.
+//! `native.rs` makes the window and `hotkey.rs` registers its system-wide
+//! hotkey; Personal and search (ADR 0128) are not here yet.
 
+pub(crate) mod hotkey;
+#[cfg(all(target_os = "macos", debug_assertions, not(test)))]
+pub(crate) mod hotkey_probe;
 #[cfg(all(target_os = "macos", not(test)))]
 mod native;
 #[cfg(all(target_os = "macos", debug_assertions, not(test)))]
 pub(crate) mod probe;
+// Windows (item 17): the same window by the tray icon ([`crate::tray`]).
+#[cfg(all(windows, debug_assertions, not(test)))]
+pub(crate) mod probe_windows;
+#[cfg(all(windows, not(test)))]
+pub(crate) mod windows;
 
 use crate::{
     menu_bar,
@@ -69,7 +77,19 @@ pub(crate) fn open<V: Render + 'static>(
     cx: &mut App,
     build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
 ) -> gpui::Result<WindowHandle<V>> {
-    let window = cx.open_window(window_options(bounds, display), build)?;
+    let window = cx.open_window(window_options(bounds, display), move |window, cx| {
+        // Before its first frame (`windows.rs`).
+        #[cfg(all(windows, not(test)))]
+        windows::float(window, bounds);
+        build(window, cx)
+    })?;
+    // Never up where a capture would see it: notifications and the Reply
+    // page remain.
+    #[cfg(all(windows, not(test)))]
+    if !window.update(cx, |_, window, _| windows::excluded(window))? {
+        window.update(cx, |_, window, _| window.remove_window())?;
+        return Err(std::io::Error::other("the companion cannot be left out of capture").into());
+    }
     #[cfg(all(target_os = "macos", not(test)))]
     window.update(cx, |_, window, _| native::float(window))?;
     Ok(window)
@@ -184,7 +204,7 @@ impl CompanionView {
             .unwrap_or_default();
         // Opening a requested document from the sidebar, or a share from
         // the Project page, changes what it shows.
-        let workspace_changes = workspace.root(cx).ok().map(|root| {
+        let workspace_changes = workspace.entity(cx).ok().map(|root| {
             cx.observe_in(&root, window, |this: &mut Self, root, window, cx| {
                 let marks = root.read(cx).companion_marks();
                 if marks != this.marks {

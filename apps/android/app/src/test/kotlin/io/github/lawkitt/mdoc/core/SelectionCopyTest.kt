@@ -91,7 +91,11 @@ class SelectionCopyTest {
         }
     }
 
-    /** Ready below the floor, its client's name replaced by hand: a selection of it is clean and copies unmarked. */
+    /**
+     * Ready below the floor, its client's name replaced by hand: a selection
+     * of it copies marked until the user checked its names (item 48), then
+     * clean and unmarked.
+     */
     @Test
     fun aCleanSelectionCopiesAsWrittenUnmarked() {
         val text = "Dear Maya Bennett, your claim is ready."
@@ -102,6 +106,9 @@ class SelectionCopyTest {
         val alias = letter.snapshot().candidates.single().alias
         val selection = range(shown, "$alias, your claim")
 
+        assertEquals(SelectionCheck.NeverScanned, letter.checkSelection(selection))
+        assertTrue(letter.copySelection(selection, "$alias, your claim", SelectionAction.CopyWithNames).marked)
+        letter.confirmNamesChecked()
         assertEquals(SelectionCheck.Clean, letter.checkSelection(selection))
         val copied = letter.copySelection(selection, "$alias, your claim", SelectionAction.Copy)
         assertEquals("$alias, your claim", copied.text)

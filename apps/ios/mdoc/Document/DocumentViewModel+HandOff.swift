@@ -19,7 +19,8 @@ extension DocumentViewModel {
         case .unscanned?:
             if findsNames { return .notScanned }
             // Below the floor names are decided by hand: with none left the
-            // document goes, as the bar's Share says (#1091 Q4).
+            // bar offers Share (#1091 Q4), and its tap asks whether the
+            // user checked them (item 48).
             if snapshot.pendingCount > 0 {
                 return .namesToDecide(names: identityCounts.toReview, proposals: snapshot.pendingCount)
             }
@@ -60,12 +61,14 @@ extension DocumentViewModel {
     }
 
     /// A hand-off that failed: a refusal shows with its step; anything else
-    /// as before.
-    func refused(_ error: any Error) {
+    /// as before. `exit` makes the hand-off again: "I checked the names
+    /// myself" goes on with it.
+    func refused(_ error: any Error, exit: (@MainActor () -> Void)? = nil) {
         if case CoreError.handOffRefused(let why) = error {
             // The tap scanned an edit Done had not scanned yet: a new name
             // it proposed shows on the bar, and Replace N and copy counts it.
             if !isEditing { applyReview(session.snapshot()) }
+            askingExit = why == .namesNotChecked ? exit : nil
             refusal = why
             // What the tap found, the bar and the menu show too.
             checkSaved()
@@ -74,12 +77,35 @@ extension DocumentViewModel {
         }
     }
 
+    /// "I checked the names myself" (item 48): the text asked of counts as
+    /// checked and is saved. True when the exit should go on: checked, or
+    /// the text changed while the question was up, so the exit asks again.
+    /// False when the save failed, which refuses in the app's words: the
+    /// save's own name the Vault's records.
+    @discardableResult
+    func confirmNamesChecked() -> Bool {
+        do {
+            if try session.confirmNamesChecked() { checkSaved() }
+            return true
+        } catch {
+            refusal = .failed
+            return false
+        }
+    }
+
     /// The refusal's step: Replace N and copy accepts the proposals as the
     /// review's Replace all does, one undoable step, then copies; Review
-    /// opens the bar on the names left; Find names looks for names again.
+    /// opens the bar on the names left; Find names looks for names again;
+    /// I checked the names myself saves the check, then the exit that
+    /// asked goes on.
     func take(_ step: HandOffRefusal.Step) {
         refusal = nil
+        let exit = askingExit
+        askingExit = nil
         switch step {
+        case .namesChecked:
+            guard confirmNamesChecked() else { return }
+            exit?()
         case .replaceAndCopy:
             replaceAllPending()
             guard snapshot.pendingCount == 0 else { return }

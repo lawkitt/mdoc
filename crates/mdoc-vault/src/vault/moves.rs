@@ -301,6 +301,8 @@ impl Vault {
         moved.project = joined.as_ref().map(|p| p.id.clone());
         // Readiness was of the text in the mapping it left.
         moved.ready_fingerprint = None;
+        // And the user's check below the floor was of that text.
+        moved.names_checked_by_hand = false;
         // The review's ranges and identities were of that text and mapping
         // too: the next open scans again.
         moved.review = None;

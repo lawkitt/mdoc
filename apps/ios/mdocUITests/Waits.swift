@@ -191,9 +191,23 @@ extension MdocUITest {
         let find = MdocUITest.menuItem("Find in document", app)
         XCTAssertTrue(find.waitForExistence(timeout: MdocUITest.timeout))
         find.tap()
+        typeInFindField(word, app)
+        let hide = app.buttons["find-hide-name"]
+        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
+        hide.tap()
+        let end = app.buttons["review-end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 10))
+        end.tap()
+    }
+
+    /// Types `word` into the open Find sheet's field once it has focus,
+    /// which the sheet gives it when it is up (#634), and waits until the
+    /// field holds the whole word.
+    @MainActor
+    static func typeInFindField(_ word: String, _ app: XCUIApplication) {
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: MdocUITest.timeout))
-        XCTAssertTrue(field.wait(until: NSPredicate(format: "hasKeyboardFocus == true"), timeout: 10))
+        XCTAssertTrue(field.wait(until: NSPredicate(format: "hasKeyboardFocus == true"), timeout: 10), "the Find field never took focus")
         // The Simulator drops a keystroke now and then while matches load,
         // and the field's value can lag what it shows: a retype after a
         // short wait, sized by that value, once doubled the word (#1255).
@@ -207,12 +221,6 @@ extension MdocUITest {
             holds = field.wait(until: typed, timeout: MdocUITest.timeout)
         }
         XCTAssertTrue(holds, "the field holds \(field.value ?? "")")
-        let hide = app.buttons["find-hide-name"]
-        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
-        hide.tap()
-        let end = app.buttons["review-end"]
-        XCTAssertTrue(end.waitForExistence(timeout: 10))
-        end.tap()
     }
 
     /// Empties a search field by its clear button and waits until it

@@ -20,6 +20,7 @@ mod markdown_search;
 mod menu_bar;
 mod menus;
 mod models;
+mod native_picker;
 mod pdf_comments;
 #[cfg(test)]
 mod perf_tests;
@@ -40,6 +41,7 @@ mod style;
 mod system_quit;
 #[cfg(test)]
 mod test_support;
+mod tray;
 mod ui;
 mod updater;
 mod workspace;
@@ -120,13 +122,22 @@ fn main() {
     {
         std::process::exit(conversion_worker::run_worker(&args[2..]));
     }
-    // The companion window's native check (src/companion/probe.rs).
-    #[cfg(all(target_os = "macos", debug_assertions, not(test)))]
+    // The companion window's native check (src/companion/probe.rs, and
+    // probe_windows.rs on Windows).
+    #[cfg(all(any(target_os = "macos", windows), debug_assertions, not(test)))]
     if args
         .get(1)
         .is_some_and(|arg| arg == "--mdoc-companion-probe")
     {
+        #[cfg(target_os = "macos")]
         companion::probe::run();
+        #[cfg(windows)]
+        companion::probe_windows::run();
+    }
+    // The companion hotkey's native check (src/companion/hotkey_probe.rs).
+    #[cfg(all(target_os = "macos", debug_assertions, not(test)))]
+    if args.get(1).is_some_and(|arg| arg == "--mdoc-hotkey-probe") {
+        companion::hotkey_probe::run();
     }
     if args.get(1).is_some_and(|arg| arg == "--mdoc-self-test") {
         let (Some(pdf), Some(expected)) = (args.get(2), args.get(3)) else {
@@ -284,6 +295,7 @@ fn main() {
             .unwrap_or_default();
         menu_bar::install(handle, menu_bar, note_shown, cx);
         menu_bar::set_companion(companion, cx);
+        let _ = handle.update(cx, |workspace, _, cx| workspace.refresh_hotkey(cx));
         *open_context.borrow_mut() = Some((handle, cx.to_async()));
         if let Some(launches) = later_launches {
             // Polled: the listener is a plain thread, and a launch is rare.
@@ -294,7 +306,8 @@ fn main() {
                         .await;
                     while let Ok(paths) = launches.try_recv() {
                         let _ = handle.update(cx, |workspace, window, cx| {
-                            window.activate_window();
+                            // Shown first if hidden in the tray.
+                            menu_bar::reveal_window(window, cx);
                             workspace.open_paths(paths, window, cx)
                         });
                     }

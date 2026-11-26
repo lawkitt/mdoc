@@ -86,9 +86,16 @@ final class TableEditingUITests: XCTestCase {
                 .press(forDuration: 0.05, thenDragTo: text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: to)))
         }
         XCTAssertTrue(placed(), "clause 17 is in view")
-        // A long press on a word in its first line selects it (the
-        // review's Hide menu).
-        target.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.12)).press(forDuration: 1.2)
+        // A long press on a word in its first line selects it, and the
+        // selection's menu shows. On a slow runner a press once selected
+        // nothing, and edit mode then rightly waited for a tap (queue run
+        // 44959124704): press again until the menu shows.
+        let menu = app.menuItems.firstMatch
+        for _ in 0..<3 where !menu.exists {
+            target.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.12)).press(forDuration: 1.2)
+            _ = menu.waitForExistence(timeout: MdocUITest.probeTimeout)
+        }
+        XCTAssertTrue(menu.exists, "a long press selects the word")
         let place = target.frame.minY
         let edit = app.buttons["edit-button"]
         XCTAssertTrue(edit.waitForExistence(timeout: 10))
