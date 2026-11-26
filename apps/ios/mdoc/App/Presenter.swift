@@ -179,7 +179,7 @@ private struct RefusalDialog: ViewModifier {
             if let step = app.step(for: refused.refusal, of: refused.id) {
                 Button(step.title) { app.take(step, on: refused.id) }
             }
-            Button("OK", role: .cancel) { navigator.dismiss() }
+            Button(refused.refusal.dismissTitle, role: .cancel) { navigator.dismiss() }
         } message: { refused in
             Text(refused.refusal.detail)
         }

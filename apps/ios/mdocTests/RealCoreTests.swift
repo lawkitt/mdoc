@@ -550,15 +550,21 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(marked.phase, .unscanned)
         XCTAssertThrowsError(try session.copyForAI())
         _ = try session.replaceAllPending()
+        XCTAssertThrowsError(try session.copyForAI()) { error in
+            XCTAssertEqual(error as? CoreError, .handOffRefused(.namesNotChecked))
+        }
+        XCTAssertTrue(try session.confirmNamesChecked())
         let handOff = try session.copyForAI()
         XCTAssertFalse(handOff.text.contains("Ms Ellison"))
         XCTAssertNeutralShareName(handOff.fileName, asFile: true)
     }
 
     /// A fresh import is never Ready before a scan on a phone that can find
-    /// names, even before the name finder is installed; below the floor it
-    /// is, with its names decided by hand. Both stay unscanned, so the
-    /// lists keep their labels (#1091 Q4).
+    /// names, even before the name finder is installed. Below the floor it
+    /// is, with its names decided by hand, but only once the user said "I
+    /// checked the names myself" of its text (item 48): saved, it is not
+    /// Ready yet. Both stay unscanned, so the lists keep their labels
+    /// (#1091 Q4).
     func testAFreshImportIsReadyBeforeAScanOnlyBelowTheFloor() throws {
         for (memory, ready) in [(Fixture.detectorTier, false), (Fixture.belowFloor, true)] {
             let core = try RealCore.make(storage: try Fixture.temporaryStorage(), keys: FixedVaultKeyStore(), physicalMemory: memory)
@@ -566,9 +572,34 @@ final class RealCoreTests: XCTestCase {
             let session = try core.library.importDocument(.text("# Note\n\nNothing to hide."), title: "Note", into: nil)
             _ = try session.recognize(observer: TestObserver())
             let id = try XCTUnwrap((session as? RealSession)?.vaultID)
-            XCTAssertEqual(try library.vault.readiness(id: id) == .ready, ready, "memory \(memory)")
+            XCTAssertEqual(try library.vault.readiness(id: id), .notReviewed, "memory \(memory): saved, not checked")
+            XCTAssertThrowsError(try library.vault.textForAi(id: id), "memory \(memory)")
+
+            XCTAssertThrowsError(try session.copyForAI(), "memory \(memory)") { error in
+                let asked = memory == Fixture.belowFloor
+                XCTAssertEqual(
+                    error as? CoreError == .handOffRefused(.namesNotChecked), asked, "memory \(memory): \(error)")
+            }
+            XCTAssertEqual(try session.confirmNamesChecked(), memory == Fixture.belowFloor, "memory \(memory)")
+            XCTAssertEqual(try library.vault.readiness(id: id) == .ready, ready, "memory \(memory): checked")
             XCTAssertEqual(try library.vault.document(id: id).phase, .unscanned, "memory \(memory)")
             XCTAssertEqual(core.library.snapshot().documents.first?.phase, .unscanned)
+        }
+    }
+
+    /// Below the floor the rule pack runs over a fresh paste at its first
+    /// save, so its email is proposed before anyone is asked whether the
+    /// names were checked (item 48).
+    func testAFreshPasteBelowTheFloorProposesItsEmail() throws {
+        let core = try core()
+        let session = try core.library.importDocument(.text(Self.letter), title: "Letter", into: nil)
+        let read = try session.recognize(observer: TestObserver())
+        XCTAssertEqual(read.phase, .unscanned)
+        XCTAssertTrue(
+            read.candidates.contains { $0.original == "maya.ellison@example.com" && $0.state == .proposed },
+            "\(read.candidates.map(\.original))")
+        XCTAssertThrowsError(try session.copyForAI()) { error in
+            guard case CoreError.handOffRefused(.namesToDecide) = error else { return XCTFail("\(error)") }
         }
     }
 

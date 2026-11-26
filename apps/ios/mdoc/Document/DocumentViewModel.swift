@@ -145,6 +145,9 @@ final class DocumentViewModel {
     /// Copy for AI or Share refused on a tap: why, and the step that
     /// resolves it (#1209).
     var refusal: HandOffRefusal?
+    /// The exit that asked "I checked the names myself": it goes on once
+    /// the user says so (item 48).
+    @ObservationIgnored var askingExit: (@MainActor () -> Void)?
     /// What the Vault says of the document as last saved, checked after
     /// each save (`checkSaved`); nil until then, and again once the text or
     /// its review changes, until the next save.
@@ -526,14 +529,14 @@ final class DocumentViewModel {
     // MARK: Hand-off
 
     /// Copy for AI to the clipboard.
-    func copyForAI(to pasteboard: (String) -> Void) {
+    func copyForAI(to pasteboard: @escaping @MainActor (String) -> Void) {
         do {
             let handOff = try session.copyForAI()
             pasteboard(handOff.text)
             say(String(localized: "Copied for AI"))
             onChange()
         } catch {
-            refused(error)
+            refused(error) { [weak self] in self?.copyForAI(to: pasteboard) }
         }
     }
 
@@ -556,7 +559,7 @@ final class DocumentViewModel {
             }
             onChange()
         } catch {
-            refused(error)
+            refused(error) { [weak self] in self?.share(asFile: asFile) }
         }
     }
 

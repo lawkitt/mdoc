@@ -30,6 +30,10 @@ enum HandOffRefusal: Equatable, Sendable {
     case notChecked
     /// The text changed after its review: Find names again.
     case changedSinceReview
+    /// Below the floor, on a tap only: nobody said this text's names were
+    /// checked, which a phone that finds no names asks before the text
+    /// leaves, and again after any change to it (item 48).
+    case namesNotChecked
     /// Names the Project knows are written out in the text: Review.
     case namesWrittenOut(Int)
     /// Excluded from AI, which only a computer changes.
@@ -45,12 +49,16 @@ enum HandOffRefusal: Equatable, Sendable {
         case review
         /// Find names, or Find names again.
         case findNames
+        /// I checked the names myself: the text as it is now counts as
+        /// checked, is saved, and the exit that asked goes on.
+        case namesChecked
 
         var systemImage: String {
             switch self {
             case .replaceAndCopy: "eye.slash"
             case .review: "list.bullet.rectangle"
             case .findNames: "text.magnifyingglass"
+            case .namesChecked: "checkmark.circle"
             }
         }
 
@@ -59,6 +67,7 @@ enum HandOffRefusal: Equatable, Sendable {
             case .replaceAndCopy(let count): String(localized: "Replace \(count) and copy")
             case .review: String(localized: "Review")
             case .findNames: String(localized: "Find names")
+            case .namesChecked: String(localized: "I checked the names myself")
             }
         }
     }
@@ -89,6 +98,7 @@ enum HandOffRefusal: Equatable, Sendable {
         case .notRead: String(localized: "The document isn't ready yet")
         case .notChecked: String(localized: "The new text isn't checked yet")
         case .changedSinceReview: String(localized: "Changed since its review")
+        case .namesNotChecked: String(localized: "Check the names yourself")
         case .namesWrittenOut(let count):
             count == 1
                 ? String(localized: "1 known name is written out")
@@ -111,6 +121,8 @@ enum HandOffRefusal: Equatable, Sendable {
             String(localized: "Names in the edited text are looked for first.")
         case .changedSinceReview:
             String(localized: "The text changed after its review, so names are looked for again first.")
+        case .namesNotChecked:
+            String(localized: "This phone can't find names. Read the text and mark any name still in it before it goes to an AI.")
         case .namesWrittenOut:
             String(localized: "A name this document's Project knows is still written out. Replace it first.")
         case .excludedFromAI:
@@ -129,7 +141,14 @@ enum HandOffRefusal: Equatable, Sendable {
         case .namesToDecide(_, let proposals): proposals > 0 ? .replaceAndCopy(proposals) : .review
         case .notScanned, .notChecked, .changedSinceReview: findsNames ? .findNames : nil
         case .namesWrittenOut: .review
+        case .namesNotChecked: .namesChecked
         case .notRead, .excludedFromAI, .failed: nil
         }
+    }
+
+    /// The alert's other button: a question is cancelled, a refusal only
+    /// acknowledged.
+    var dismissTitle: String {
+        self == .namesNotChecked ? String(localized: "Cancel") : String(localized: "OK")
     }
 }

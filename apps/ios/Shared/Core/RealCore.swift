@@ -861,6 +861,9 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     private var ended = false
     /// The core's id of the long job running now, which `end` stops.
     private var runningJob: UInt64?
+    /// The text Copy for AI last asked "I checked the names myself" of:
+    /// the answer is about that text only (item 48).
+    private var namesAskedOf: String?
     /// The saved reply the Reply pane shows, picked or pasted this
     /// session; nil shows the newest.
     private var shownReply: ReplyID?
@@ -1314,7 +1317,19 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             throw CoreError.handOffRefused(vaultID == nil ? .notRead : .failed)
         }
         guard let vaultID else { throw CoreError.handOffRefused(.notRead) }
-        if let refusal = savedReadiness().flatMap(HandOffRefusal.init) {
+        // Below the floor names are decided by hand, and the text leaves
+        // only once the user said they checked them (item 48): asked after
+        // any other refusal the Vault can tell now, before its "not
+        // reviewed", which is what an unchecked record reads as.
+        let readiness = savedReadiness()
+        if readiness != .notReviewed, let refusal = readiness.flatMap(HandOffRefusal.init) {
+            throw CoreError.handOffRefused(refusal)
+        }
+        if let asked = textOwingNamesCheck() {
+            lock.withLock { namesAskedOf = asked }
+            throw CoreError.handOffRefused(.namesNotChecked)
+        }
+        if let refusal = readiness.flatMap(HandOffRefusal.init) {
             throw CoreError.handOffRefused(refusal)
         }
         let text: String
@@ -1327,6 +1342,27 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         // The Restore extension restores with where it went.
         library.rememberShared(vaultID: vaultID)
         return HandOff(text: text, fileName: handOff.fileName)
+    }
+
+    /// Below the floor, the text of a document never scanned that nobody
+    /// said was checked, as it is now: Copy for AI and Share ask first. A
+    /// scanned one needs no check, nor does any above the floor.
+    private func textOwingNamesCheck() -> String? {
+        guard library.findsNoNames, !ffi.namesChecked(), let review = try? ffi.snapshot(),
+              review.phase == .unscanned else { return nil }
+        return review.text
+    }
+
+    /// The text last asked of counts as checked, and the save that makes
+    /// owed runs now, so the Vault records it Ready once no proposals are
+    /// left. False, with nothing checked, when the text changed since it
+    /// was asked (a join or a move meanwhile): the exit asks again.
+    func confirmNamesChecked() throws -> Bool {
+        guard let asked = lock.withLock({ namesAskedOf }) else { return false }
+        guard try core({ try ffi.confirmNamesChecked(text: asked) }) else { return false }
+        lock.withLock { namesAskedOf = nil }
+        try saveChanges()
+        return true
     }
 
     /// Saves, then opens the document again from the Vault: its names

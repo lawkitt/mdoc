@@ -94,10 +94,14 @@ final class DeviceBelowFloorUITests: XCTestCase {
         XCTAssertTrue(undone, "the selection was not marked")
         if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 
-        // The marked text shares.
+        // The marked text shares once the user says they checked the
+        // names (item 48).
         let primary = app.buttons["primary-action"]
         expect(NSPredicate(format: "label BEGINSWITH 'Share'"), on: primary, timeout: 10)
         primary.tap()
+        let asked = app.alerts["Check the names yourself"]
+        XCTAssertTrue(asked.waitForExistence(timeout: MdocUITest.timeout), "Share did not ask")
+        asked.buttons["I checked the names myself"].tap()
         XCTAssertTrue(app.otherElements["ActivityListView"].firstMatch.waitForExistence(timeout: 10))
         MdocUITest.closeShareSheet(app)
     }
