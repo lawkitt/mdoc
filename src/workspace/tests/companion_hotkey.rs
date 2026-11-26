@@ -79,22 +79,49 @@ fn option_m_is_registered_only_while_the_preview_is_on(cx: &mut TestAppContext) 
 }
 
 /// Shown off before its save lands (#1220), the preview lets go of the
-/// hotkey at once; a save that failed takes it again.
+/// hotkey at once, and a model check finishing meanwhile doesn't take it
+/// back (review of #1268); a save that failed takes it again.
 #[gpui::test]
 fn the_preview_shown_off_lets_go_at_once(cx: &mut TestAppContext) {
     let fixture = fixture();
     let (tabs, cx) = boot_fixture(cx, &fixture);
     let recorded = launch(&tabs, cx);
     set_preview(&tabs, cx, true);
-    for (shown, held) in [(false, None), (true, Some(Hotkey::COMPANION))] {
+    let emit = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext, event| {
         tabs.update(cx, |tabs, cx| {
-            (tabs.settings).update(cx, |_, cx| {
-                cx.emit(settings_ui::Event::AiConnectorShown(shown))
+            (tabs.settings).update(cx, |panel, cx| {
+                if let settings_ui::Event::AiConnectorShown(shown) = event {
+                    panel.open = true;
+                    panel.draft.ai_connector.preview = shown;
+                }
+                cx.emit(event)
             })
         });
         cx.run_until_parked();
-        assert_eq!(recorded.state().registered, held);
-    }
+    };
+    emit(&tabs, cx, settings_ui::Event::AiConnectorShown(false));
+    assert_eq!(recorded.state().registered, None);
+    // Still saved on.
+    emit(&tabs, cx, settings_ui::Event::Checked);
+    assert_eq!(recorded.state().registered, None, "a model check took it");
+    emit(&tabs, cx, settings_ui::Event::AiConnectorShown(true));
+    assert_eq!(recorded.state().registered, Some(Hotkey::COMPANION));
+}
+
+/// Review of #1268: "Quit when windows close" takes the item away, and the
+/// hotkey with it, even when the quit is cancelled and mdoc stays open.
+#[gpui::test]
+fn the_item_going_lets_go_of_the_hotkey(cx: &mut TestAppContext) {
+    let fixture = fixture();
+    let (tabs, cx) = boot_fixture(cx, &fixture);
+    let recorded = launch(&tabs, cx);
+    set_preview(&tabs, cx, true);
+    assert_eq!(recorded.state().registered, Some(Hotkey::COMPANION));
+    cx.cx.update(menu_bar::quit_when_windows_close);
+    assert_eq!(recorded.state().registered, None);
+    // The window reads the setting again: still no item, no hotkey.
+    tabs.update(cx, |tabs, cx| tabs.refresh_hotkey(cx));
+    assert_eq!(recorded.state().registered, None);
 }
 
 /// Done when: a changed shortcut replaces the old one at once, off lets

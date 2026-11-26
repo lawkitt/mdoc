@@ -138,10 +138,14 @@ impl Workspace {
 
     /// The companion's hotkey follows the saved setting: registered only
     /// while the companion can open (the preview and the menu bar item
-    /// on), and Settings shows why it couldn't be.
+    /// on), and Settings shows why it couldn't be. The preview shown off in
+    /// open Settings, its save not landed yet (#1220), counts as off.
     pub(crate) fn refresh_hotkey(&mut self, cx: &mut Context<Self>) {
         let setting = self.ai_setting();
-        let wanted = (setting.preview && !setting.hotkey_off && self.menu_bar_setting())
+        let panel = self.settings.read(cx);
+        let shown_off = panel.open && !panel.draft.ai_connector.preview;
+        let item = self.menu_bar_setting() && crate::menu_bar::keeps_running(cx);
+        let wanted = (setting.preview && !shown_off && !setting.hotkey_off && item)
             .then_some(setting.hotkey);
         let failed = crate::companion::hotkey::set(wanted, cx);
         self.settings

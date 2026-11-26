@@ -545,6 +545,17 @@ fn the_switch_turns_the_shortcut_off_and_keeps_it(cx: &mut TestAppContext) {
     click(cx, "ai-hotkey");
     assert!(!saved(&shared).hotkey_off);
     assert_eq!(saved(&shared).hotkey, Hotkey::COMPANION);
+    // Review of #1268: either switch going off while it records stops the
+    // recorder, so the next key reaches the app again.
+    for switch in ["ai-hotkey", "ai-connector-preview"] {
+        click(cx, "ai-hotkey-record");
+        panel.update(cx, |p, _| assert!(p.ai.recording.is_some()));
+        click(cx, switch);
+        panel.update(cx, |p, _| assert!(p.ai.recording.is_none(), "{switch}"));
+        cx.simulate_keystrokes("ctrl-shift-space");
+        assert_eq!(saved(&shared).hotkey, Hotkey::COMPANION, "{switch}");
+        click(cx, switch);
+    }
 }
 
 /// Done when (item 15): a shortcut that couldn't be registered shows

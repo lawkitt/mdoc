@@ -156,7 +156,7 @@ impl Panel {
     /// A key press while recording: a shortcut saves, Esc stops, anything
     /// else says why it isn't one.
     pub(crate) fn hotkey_keystroke(&mut self, keystroke: &Keystroke, cx: &mut Context<Self>) {
-        match hotkey::recorded(keystroke) {
+        match hotkey::recorded(keystroke, hotkey::key_down()) {
             Ok(shortcut) => {
                 self.ai.stop_recording(cx);
                 if self.draft.ai_connector.hotkey != shortcut {
@@ -192,7 +192,7 @@ impl Panel {
 
     /// Why the companion's shortcut couldn't be registered, as the page
     /// holds it.
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "macos"))]
     pub(crate) fn hotkey_failed_shown(&self) -> Option<String> {
         self.ai.hotkey_failed.clone()
     }
@@ -209,7 +209,11 @@ impl Panel {
     }
 
     /// Read the apps' state again; with the preview off, nothing is read.
+    /// The shortcut recorder stops once the preview or the shortcut is off.
     pub(super) fn refresh_ai(&mut self, cx: &mut Context<Self>) {
+        if !self.draft.ai_connector.preview || self.draft.ai_connector.hotkey_off {
+            self.ai.stop_recording(cx);
+        }
         self.ai.status = if self.draft.ai_connector.preview {
             let places = self.places();
             Some(Host::ALL.map(|host| setup::status(places, host)))

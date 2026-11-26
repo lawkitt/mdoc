@@ -489,6 +489,9 @@ fn carry_out(effect: MenuBarEffect, cx: &mut App) {
         MenuBarEffect::ShowItem => show_item(cx),
         MenuBarEffect::RemoveItem => {
             close_note(cx);
+            // The companion can't open without the item: its hotkey goes
+            // too, even if mdoc stays open after "Quit when windows close".
+            crate::companion::hotkey::set(None, cx);
             #[cfg(all(target_os = "macos", not(test)))]
             gpui_macos::set_status_item(None);
         }
