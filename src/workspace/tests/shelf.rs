@@ -620,7 +620,12 @@ fn a_write_of_new_text_takes_back_a_phones_names_check(cx: &mut TestAppContext) 
     cx.run_until_parked();
     let vault = vault(&tabs, cx);
     (vault.update_document(document.as_str(), |d| d.names_checked_by_hand = true)).unwrap();
-    let checked = || vault.document(document.as_str()).unwrap().names_checked_by_hand;
+    let checked = || {
+        vault
+            .document(document.as_str())
+            .unwrap()
+            .names_checked_by_hand
+    };
 
     // A review change alone: the text is as it was.
     let view = active(&tabs, cx);
@@ -635,7 +640,10 @@ fn a_write_of_new_text_takes_back_a_phones_names_check(cx: &mut TestAppContext) 
     let before = vault.document(document.as_str()).unwrap().revision;
     tabs.update_in(cx, |tabs, window, cx| tabs.autosave(id, window, cx));
     cx.run_until_parked();
-    assert!(vault.document(document.as_str()).unwrap().revision > before, "written");
+    assert!(
+        vault.document(document.as_str()).unwrap().revision > before,
+        "written"
+    );
     assert!(checked(), "unchanged text keeps the check");
 
     view.update(cx, |view, cx| {
