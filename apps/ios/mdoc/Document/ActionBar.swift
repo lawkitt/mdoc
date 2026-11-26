@@ -174,7 +174,7 @@ struct ActionBar: View {
                         .frame(maxWidth: .infinity)
                 }
                 .secondaryAction()
-                .accessibilityHint(Text("Copies the text for an AI app, with the note about placeholders."))
+                .accessibilityHint(Text("Copies the text for an AI app, with the note about aliases."))
                 .accessibilityIdentifier("copy-for-ai")
                 pasteReply(accessibilityLabel: "Paste reply")
             }
