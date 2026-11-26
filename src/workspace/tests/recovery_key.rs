@@ -342,6 +342,60 @@ fn the_recovery_key_takes_both_wrong_key_notices_away(cx: &mut TestAppContext) {
     });
 }
 
+/// Done when (#1287): on a profile with no key and no session, launch
+/// shows Home's recovery screen at once, not a blank page. A refused
+/// intake's notice is on the bell and in its popover until the recovery
+/// key opens the Vault: then the bell has nothing to count, the popover
+/// no card, and Home shows the opened Vault.
+#[gpui::test]
+fn the_recovery_key_clears_the_locked_notice_from_the_bell(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let sealed_with = [5; 32];
+    let (root, _, _) = sealed_vault(dir.path(), &sealed_with);
+    let store = key_store(Some([2; 32]));
+    let (tabs, cx) = boot_home_with(
+        cx,
+        Session::default(),
+        launch_with(root, [2; 32], store.clone()),
+    );
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    draw(cx);
+    assert!(
+        cx.debug_bounds("home-recovery").is_some(),
+        "launch shows it"
+    );
+    tabs.update_in(cx, |tabs, window, cx| {
+        assert!(tabs.intake_refused(window, cx));
+    });
+    draw(cx);
+    draw(cx);
+    cx.update(|_, cx| assert!(tabs.read(cx).title.notices.get() >= 1));
+    if cx.debug_bounds("notices-popover").is_none() {
+        click(cx, "header-notices");
+    }
+    assert!(cx.debug_bounds("dismiss-session-notice").is_some());
+    // The recovery key opens the Vault, the popover still open.
+    type_key(&tabs, &recovery::format(&sealed_with), cx);
+    click(cx, "home-recovery-open");
+    cx.run_until_parked();
+    draw(cx);
+    draw(cx);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.vault.vault().is_some());
+        assert_eq!(tabs.notice_text(), None);
+        assert_eq!(tabs.title.notices.get(), 0, "the bell counts nothing");
+    });
+    assert!(cx.debug_bounds("dismiss-session-notice").is_none());
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    assert!(cx.debug_bounds("home-recovery").is_none());
+    assert!(
+        cx.debug_bounds("home-drop").is_some(),
+        "Home shows the Vault"
+    );
+    assert_eq!(store.lock().unwrap().stored, vec![sealed_with]);
+}
+
 #[gpui::test]
 fn a_key_the_os_refuses_to_keep_still_opens_this_run_and_says_so(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
