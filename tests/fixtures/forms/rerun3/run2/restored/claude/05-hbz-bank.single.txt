@@ -1,0 +1,49 @@
+Here is the HBZ Bank individual account opening form filled in for you. The form asks for capital letters, so when you copy it onto the paper form, write every value in CAPITALS, including the values that replace the aliases.
+
+[B01] Date: NEEDS-YOU (the date you sign the form; it has 8 boxes, so probably DDMMYYYY)
+[B02] Branch: NEEDS-YOU (you haven't said which HBZ branch you're applying to, for example the Durban branch)
+[B03] Type of Account: Current [X]  Saving [ ]
+
+A. ACCOUNT HOLDER'S DETAIL
+[B04] Surname: ESCALANTE
+[B05] First name: MARICEL
+[B06] Identity number: N/A (NO SOUTH AFRICAN ID NUMBER, NON-RESIDENT)
+[B07] Date of Birth: 09 AUG 1991
+[B08] Passport number: P4829173B
+[B09] Passport issuing country: PHILIPPINES   Expiry date: 13/03/2032
+[B10] Work / study / residence permit: N/A   Expiry date: N/A
+[B11] Alternative type of permit (specify): N/A   Expiry date: N/A
+[B12] Nationality: FILIPINO   Country of birth: CEBU CITY
+[B13] Additional nationality: NONE
+[B14] Physical residential address: Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418   Postal code: see note 2
+[B15] Postal address: Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418   Postal code: see note 2
+[B16] Email address: NEEDS-YOU (no email address is listed)
+[B17] Home telephone no: leave blank (see note 3)
+[B18] Work telephone no: leave blank, or NEEDS-YOU if you want to give a work number (none is listed)
+[B19] Cell. no: Country Code see note 3   Area Code N/A   Number +65 8555 0143
+[B20] Fax no: N/A
+[B21] Nature of profession / occupation: STAFF NURSE
+
+There are no US indicia (no US phone number, address or email), so you don't need the W-8BEN.
+
+B. BENEFICIAL OWNERSHIP
+[B22] Are you the beneficial owner of the funds? Yes [X]  No [ ]
+[B23] Beneficial owner details: leave blank (not needed, because you answered Yes)
+
+C. FATCA
+[B24] U.S. citizen? Yes [ ]  No [X]
+[B25] Lawful permanent resident (green card / substantial presence)? Yes [ ]  No [X]
+[B26] Born in the United States or a U.S. territory? Yes [ ]  No [X]
+[B27] 'US Person' for any other reason? Yes [ ]  No [X]   (leave "please specify" blank)
+[B28] Instructions to transfer funds to U.S. accounts, or directions from a U.S. address? Yes [ ]  No [X]
+[B29] Power of Attorney or signing authority to anyone with a U.S. address? Yes [ ]  No [X]
+[B30] "In care of" / "hold mail" / U.S. P.O. Box / U.S. telephone number? Yes [ ]  No [X]
+
+Things to do by hand:
+1. Country of birth (B12): this box wants a country, but CEBU CITY is your place of birth as stored. If it's a town or city, write only the country on the paper form. (The form says "County of birth", which is a typo for "Country".)
+2. Addresses (B14, B15): Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 is your whole Singapore home address in one piece. On paper, split it over the address lines, put its postal code in the "Postal code" box rather than on the address lines, and make sure SINGAPORE is written as the country. I put your home address as the postal address as well. If you want post sent somewhere else, give me that address. You could also write "SAME AS ABOVE" there if the bank accepts it.
+3. Phone (B17/B19): I put +65 8555 0143 under cell number. If it's actually a landline, move it to Home telephone instead. The form splits the number into Country Code / Area Code / Number. If the stored number starts with a country code (for a Singapore number that's 65), write that code in the Country Code box and the rest in Number. Singapore has no area codes, so write N/A there.
+
+Not used on this form: your middle name (BUENAFLOR), your passport's date of issue (14 MAR 2022) and its issuing authority (DFA MANILA), title (Ms) and sex. If the bank wants your full name as it appears in your passport, you could add BUENAFLOR after MARICEL in the first name box.
+
+This extract has no signature or declaration section. If the full form has one, you'll need to sign it yourself. As a non-resident, expect the bank to ask for supporting documents too, such as a copy of your passport, proof of your Singapore address and possibly the lease for the Durban flat as proof of where the funds come from. Check their list before you go.

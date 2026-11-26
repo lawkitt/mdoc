@@ -1,0 +1,76 @@
+Here is how to fill in your Form 22. The property manager or owner fills in items 1, 2, 3, 7, 8 and 9 and the first pet question (B25), so leave those blank. You fill in the rest.
+
+1 Property manager/owner details
+[B01] Leave blank. The property manager/owner fills this in.
+
+2 Address of the premises
+[B02] Leave blank. The property manager/owner fills this in. If they don't, write the address of the Brisbane flat from the listing.
+
+3 Ways to submit your application
+[B03] Leave blank. The property manager/owner fills this in.
+
+4 Number of occupants
+[B04] Total number of occupants: 1
+[B05] Number of occupants under 18 years of age: 0
+
+5 Applicant details
+[B06] Full name: MARICEL BUENAFLOR ESCALANTE
+[B07] Date of birth: 09 AUG 1991
+  This is your date of birth as printed in your passport. If the passport shows it in a form like "01 JAN 1990", you can rewrite it by hand as DD/MM/YYYY, which is the usual format in Australia.
+[B08] Current address: Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418   Postcode: NEEDS-YOU
+  Your Singapore postal code (6 digits). If it is already part of your stored address, copy it into the Postcode box by hand. Leave it out of the address line if you want, so it isn't written twice.
+[B09] Phone: +65 8555 0143
+  If the stored number has no country code, add +65 in front by hand, so an Australian agent can call it.
+[B10] Email: NEEDS-YOU (your email address isn't in your details)
+
+6 Employment details
+The form asks for your "current" employer. Your nursing job in Brisbane is what shows you can pay the rent there, so I suggest you list it here and say it starts on 1 February 2027. If you are working in Singapore now, you could list that job instead, or add it under item 7.
+[B11] Current employer: NEEDS-YOU (the name of the Brisbane hospital or employer)
+[B12] Job title: Nurse (change this to your exact title from the offer letter, for example "Registered Nurse", if it is different)
+[B13] Length of employment: New position, starting 1 February 2027   Gross weekly income: NEEDS-YOU (your weekly pay before tax, from your offer letter or contract; if you only know the yearly salary, divide it by 52)
+[B14] Employer name: NEEDS-YOU (your manager or a contact at the employer, such as the person in HR who made your offer)   Employer phone: NEEDS-YOU   Employer email: NEEDS-YOU
+
+7 Financial information
+[B15] Leave items 1 and 2 blank. The property manager/owner says which documents they want.
+  Other: you can write "Letter of offer / employment contract for nursing position starting 1 February 2027". It helps to attach it, along with savings statements if you have them, because your pay in Brisbane hasn't started yet.
+
+8 Verification of identity
+[B16] Leave blank. The property manager/owner says which documents they want. Your passport (issued by the Philippines, valid until 13 March 2032) will most likely be one of them. Your passport number is not asked for anywhere on this form, so don't write it in.
+
+9 Applicant suitability
+[B17] Leave blank. The property manager/owner says which documents they want.
+
+10 Rental history
+Property 1
+[B18] Current/previous address: Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418   Postcode: NEEDS-YOU (your Singapore postal code, the same as in B08)
+[B19] Rental period (Start – End): June 2021 – Current
+  Add the exact start day if you know it, for example from your lease.
+[B20] Property manager/owner name: NEEDS-YOU   Property manager/owner email: NEEDS-YOU   Property manager/owner phone: NEEDS-YOU
+  These are your Singapore landlord's or agent's details. For the phone number, include the +65 country code.
+
+Property 2
+[B21] Optional: NEEDS-YOU if you want to list where you lived before June 2021 (address, postcode, dates, and the landlord's name, email and phone). Five years at one place is good rental history, so you can leave this blank.
+
+[B22] Leave blank. You have a rental history, so this doesn't apply.
+
+11 References
+The form asks for 2 referees who can say you will look after the property. A former landlord, your employer, a colleague or a nursing supervisor all work well. Family members carry less weight.
+[B23] Name: NEEDS-YOU   Phone: NEEDS-YOU   Email: NEEDS-YOU   Referee's connection to applicant: NEEDS-YOU
+[B24] Name: NEEDS-YOU   Phone: NEEDS-YOU   Email: NEEDS-YOU   Referee's connection to applicant: NEEDS-YOU
+
+12 Pet details
+[B25] Leave blank. The property manager/owner fills this in.
+[B26] Do you intend to keep pets at the premises? [X] No
+[B27] Leave blank (you have no pets).
+
+Still needed from you
+- B08 and B18: your Singapore postal code, unless it is already in your stored address
+- B10: your email address
+- B11, B13, B14: your Brisbane employer's name, your gross weekly pay, and an employer contact's name, phone and email
+- B20: your Singapore landlord's or agent's name, email and phone
+- B23, B24: two referees, each with name, phone, email and how they know you
+- B21 (optional): an earlier rental before June 2021
+
+Also check
+- The section you sent ends at item 12. Item 15 (tenancy databases) and any declaration or signature are on later pages, so read and sign those yourself.
+- You don't have to give your passport number or other ID numbers in this application form. Show the passport itself when the property manager asks for ID under item 8.

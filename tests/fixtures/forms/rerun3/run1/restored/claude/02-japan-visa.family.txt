@@ -1,0 +1,65 @@
+Here is your form (yours only), filled from what you gave me. Aliases are written exactly as listed; NEEDS-YOU marks what I don't have.
+
+VISA APPLICATION FORM TO ENTER JAPAN
+
+[B01] Surname (as shown in passport): RAGHUNATHAN
+[B02] Given and middle names (as shown in passport): VIKRAM ANAND
+[B03] Other names: NEEDS-YOU (any other names you use or have used; write "None" if there are none)
+[B04] Date of birth: 22/11/1983
+[B05] Place of birth: PUNE, MAHARASHTRA
+[B06] Sex: Male [X]  Female [ ]
+[B07] Marital status: Single [ ]  Married [X]  Widowed [ ]  Divorced [ ]
+[B08] Nationality or citizenship: Indian
+[B09] Former and/or other nationalities or citizenships: NEEDS-YOU (write "None" if you have never held another)
+[B10] ID No. issued to you by your government: NEEDS-YOU (a national ID number other than your passport number; fill it in by hand on the form, not here, or leave it blank if you have none)
+[B11] Passport type: Diplomatic [ ]  Official [ ]  Ordinary [X]  Other [ ]
+[B12] Passport No.: Z4827163
+[B13] Place of issue: NEEDS-YOU (the place of issue printed in your passport, usually a city; it isn't in the list I have)
+[B14] Date of issue: 05/06/2019
+[B15] Issuing authority: HIGH COMMISSION OF INDIA, LONDON
+[B16] Date of expiry: 04/06/2029
+[B17] Certificate of Eligibility No.: N/A
+[B18] Purpose of visit to Japan/Status of residence: Tourism (Temporary Visitor)
+[B19] Intended length of stay in Japan: 7 days
+[B20] Date of arrival in Japan: 20/04/2027
+[B21] Port of entry into Japan: Kansai International Airport
+[B22] Name of ship or airline: NEEDS-YOU (airline and flight number)
+Names and addresses of hotels or persons with whom applicant intends to stay
+[B23] Name: NEEDS-YOU (hotel name)   Tel.: NEEDS-YOU (hotel phone)
+[B24] Address: NEEDS-YOU (hotel address)
+[B25] Dates and duration of previous stays in Japan: October 2023, 9 days
+Your current residential address
+[B26] Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B27] Tel.: +44 7700 900123   Mobile No.: +44 7700 900123
+[B28] E-Mail: NEEDS-YOU (your email address)
+[B29] Current profession or occupation and position: Software Engineer
+Name and address of employer
+[B30] Name: NEEDS-YOU (employer name)   Tel.: NEEDS-YOU (employer phone)
+[B31] Address: NEEDS-YOU (employer address)
+[B32] Partner's profession/occupation: Pharmacist
+Guarantor or reference in Japan
+[B33] Name: None
+Inviter in Japan
+[B34] Name: None
+[B35] Remarks/Special circumstances: Travelling for tourism with my wife, MEERA RAGHUNATHAN, and my daughter, ANIKA RAGHUNATHAN, who are applying separately.
+Have you ever:
+[B36] been convicted of a crime or offence in any country? NEEDS-YOU (tick Yes or No yourself)
+[B37] been sentenced to imprisonment for 1 year or more in any country? NEEDS-YOU (tick Yes or No yourself)
+[B38] been deported or removed from Japan or any country? NEEDS-YOU (tick Yes or No yourself)
+[B39] been convicted and sentenced for a drug offence in any country? NEEDS-YOU (tick Yes or No yourself)
+[B40] engaged in prostitution or related activity? NEEDS-YOU (tick Yes or No yourself)
+[B41] committed trafficking in persons or aided such an offence? NEEDS-YOU (tick Yes or No yourself)
+[B42] Details if any answer is "Yes": leave blank if all answers are No; otherwise NEEDS-YOU
+[B43] Date of application: NEEDS-YOU (the day you submit, as Day/Month/Year)
+[B44] Signature of applicant: NEEDS-YOU (sign by hand)
+
+What to do by hand:
+- B04 and B14: the form wants Day/Month/Year. If your passport prints these dates another way, rewrite them in that order, e.g. as DD/MM/YYYY.
+- B05: the form has separate City, State or Province, and Country boxes. Split your place of birth across them.
+- B27: I put your number under both Tel. and Mobile No. If it is a landline, leave Mobile No. blank. If it is a mobile and you have no landline, you can leave Tel. blank.
+- B11: I ticked Ordinary, the usual type for a tourist passport. Change it if yours is diplomatic or official.
+- B33/B34: I wrote "None" because you didn't mention anyone in Japan guaranteeing or inviting you. If someone is, tell me and I'll fill these in.
+- B25: if you remember the exact dates of the October 2023 stay, add them, e.g. "DD/10/2023 to DD/10/2023 (9 days)".
+- B35 is optional. Remove it if you prefer.
+
+Important for your daughter: her passport is valid only until 1 January 2027, which is before you arrive on 20 April 2027. She will need a new passport before she can apply for her visa. Also, Japan usually expects a passport to stay valid for the whole stay.

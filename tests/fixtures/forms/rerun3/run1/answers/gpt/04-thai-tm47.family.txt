@@ -1,0 +1,61 @@
+## TM.47 for P1
+
+**B01 — Written at**  
+Bangkok Immigration Office
+
+**B02 — Filing date**  
+Day 24, month November, year 2569 B.E.
+
+**B03 — Full name**
+
+GIVEN_P1
+
+MIDDLE_P1
+
+SURNAME_P1
+
+After the values are restored, write them together in block capitals on the full-name line, in passport order.
+
+**B04 — Nationality**  
+Indian
+
+**B05 — Visa**  
+Check **NON-IMM**.
+
+**B06 — Date entered Thailand**  
+Day 26, month August, year 2569 B.E.
+
+**B07 — Means of travel**  
+Airplane
+
+**B08 — Passport number**
+
+ID_P1
+
+**B09 — Arrival card number**  
+NEEDS-YOU  
+Enter your arrival card number directly on the form.
+
+**B10 — Lane or road**  
+NEEDS-YOU  
+Enter the lane or road from your current Thai address.
+
+**B11 — Tambol**  
+NEEDS-YOU  
+Enter the subdistrict from your current Thai address.
+
+**B12 — Amphur**  
+NEEDS-YOU  
+Enter the district from your current Thai address.
+
+**B13 — Province**  
+NEEDS-YOU  
+Enter the province from your current Thai address.
+
+**B14 — Phone**
+
+PHONE_P1
+
+**B15 — Signature**  
+NEEDS-YOU  
+Sign the form by hand.

@@ -1,0 +1,102 @@
+## Certificate of Visa Eligibility application
+
+The entries below are for you as the sole applicant. Where a field has two aliases on separate lines, combine the restored values by hand as described below.
+
+```text
+B01  Family name
+SURNAME_P1
+
+B02  Given names
+GIVEN_P1
+MIDDLE_P1
+
+B03  Chinese-character name       NEEDS-YOU
+B04  Sex                          [√] Male
+B05  Date of birth
+DATE_P1
+
+B06  Nationality                  INDIAN
+B07  Country of birth
+PLACE_P1
+
+B08  National identity number     NEEDS-YOU
+B09  Other names used in Korea    NEEDS-YOU
+B10  Multiple citizenship         NEEDS-YOU
+
+B11  Passport type                NEEDS-YOU
+B12  Passport number
+ID_P1
+
+B13  Country of passport          INDIA
+B14  Place of issue               NEEDS-YOU
+B15  Date of issue
+ISSUED_P1
+
+B16  Date of expiry               2029/06/04
+B17  Other valid passports        NEEDS-YOU
+
+B18  Home-country address         NEEDS-YOU
+B19  Current residential address
+ADDRESS_P1
+
+B20  Cell phone
+PHONE_P1
+
+B21  General telephone            NEEDS-YOU
+B22  Email                        NEEDS-YOU
+
+B23  Emergency contact full name
+GIVEN_P2
+SURNAME_P2
+
+B24  Country of residence         UNITED KINGDOM
+B25  Emergency contact phone
+PHONE_P2
+
+B26  Relationship                 WIFE
+
+B27  Marital status               [√] Married
+B28  Spouse family name
+SURNAME_P2
+
+B29  Spouse given names
+GIVEN_P2
+
+B30  Spouse date of birth
+DATE_P2
+
+B31  Spouse nationality           INDIAN
+B32  Spouse residential address
+ADDRESS_P1
+
+B33  Spouse contact number
+PHONE_P2
+
+B34  Children                     [√] Yes    Number 1
+
+B35  Highest education            [√] Master's / Doctoral Degree
+B36  School name                  NEEDS-YOU
+B37  School location              NEEDS-YOU
+
+B38  Current circumstances       [√] Employed
+B39  Company name                 NEEDS-YOU
+B40  Position                     NEEDS-YOU
+B41  Company address              NEEDS-YOU
+B42  Company telephone            NEEDS-YOU
+```
+
+### After the aliases are restored
+
+- **B02 and B23** — For B02, copy the given names in the order shown in your passport’s given-names field. Include the middle name if it appears there. For B23, combine your wife’s given name and family name on one line, using her full name in English.
+- **B05, B15 and B30** — Write both birth dates as `yyyy/mm/dd`. I used that same format for the expiry date in B16. For B15, copy the issue date from your passport and follow any format indicated on the form you submit.
+- **B07** — Enter only the country that corresponds to the restored birthplace. Verify the country privately if the restored value gives only a locality.
+- **B19, B20 and B32** — I used your home address for both residential fields based on your shared UK residence. Check that it restores to your current UK address and that the number in B20 is your mobile number.
+
+### What you still need to supply or confirm privately
+
+- **B03 and B08** — Your Chinese-character name and national identity number, where applicable.
+- **B09, B10 and B17** — Confirm Yes or No for prior use of another name to enter or leave Korea, additional citizenship, and any other valid passport. For any Yes, supply the requested names, citizenship details, or passport details in that field.
+- **B11 and B14** — Confirm the passport category and copy the place of issue from your passport or passport records. If you select Other for the category, add the requested description.
+- **B18, B21 and B22** — Supply your home-country address in India and general telephone number, if applicable, and your email address.
+- **B36 and B37** — Supply the institution that awarded your master’s degree and its city, province or equivalent, and country.
+- **B39–B42** — Supply the company name, your job title, and the company address and telephone number to use for the transfer application.

@@ -1,0 +1,56 @@
+Here is your form (your application only). Before the fields, one urgent point:
+
+**Your daughter's passport expires on 1 January 2027, before your 20 April 2027 arrival.** Japan will not issue her a visa on it. She needs a new passport before her own application. Once she has it, her passport number, issue date and expiry date will all change, so the values stored for her will need updating too. Your passport (valid to 4 June 2029) and your wife's (valid to 10 August 2030) are fine.
+
+VISA APPLICATION FORM TO ENTER JAPAN
+
+[B01] Surname: RAGHUNATHAN
+[B02] Given and middle names: VIKRAM ANAND
+[B03] Other names: NEEDS-YOU. I don't know whether you have used any other names. If you haven't, write "None".
+[B04] Date of birth: 22/11/1983
+      By hand: the form wants Day/Month/Year. If your passport prints the date another way, rewrite it as DD/MM/YYYY.
+[B05] Place of birth: PUNE, MAHARASHTRA
+      By hand: the form has separate City, State or Province and Country boxes. Split the value across them.
+[B06] Sex: Male [X]  Female [ ]
+[B07] Marital status: Single [ ]  Married [X]  Widowed [ ]  Divorced [ ]
+[B08] Nationality or citizenship: Indian
+[B09] Former and/or other nationalities: NEEDS-YOU. If you never held another nationality, write "None".
+[B10] ID No. issued to you by your government: NEEDS-YOU. No national ID number (such as Aadhaar) is in your stored details. Write it on the form yourself, not in this chat. Many applicants leave this blank if the consulate doesn't ask for it.
+[B11] Passport type: NEEDS-YOU. Your details say "passport" but not which type. For a normal tourist passport (type "P" on the data page), tick Ordinary.
+[B12] Passport No.: Z4827163
+[B13] Place of issue: NEEDS-YOU. Indian passports print a "Place of Issue" (a city) on the data page. Copy it from there. The issuing authority stored for you is a different field, but if it turns out to be that same printed entry, you can write HIGH COMMISSION OF INDIA, LONDON here.
+[B14] Date of issue: 05/06/2019
+      By hand: rewrite as DD/MM/YYYY if your passport shows it differently.
+[B15] Issuing authority: HIGH COMMISSION OF INDIA, LONDON
+[B16] Date of expiry: 04/06/2029
+[B17] Certificate of Eligibility No.: N/A (not needed for a short-term tourist visa)
+[B18] Purpose of visit: Tourism (Temporary Visitor)
+[B19] Intended length of stay: 7 days
+[B20] Date of arrival: 20/04/2027
+[B21] Port of entry: Kansai International Airport
+[B22] Name of ship or airline: NEEDS-YOU. Add your airline and flight number once booked.
+[B23] Hotel name / Tel.: NEEDS-YOU. Add your hotel's name and phone number.
+[B24] Hotel address: NEEDS-YOU. Add your hotel's address. If you are staying in more than one place, list them all.
+[B25] Previous stays in Japan: 9 days, October 2023
+      If you know the exact dates, write them (for example "DD/10/2023 to DD/10/2023, 9 days").
+[B26] Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B27] Tel.: +44 7700 900123   Mobile No.: +44 7700 900123
+      If this is a mobile number and you have no landline, you can leave Tel. blank and keep it under Mobile only.
+[B28] E-Mail: NEEDS-YOU. No email address is stored for you.
+[B29] Current profession or occupation and position: Software Engineer
+      Add your job title if it is different (for example "Senior Software Engineer").
+[B30] Employer name / Tel.: NEEDS-YOU. Add your employer's name and phone number.
+[B31] Employer address: NEEDS-YOU. Add your employer's address.
+[B32] Partner's profession/occupation: Pharmacist
+[B33] Guarantor or reference in Japan: NEEDS-YOU. If no one in Japan is guaranteeing or hosting you (a normal self-funded holiday), write "None". If someone is, give their details.
+[B34] Inviter in Japan: NEEDS-YOU. Same as above: "None" if nobody invited you, or "same as above" if the inviter and the guarantor are the same person.
+[B35] Remarks: Travelling with my wife, RAGHUNATHAN MEERA, and our daughter, RAGHUNATHAN ANIKA, who are applying separately.
+      (Optional. You can leave it blank.)
+[B36]-[B41] Criminal record, deportation, drugs, prostitution, trafficking: NEEDS-YOU. Only you can answer these. Tick Yes or No for each one honestly. Note 2 says to tick "Yes" even if a sentence was suspended.
+[B42] Details if "Yes": leave blank if every answer from B36 to B41 is No.
+[B43] Date of application: NEEDS-YOU. Write the date you submit, as DD/MM/YYYY.
+[B44] Signature of applicant: sign by hand.
+
+Still needed from you: other names, other nationalities, government ID number, passport type, place of issue, flight, hotel, email, employer details, guarantor/inviter (or "None"), the six background questions, and the application date.
+
+Your wife and daughter each need their own form. When you fill those, B32 asks for the partner's occupation (yours, Software Engineer, on your wife's form). For your daughter, as a minor, it asks for both parents' occupations.

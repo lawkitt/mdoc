@@ -1,0 +1,45 @@
+```text
+B01  [ ] Mr  [ ] Mrs  [ ] Miss  [✔] Ms
+B02
+SURNAME_P1
+B03
+DATE_P1
+B04
+GIVEN_P1
+MIDDLE_P1
+B05
+NEEDS-YOU
+B06  NONE
+B07  [ ] Male  [✔] Female
+B08
+PLACE_P1
+B09
+NEEDS-YOU
+B10
+NEEDS-YOU
+B11
+PHONE_P1
+B12  NOT APPLICABLE
+B13  NOT APPLICABLE
+B14  NOT APPLICABLE
+B15
+NEEDS-YOU
+B16  NOT APPLICABLE
+B17  03 NOVEMBER 2026
+B18  Leave blank if the Armed Forces section does not apply
+B19  Leave blank if the Armed Forces section does not apply
+B20  Leave blank if the Armed Forces section does not apply
+B21  Leave unchecked
+B22  Leave both unchecked unless either statement applies
+B23  [✔] Signature of Patient  [ ] Signature on behalf of patient
+NEEDS-YOU
+B24
+NEEDS-YOU
+```
+
+- **B02, B04, B08** — Use block capitals on the form. In B04, put your first name and middle name in the same blank, in that order, separated by a space. In B08, add your birth town or country by hand if the restored value omits either.
+- **B03** — If the restored date uses a different order, write it by hand as day, month, year.
+- **B05** — Enter your NHS number privately if you know it. Otherwise, leave the field blank.
+- **B09, B10, B15** — Enter your new Leeds address and postcode by hand in B09 and B10. I’ve assumed this is your first UK GP registration, so repeat the Leeds address in B15.
+- **B18–B20** — If you’re returning from the Armed Forces, these fields need your address before enlisting, service or personnel number, and enlistment date, respectively.
+- **B23–B24** — Sign by hand and enter the date you sign.

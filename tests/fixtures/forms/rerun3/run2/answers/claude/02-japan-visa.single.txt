@@ -1,0 +1,75 @@
+Here is your Japan visa form filled from what you gave me. Blanks marked NEEDS-YOU need something I don't have. The list of missing items and the things to fix by hand are at the end.
+
+APPLICANT
+[B01] Surname: SURNAME_P1
+[B02] Given and middle names: GIVEN_P1 MIDDLE_P1
+[B03] Other names: NEEDS-YOU (any other names you use or have used. If there are none, write "None")
+[B04] Date of birth: DATE_P1
+[B05] Place of birth: PLACE_P1
+[B06] Sex: Male [ ]  Female [X]
+[B07] Marital status: Single [X]  Married [ ]  Widowed [ ]  Divorced [ ]
+[B08] Nationality or citizenship: Filipino
+[B09] Former and/or other nationalities: NEEDS-YOU (write "None" if you have never held another)
+[B10] ID No. issued by your government: NEEDS-YOU (a national ID number such as your PhilSys number, if you have one. Write it on the form yourself, not here)
+
+PASSPORT
+[B11] Passport type: Diplomatic [ ]  Official [ ]  Ordinary [X]  Other [ ]
+[B12] Passport No.: ID_P1
+[B13] Place of issue: NEEDS-YOU (the city or office where the passport was issued)
+[B14] Date of issue: ISSUED_P1
+[B15] Issuing authority: AUTHORITY_P1
+[B16] Date of expiry: 13/03/2032
+[B17] Certificate of Eligibility No.: N/A
+
+TRIP
+[B18] Purpose of visit: Tourism (sightseeing), Temporary Visitor
+[B19] Intended length of stay: 10 days
+[B20] Date of arrival: 02/04/2027
+[B21] Port of entry: Narita International Airport
+[B22] Name of ship or airline: NEEDS-YOU (the airline, and the flight number once booked)
+[B23] Hotel name: NEEDS-YOU   Tel.: NEEDS-YOU
+[B24] Hotel address: NEEDS-YOU
+[B25] Previous stays in Japan: None
+
+CONTACT AND WORK
+[B26] Address: ADDRESS_P1
+[B27] Tel.: PHONE_P1   Mobile No.: PHONE_P1
+[B28] E-Mail: NEEDS-YOU
+[B29] Current occupation and position: Staff Nurse
+[B30] Employer name: NEEDS-YOU   Tel.: NEEDS-YOU
+[B31] Employer address: NEEDS-YOU
+[B32] Partner's/parents' occupation: leave blank (optional, and you are a single adult)
+
+GUARANTOR AND INVITER
+[B33] Guarantor or reference in Japan: None (leave the other parts and the sex boxes blank)
+[B34] Inviter in Japan: None (leave the other parts and the sex boxes blank)
+[B35] Remarks: leave blank (optional)
+
+DECLARATIONS
+[B36] Convicted of a crime or offence: NEEDS-YOU
+[B37] Sentenced to 1 year or more of imprisonment: NEEDS-YOU
+[B38] Deported or removed from any country: NEEDS-YOU
+[B39] Convicted of a drug offence: NEEDS-YOU
+[B40] Involved in prostitution: NEEDS-YOU
+[B41] Involved in trafficking in persons: NEEDS-YOU
+[B42] Details if any answer is "Yes": leave blank if every answer is "No"
+[B43] Date of application: NEEDS-YOU (the day you sign, as DD/MM/YYYY)
+[B44] Signature: sign by hand, the same way as in your passport
+
+WHAT TO FIX BY HAND
+- B04 and B14: the form wants Day/Month/Year. If your passport prints these dates another way (for example "15 JAN 1990"), rewrite them as DD/MM/YYYY when you copy them onto the form.
+- B05: the form splits place of birth into City, Province and Country. Split your place of birth into those three parts by hand, and add "Philippines" as the country if the passport doesn't show it.
+- B01 and B02: copy the names exactly as the passport prints them, capitals included. Put the given and middle names in the order the passport uses.
+- B11: I ticked Ordinary because a holiday trip is normally made on an ordinary passport. Check your passport and change the tick if it says something else.
+- B27: if PHONE_P1 is a mobile number with no landline, keep it under Mobile No. and write "None" under Tel. If it is a landline, put it only under Tel. and add your mobile number by hand.
+- B13: the passport often shows the place of issue next to the issuing authority (B15). If so, copy that city into B13.
+
+STILL NEEDED (NEEDS-YOU)
+- B03, B09, B10: other names, other nationalities, and any government ID number
+- B13: passport place of issue
+- B22: airline and flight
+- B23, B24: name, phone number and address of at least your first hotel. Consulates usually expect an itinerary with your accommodation, so book or choose your Tokyo and Kyoto hotels first. If the consulate allows it, you can list every hotel and write "see attached itinerary"
+- B28: email address
+- B30, B31: your employer's name, phone number and address (the hospital or clinic)
+- B36 to B41: tick Yes or No yourself. These are your own sworn answers, so I won't tick them for you
+- B43: the date you submit the form

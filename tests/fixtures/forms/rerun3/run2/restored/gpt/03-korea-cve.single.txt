@@ -1,0 +1,47 @@
+Use the entries below to fill the form on your device. Enter names and other text in block letters, and complete each `NEEDS-YOU` entry privately.
+
+| Blank | Entry or action |
+|---|---|
+| B01 | ESCALANTE |
+| B02 | MARICEL BUENAFLOR |
+| B03 | NEEDS-YOU — Enter your Hanja name if you have one. |
+| B04 | Female [√] |
+| B05 | 09 AUG 1991 |
+| B06 | FILIPINO |
+| B07 | NEEDS-YOU — Country of birth. |
+| B08 | NEEDS-YOU — National identity number, if applicable. |
+| B09 | NEEDS-YOU — Check Yes or No. If Yes, enter the family and given names you previously used to enter or leave Korea. |
+| B10 | NEEDS-YOU — Check Yes or No. If Yes, list your other citizenships. |
+| B11 | NEEDS-YOU — Check the type shown in your passport. If you select Other, specify the type. |
+| B12 | P4829173B |
+| B13 | PHILIPPINES |
+| B14 | NEEDS-YOU — Place where your passport was issued. |
+| B15 | 14 MAR 2022 |
+| B16 | 13 MARCH 2032 |
+| B17 | NEEDS-YOU — Check Yes or No. If Yes, enter the other valid passport’s type, number, issuing country, and expiry date. |
+| B18 | NEEDS-YOU — Your home-country address in the Philippines. |
+| B19 | Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 |
+| B20 | +65 8555 0143 |
+| B21 | NEEDS-YOU — General telephone number, if applicable. |
+| B22 | NEEDS-YOU — Your email address. |
+| B23 | NEEDS-YOU — Your mother’s full name in English. |
+| B24 | PHILIPPINES |
+| B25 | NEEDS-YOU — Your mother’s telephone number. |
+| B26 | MOTHER |
+| B27 | Single [√] |
+| B28–B33 | Leave blank. The spouse fields apply only if you select Married. |
+| B34 | No [√]. Number of children is 0. |
+| B35 | Bachelor’s Degree [√] |
+| B36 | NEEDS-YOU — Name of the school that awarded your nursing degree. |
+| B37 | NEEDS-YOU — School location, including city, province, and country as applicable. |
+| B38 | NEEDS-YOU — Select your current employment or other status. If you select Other, specify it. |
+| B39 | NEEDS-YOU — Name of your current company, institution, or school, if applicable. |
+| B40 | NEEDS-YOU — Your current position or course, if applicable. |
+| B41 | NEEDS-YOU — Address of that company, institution, or school, if applicable. |
+| B42 | NEEDS-YOU — Telephone number of that company, institution, or school, if applicable. |
+
+- **B02** — Match the passport’s Given Names field exactly. Keep the middle name only if it appears in that field, and use the printed order.
+- **B05** — After the date is restored, write it by hand in `yyyy/mm/dd` format.
+- **B18–B19** — I treated your stored home address as your current Singapore address. If it is your Philippine address, move it to B18 and enter your current Singapore address in B19.
+- **B20–B21** — I treated your stored phone number as your cell number. If it is a general telephone number, move it to B21 and enter your cell number in B20 if you have one.
+- **B38–B42** — Use your circumstances at the time you complete the form. The Seoul nursing offer gives your prospective role.

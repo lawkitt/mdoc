@@ -1,0 +1,35 @@
+### Form 22 for P1
+
+| Blank | What to enter |
+|---|---|
+| B01 | Full name — NEEDS-YOU · Phone — NEEDS-YOU · Email — NEEDS-YOU · Agency details, if applicable — NEEDS-YOU |
+| B02 | Street address of the Brisbane rental — NEEDS-YOU · Postcode — NEEDS-YOU |
+| B03 | Submission method 1 — NEEDS-YOU · Submission method 2 — NEEDS-YOU |
+| B04 | 3 |
+| B05 | NEEDS-YOU — number of the three occupants who are under 18 |
+| B06 | VIKRAM ANAND RAGHUNATHAN |
+| B07 | 22/11/1983 |
+| B08 | Current address — 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom · Postcode — NEEDS-YOU |
+| B09 | +44 7700 900123 |
+| B10 | Applicant email — NEEDS-YOU |
+| B11 | Current employer — NEEDS-YOU |
+| B12 | Job title — NEEDS-YOU |
+| B13 | Length of employment — NEEDS-YOU · Gross weekly income — NEEDS-YOU |
+| B14 | Employer name — NEEDS-YOU · Employer phone — NEEDS-YOU · Employer email — NEEDS-YOU |
+| B15 | Financial document 1 — NEEDS-YOU · Financial document 2 — NEEDS-YOU · Other evidence of ability to pay rent, if applicable — NEEDS-YOU |
+| B16 | Identity document 1 — NEEDS-YOU · Identity document 2 — NEEDS-YOU |
+| B17 | Suitability document 1 — NEEDS-YOU · Suitability document 2 — NEEDS-YOU |
+| B18 | Current rental address — 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom · Postcode — NEEDS-YOU |
+| B19 | March 2020 – Present |
+| B20 | Current property manager or owner name — NEEDS-YOU · Email — NEEDS-YOU · Phone — NEEDS-YOU |
+| B21 | If you have a second rental to list, previous address — NEEDS-YOU · Postcode — NEEDS-YOU · Rental period — NEEDS-YOU · Property manager or owner name — NEEDS-YOU · Email — NEEDS-YOU · Phone — NEEDS-YOU |
+| B22 | Leave blank. Your current rental is listed above. |
+| B23 | First referee’s name — NEEDS-YOU · Phone — NEEDS-YOU · Email — NEEDS-YOU · Connection to you — NEEDS-YOU |
+| B24 | Second referee’s name — NEEDS-YOU · Phone — NEEDS-YOU · Email — NEEDS-YOU · Connection to you — NEEDS-YOU |
+| B25 | NEEDS-YOU — the property manager or owner should select Yes, No or Not applicable. |
+| B26 | Tick **No**. |
+| B27 | Leave all three fields blank. |
+
+After the values are restored, move the postcode into the separate postcode box in B08 and B18 if it is included in the restored address. Otherwise, enter the Manchester postcode by hand. If B07 requires a different date format, reformat the restored date by hand.
+
+The property manager or owner should specify the submission methods in B03 and the requested documents in B15–B17. If your wife is also applying as a co-applicant, the form says she needs her own copy.

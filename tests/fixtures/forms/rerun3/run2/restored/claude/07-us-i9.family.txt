@@ -1,0 +1,44 @@
+Here is Section 1 of your Form I-9, filled for you (P1). Your wife's and daughter's details aren't used on this form.
+
+[B01] Last Name (Family Name): RAGHUNATHAN
+[B02] First Name (Given Name): VIKRAM
+[B03] Middle Initial (if any): ANAND
+      By hand: the form wants only the initial. Keep the first letter of your middle name and delete the rest.
+[B04] Other Last Names Used (if any): N/A
+[B05] Address (Street Number and Name): NEEDS-YOU
+[B06] Apt. Number (if any): NEEDS-YOU
+[B07] City or Town: NEEDS-YOU
+[B08] State: NEEDS-YOU
+[B09] ZIP Code: NEEDS-YOU
+      Your new US address isn't saved in mdoc, so enter all of B05 to B09 yourself. Leave B06 blank if there's no apartment. Don't use your saved home address here, because the I-9 needs the address where you live in the US now.
+[B10] Date of Birth (mm/dd/yyyy): 22/11/1983
+      By hand: rewrite it as month/day/year with two digits for the month, two for the day and four for the year (for example, the 5th of March becomes 03/05/...). Your passport probably prints the day first, so check that the day and month aren't swapped.
+[B11] U.S. Social Security Number: leave blank
+      You don't have an SSN yet, so leave this blank. If your employer uses E-Verify, tell HR you've applied (or will apply) for one, and give them the number once it arrives.
+[B12] Employee's Email Address: NEEDS-YOU
+      This is optional. No email is listed, so add one yourself or leave it blank.
+[B13] Employee's Telephone Number: +44 7700 900123
+      This is optional. If the saved number is your Indian one and you now have a US number, you may want to write the US number instead.
+
+[B14] Citizenship or immigration status:
+      [ ] 1. A citizen of the United States
+      [ ] 2. A noncitizen national of the United States
+      [ ] 3. A lawful permanent resident
+      [X] 4. An alien authorized to work until (exp. date, if any): 01/15/2029
+      Check that this date matches the "Admit Until Date" on your I-94 record for your L-1 status. If they differ, use the I-94 date.
+
+[B15] If you checked Item Number 4, enter one of these:
+      USCIS A-Number: (leave blank)
+      Form I-94 Admission Number: (leave blank)
+      Foreign Passport Number: Z4827163
+      Country of Issuance: India
+      You only need one of the three options. I've used your passport because it's on file and valid until 4 June 2029. If you'd rather give your I-94 admission number (from your I-94 record on the CBP website), write it in that blank yourself and leave the passport blank. It isn't saved here.
+
+[B16] Signature of Employee: NEEDS-YOU
+      Sign it yourself, by hand or through your employer's e-signature system.
+[B17] Today's Date (mm/dd/yyyy): NEEDS-YOU
+      Write the date you sign, as mm/dd/yyyy. You must finish Section 1 no later than your first day of work.
+
+Preparer and/or Translator Certification: not needed if you fill in and sign Section 1 yourself.
+
+For Section 2 (which your employer completes), have your Indian passport and your I-94 record ready. With an L-1, these two together usually serve as a List A document.

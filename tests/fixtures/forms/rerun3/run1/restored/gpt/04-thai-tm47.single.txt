@@ -1,0 +1,19 @@
+| Blank | Entry |
+|---|---|
+| B01 Written at | Chiang Mai Immigration Office |
+| B02 Report date | 24 November 2569 |
+| B03 Full name | MARICEL BUENAFLOR ESCALANTE |
+| B04 Nationality | Filipino |
+| B05 Visa type | ☑ NON-IMM |
+| B06 Date entered Thailand | 25 August 2569 |
+| B07 Transport | Air |
+| B08 Passport number | P4829173B |
+| B09 Arrival card number | NEEDS-YOU |
+| B10 Lane or road | NEEDS-YOU |
+| B11 Tambol (subdistrict) | NEEDS-YOU |
+| B12 Amphur (district) | NEEDS-YOU |
+| B13 Province | Chiang Mai |
+| B14 Phone | +65 8555 0143 |
+| B15 Signature | NEEDS-YOU |
+
+Both date fields use Buddhist Era years. After mdoc restores your name, write it in block capitals for B03. Enter your arrival card number in B09 and the lane or road, subdistrict, and district of your current Thai address in B10–B12. Sign B15 by hand.

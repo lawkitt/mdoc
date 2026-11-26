@@ -1,0 +1,156 @@
+I used you as the applicant and first emergency contact, and used your current home address for the child and both parents. Leave B01–B07 for preschool staff. The entries below give them the information you have.
+
+```text
+Preschool/Daycare name in the form heading
+NEEDS-YOU
+
+FOR OFFICIAL USE ONLY
+
+B01 Name of child
+ANIKA
+RAGHUNATHAN
+
+B02 Date of birth
+17/09/2019
+
+B03 Sex
+Mark Female. Leave Male blank.
+
+B04 Religion
+NEEDS-YOU
+
+B05 Home address
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+B06 Date of full immunization
+NEEDS-YOU
+
+B07 Date of admission
+NEEDS-YOU
+
+APPLICATION
+
+B08 Child applying for admission
+ANIKA
+RAGHUNATHAN
+
+B08 Preschool/Daycare name
+NEEDS-YOU
+
+B09 Name of applicant
+VIKRAM
+ANAND
+RAGHUNATHAN
+
+B10 Applicant telephone
+(C)
++44 7700 900123
+(W) NEEDS-YOU
+(H) NEEDS-YOU
+
+B11 Applicant email
+NEEDS-YOU
+
+B12 Relationship to child
+Father
+
+CHILD AND FAMILY
+
+B13 Name of child
+ANIKA
+RAGHUNATHAN
+
+B14 People the child lives with
+Mother
+MEERA
+RAGHUNATHAN
+
+Father
+VIKRAM
+ANAND
+RAGHUNATHAN
+
+B15 Child’s address
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+B16 Number of children in the family
+Male 0
+Female 1
+
+B17 Place of child in the family
+First and only child
+
+B18 Name of mother
+MEERA
+RAGHUNATHAN
+
+B19 Mother’s address
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+B20 Mother’s telephone
+(C)
++44 7700 900456
+(W) NEEDS-YOU
+(H) NEEDS-YOU
+
+B21 Mother’s email
+NEEDS-YOU
+
+B22 Mother’s occupation
+Pharmacist
+
+B23 Name of father
+VIKRAM
+ANAND
+RAGHUNATHAN
+
+B24 Father’s address
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+B25 Father’s telephone
+(C)
++44 7700 900123
+(W) NEEDS-YOU
+(H) NEEDS-YOU
+
+B26 Father’s email
+NEEDS-YOU
+
+B27 Father’s occupation
+Software engineer
+
+B28 People authorized to collect the child
+Mother
+MEERA
+RAGHUNATHAN
+
+Father
+VIKRAM
+ANAND
+RAGHUNATHAN
+
+EMERGENCY CONTACTS
+
+B29 First emergency contact
+VIKRAM
+ANAND
+RAGHUNATHAN
+
+(C)
++44 7700 900123
+(W) NEEDS-YOU
+(H) NEEDS-YOU
+
+B30 Second emergency contact
+MEERA
+RAGHUNATHAN
+
+(C)
++44 7700 900456
+(W) NEEDS-YOU
+(H) NEEDS-YOU
+```
+
+- **Names and date.** After the values are restored, join each set of name parts with spaces in the corresponding blank. For B02, copy the restored birth date into the day, month and year spaces.
+- **Telephone numbers.** I placed the supplied numbers in the cell slots provisionally. Move each restored number to the work or home slot if that is where it belongs. Supply any additional numbers the preschool requires.
+- **Missing details.** Add the Roseau preschool’s name in the heading and B08, the child’s religion for B04, the full immunization date from her health record for B06, and the applicant’s and both parents’ email addresses. The requested start is **January 2027**. Preschool staff can enter the confirmed admission date in B07.

@@ -1,0 +1,80 @@
+Here is your Application for Certificate of Visa Eligibility, filled in for you (P1). Write everything in block letters. Some blanks need information I don't have; those say NEEDS-YOU, with a note on what's missing.
+
+1. PERSONAL DETAILS
+[B01] Family Name: RAGHUNATHAN
+[B02] Given Names: VIKRAM ANAND
+[B03] 漢字姓名 (Chinese-character name): leave blank (not applicable)
+[B04] Sex: Male [√]
+[B05] Date of Birth (yyyy/mm/dd): 22/11/1983
+[B06] Nationality: INDIAN
+[B07] Country of Birth: NEEDS-YOU
+[B08] National Identity No.: NEEDS-YOU
+[B09] Other names used to enter or depart Korea: NEEDS-YOU
+[B10] Citizen of more than one country: NEEDS-YOU
+
+2. PASSPORT INFORMATION
+[B11] Passport Type: NEEDS-YOU
+[B12] Passport No.: Z4827163
+[B13] Country of Passport: INDIA
+[B14] Place of Issue: HIGH COMMISSION OF INDIA, LONDON
+[B15] Date of Issue: 05/06/2019
+[B16] Date of Expiry: 2029/06/04
+[B17] Any other valid passport: NEEDS-YOU
+
+3. CONTACT INFORMATION
+[B18] Home Country Address: NEEDS-YOU
+[B19] Current Residential Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B20] Cell Phone No.: +44 7700 900123
+[B21] Telephone No.: NEEDS-YOU
+[B22] E-mail: NEEDS-YOU
+3.6 Emergency Contact
+[B23] Full Name in English: MEERA RAGHUNATHAN
+[B24] Country of Residence: UNITED KINGDOM
+[B25] Telephone No.: +44 7700 900456
+[B26] Relationship to the applicant: WIFE
+
+4. MARITAL STATUS AND FAMILY DETAILS
+[B27] Current Marital Status: Married [√]
+[B28] Spouse Family Name: RAGHUNATHAN
+[B29] Spouse Given Names: MEERA
+[B30] Spouse Date of Birth (yyyy/mm/dd): 03/02/1986
+[B31] Spouse Nationality: INDIAN
+[B32] Spouse Residential Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B33] Spouse Contact No.: +44 7700 900456
+[B34] Children: Yes [√], Number of children: 1
+
+5. EDUCATION
+[B35] Highest level: Master's/Doctoral Degree [√]
+[B36] Name of School: NEEDS-YOU
+[B37] Location of School (city/province/country): NEEDS-YOU
+
+6. EMPLOYMENT
+[B38] Current personal circumstances: Employed [√]
+[B39] Name of Company: NEEDS-YOU
+[B40] Position: NEEDS-YOU
+[B41] Address of Company: NEEDS-YOU
+[B42] Telephone No.: NEEDS-YOU
+
+Things to fix by hand once the real values are back in:
+- B05 and B30: the form wants yyyy/mm/dd. Your dates of birth are stored as printed in the passports, which is probably a different order, so rewrite each one as year/month/day (for example, a date printed 05/03/1985 becomes 1985/03/05).
+- B15: no format is given here, but use yyyy/mm/dd as well so all the dates on the form match.
+- B02: check that VIKRAM ANAND matches the "Given Name(s)" line in your passport exactly. If your passport shows only your first name there, delete ANAND.
+- B14: the form asks for the place of issue. If HIGH COMMISSION OF INDIA, LONDON comes back as an office name rather than a place, write the place shown in your passport's "Place of Issue" box.
+- B20, B25 and B33: you're applying from the UK, so write the phone numbers in international format with the country code (+44 for a UK number).
+
+What the NEEDS-YOU blanks need from you:
+- B07: your country of birth. I only have your place of birth, not the country.
+- B08: a national ID number, if you have one. If not, leave it blank.
+- B09: whether you have ever entered or left Korea under a different name. Tick No or Yes, and give the name if Yes.
+- B10: whether you hold any other citizenship. Tick No or Yes, and give details if Yes.
+- B11: your passport type. If it's an ordinary passport (not diplomatic or official), tick Regular.
+- B17: whether you hold any other valid passport. Tick No, or Yes and fill in a) to d).
+- B18: your address in India, if you have one. 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom is your UK address, so I put it under current residence in B19.
+- B21: a landline number, or leave it blank if you don't have one.
+- B22: your e-mail address.
+- B36 and B37: the name and location of the school where you did your master's in computer science.
+- B39 to B42: your employer's name, your position, and the company's address and phone number. Check with your HR team whether they want your current office or the Seoul office here.
+
+Fill the NEEDS-YOU details straight into the form. Don't type passport or ID numbers into this chat.
+
+One more thing: this form covers only you. Your wife and daughter will need their own applications when they join you. Your daughter's passport runs out on 1 January 2027, so she will probably need to renew it before she applies.

@@ -1,0 +1,140 @@
+# Form 22 — Your application
+
+## Property and submission
+
+**B01 — Property manager or owner**  
+Full name — NEEDS-YOU  
+Phone — NEEDS-YOU  
+Email — NEEDS-YOU  
+Agency details, if applicable — NEEDS-YOU
+
+**B02 — Premises**  
+Street address — NEEDS-YOU  
+Postcode — NEEDS-YOU
+
+**B03 — Submission methods**  
+Method 1 — NEEDS-YOU  
+Method 2 — NEEDS-YOU  
+Use the two methods supplied by the property manager or owner.
+
+## Occupants and applicant details
+
+**B04 — Total occupants**  
+3
+
+**B05 — Occupants under 18**  
+NEEDS-YOU  
+Check the ages of the three intended occupants and enter the number under 18.
+
+**B06 — Full name**
+
+GIVEN_P1
+
+MIDDLE_P1
+
+SURNAME_P1
+
+After restoration, combine the three name parts in the single full-name field in your usual full-name order.
+
+**B07 — Date of birth**
+
+DATE_P1
+
+If the field requires a different date format, reformat the restored date by hand.
+
+**B08 — Current address**
+
+ADDRESS_P1
+
+Postcode — NEEDS-YOU
+
+If the restored address includes the postcode, move it into the separate postcode field by hand. Do the same for B18.
+
+**B09 — Phone**
+
+PHONE_P1
+
+**B10 — Email**  
+NEEDS-YOU — your email address.
+
+## Employment and supporting documents
+
+**B11 — Current employer**  
+NEEDS-YOU
+
+**B12 — Job title**  
+NEEDS-YOU
+
+**B13 — Employment and income**  
+Length of employment — NEEDS-YOU  
+Gross weekly income — NEEDS-YOU
+
+**B14 — Employer contact**  
+Name — NEEDS-YOU  
+Phone — NEEDS-YOU  
+Email — NEEDS-YOU
+
+**B15 — Financial documents requested by the property manager or owner**  
+Document 1 — NEEDS-YOU  
+Document 2 — NEEDS-YOU  
+Other, if applicable — NEEDS-YOU for details of any alternative evidence of your ability to pay rent.
+
+**B16 — Identity documents requested by the property manager or owner**  
+Document 1 — NEEDS-YOU  
+Document 2 — NEEDS-YOU
+
+**B17 — Suitability documents requested by the property manager or owner**  
+Document 1 — NEEDS-YOU  
+Document 2 — NEEDS-YOU
+
+## Rental history
+
+**B18 — Property 1, current rental in Manchester**
+
+ADDRESS_P1
+
+Postcode — NEEDS-YOU
+
+**B19 — Rental period**  
+March 2020 – Present
+
+**B20 — Property 1 manager or owner**  
+Name — NEEDS-YOU  
+Email — NEEDS-YOU  
+Phone — NEEDS-YOU
+
+**B21 — Property 2, if applicable**  
+Previous address — NEEDS-YOU  
+Postcode — NEEDS-YOU  
+Rental period — NEEDS-YOU  
+Property manager or owner name — NEEDS-YOU  
+Property manager or owner email — NEEDS-YOU  
+Property manager or owner phone — NEEDS-YOU
+
+**B22 — Prior living arrangements**  
+Leave blank. You’ve provided a rental history.
+
+## References and pets
+
+**B23 — Referee 1**  
+Name — NEEDS-YOU  
+Phone — NEEDS-YOU  
+Email — NEEDS-YOU  
+Connection to you — NEEDS-YOU
+
+**B24 — Referee 2**  
+Name — NEEDS-YOU  
+Phone — NEEDS-YOU  
+Email — NEEDS-YOU  
+Connection to you — NEEDS-YOU
+
+**B25 — Rules about keeping pets**  
+NEEDS-YOU — the property manager or owner selects Yes, No, or Not applicable.
+
+**B26 — Do you intend to keep pets?**  
+No
+
+**B27 — Pet details**  
+Leave blank.
+
+If your wife is also applying as an applicant, the form calls for her to complete a separate Form 22.

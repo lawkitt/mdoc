@@ -1,0 +1,64 @@
+Enter the answers in English block letters. Complete the `NEEDS-YOU` items privately before submitting. A dash means leave the field blank.
+
+| Field | Entry |
+|---|---|
+| B01 Family name | SURNAME_P1 |
+| B02 Given names, first name | GIVEN_P1 |
+| B02 Given names, middle name | MIDDLE_P1 |
+| B03 Name in Chinese characters | NEEDS-YOU |
+| B04 Sex | √ FEMALE |
+| B05 Date of birth | DATE_P1 |
+| B06 Nationality | FILIPINO |
+| B07 Country of birth | PLACE_P1 |
+| B08 National identity number | NEEDS-YOU |
+| B09 Other names used to enter or depart Korea | NEEDS-YOU |
+| B10 Citizenship of more than one country | NEEDS-YOU |
+| B11 Passport type | NEEDS-YOU |
+| B12 Passport number | ID_P1 |
+| B13 Country of passport | PHILIPPINES |
+| B14 Place of issue | NEEDS-YOU |
+| B15 Date of issue | ISSUED_P1 |
+| B16 Expiry date | 2032/03/13 |
+| B17 Other valid passports | NEEDS-YOU |
+| B18 Home-country address | NEEDS-YOU |
+| B19 Current residential address | ADDRESS_P1 |
+| B20 Cell phone | PHONE_P1 |
+| B21 Landline telephone | NEEDS-YOU |
+| B22 Email | NEEDS-YOU |
+| B23 Emergency contact’s full name | NEEDS-YOU |
+| B24 Emergency contact’s country of residence | PHILIPPINES |
+| B25 Emergency contact’s telephone | NEEDS-YOU |
+| B26 Relationship | MOTHER |
+| B27 Marital status | √ SINGLE |
+| B28 Spouse’s family name | — |
+| B29 Spouse’s given names | — |
+| B30 Spouse’s date of birth | — |
+| B31 Spouse’s nationality | — |
+| B32 Spouse’s address | — |
+| B33 Spouse’s contact number | — |
+| B34 Children | √ NO |
+| B35 Highest completed education | √ BACHELOR’S DEGREE |
+| B36 School name | NEEDS-YOU |
+| B37 School location | NEEDS-YOU |
+| B38 Current employment status | NEEDS-YOU |
+| B39 Company, institution, or school name | NEEDS-YOU |
+| B40 Position or course | NEEDS-YOU |
+| B41 Company, institution, or school address | NEEDS-YOU |
+| B42 Company, institution, or school telephone | NEEDS-YOU |
+
+**Check after the aliases are restored**
+
+- **B02** Use one Given Names field and follow the exact spelling and order in your passport. Include the middle name in that field if it appears among the passport’s given names.
+- **B05, B15, B16** Write the birth date as `yyyy/mm/dd`. Use the same layout for the issue date if needed. The expiry date is already in that layout.
+- **B07** Enter only the country from the restored birthplace. If the restored value gives only a locality, supply its country by hand.
+- **B18–B19** B18 needs your home-country address. Use the restored address for B19 if it is your current Singapore address. If it is your Philippine home-country address, move it to B18 and enter your current Singapore address in B19.
+- **B20–B21** I placed the stored number in the cell phone field. If it is a landline, move it to B21 and supply your mobile number in B20. Supply a landline in B21 if you have one.
+
+**Supply the remaining details privately**
+
+- **B03, B08** Enter your name in Chinese characters and your national identity number where applicable.
+- **B09, B10, B17** Select Yes or No for each. For any Yes, enter the other name used for Korean travel, the additional citizenship, or the other valid passport’s type, number, issuing country, and expiry date, respectively.
+- **B11, B14** Check the passport category and place of issue. If you select Other for the category, specify it.
+- **B22, B23, B25** Enter your email and your mother’s full name in English and telephone number.
+- **B36–B37** Enter the school that awarded your nursing degree and its city, province, and country.
+- **B38–B42** Select your current circumstances and supply the corresponding details where applicable. If you select Other, describe your circumstances in the space provided.

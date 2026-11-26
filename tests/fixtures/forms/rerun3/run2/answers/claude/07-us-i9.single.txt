@@ -1,0 +1,51 @@
+Here is Section 1 of your Form I-9, filled from what you gave me. Read the notes under the form. A few blanks need you to do something by hand, and the address blanks are yours to fill.
+
+Section 1. Employee Information and Attestation
+
+[B01] Last Name (Family Name): SURNAME_P1
+[B02] First Name (Given Name): GIVEN_P1
+[B03] Middle Initial (if any): MIDDLE_P1
+[B04] Other Last Names Used (if any): N/A
+[B05] Address (Street Number and Name): NEEDS-YOU
+[B06] Apt. Number (if any): NEEDS-YOU
+[B07] City or Town: NEEDS-YOU
+[B08] State: NEEDS-YOU
+[B09] ZIP Code: NEEDS-YOU
+[B10] Date of Birth (mm/dd/yyyy): DATE_P1
+[B11] U.S. Social Security Number: (leave blank)
+[B12] Employee's Email Address: NEEDS-YOU
+[B13] Employee's Telephone Number: PHONE_P1
+
+[B14] [ ] 1. A citizen of the United States
+      [ ] 2. A noncitizen national of the United States
+      [ ] 3. A lawful permanent resident
+      [X] 4. An alien authorized to work until (exp. date, if any): 09/30/2029
+
+[B15] USCIS A-Number: (leave blank)  OR  Form I-94 Admission Number: (leave blank)  OR  Foreign Passport Number and Country of Issuance: ID_P1, Philippines
+
+[B16] Signature of Employee: NEEDS-YOU
+[B17] Today's Date (mm/dd/yyyy): NEEDS-YOU
+
+Preparer and/or Translator Certification: leave it blank if you fill in Section 1 yourself.
+
+What to do by hand
+
+- B03, Middle Initial: MIDDLE_P1 brings back your full middle name. The form wants only the initial, so after mdoc puts it back, cut it down to its first letter. If you have no middle name, write N/A.
+- B10, Date of Birth: DATE_P1 comes back as printed in your passport, which may not be mm/dd/yyyy (Philippine passports often show the date as day, month name, year). Rewrite it as two-digit month / two-digit day / four-digit year.
+- B15, Passport: ID_P1 is your passport number. Write it with the country, Philippines, as the form asks. You only need one of the three choices in B15, so leave the A-Number and I-94 blanks empty. You may use your I-94 Admission Number instead if you prefer; it is not listed here, so you would fill it in yourself.
+
+What is missing (NEEDS-YOU)
+
+- B05 to B09, Address: your new US address is not saved in mdoc, so fill in the street, apartment number (or N/A), city, state and ZIP yourself. Do not use your saved home address here: the I-9 asks for where you live now in the US. If you live in Houston, the city is Houston and the state is TX.
+- B12, Email: no email address is listed. This blank is optional; write your email or N/A.
+- B16, Signature: sign it yourself, by hand or electronically if your employer uses an electronic I-9.
+- B17, Today's Date: write the date you sign, in mm/dd/yyyy. You must sign no later than your first day of work, next Monday, and not before you accepted the job offer.
+
+Other points to check
+
+- B11, Social Security Number: you may leave it blank while you wait for your number. The one exception is if your employer uses E-Verify: then the number is required, and your employer should let you start work and update the I-9 once your Social Security card arrives. Tell HR you have applied, or are about to apply, for a number.
+- B14, work authorization date: I used 09/30/2029, as you told me. Make sure it matches the end date on your I-94 record or your I-797 approval notice, not only the visa stamp in your passport. If the I-94 shows a different date, use that one.
+- B04: you said you have never used another last name, so N/A is right.
+- B13: PHONE_P1 is your saved phone number. If you now have a US number, you may write that one instead. This blank is optional.
+
+For Section 2, your employer will need to see your documents in person by your third day of work. As an H-1B worker you would usually show your Philippine passport together with your Form I-94 (a List A combination). Bring your I-797 approval notice too, in case HR asks.

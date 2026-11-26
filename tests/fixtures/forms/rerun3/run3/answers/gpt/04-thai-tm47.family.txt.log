@@ -1,0 +1,141 @@
+Reading additional input from stdin...
+OpenAI Codex v0.172.0
+--------
+workdir: /private/var/folders/vc/b3qk63h13wg_7f6fxfjw986r0000gn/T/tmp.Wo4erMof2m
+model: gpt-6.2-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a215c8-101d-7503-92ab-f081c4ed7cb9
+--------
+user
+Use no tools: answer from the text below only.
+
+Note from mdoc: my personal details are replaced with aliases. Each alias
+stands for one value, which is put back on my device after your reply,
+exactly as it is stored. Write an alias exactly as listed, with nothing
+attached to it, in every blank it fills, even if another blank has it too.
+You cannot see or change the value, so where a form needs it in another
+shape, write the alias and tell me in words what to do with it by hand.
+Never guess or invent a real value, even as an example, and never ask me to
+type an identifier, mine or anyone's, into this chat. If the form needs
+something that is not listed here, write NEEDS-YOU and say what is missing.
+
+P1 is "Me".
+- SURNAME_P1: my family name
+- GIVEN_P1: my first name
+- MIDDLE_P1: my middle name
+- DATE_P1: my date of birth, as printed in my passport
+- PLACE_P1: my place of birth
+- ID_P1: my passport number
+- ISSUED_P1: my passport's date of issue, as printed
+- AUTHORITY_P1: my passport's issuing authority, as printed
+- ADDRESS_P1: my home address
+- PHONE_P1: my phone number
+
+P2 is "Wife".
+- SURNAME_P2: her family name
+- GIVEN_P2: her first name
+- DATE_P2: her date of birth, as printed in her passport
+- PLACE_P2: her place of birth
+- ID_P2: her passport number
+- ISSUED_P2: her passport's date of issue, as printed
+- AUTHORITY_P2: her passport's issuing authority, as printed
+- PHONE_P2: her phone number
+
+P3 is "Daughter".
+- SURNAME_P3: her family name
+- GIVEN_P3: her first name
+- DATE_P3: her date of birth, as printed in her passport
+- PLACE_P3: her place of birth
+- ID_P3: her passport number
+- ISSUED_P3: her passport's date of issue, as printed
+- AUTHORITY_P3: her passport's issuing authority, as printed
+
+Readable facts: P1: title Mr; sex male; nationality Indian; document type passport; passport issued by India, valid until 4 June 2029. P2: title Mrs; sex female; nationality Indian; document type passport; passport issued by India, valid until 10 August 2030. P3: sex female; nationality Indian; document type passport; passport issued by India, valid until 1 January 2027.
+
+ตม.๔๗
+TM.47
+แบบการแจ้งอยู่เกินกว่า ๙๐ วัน ของบุคคลต่างด้าว
+FORM FOR ALIEN TO NOTFY OF STAYING LONGE THAN 90 DAYS
+
+[B01] เขียนที่ WRITTEN AT: ....
+[B02] วันที่ DATE .... เดือน MONTH .... พ.ศ. YEAR ....
+เรียน พนักงานเจ้าหน้าที่ตรวจคนเข้าเมือง
+TO THE IMMIGRATION OFFICER
+[B03] ด้วยข้าพเจ้า .... (FULL NAME IN BLOCK LETTERS)
+[B04] สัญชาติ NATIONALITY: ....
+[B05] ประเภทวีซ่า VISA: [ ] TOURIST  [ ] NON-IMM
+[B06] เดินทางเข้ามาเมื่อวันที่ ENTERED THAILAND ON .... เดือน MONTH .... พ.ศ. YEAR ....
+[B07] โดยพาหนะ BY: ....
+[B08] หนังสือเดินทางเลขที่ PASSPORT NO.: ....
+[B09] ตามบัตรขาเข้าเลขที่ ARRIVAL CARD NO.: ....
+บัดนี้ ได้อยู่ในราชอาณาจักรไทย ครบ ๙๐ วันแล้ว และพำนักอยู่ที่
+I HAVE NOW BEEN STAYING IN THAILAND FOR 90 DAYS AND MY PRESENT ADDRESS IS
+[B10] ซอย/ถนน LANE/ROAD: ....
+[B11] ตำบล TAMBOL: ....
+[B12] อำเภอ AMPHUR: ....
+[B13] จังหวัด PROVINCE: ....
+[B14] โทรศัพท์ PHONE: ....
+[B15] ลงชื่อ SIGNATURE: ....
+หมายเหตุ คนต่างด้าวต้องแจ้งกองตรวจคนเข้าเมืองทุกระยะ ๙๐ วัน
+NOTICE: ALIEN MUST NOTIFY THE IMMIGRATION OFFICE EVERY 90 DAYS
+
+I entered Thailand on 26 August 2026 at Suvarnabhumi airport on a non-immigrant visa to work remotely from Bangkok, and I'm filing my 90-day report today, 24 November 2026, at the Bangkok immigration office. My wife and daughter file their own; my Thai address and arrival card number are not saved in mdoc.
+warning: `[features].multi_agent` is deprecated. It still controls the V1 fallback. `[agents].enabled = false` disables subagent tools even when the model selects a subagent version, unless `[features].multi_agent_v2` is enabled.
+warning: `[features].multi_agent` is deprecated. It still controls the V1 fallback. `[agents].enabled = false` disables subagent tools even when the model selects a subagent version, unless `[features].multi_agent_v2` is enabled.
+codex
+## TM.47 for P1
+
+| Blank | Entry |
+|---|---|
+| B01 Written at | Bangkok Immigration Office |
+| B02 Filing date | 24 / November / 2569 |
+| B03 Full name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 |
+| B04 Nationality | Indian |
+| B05 Visa type | ☑ NON-IMM |
+| B06 Date of entry | 26 / August / 2569 |
+| B07 Means of travel | Airplane |
+| B08 Passport number | ID_P1 |
+| B09 Arrival card number | NEEDS-YOU |
+| B10 Lane or road | NEEDS-YOU |
+| B11 Tambol | NEEDS-YOU |
+| B12 Amphur | NEEDS-YOU |
+| B13 Province | NEEDS-YOU |
+| B14 Phone | PHONE_P1 |
+| B15 Signature | NEEDS-YOU |
+
+- **B02 and B06** use the form’s Buddhist Era year. Enter the day, month, and year in their separate spaces.
+- **B03** After the aliases are replaced, write the full name in block capitals and follow the name order shown in your passport.
+- **B09** Enter your arrival card number from your records.
+- **B10–B13** Enter the lane or road, subdistrict, district, and province of your current Thai address.
+- **B15** Sign the form by hand.
+tokens used
+2,843
+## TM.47 for P1
+
+| Blank | Entry |
+|---|---|
+| B01 Written at | Bangkok Immigration Office |
+| B02 Filing date | 24 / November / 2569 |
+| B03 Full name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 |
+| B04 Nationality | Indian |
+| B05 Visa type | ☑ NON-IMM |
+| B06 Date of entry | 26 / August / 2569 |
+| B07 Means of travel | Airplane |
+| B08 Passport number | ID_P1 |
+| B09 Arrival card number | NEEDS-YOU |
+| B10 Lane or road | NEEDS-YOU |
+| B11 Tambol | NEEDS-YOU |
+| B12 Amphur | NEEDS-YOU |
+| B13 Province | NEEDS-YOU |
+| B14 Phone | PHONE_P1 |
+| B15 Signature | NEEDS-YOU |
+
+- **B02 and B06** use the form’s Buddhist Era year. Enter the day, month, and year in their separate spaces.
+- **B03** After the aliases are replaced, write the full name in block capitals and follow the name order shown in your passport.
+- **B09** Enter your arrival card number from your records.
+- **B10–B13** Enter the lane or road, subdistrict, district, and province of your current Thai address.
+- **B15** Sign the form by hand.

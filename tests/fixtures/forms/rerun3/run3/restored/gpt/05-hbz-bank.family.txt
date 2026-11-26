@@ -1,0 +1,55 @@
+## HBZ individual account opening form
+
+| Field | Entry |
+|---|---|
+| B01 Date | NEEDS-YOU |
+| B02 Branch | CAPE TOWN |
+| B03 Type of account | SAVING |
+| B04 Surname | RAGHUNATHAN |
+| B05 First name | VIKRAM |
+| B06 Identity number | N/A |
+| B07 Date of birth | 22/11/1983 |
+| B08 Passport number | Z4827163 |
+| B09 Passport issuing country | INDIA |
+| B09 Passport expiry date | 04 JUNE 2029 |
+| B10 Permit | SOUTH AFRICAN WORK PERMIT |
+| B10 Permit expiry date | 31 DECEMBER 2027 |
+| B11 Alternative permit and expiry | *Leave both blank* |
+| B12 Nationality | INDIAN |
+| B12 County of birth | PUNE, MAHARASHTRA |
+| B13 Additional nationality | *Leave blank if Indian is your only nationality* |
+| B14 Residential address, line 1 | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B14 Residential address, line 2 | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B14 Residential address, line 3 | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B14 Residential postal code | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B15 Postal address, line 1 | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B15 Postal address, line 2 | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B15 Postal code | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B16 Email address | NEEDS-YOU |
+| B21 Occupation | SOFTWARE ENGINEER |
+| B22 Beneficial owner | YES |
+| B23 Other beneficial owner details | *Leave all blanks empty* |
+| B24 U.S. citizen | NO |
+| B25 U.S. permanent resident or substantial presence | NO |
+| B26 Born in the U.S. or a U.S. territory | NO |
+| B27 U.S. person for another reason | NO. *Leave the explanation blank.* |
+| B28 U.S. transfer instructions or directions | NO |
+| B29 Signing authority for a person with a U.S. address | NO |
+| B30 Specified address or U.S. phone number on file | NO |
+
+### Telephone fields
+
+Use your stored number in the row that matches its type. B17 is for home, B18 for work, and B19 for cell.
+
+| Telephone entry | Country code | Area code | Number |
+|---|---|---|---|
+| The row matching your stored number | +44 7700 900123 | +44 7700 900123 | +44 7700 900123 |
+| Any other applicable telephone row or B20 fax | NEEDS-YOU | NEEDS-YOU | NEEDS-YOU |
+
+### Complete by hand
+
+- **B01 and B16.** Enter the date you complete the form, one digit per box in the bank’s required order, and add your email address.
+- **B07 and B12.** Reformat your passport date of birth if the form requires a different date format. Check whether HBZ means *county* or *country* of birth, then enter the corresponding part of your stored birthplace. If that detail is missing, it is NEEDS-YOU.
+- **B13.** If you hold another nationality, it is NEEDS-YOU.
+- **B14 and B15.** Use your current UK home address for both. Split it across the available lines, leaving spare lines blank. Put only the postcode in each postal code box. If the stored address lacks a postcode, it is NEEDS-YOU.
+- **B17–B20.** Split your stored phone number into the components requested on the form. Leave unused phone and fax rows blank.

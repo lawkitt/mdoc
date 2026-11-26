@@ -1,0 +1,56 @@
+### HBZ individual account opening form
+
+| Field | Entry |
+|---|---|
+| B01 Date | NEEDS-YOU |
+| B02 Branch | CAPE TOWN |
+| B03 Type of account | SAVING ☒ |
+| B04 Surname | SURNAME_P1 |
+| B05 First name | GIVEN_P1 |
+| B06 Identity number | N/A |
+| B07 Date of birth | DATE_P1 |
+| B08 Passport number | ID_P1 |
+| B09 Passport issuing country | INDIA |
+| B09 Passport expiry date | 4 JUNE 2029 |
+| B10 Work / study / residence permit | SOUTH AFRICAN WORK PERMIT |
+| B10 Permit expiry date | 31 DECEMBER 2027 |
+| B11 Alternative permit and expiry | Leave both blank |
+| B12 Nationality | INDIAN |
+| B12 County of birth | PLACE_P1 |
+| B13 Additional nationality | NEEDS-YOU |
+| B14 Residential address, line 1 | ADDRESS_P1 |
+| B14 Residential address, line 2 | ADDRESS_P1 |
+| B14 Residential address, line 3 | ADDRESS_P1 |
+| B14 Residential postal code | ADDRESS_P1 |
+| B15 Postal address, line 1 | ADDRESS_P1 |
+| B15 Postal address, line 2 | ADDRESS_P1 |
+| B15 Postal code | ADDRESS_P1 |
+| B16 Email address | NEEDS-YOU |
+| B21 Occupation | SOFTWARE ENGINEER |
+| B22 Beneficial owner of the funds | YES ☒ |
+| B23 Beneficial owner details | Leave all blanks empty because B22 is YES |
+
+| Telephone field | Country code | Area code | Number |
+|---|---|---|---|
+| B17 Home telephone, if your listed number is a landline | PHONE_P1 | PHONE_P1 | PHONE_P1 |
+| B18 Work telephone | NEEDS-YOU | NEEDS-YOU | NEEDS-YOU |
+| B19 Cell, if your listed number is a mobile | PHONE_P1 | PHONE_P1 | PHONE_P1 |
+| B20 Fax | NEEDS-YOU | NEEDS-YOU | NEEDS-YOU |
+
+| FATCA field | Response |
+|---|---|
+| B24 U.S. citizen | NO ☒ |
+| B25 U.S. permanent resident or substantial presence | NO ☒ |
+| B26 Born in the U.S. or a U.S. territory | NO ☒ |
+| B27 U.S. person for any other reason | NO ☒. Leave the explanation blank. |
+| B28 U.S. transfer instructions or directions from a U.S. address | NO ☒ |
+| B29 Power of attorney or signing authority held by someone with a U.S. address | NO ☒ |
+| B30 In-care-of or hold-mail address, U.S. P.O. box, or U.S. telephone number | NO ☒ |
+
+### Finish on your device
+
+- **B01, B13 and B16.** Enter the date you complete the form, one digit per box in the bank’s required order. Confirm whether you have any additional nationality and enter your email address.
+- **B12.** The form says “County of birth.” Confirm whether the bank means county or country, then copy the relevant part of your restored birthplace. Supply it locally if the stored birthplace lacks that detail.
+- **B14 and B15.** I used your current UK home address for both residential and postal mail. After restoration, split it across the available lines, put the postcode in its own box, and include the country in the address. Add the postcode locally if it is missing from the stored address.
+- **B17–B20.** Use the home or cell row that matches your restored number. Split it into the country code, area code or mobile prefix as applicable, and remaining digits. A separate home or cell number, work number, and fax number are missing. Supply those locally if applicable.
+- **Capital letters.** After restoration, put text entries in capitals and adjust the passport birth date by hand if the bank requires a different format.

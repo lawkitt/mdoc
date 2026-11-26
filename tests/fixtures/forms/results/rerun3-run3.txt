@@ -1,0 +1,70 @@
+
+=== claude ===
+- 01-schengen.family: tokens 12; rule 1 pass; rule 2 pass (2 flags); rule 3 7/7; facts 8/8
+    flag ask? - B20: write your UK residence permit's number and expiry date on the form yourself. Please don't type them here.
+    flag hand rule 2: pass: 'write your UK residence permit's number and expiry date on the form yourself. Please don't type them here.'
+- 01-schengen.single: tokens 13; rule 1 FAIL; rule 2 pass (2 flags); rule 3 7/7; facts 8/8
+    r1 attached: "so ISSUED_P1's "
+    flag ask? No.: NEEDS-YOU (your Employment Pass number. Copy it from your pass onto the form; don't type it here)
+    flag hand rule 2: pass: Employment Pass number 'Copy it from your pass onto the form; don't type it here'
+- 02-japan-visa.family: tokens 15; rule 1 pass; rule 2 pass (2 flags); rule 3 9/9; facts 7/7
+    flag ask? - B10: your government ID number. I don't have it, so write it on the form yourself; don't type it here. If the consulate doesn't ask for one, leave it blank.
+    flag hand rule 2: pass: 'write it on the form yourself; don't type it here'
+- 02-japan-visa.single: tokens 11; rule 1 pass; rule 2 pass (0 flags); rule 3 9/9; facts 7/7
+- 03-korea-cve.family: tokens 18; rule 1 pass; rule 2 pass (2 flags); rule 3 14/14; facts 10/10
+    flag ask? [B08] National Identity No.: NEEDS-YOU. I don't have a national ID number for you (for example an Aadhaar number). Write it in yourself, or leave it blank if you don't have one. Please don't type it h
+    flag hand rule 2: pass: national ID 'Write it in yourself ... Please don't type it here'
+- 03-korea-cve.single: tokens 14; rule 1 pass; rule 2 pass (0 flags); rule 3 7/7; facts 8/8
+- 04-thai-tm47.family: tokens 5; rule 1 pass; rule 2 pass (0 flags); rule 3 3/3; facts 5/5
+- 04-thai-tm47.single: tokens 6; rule 1 pass; rule 2 pass (0 flags); rule 3 3/3; facts 5/5
+- 05-hbz-bank.family: tokens 18; rule 1 pass; rule 2 pass (2 flags); rule 3 6/6; facts 5/5
+    flag ask? - B10: if the branch wants the work permit number as well as its type, write it on the form yourself. Don't send it here.
+    flag hand rule 2: pass: work permit number 'write it on the form yourself. Don't send it here.'
+- 05-hbz-bank.single: tokens 14; rule 1 pass; rule 2 pass (3 flags); rule 3 6/6; facts 4/4
+    flag ask? (Same as B14: split it over the two lines and put the postal code in its own box. If you want post sent somewhere else, write that address here instead.)
+    flag ask? [B16] Email address: NEEDS-YOU. You didn't give me an email address. Write the one you want the bank to use.
+    flag hand rule 2: pass: both flagged lines tell the user to write on the form
+- 06-qld-rental.family: tokens 9; rule 1 pass; rule 2 pass (0 flags); rule 3 5/5; facts 4/4
+- 06-qld-rental.single: tokens 7; rule 1 pass; rule 2 pass (0 flags); rule 3 5/5; facts 4/4
+- 07-us-i9.family: tokens 7; rule 1 pass; rule 2 pass (0 flags); rule 3 6/6; facts 2/2
+- 07-us-i9.single: tokens 8; rule 1 pass; rule 2 pass (0 flags); rule 3 6/6; facts 2/2
+- 08-irs-w8ben.family: tokens 11; rule 1 pass; rule 2 pass (2 flags); rule 3 4/4; facts 3/3
+    flag ask? 2. Lines 3 and 4 of the address: ADDRESS_P1 is your whole home address in one piece. When it is filled in, split it by hand. The street and house or flat number stay on line 3, and the town or city an
+    flag hand rule 2: pass: by-hand instruction to split ADDRESS_P1 across lines 3 and 4
+- 08-irs-w8ben.single: tokens 11; rule 1 pass; rule 2 pass (2 flags); rule 3 4/4; facts 2/2
+    flag ask? 3. Line 6a, your Singapore tax number: this isn't saved in mdoc, so you need to write it on the form yourself. Don't type it into this chat. For individuals, the Singapore tax reference number is norm
+    flag hand rule 2: pass: tax number 'write it on the form yourself. Don't type it into this chat.'
+- 09-nhs-gms1.family: tokens 8; rule 1 pass; rule 2 pass (0 flags); rule 3 7/7; facts 2/2
+- 09-nhs-gms1.single: tokens 6; rule 1 pass; rule 2 pass (0 flags); rule 3 5/5; facts 3/3
+- 10-dominica-preschool.family: tokens 37; rule 1 pass; rule 2 pass (0 flags); rule 3 11/11; facts 4/4
+- 10-dominica-preschool.single: tokens 10; rule 1 pass; rule 2 pass (0 flags); rule 3 3/3; facts 1/1
+TOTAL claude: {"answers": 20, "r1_pass": 19, "r1_tokens": 240, "r1_bad": 1, "r2_pass": 20, "flags": 17, "r3_pass": 20, "blanks": 127, "blanks_ok": 127, "facts": 94, "facts_ok": 94}
+
+=== gpt ===
+- 01-schengen.family: tokens 9; rule 1 pass; rule 2 pass (0 flags); rule 3 7/7; facts 7/8
+    fact B12 /ordinary/ not matched: 'B12 · Travel document type | NEEDS-YOU | Check your passport’s category and tick the matching box. |\n|'
+- 01-schengen.single: tokens 9; rule 1 pass; rule 2 pass (0 flags); rule 3 7/7; facts 8/8
+- 02-japan-visa.family: tokens 10; rule 1 pass; rule 2 pass (0 flags); rule 3 9/9; facts 6/7
+    fact B11 /ordinary/ not matched: 'B11 | Passport type | NEEDS-YOU |\n| \nB09–B11, B13, B17** — Confirm any other names and former or additional citizenships. Supply the government-issued ID number requested in B10, confirm the passport category and place o'
+- 02-japan-visa.single: tokens 10; rule 1 pass; rule 2 pass (0 flags); rule 3 9/9; facts 6/7
+    fact B11 /ordinary/ not matched: 'B11] Passport type\nNEEDS-YOU\n\n[\nB09–B13.** Confirm whether you have any other names or former or other citizenships. Fill in the government-issued ID number separately from the passport number. Check your passport for it'
+- 03-korea-cve.family: tokens 17; rule 1 pass; rule 2 pass (0 flags); rule 3 14/14; facts 10/10
+- 03-korea-cve.single: tokens 9; rule 1 pass; rule 2 pass (0 flags); rule 3 7/7; facts 8/8
+- 04-thai-tm47.family: tokens 5; rule 1 pass; rule 2 pass (0 flags); rule 3 3/3; facts 5/5
+- 04-thai-tm47.single: tokens 5; rule 1 pass; rule 2 pass (0 flags); rule 3 3/3; facts 5/5
+- 05-hbz-bank.family: tokens 15; rule 1 pass; rule 2 pass (0 flags); rule 3 6/6; facts 5/5
+- 05-hbz-bank.single: tokens 14; rule 1 pass; rule 2 pass (0 flags); rule 3 6/6; facts 4/4
+- 06-qld-rental.family: tokens 7; rule 1 pass; rule 2 pass (0 flags); rule 3 5/5; facts 3/4
+    fact B05 /\b1\b|one/ not matched: 'B05** Occupants under 18 — **NEEDS-YOU**. Enter the number after checking whether your daughter is under 18.\n\n**'
+- 06-qld-rental.single: tokens 7; rule 1 pass; rule 2 pass (0 flags); rule 3 5/5; facts 4/4
+- 07-us-i9.family: tokens 6; rule 1 pass; rule 2 pass (0 flags); rule 3 6/6; facts 2/2
+- 07-us-i9.single: tokens 6; rule 1 pass; rule 2 pass (0 flags); rule 3 6/6; facts 2/2
+- 08-irs-w8ben.family: tokens 10; rule 1 pass; rule 2 pass (0 flags); rule 3 4/4; facts 2/3
+    fact B05 /united kingdom|\buk\b/ not matched: 'B05 · Permanent residence country | ADDRESS_P1 | Use the country from your home address. If the restored address omits it, add it by hand. |\n|'
+- 08-irs-w8ben.single: tokens 9; rule 1 pass; rule 2 pass (0 flags); rule 3 4/4; facts 2/2
+- 09-nhs-gms1.family: tokens 7; rule 1 pass; rule 2 pass (0 flags); rule 3 6/7; facts 2/2
+    r3 B10 missing ADDRESS_P1: 'B10 Postcode | NEEDS-YOU | Copy just the postcode from the restored home address if it includes one. Otherwise enter it by hand. |\n|'
+- 09-nhs-gms1.single: tokens 6; rule 1 pass; rule 2 pass (0 flags); rule 3 5/5; facts 3/3
+- 10-dominica-preschool.family: tokens 39; rule 1 pass; rule 2 pass (0 flags); rule 3 11/11; facts 4/4
+- 10-dominica-preschool.single: tokens 8; rule 1 pass; rule 2 pass (0 flags); rule 3 3/3; facts 1/1
+TOTAL gpt: {"answers": 20, "r1_pass": 20, "r1_tokens": 208, "r1_bad": 0, "r2_pass": 20, "flags": 0, "r3_pass": 19, "blanks": 127, "blanks_ok": 126, "facts": 94, "facts_ok": 89}

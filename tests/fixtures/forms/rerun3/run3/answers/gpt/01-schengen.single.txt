@@ -1,0 +1,77 @@
+- **B01 · Surname**
+
+SURNAME_P1
+
+- **B02 · Surname at birth** — NEEDS-YOU. Check your surname at birth and any former family names. Single status does not establish your surname at birth.
+- **B03 · Given names**
+
+GIVEN_P1
+
+MIDDLE_P1
+
+Copy the given names in the order shown in your passport. Include the middle name in this field only if it appears among the passport’s given names.
+
+- **B04 · Date of birth**
+
+DATE_P1
+
+After the value is restored, put it in day-month-year order by hand if needed.
+
+- **B05 · Place of birth**
+
+PLACE_P1
+
+- **B06 · Country of birth** — NEEDS-YOU. Enter your country of birth.
+- **B07 · Nationality** — Current nationality: Filipino. NEEDS-YOU for nationality at birth if different and for any other nationalities. Leave those blanks empty if they do not apply.
+- **B08 · Sex** — Tick **Female**.
+- **B09 · Civil status** — Tick **Single**.
+- **B10 · Parent or legal guardian** — Leave blank if you are an adult applying for yourself. If applicable, NEEDS-YOU for the parent or guardian’s name, address if different, phone, email, and nationality.
+- **B11 · National identity number** — NEEDS-YOU if applicable. Enter your national identity number directly on the form.
+- **B12 · Travel document type** — NEEDS-YOU. Check the passport category and tick **Ordinary passport** if that is what you hold.
+- **B13 · Travel document number**
+
+ID_P1
+
+- **B14 · Date of issue**
+
+ISSUED_P1
+
+If the form requires a different date format, adjust it by hand after the value is restored.
+
+- **B15 · Valid until** — 13-03-2032.
+- **B16 · Issued by (country)** — Philippines.
+- **B17 · Qualifying family member** — If applicable, NEEDS-YOU for their surname, given names, date of birth, nationality, and travel document or ID card number. Otherwise leave blank.
+- **B18 · Family relationship** — If applicable, NEEDS-YOU for the relationship to the family member. Otherwise leave blank.
+- **B19 · Home address**
+
+ADDRESS_P1
+
+**Email** — NEEDS-YOU. Enter your email address.
+
+**Telephone**
+
+PHONE_P1
+
+- **B20 · Residence outside the country of current nationality** — If you reside in Singapore, tick **Yes** and enter **Employment Pass**. NEEDS-YOU for the pass number and expiry date. If you reside in the Philippines, tick **No**.
+- **B21 · Current occupation** — Staff nurse.
+- **B22 · Employer** — NEEDS-YOU for your employer’s name, address, and telephone number.
+- **B23 · Purpose of journey** — Tick **Tourism**.
+- **B24 · Additional information on purpose of stay** — Holiday in Italy, arriving in Rome on 14 May 2027 and leaving the Schengen area on 28 May 2027.
+- **B25 · Main destination** — Italy. NEEDS-YOU for any other Schengen destinations on your itinerary.
+- **B26 · Member State of first entry** — Italy.
+- **B27 · Number of entries requested** — Tick **Single entry** if you want one entry for the trip described. NEEDS-YOU to select **Two entries** or **Multiple entries** if you want either of those.
+- **B28 · Intended arrival** — 14-05-2027.
+- **B29 · Intended departure** — 28-05-2027.
+- **B30 · Previous Schengen visa fingerprints** — Tick **No**. Leave the date and visa sticker number blank.
+- **B31 · Entry permit for final destination** — If applicable, NEEDS-YOU for the issuer and the validity start and end dates. Otherwise leave blank.
+- **B32 · Host or accommodation name** — NEEDS-YOU for the name of each host, hotel, or other temporary accommodation, as applicable.
+- **B33 · Host or accommodation contact details** — NEEDS-YOU for the corresponding address, email, and telephone number.
+- **B34 · Inviting company or organisation** — Leave blank if you have no inviting company or organisation. If applicable, NEEDS-YOU for its name and address.
+- **B35 · Inviting company contact details** — If B34 applies, NEEDS-YOU for the contact person’s surname, given name, address, phone, and email, plus the company’s phone number. Otherwise leave blank.
+- **B36 · Travel and living costs** — Tick **by the applicant himself/herself**. NEEDS-YOU to select the means of support you will use. Leave the sponsor section blank.
+- **B37 · Person filling in the form** — Leave blank if you complete the application yourself. Otherwise, NEEDS-YOU for the preparer’s surname and given name.
+- **B38 · Preparer’s contact details** — If B37 applies, NEEDS-YOU for the preparer’s address, email, and telephone number. Otherwise leave blank.
+- **B39 · Place and date** — NEEDS-YOU. Enter the place and date of signing.
+- **B40 · Signature** — NEEDS-YOU. Sign the form yourself and obtain a parent or legal guardian’s signature if applicable.
+
+If you qualify for the family-member exemption printed at the top of the form, leave **B21, B22, and B32–B36** blank.

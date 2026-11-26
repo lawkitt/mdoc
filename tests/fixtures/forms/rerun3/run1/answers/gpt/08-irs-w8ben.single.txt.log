@@ -1,0 +1,114 @@
+Reading additional input from stdin...
+OpenAI Codex v0.172.0
+--------
+workdir: /private/var/folders/vc/b3qk63h13wg_7f6fxfjw986r0000gn/T/tmp.7vZoHrRVDe
+model: gpt-6.2-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a215bb-cc74-7f40-84d9-b6306a340e56
+--------
+user
+Use no tools: answer from the text below only.
+
+Note from mdoc: my personal details are replaced with aliases. Each alias
+stands for one value, which is put back on my device after your reply,
+exactly as it is stored. Write an alias exactly as listed, with nothing
+attached to it, in every blank it fills, even if another blank has it too.
+You cannot see or change the value, so where a form needs it in another
+shape, write the alias and tell me in words what to do with it by hand.
+Never guess or invent a real value, even as an example, and never ask me to
+type an identifier, mine or anyone's, into this chat. If the form needs
+something that is not listed here, write NEEDS-YOU and say what is missing.
+
+P1 is "Me".
+- SURNAME_P1: my family name
+- GIVEN_P1: my first name
+- MIDDLE_P1: my middle name
+- DATE_P1: my date of birth, as printed in my passport
+- PLACE_P1: my place of birth
+- ID_P1: my passport number
+- ISSUED_P1: my passport's date of issue, as printed
+- AUTHORITY_P1: my passport's issuing authority, as printed
+- ADDRESS_P1: my home address
+- PHONE_P1: my phone number
+
+Readable facts: title Ms; sex female; nationality Filipino; document type passport; passport issued by the Philippines, valid until 13 March 2032.
+
+Form W-8BEN (Rev. October 2021)
+Certificate of Foreign Status of Beneficial Owner for United States Tax Withholding and Reporting (Individuals)
+For use by individuals. Entities must use Form W-8BEN-E.
+Go to www.irs.gov/FormW8BEN for instructions and the latest information.
+Give this form to the withholding agent or payer. Do not send to the IRS.
+Do NOT use this form if: You are NOT an individual (instead use W-8BEN-E); You are a U.S. citizen or other U.S. person, including a resident alien individual (W-9); You are a beneficial owner claiming that income is effectively connected with the conduct of trade or business within the United States (other than personal services) (W-8ECI); You are a beneficial owner who is receiving compensation for personal services performed in the United States (8233 or W-4); You are a person acting as an intermediary (W-8IMY).
+Note: If you are resident in a FATCA partner jurisdiction (that is, a Model 1 IGA jurisdiction with reciprocity), certain tax account information may be provided to your jurisdiction of residence.
+
+Part I Identification of Beneficial Owner (see instructions)
+[B01] 1 Name of individual who is the beneficial owner: ....
+[B02] 2 Country of citizenship: ....
+[B03] 3 Permanent residence address (street, apt. or suite no., or rural route). Do not use a P.O. box or in-care-of address.: ....
+[B04]   City or town, state or province. Include postal code where appropriate.: ....
+[B05]   Country: ....
+[B06] 4 Mailing address (if different from above): ....  City or town, state or province. Include postal code where appropriate.: ....  Country: ....
+[B07] 5 U.S. taxpayer identification number (SSN or ITIN), if required (see instructions): ....
+[B08] 6a Foreign tax identifying number (see instructions): ....
+[B09] 6b Check if FTIN not legally required [ ]
+[B10] 7 Reference number(s) (see instructions): ....
+[B11] 8 Date of birth (MM-DD-YYYY) (see instructions): ....
+Part II Claim of Tax Treaty Benefits (for chapter 3 purposes only) (see instructions)
+[B12] 9 I certify that the beneficial owner is a resident of .... within the meaning of the income tax treaty between the United States and that country.
+[B13] 10 Special rates and conditions (if applicable—see instructions): The beneficial owner is claiming the provisions of Article and paragraph .... of the treaty identified on line 9 above to claim a .... % rate of withholding on (specify type of income): ....  Explain the additional conditions in the Article and paragraph the beneficial owner meets to be eligible for the rate of withholding: ....
+Part III Certification
+(The certification text under penalties of perjury follows on the form.)
+[B14] [ ] I certify that I have the capacity to sign for the person identified on line 1 of this form.
+[B15] Sign Here: Signature of beneficial owner (or individual authorized to sign for beneficial owner): ....   Date (MM-DD-YYYY): ....
+[B16] Print name of signer: ....
+
+A US brokerage asked me for a W-8BEN for my investment account. I'm a tax resident of Singapore only, I live at my home address there, and my Singapore tax number is not saved in mdoc.
+warning: `[features].multi_agent` is deprecated. It still controls the V1 fallback. `[agents].enabled = false` disables subagent tools even when the model selects a subagent version, unless `[features].multi_agent_v2` is enabled.
+warning: `[features].multi_agent` is deprecated. It still controls the V1 fallback. `[agents].enabled = false` disables subagent tools even when the model selects a subagent version, unless `[features].multi_agent_v2` is enabled.
+codex
+| Blank | Entry | What to do by hand |
+|---|---|---|
+| B01 · Beneficial owner’s name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 | Enter all three on the same line. |
+| B02 · Citizenship | Philippines | |
+| B03 · Permanent residence street address | ADDRESS_P1 | Keep only the street address and any apartment or unit number. |
+| B04 · City and postal code | ADDRESS_P1 | Keep only the city and postal code from the restored address. |
+| B05 · Country | Singapore | |
+| B06 · Mailing address | Leave blank if it matches your permanent address | If it differs, use NEEDS-YOU for the missing mailing address, including city, postal code, and country. |
+| B07 · U.S. SSN or ITIN | Leave blank unless required | If required, use NEEDS-YOU for the missing U.S. tax ID and enter it directly on the form. |
+| B08 · Foreign tax identifying number | NEEDS-YOU | Enter your Singapore tax number directly on the form. |
+| B09 · FTIN checkbox | Leave unchecked | |
+| B10 · Reference number | Leave blank unless the brokerage requires one | If required, use NEEDS-YOU for the missing brokerage reference. |
+| B11 · Date of birth | DATE_P1 | Convert the restored date to MM-DD-YYYY. |
+| B12 · Treaty residence | Leave blank | The information supplied does not establish a treaty claim. |
+| B13 · Special rates and conditions | Leave blank | |
+| B14 · Capacity to sign | Check when you sign for yourself | |
+| B15 · Signature and signing date | NEEDS-YOU for signature. NEEDS-YOU for date. | Sign yourself and enter the date you sign in MM-DD-YYYY format. |
+| B16 · Printed name of signer | GIVEN_P1 MIDDLE_P1 SURNAME_P1 | Enter all three on the same line. |
+
+Give the completed form to the brokerage.
+tokens used
+9,513
+| Blank | Entry | What to do by hand |
+|---|---|---|
+| B01 · Beneficial owner’s name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 | Enter all three on the same line. |
+| B02 · Citizenship | Philippines | |
+| B03 · Permanent residence street address | ADDRESS_P1 | Keep only the street address and any apartment or unit number. |
+| B04 · City and postal code | ADDRESS_P1 | Keep only the city and postal code from the restored address. |
+| B05 · Country | Singapore | |
+| B06 · Mailing address | Leave blank if it matches your permanent address | If it differs, use NEEDS-YOU for the missing mailing address, including city, postal code, and country. |
+| B07 · U.S. SSN or ITIN | Leave blank unless required | If required, use NEEDS-YOU for the missing U.S. tax ID and enter it directly on the form. |
+| B08 · Foreign tax identifying number | NEEDS-YOU | Enter your Singapore tax number directly on the form. |
+| B09 · FTIN checkbox | Leave unchecked | |
+| B10 · Reference number | Leave blank unless the brokerage requires one | If required, use NEEDS-YOU for the missing brokerage reference. |
+| B11 · Date of birth | DATE_P1 | Convert the restored date to MM-DD-YYYY. |
+| B12 · Treaty residence | Leave blank | The information supplied does not establish a treaty claim. |
+| B13 · Special rates and conditions | Leave blank | |
+| B14 · Capacity to sign | Check when you sign for yourself | |
+| B15 · Signature and signing date | NEEDS-YOU for signature. NEEDS-YOU for date. | Sign yourself and enter the date you sign in MM-DD-YYYY format. |
+| B16 · Printed name of signer | GIVEN_P1 MIDDLE_P1 SURNAME_P1 | Enter all three on the same line. |
+
+Give the completed form to the brokerage.

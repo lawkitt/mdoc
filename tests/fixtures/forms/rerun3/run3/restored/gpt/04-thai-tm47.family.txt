@@ -1,0 +1,25 @@
+## TM.47 for P1
+
+| Blank | Entry |
+|---|---|
+| B01 Written at | Bangkok Immigration Office |
+| B02 Filing date | 24 / November / 2569 |
+| B03 Full name | VIKRAM ANAND RAGHUNATHAN |
+| B04 Nationality | Indian |
+| B05 Visa type | ☑ NON-IMM |
+| B06 Date of entry | 26 / August / 2569 |
+| B07 Means of travel | Airplane |
+| B08 Passport number | Z4827163 |
+| B09 Arrival card number | NEEDS-YOU |
+| B10 Lane or road | NEEDS-YOU |
+| B11 Tambol | NEEDS-YOU |
+| B12 Amphur | NEEDS-YOU |
+| B13 Province | NEEDS-YOU |
+| B14 Phone | +44 7700 900123 |
+| B15 Signature | NEEDS-YOU |
+
+- **B02 and B06** use the form’s Buddhist Era year. Enter the day, month, and year in their separate spaces.
+- **B03** After the aliases are replaced, write the full name in block capitals and follow the name order shown in your passport.
+- **B09** Enter your arrival card number from your records.
+- **B10–B13** Enter the lane or road, subdistrict, district, and province of your current Thai address.
+- **B15** Sign the form by hand.

@@ -1,0 +1,52 @@
+## Schengen visa application draft for P1
+
+Complete each `NEEDS-YOU` entry on your device. Where two rows share a field number, put the applicable entries together in that field.
+
+| Field | Entry | What to check or complete |
+|---|---|---|
+| B01 · Surname | SURNAME_P1 | |
+| B02 · Surname at birth | NEEDS-YOU | Confirm your surname at birth and any former family names. |
+| B03 · First name | GIVEN_P1 | Enter your given names in the order shown in your passport. |
+| B03 · Middle name | MIDDLE_P1 | Include it in the same field if it appears among your passport’s given names. |
+| B04 · Date of birth | DATE_P1 | After the value is restored, write it in day-month-year order. |
+| B05 · Place of birth | PLACE_P1 | |
+| B06 · Country of birth | NEEDS-YOU | Enter your country of birth. |
+| B07 · Current nationality | Indian | |
+| B07 · Nationality at birth | NEEDS-YOU | Complete only if different from your current nationality. |
+| B07 · Other nationalities | NEEDS-YOU | Enter any other nationalities you hold. |
+| B08 · Sex | Female ☐ / Male ☑ | Select Male. |
+| B09 · Civil status | Married | |
+| B10 · Parental authority or guardian | Leave blank | This field applies to minors. |
+| B11 · National identity number | NEEDS-YOU | Enter your national identity number locally if applicable. |
+| B12 · Travel document type | NEEDS-YOU | Check your passport’s category and tick the matching box. |
+| B13 · Travel document number | ID_P1 | |
+| B14 · Date of issue | ISSUED_P1 | If the form requires a different date format, reformat it by hand after the value is restored. |
+| B15 · Valid until | 04-06-2029 | |
+| B16 · Issued by | India | |
+| B17–B18 · Qualifying family member | Leave blank if inapplicable | Complete these fields only if you have a qualifying family member under the form’s instructions. |
+| B19 · Home address | ADDRESS_P1 | |
+| B19 · Email address | NEEDS-YOU | Enter your email address alongside your home address. |
+| B19 · Telephone | PHONE_P1 | |
+| B20 · Residence outside country of nationality | Yes. UK residence permit. | |
+| B20 · Permit number | NEEDS-YOU | Enter the permit or equivalent reference number locally. |
+| B20 · Permit valid until | NEEDS-YOU | Enter the expiry date of your UK residence permission. |
+| B21 · Current occupation | Software engineer | |
+| B22 · Employer | NEEDS-YOU | Enter your employer’s name, address and telephone number. |
+| B23 · Purpose | Business | |
+| B24 · Additional information | Attending a trade fair in Munich, Germany, from 8 to 13 March 2027. | |
+| B25 · Main destination | Germany | Add any other Schengen destinations on your itinerary if applicable. |
+| B26 · First entry | NEEDS-YOU | Enter the country where you first enter the Schengen area. Use Germany if you enter there first. |
+| B27 · Number of entries | NEEDS-YOU | Select single, two or multiple entries based on your planned border crossings. |
+| B28 · Intended arrival | NEEDS-YOU | Enter your planned Schengen arrival date. Use 08-03-2027 if you arrive on the first fair day. |
+| B29 · Intended departure | NEEDS-YOU | Enter your planned Schengen departure date. Use 13-03-2027 if you depart on the last fair day. |
+| B30 · Previous fingerprints | Yes | Your fingerprints were taken in 2023. Leave the exact date blank. Enter the visa sticker number locally if known. |
+| B31 · Final-destination entry permit | Leave blank if inapplicable | If your itinerary requires an onward entry permit, enter its issuer and validity dates. |
+| B32 · Inviting person or accommodation | NEEDS-YOU | Enter your inviting person’s surname and given name, or the name of your hotel or other accommodation. |
+| B33 · Inviting person or accommodation contact | NEEDS-YOU | Enter the address, email and telephone number. |
+| B34 · Inviting company or organisation | NEEDS-YOU | Enter its name and address if an organisation is inviting you. |
+| B35 · Inviting organisation contact | NEEDS-YOU | If B34 applies, enter the contact person’s surname, given name, address, telephone and email, plus the organisation’s telephone number. |
+| B36 · Who covers your costs | By a sponsor | Your employer is paying. Select “referred to in field 30 or 31” if your employer is already listed there. Otherwise select “other” and enter its name. |
+| B36 · Sponsor name and means of support | NEEDS-YOU | Supply your employer’s name if using “other” and tick the means of support it actually provides. |
+| B37–B38 · Person completing the form | Leave blank if you complete it yourself | If someone else completes it, enter their name, address, email and telephone number. |
+| B39 · Place and date | NEEDS-YOU | Enter the place and date when you sign. |
+| B40 · Signature | NEEDS-YOU | Sign in the applicant signature field. Leave the guardian signature line blank if inapplicable. |

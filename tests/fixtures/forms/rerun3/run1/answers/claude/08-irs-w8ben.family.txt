@@ -1,0 +1,42 @@
+Here is your W-8BEN, filled for you (P1) as the beneficial owner of the book royalties. Your wife and daughter don't go on this form. Each person who receives income needs their own W-8BEN, and here that is only you.
+
+Part I – Identification of Beneficial Owner
+
+[B01] 1 Name of individual who is the beneficial owner: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+[B02] 2 Country of citizenship: India
+[B03] 3 Permanent residence address (street, apt. or suite no., or rural route): ADDRESS_P1
+[B04]   City or town, state or province, postal code: ADDRESS_P1
+[B05]   Country: United Kingdom
+[B06] 4 Mailing address (if different from above): leave blank
+[B07] 5 U.S. taxpayer identification number (SSN or ITIN): leave blank (see note 2)
+[B08] 6a Foreign tax identifying number: NEEDS-YOU (your UK tax number, see note 2)
+[B09] 6b Check if FTIN not legally required: leave unchecked
+[B10] 7 Reference number(s): leave blank, unless your publisher gave you a reference number for this form
+[B11] 8 Date of birth (MM-DD-YYYY): DATE_P1 (see note 3)
+
+Part II – Claim of Tax Treaty Benefits
+
+[B12] 9 I certify that the beneficial owner is a resident of United Kingdom within the meaning of the income tax treaty between the United States and that country.
+[B13] 10 Special rates and conditions:
+  Article and paragraph: Article 12, paragraph 1
+  Rate of withholding: 0 %
+  Type of income: Royalties (copyright royalties for a literary work)
+  Additional conditions: The beneficial owner is an individual resident in the United Kingdom under the treaty and the beneficial owner of the royalties. As an individual resident, the beneficial owner is a qualified person under Article 23 (Limitation on Benefits). The royalties are not effectively connected with a permanent establishment or fixed base in the United States.
+
+Part III – Certification
+
+[B14] [X] I certify that I have the capacity to sign for the person identified on line 1 of this form.
+[B15] Signature: sign by hand. Date (MM-DD-YYYY): the date you sign, written by hand.
+[B16] Print name of signer: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+
+Things to do by hand after the values are put back:
+
+1. Address (lines 3 and 4). ADDRESS_P1 is your whole home address in one value, but the form splits it in two. On line 3, keep only the street and house or flat number. On the second line, keep only the town or city and the postcode. Delete the extra parts from each line. If the stored address ends with the country, delete it there too, because the country already goes on its own line ("United Kingdom"). This must be your UK home address, not a P.O. box or a "care of" address. If your home address isn't in the UK, tell me, because the treaty claim depends on it.
+
+2. Tax numbers (lines 5 and 6a). Your UK tax number isn't saved in mdoc, so line 6a needs you. Write it on the paper or PDF form yourself. Don't type it into this chat. For a UK resident this is usually your HMRC Unique Taxpayer Reference (UTR) if you have one, or else your National Insurance number. Leave line 6b unchecked, because the UK does issue tax numbers. With a UK tax number on line 6a you normally don't need a US SSN or ITIN on line 5 to claim the treaty rate. Some withholding agents still ask for an ITIN anyway. If your publisher does, you'll need to apply for one separately before they will apply the 0% rate.
+
+3. Date of birth (line 8). DATE_P1 is stored exactly as printed in your passport, which is likely day first (for example DD/MM/YYYY). The form needs month-day-year with hyphens (MM-DD-YYYY). Rewrite it in that order by hand once it's filled in.
+
+4. Signature and date. Sign line 15 yourself and date it in MM-DD-YYYY format. The checkbox on line 14 is ticked because you are signing for yourself. Then send the form to your publisher, not to the IRS. It stays valid until the end of the third calendar year after you sign, unless your circumstances change. If you move out of the UK or stop being UK tax resident, give them a new form within 30 days.
+
+One point to check: the 0% rate under Article 12 only applies if you are tax resident in the UK under the treaty. If India could also treat you as tax resident this year, the treaty's tie-breaker rules decide, and you may want to confirm with an adviser. If you are only UK resident, the form above is correct.

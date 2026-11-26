@@ -1,0 +1,72 @@
+I've filled the application below with your aliases and the facts you gave me. The form asks for block letters, so write everything in capitals. Where a blank needs something I don't have, I wrote NEEDS-YOU. The full list is at the end.
+
+APPLICATION FOR CERTIFICATE OF VISA ELIGIBILITY
+
+1. PERSONAL DETAILS
+[B01] Family Name: SURNAME_P1
+[B02] Given Names: GIVEN_P1 MIDDLE_P1
+      (A Philippine passport's machine-readable line lists your middle name after your first name, so both go here. If your employer or the embassy tells you to leave out the middle name, keep only GIVEN_P1.)
+[B03] 漢字姓名 (Chinese-character name): leave blank (not applicable)
+[B04] Sex: Male [ ]  Female [√]
+[B05] Date of Birth (yyyy/mm/dd): DATE_P1
+      By hand: rewrite this as year/month/day in numbers, e.g. a passport date printed as "day month year" becomes yyyy/mm/dd.
+[B06] Nationality: FILIPINO
+[B07] Country of Birth: PLACE_P1
+      By hand: if your place of birth shows only a city or province, write the country it is in instead.
+[B08] National Identity No.: NEEDS-YOU (your Philippine national ID / PhilSys number, if you have one. Write it on the form yourself, not here. Leave it blank if you don't have one.)
+[B09] Used other names to enter or depart Korea? No [ ]  Yes [ ]  NEEDS-YOU (tick one. If Yes, add the other name.)
+[B10] Citizen of more than one country? No [ ]  Yes [ ]  NEEDS-YOU (tick one)
+
+2. PASSPORT INFORMATION
+[B11] Passport Type: Diplomatic [ ]  Official [ ]  Regular [√]  Other [ ]
+      (I ticked Regular because this is for a private nursing job. Change it if your passport is a different type.)
+[B12] Passport No.: ID_P1
+[B13] Country of Passport: PHILIPPINES
+[B14] Place of Issue: AUTHORITY_P1
+      By hand: if the issuing authority reads like "DFA" plus a place, write just the place (the city or office location) here.
+[B15] Date of Issue: ISSUED_P1
+      By hand: rewrite it as yyyy/mm/dd so it matches the other dates on the form.
+[B16] Date of Expiry: 2032/03/13
+[B17] Any other valid passport? No [ ]  Yes [ ]  NEEDS-YOU (tick one. If Yes, fill in its type, number, country and expiry date.)
+
+3. CONTACT INFORMATION
+[B18] Home Country Address: NEEDS-YOU (your address in the Philippines. You only gave me one home address, and you live in Singapore.)
+[B19] Current Residential Address: ADDRESS_P1
+      (If ADDRESS_P1 is actually your Philippine address, move it to B18 and write your Singapore address here.)
+[B20] Cell Phone No.: PHONE_P1
+      By hand: make sure it includes the country code (e.g. starts with + and the country code).
+[B21] Telephone No.: leave blank unless you have a landline
+[B22] E-mail: NEEDS-YOU (your email address)
+3.6 Emergency Contact
+[B23] Full Name in English: NEEDS-YOU (your mother's full name)
+[B24] Country of Residence: PHILIPPINES
+[B25] Telephone No.: NEEDS-YOU (your mother's phone number, with country code)
+[B26] Relationship to the applicant: MOTHER
+
+4. MARITAL STATUS AND FAMILY DETAILS
+[B27] Current Marital Status: Married [ ]  Divorced [ ]  Single [√]
+[B28]-[B33] Spouse details: leave blank (you are single)
+[B34] Children? No [√]  Yes [ ]  Number of children [ ] (leave blank)
+
+5. EDUCATION
+[B35] Highest education: Master's/Doctoral [ ]  Bachelor's Degree [√]  High School [ ]  Other [ ]
+[B36] Name of School: NEEDS-YOU (the school where you got your nursing degree)
+[B37] Location of School (city/province/country): NEEDS-YOU
+
+6. EMPLOYMENT
+[B38] Current personal circumstances: NEEDS-YOU (tick the box that fits you now, e.g. Employed if you currently work as a nurse in Singapore)
+[B39] Name of Company/Institute/School: NEEDS-YOU (your current employer. This asks about your current job, not the Seoul one.)
+[B40] Position/Course: NEEDS-YOU (your current job title)
+[B41] Address of Company/Institute/School: NEEDS-YOU
+[B42] Telephone No.: NEEDS-YOU
+
+What's still missing (NEEDS-YOU):
+- B08: national ID number, if you have one
+- B09, B10, B17: whether you've used other names in Korea, whether you have another citizenship, and whether you have another valid passport
+- B18: your home address in the Philippines
+- B22: your email address
+- B23, B25: your mother's full name and phone number
+- B36, B37: the name and location of your nursing school
+- B38 to B42: your current job status and employer details
+
+Fill these in on the form yourself. Please don't type any ID numbers into this chat. Also, check every date for the yyyy/mm/dd format before you send the form to your employer.

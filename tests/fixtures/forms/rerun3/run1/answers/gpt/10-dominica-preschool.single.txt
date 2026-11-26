@@ -1,0 +1,14 @@
+| Form field | Entry |
+|---|---|
+| Application heading, preschool/daycare name | NEEDS-YOU |
+| B08, preschool/daycare name | NEEDS-YOU |
+| B09, applicant name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 |
+| B10, applicant phone | PHONE_P1 |
+| B11, applicant email | NEEDS-YOU |
+| B12, relationship to child | Aunt |
+| B30, second emergency contact name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 |
+| B30, second emergency contact phone | PHONE_P1 |
+
+Fill in the preschool or daycare name in both places and add your email in B11. Once mdoc restores your phone number, put it in the matching slot in both B10 and B30. Use C for cell, W for work, or H for home.
+
+Leave the child’s name in B08 and all of B13–B29 blank for your sister. Leave B01–B07 blank for the preschool or daycare staff.

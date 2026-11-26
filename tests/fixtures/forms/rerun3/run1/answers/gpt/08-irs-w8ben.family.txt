@@ -1,0 +1,90 @@
+Use P1 as the beneficial owner and signer. The supplied text identifies the income as book royalties and gives your UK tax residence. To complete the treaty claim, you still need the applicable article and paragraph, the withholding rate, and any eligibility conditions.
+
+### Part I — Identification of beneficial owner
+
+```text
+[B01] Name of beneficial owner
+GIVEN_P1
+MIDDLE_P1
+SURNAME_P1
+
+[B02] Country of citizenship
+India
+
+[B03] Permanent residence address
+ADDRESS_P1
+
+[B04] City or town, state or province, postal code
+ADDRESS_P1
+
+[B05] Country
+ADDRESS_P1
+
+[B06] Mailing address, if different
+Street address
+NEEDS-YOU
+City or town, state or province, postal code
+NEEDS-YOU
+Country
+NEEDS-YOU
+
+[B07] U.S. taxpayer identification number, if required
+NEEDS-YOU
+
+[B08] Foreign tax identifying number
+NEEDS-YOU
+
+[B09] FTIN not legally required
+Leave unchecked.
+
+[B10] Reference number(s), if applicable
+NEEDS-YOU
+
+[B11] Date of birth
+DATE_P1
+```
+
+- **B01** After restoration, combine the three name parts on line 1.
+- **B03–B05** After restoration, split the home address by hand. Put the street and unit on B03, the locality and postal code on B04, and the address country on B05. If the stored address omits the country, enter it directly on the form.
+- **B06** Leave all three blanks empty if your mailing address is the same. Otherwise, enter the separate mailing address directly on the form.
+- **B07** Enter your SSN or ITIN directly on the form if required. Otherwise, leave it blank.
+- **B08** Enter your UK National Insurance number directly on the form.
+- **B10** Enter the publisher’s reference number if applicable. Otherwise, leave it blank.
+- **B11** After restoration, put the date of birth in `MM-DD-YYYY` format by hand.
+
+### Part II — Claim of tax treaty benefits
+
+```text
+[B12] Treaty country of residence
+United Kingdom
+
+[B13] Article and paragraph
+NEEDS-YOU
+Withholding rate (%)
+NEEDS-YOU
+Type of income
+Copyright royalties from a book I wrote
+Additional eligibility conditions
+NEEDS-YOU
+```
+
+Confirm that you qualify as a UK resident under the treaty before certifying B12. For B13, enter the treaty provision and rate that apply to your book royalties, and explain any additional conditions that provision requires you to meet.
+
+### Part III — Certification
+
+```text
+[B14] Capacity to sign
+Check at signing if you can certify that you have capacity to sign.
+
+[B15] Signature
+NEEDS-YOU
+Date
+NEEDS-YOU
+
+[B16] Printed name of signer
+GIVEN_P1
+MIDDLE_P1
+SURNAME_P1
+```
+
+Sign B15 yourself and enter the date you sign in `MM-DD-YYYY` format. After restoration, combine the three name parts on B16. Give the completed form to your publisher.

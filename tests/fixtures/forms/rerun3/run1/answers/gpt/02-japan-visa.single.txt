@@ -1,0 +1,63 @@
+| Field | Entry | What to complete by hand |
+|---|---|---|
+| B01 · Surname | SURNAME_P1 | |
+| B02 · Given and middle names | GIVEN_P1 MIDDLE_P1 | |
+| B03 · Other names | NEEDS-YOU | Enter any other names you have used, if applicable. |
+| B04 · Date of birth | DATE_P1 | After substitution, arrange the date in day/month/year order. |
+| B05 · Place of birth | PLACE_P1 | After substitution, arrange the place as city, state or province, and country. Supply any missing parts. |
+| B06 · Sex | Female | Tick Female. |
+| B07 · Marital status | Single | Tick Single. |
+| B08 · Nationality or citizenship | Filipino | |
+| B09 · Former or other nationalities | NEEDS-YOU | Enter any former or additional nationalities, if applicable. |
+| B10 · Government-issued ID No. | NEEDS-YOU | Enter the government-issued ID number requested in this field. |
+| B11 · Passport type | NEEDS-YOU | Check the passport and tick the applicable category. |
+| B12 · Passport No. | ID_P1 | |
+| B13 · Place of issue | NEEDS-YOU | Enter the passport’s place of issue. The Philippines is the issuing country. |
+| B14 · Date of issue | ISSUED_P1 | After substitution, arrange the date in day/month/year order. |
+| B15 · Issuing authority | AUTHORITY_P1 | |
+| B16 · Date of expiry | 13/03/2032 | |
+| B17 · Certificate of Eligibility No. | NEEDS-YOU | Enter the number if applicable. |
+| B18 · Purpose of visit | Tourism (holiday) | |
+| B19 · Intended length of stay | 10 days | |
+| B20 · Date of arrival | 2 April 2027 | |
+| B21 · Port of entry | Narita | |
+| B22 · Airline | NEEDS-YOU | Enter the airline for your arrival flight. |
+| B23 · Hotel name | NEEDS-YOU | Enter the names of your Tokyo and Kyoto hotels once booked. |
+| B23 · Hotel telephone | NEEDS-YOU | Enter the telephone number for each hotel. |
+| B24 · Hotel address | NEEDS-YOU | Enter the address for each hotel. |
+| B25 · Previous stays in Japan | None | |
+| B26 · Current residential address | ADDRESS_P1 | |
+| B27 · Tel. | PHONE_P1 | If this is your mobile number, move it to the Mobile No. field. |
+| B27 · Mobile No. | NEEDS-YOU | If the supplied number is your mobile, use it here. Add another number in the appropriate field if you have one. |
+| B28 · Email | NEEDS-YOU | Enter your email address. |
+| B29 · Occupation and position | Staff nurse | |
+| B30 · Employer name | NEEDS-YOU | Enter your employer’s name. |
+| B30 · Employer telephone | NEEDS-YOU | Enter your employer’s telephone number. |
+| B31 · Employer address | NEEDS-YOU | Enter your employer’s address. |
+| B32 · Partner’s or parents’ occupation | NEEDS-YOU | Optional. Supply the relevant occupation if applicable. |
+| B33 · Guarantor or reference name | NEEDS-YOU | Complete the B33 fields if you have a guarantor or reference in Japan. |
+| B33 · Telephone | NEEDS-YOU | |
+| B33 · Address | NEEDS-YOU | |
+| B33 · Date of birth | NEEDS-YOU | Use day/month/year. |
+| B33 · Sex | NEEDS-YOU | Tick the applicable box. |
+| B33 · Relationship to applicant | NEEDS-YOU | |
+| B33 · Occupation and position | NEEDS-YOU | |
+| B33 · Nationality and immigration status | NEEDS-YOU | |
+| B34 · Inviter name | NEEDS-YOU | Complete the B34 fields if you have an inviter. If the inviter and guarantor are the same person, write “same as above” as directed. |
+| B34 · Telephone | NEEDS-YOU | |
+| B34 · Address | NEEDS-YOU | |
+| B34 · Date of birth | NEEDS-YOU | Use day/month/year. |
+| B34 · Sex | NEEDS-YOU | Tick the applicable box. |
+| B34 · Relationship to applicant | NEEDS-YOU | |
+| B34 · Occupation and position | NEEDS-YOU | |
+| B34 · Nationality and immigration status | NEEDS-YOU | |
+| B35 · Remarks or special circumstances | NEEDS-YOU | Optional. Complete if you have anything to add. |
+| B36 · Criminal conviction | NEEDS-YOU | Answer Yes or No. |
+| B37 · Imprisonment of one year or more | NEEDS-YOU | Answer Yes or No, following Note 2. |
+| B38 · Deportation or removal | NEEDS-YOU | Answer Yes or No. |
+| B39 · Drug conviction and sentence | NEEDS-YOU | Answer Yes or No, following Note 2. |
+| B40 · Prostitution-related activity | NEEDS-YOU | Answer Yes or No. |
+| B41 · Trafficking in persons | NEEDS-YOU | Answer Yes or No. |
+| B42 · Details of any Yes answer | NEEDS-YOU | Complete if you answered Yes to any question in B36–B41. |
+| B43 · Date of application | NEEDS-YOU | Enter the actual application date in day/month/year order. |
+| B44 · Signature | NEEDS-YOU | Sign the application yourself. |

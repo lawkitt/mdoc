@@ -1,0 +1,29 @@
+Here is your TM.47 (90-day report), filled from what you gave me. The form uses Thai Buddhist Era years (พ.ศ.), which are the Western year plus 543, so 2026 is 2569.
+
+[B01] WRITTEN AT: Chiang Mai Immigration Office
+[B02] DATE: 24  MONTH: November (พฤศจิกายน)  YEAR: 2569
+[B03] FULL NAME (BLOCK LETTERS): MS MARICEL BUENAFLOR ESCALANTE
+[B04] NATIONALITY: FILIPINO
+[B05] VISA: [ ] TOURIST  [X] NON-IMM
+[B06] ENTERED THAILAND ON: 25  MONTH: August (สิงหาคม)  YEAR: 2569
+[B07] BY: AIR
+[B08] PASSPORT NO.: P4829173B
+[B09] ARRIVAL CARD NO.: NEEDS-YOU
+[B10] LANE/ROAD: NEEDS-YOU
+[B11] TAMBOL: NEEDS-YOU
+[B12] AMPHUR: NEEDS-YOU
+[B13] PROVINCE: CHIANG MAI
+[B14] PHONE: +65 8555 0143
+[B15] SIGNATURE: NEEDS-YOU
+
+What you need to do by hand:
+
+- B03: the form asks for block letters. When your name comes back on your device, write it in capital letters (given name, middle name, family name), as it appears in your passport.
+- B09: your arrival card number is not saved in mdoc. Copy it from your arrival record (the card or receipt from when you entered on 25 August 2026, usually kept with your passport).
+- B10 to B12: your Thai address is not saved in mdoc. Fill in your lane/road (with house number), tambol (sub-district) and amphur (district) in Chiang Mai. I put Chiang Mai as the province because you said you live there. Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 is your home address, so I did not use it here.
+- B14: if your usual number is not a Thai number, add the country code, or give a Thai number where immigration can reach you.
+- B15: sign by hand, the same way you sign your passport.
+
+Timing check: 90 days from 25 August 2026 is 23 November 2026. Reports are accepted from 15 days before to 7 days after the due date, so filing today, 24 November, is within the window.
+
+Your date and place of birth, passport issue date and issuing authority are not asked for on this form, so I left them out.

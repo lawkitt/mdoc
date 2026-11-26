@@ -1,0 +1,53 @@
+Here's your Schengen visa form, filled in for you alone. Your wife and daughter aren't travelling, so none of their details go on it.
+
+[B01] 1. Surname (Family name): RAGHUNATHAN
+[B02] 2. Surname at birth (Former family name(s)): NEEDS-YOU. I don't know if your family name has ever changed. If it hasn't, leave this blank.
+[B03] 3. First name(s) (Given name(s)): VIKRAM ANAND
+[B04] Date of birth (day-month-year): 22/11/1983
+[B05] 5. Place of birth: PUNE, MAHARASHTRA
+[B06] 6. Country of birth: NEEDS-YOU. Your country of birth isn't in what you gave me.
+[B07] 7. Current nationality: Indian   Nationality at birth, if different: leave blank if you were Indian at birth (otherwise NEEDS-YOU)   Other nationalities: leave blank if you have none (otherwise NEEDS-YOU)
+[B08] 8. Sex: [x] Male
+[B09] 9. Civil status: [x] Married
+[B10] 10. Parental authority / legal guardian: leave blank (this is only for minors)
+[B11] 11. National identity number, where applicable: NEEDS-YOU. It isn't listed. Write it on the form yourself if it applies, otherwise leave it blank.
+[B12] 12. Type of travel document: [x] Ordinary passport
+[B13] 13. Number of travel document: Z4827163
+[B14] 14. Date of issue: 05/06/2019
+[B15] 15. Valid until: 04-06-2029
+[B16] 16. Issued by (country): India
+[B17] 17. Personal data of the EU/EEA/CH/UK family member: leave blank (doesn't apply)
+[B18] 18. Family relationship with an EU, EEA or CH citizen: leave blank (doesn't apply)
+[B19] 19. Applicant's home address and e-mail address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom, plus your e-mail address: NEEDS-YOU (it isn't listed)   Tel.: +44 7700 900123
+[B20] 20. Residence in a country other than the country of current nationality: [x] Yes. Residence permit or equivalent: UK residence permit   No.: NEEDS-YOU   Valid until: NEEDS-YOU
+[B21] *21. Current occupation: Software engineer
+[B22] *22. Employer and employer's address and telephone number: NEEDS-YOU. I need your employer's name, address and phone number.
+[B23] 23. Purpose(s) of the journey: [x] Business
+[B24] 24. Additional information on purpose of stay: Attending a trade fair in Munich, Germany, 8-13 March 2027. Add the fair's name (NEEDS-YOU).
+[B25] 25. Member State of main destination: Germany
+[B26] 26. Member State of first entry: NEEDS-YOU. This is the Schengen country where you land first. If you fly straight to Munich, it's Germany.
+[B27] 27. Number of entries requested: [x] Single entry
+[B28] Intended date of arrival of the first intended stay in the Schengen area: 08-03-2027
+[B29] Intended date of departure from the Schengen area after the first intended stay: 13-03-2027
+[B30] 28. Fingerprints collected previously for a Schengen visa: [x] Yes. Date, if known: leave blank (you don't know it). Visa sticker number, if known: copy it from your 2023 visa if you still have it, otherwise leave blank.
+[B31] 29. Entry permit for the final country of destination: leave blank (doesn't apply)
+[B32] *30. Name of inviting person(s), or of hotel(s) or temporary accommodation(s): NEEDS-YOU. Give your Munich hotel's name, or the person inviting you if there is one.
+[B33] Address and e-mail address of inviting person(s)/hotel(s)/temporary accommodation(s): NEEDS-YOU   Telephone No.: NEEDS-YOU
+[B34] *31. Name and address of inviting company/organisation: NEEDS-YOU. This is for a company or the fair organiser in Germany that sent you an invitation letter. If nobody did, leave it blank.
+[B35] Contact person in company/organisation (surname, first name, address, telephone, e-mail): NEEDS-YOU   Telephone No. of company/organisation: NEEDS-YOU
+[B36] *32. Cost of travelling and living during the applicant's stay is covered:
+  [x] by a sponsor: [x] other (please specify): my employer, plus your employer's name (NEEDS-YOU)   Means of support: [x] All expenses covered during the stay
+[B37] 33. Person filling in the form, if different from the applicant: leave blank (you're filling it in yourself)
+[B38] Address, e-mail and telephone of the person filling in the form: leave blank
+[B39] Place and date: NEEDS-YOU. Write the place and date when you sign.
+[B40] Signature of applicant: sign by hand   (Signature of parental authority/legal guardian): leave blank
+
+Things to fix by hand on the form:
+- B04 and B14: the form wants day-month-year (for example 08-03-2027). If 22/11/1983 or 05/06/2019 comes back written another way, such as with a month name, rewrite it in that format.
+- B03: put your names exactly as your passport shows them. If your passport doesn't print a middle name, or prints it with your surname, cross out or move ANAND to match.
+- B12: I ticked "Ordinary passport". Change it only if yours is a diplomatic, service or other special passport.
+- B20: write your UK residence permit's number and expiry date on the form yourself. Please don't type them here.
+- B27: I picked a single entry because it's one trip. Choose "Multiple entries" if you want to visit again on the same visa.
+- B28-B29: I used 8 March as arrival and 13 March as departure. Change them if you're flying in earlier or leaving later than the fair dates.
+- B36: if a German inviting company in field 31 is paying instead of your own employer, tick "referred to in field 30 or 31" instead.
+- Ask your employer for a letter confirming your job, the trip's purpose and that they're paying the costs. Consulates usually want one for business visas.

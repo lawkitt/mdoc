@@ -1,0 +1,143 @@
+Reading additional input from stdin...
+OpenAI Codex v0.172.0
+--------
+workdir: /private/var/folders/vc/b3qk63h13wg_7f6fxfjw986r0000gn/T/tmp.othWLle7aP
+model: gpt-6.2-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a215c6-82f4-7c22-9c6b-a5a7d6802070
+--------
+user
+Use no tools: answer from the text below only.
+
+Note from mdoc: my personal details are replaced with aliases. Each alias
+stands for one value, which is put back on my device after your reply,
+exactly as it is stored. Write an alias exactly as listed, with nothing
+attached to it, in every blank it fills, even if another blank has it too.
+You cannot see or change the value, so where a form needs it in another
+shape, write the alias and tell me in words what to do with it by hand.
+Never guess or invent a real value, even as an example, and never ask me to
+type an identifier, mine or anyone's, into this chat. If the form needs
+something that is not listed here, write NEEDS-YOU and say what is missing.
+
+P1 is "Me".
+- SURNAME_P1: my family name
+- GIVEN_P1: my first name
+- MIDDLE_P1: my middle name
+- DATE_P1: my date of birth, as printed in my passport
+- PLACE_P1: my place of birth
+- ID_P1: my passport number
+- ISSUED_P1: my passport's date of issue, as printed
+- AUTHORITY_P1: my passport's issuing authority, as printed
+- ADDRESS_P1: my home address
+- PHONE_P1: my phone number
+
+Readable facts: title Ms; sex female; nationality Filipino; document type passport; passport issued by the Philippines, valid until 13 March 2032.
+
+NHS
+Family doctor services registration  GMS1
+Patient's details  Please complete in BLOCK CAPITALS and tick ✔ as appropriate
+[B01] [ ] Mr  [ ] Mrs  [ ] Miss  [ ] Ms
+[B02] Surname: ....
+[B03] Date of birth: ....
+[B04] First names: ....
+[B05] NHS No.: ....
+[B06] Previous surname/s: ....
+[B07] [ ] Male  [ ] Female
+[B08] Town and country of birth: ....
+[B09] Home address: ....
+[B10] Postcode: ....
+[B11] Telephone number: ....
+Please help us trace your previous medical records by providing the following information
+[B12] Your previous address in UK: ....
+[B13] Name of previous doctor while at that address: ....
+[B14] Address of previous doctor: ....
+If you are from abroad
+[B15] Your first UK address where registered with a GP: ....
+[B16] If previously resident in UK, date of leaving: ....
+[B17] Date you first came to live in UK: ....
+If you are returning from the Armed Forces
+[B18] Address before enlisting: ....
+[B19] Service or Personnel number: ....
+[B20] Enlistment date: ....
+If you are registering a child under 5
+[B21] [ ] I wish the child above to be registered with the doctor named overleaf for Child Health Surveillance
+If you need your doctor to dispense medicines and appliances* (*Not all doctors are authorised to dispense medicines)
+[B22] [ ] I live more than 1 mile in a straight line from the nearest chemist  [ ] I would have serious difficulty in getting them from a chemist
+[B23] [ ] Signature of Patient  [ ] Signature on behalf of patient
+[B24] Date: ....
+Version 01/02  Please see overleaf re: Organ donation
+
+I've just moved to the UK from Singapore on a Health and Care Worker visa and I'm registering with a GP in Leeds. I arrived on 3 November 2026, I've never lived in the UK before, I've never had another surname, and my new Leeds address is not saved in mdoc.
+warning: `[features].multi_agent` is deprecated. It still controls the V1 fallback. `[agents].enabled = false` disables subagent tools even when the model selects a subagent version, unless `[features].multi_agent_v2` is enabled.
+warning: `[features].multi_agent` is deprecated. It still controls the V1 fallback. `[agents].enabled = false` disables subagent tools even when the model selects a subagent version, unless `[features].multi_agent_v2` is enabled.
+codex
+| Box | Entry |
+|---|---|
+| B01 Title | Tick **Ms** |
+| B02 Surname | SURNAME_P1 |
+| B03 Date of birth | DATE_P1 |
+| B04 First names | GIVEN_P1 |
+| B04 First names, continued | MIDDLE_P1 |
+| B05 NHS number | NEEDS-YOU |
+| B06 Previous surnames | NONE |
+| B07 Sex | Tick **Female** |
+| B08 Town and country of birth | PLACE_P1 |
+| B09 Home address | NEEDS-YOU |
+| B10 Postcode | NEEDS-YOU |
+| B11 Telephone number | PHONE_P1 |
+| B12 Previous UK address | NOT APPLICABLE |
+| B13 Previous doctor’s name | NOT APPLICABLE |
+| B14 Previous doctor’s address | NOT APPLICABLE |
+| B15 First UK address where registered with a GP | NEEDS-YOU |
+| B16 Date you previously left the UK | NOT APPLICABLE |
+| B17 Date you first came to live in the UK | 3 NOVEMBER 2026 |
+| B18–B20 Armed Forces | Leave blank unless you are returning from the Armed Forces. If that applies, each box is NEEDS-YOU. |
+| B21 Child Health Surveillance | Leave unticked |
+| B22 Dispensing medicines and appliances | Tick any statement that applies to you |
+| B23 Signature | Tick **Signature of Patient** if you are signing for yourself. Sign by hand. |
+| B24 Date | NEEDS-YOU |
+
+After mdoc restores your details, put your first name and middle name together in B04, in that order. Use block capitals for the written entries. Check that B08 contains both your birth town and birth country, and add either by hand if it is missing.
+
+- **B05** Enter your NHS number directly on the form if you already have one and know it. Otherwise, leave the box blank.
+- **B09, B10 and B15** Enter your new Leeds address in B09 and its postcode in B10. Use the same Leeds address in B15 if this is your first UK GP registration.
+- **B18–B20** If the section applies, you’ll need your address before enlisting, service or personnel number, and enlistment date.
+- **B24** Enter the date you sign the form.
+tokens used
+16,833
+| Box | Entry |
+|---|---|
+| B01 Title | Tick **Ms** |
+| B02 Surname | SURNAME_P1 |
+| B03 Date of birth | DATE_P1 |
+| B04 First names | GIVEN_P1 |
+| B04 First names, continued | MIDDLE_P1 |
+| B05 NHS number | NEEDS-YOU |
+| B06 Previous surnames | NONE |
+| B07 Sex | Tick **Female** |
+| B08 Town and country of birth | PLACE_P1 |
+| B09 Home address | NEEDS-YOU |
+| B10 Postcode | NEEDS-YOU |
+| B11 Telephone number | PHONE_P1 |
+| B12 Previous UK address | NOT APPLICABLE |
+| B13 Previous doctor’s name | NOT APPLICABLE |
+| B14 Previous doctor’s address | NOT APPLICABLE |
+| B15 First UK address where registered with a GP | NEEDS-YOU |
+| B16 Date you previously left the UK | NOT APPLICABLE |
+| B17 Date you first came to live in the UK | 3 NOVEMBER 2026 |
+| B18–B20 Armed Forces | Leave blank unless you are returning from the Armed Forces. If that applies, each box is NEEDS-YOU. |
+| B21 Child Health Surveillance | Leave unticked |
+| B22 Dispensing medicines and appliances | Tick any statement that applies to you |
+| B23 Signature | Tick **Signature of Patient** if you are signing for yourself. Sign by hand. |
+| B24 Date | NEEDS-YOU |
+
+After mdoc restores your details, put your first name and middle name together in B04, in that order. Use block capitals for the written entries. Check that B08 contains both your birth town and birth country, and add either by hand if it is missing.
+
+- **B05** Enter your NHS number directly on the form if you already have one and know it. Otherwise, leave the box blank.
+- **B09, B10 and B15** Enter your new Leeds address in B09 and its postcode in B10. Use the same Leeds address in B15 if this is your first UK GP registration.
+- **B18–B20** If the section applies, you’ll need your address before enlisting, service or personnel number, and enlistment date.
+- **B24** Enter the date you sign the form.

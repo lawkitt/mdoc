@@ -1,0 +1,73 @@
+## Form 22 for P1
+
+### 1–3. Property and submission details
+
+- **B01** Property manager or owner’s full name — NEEDS-YOU. Phone — NEEDS-YOU. Email — NEEDS-YOU. Agency details, if applicable — NEEDS-YOU.
+- **B02** Brisbane rental property address — NEEDS-YOU. Postcode — NEEDS-YOU.
+- **B03** Submission method 1 — NEEDS-YOU. Submission method 2 — NEEDS-YOU. The property manager or owner supplies both methods.
+
+### 4–5. Occupants and applicant details
+
+- **B04** Total occupants — **3**.
+- **B05** Occupants under 18 — **NEEDS-YOU**. Enter the number after checking whether your daughter is under 18.
+
+**B06 Full name**
+
+VIKRAM
+
+ANAND
+
+RAGHUNATHAN
+
+After the values are restored, combine them in the single full-name field in the order shown on your passport.
+
+**B07 Date of birth**
+
+22/11/1983
+
+If the form uses a different date format, reformat the restored date by hand.
+
+**B08 Current address**
+
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+Postcode — NEEDS-YOU. If the restored address includes the postcode, put it in the separate postcode field by hand.
+
+**B09 Phone**
+
++44 7700 900123
+
+**B10** Email — NEEDS-YOU.
+
+### 6–9. Employment and supporting documents
+
+- **B11** Current employer — NEEDS-YOU.
+- **B12** Job title — NEEDS-YOU.
+- **B13** Length of employment — NEEDS-YOU. Gross weekly income — NEEDS-YOU.
+- **B14** Employer name — NEEDS-YOU. Employer phone — NEEDS-YOU. Employer email — NEEDS-YOU.
+- **B15** Financial document 1 — NEEDS-YOU. Financial document 2 — NEEDS-YOU. The property manager or owner specifies the requested documents. Other evidence of ability to pay rent, if applicable — NEEDS-YOU.
+- **B16** Identity document 1 — NEEDS-YOU. Identity document 2 — NEEDS-YOU. The property manager or owner specifies the requested documents.
+- **B17** Suitability document 1 — NEEDS-YOU. Suitability document 2 — NEEDS-YOU. The property manager or owner specifies the requested documents.
+
+### 10. Rental history
+
+**B18 Current rental address in Manchester**
+
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+Postcode — NEEDS-YOU. If the restored address includes the postcode, put it in the separate postcode field by hand.
+
+- **B19** Rental period — **March 2020 to present**.
+- **B20** Property manager or owner’s name — NEEDS-YOU. Email — NEEDS-YOU. Phone — NEEDS-YOU.
+- **B21** If you have a second rental property to list, its address — NEEDS-YOU. Postcode — NEEDS-YOU. Rental period — NEEDS-YOU. Property manager or owner’s name — NEEDS-YOU. Email — NEEDS-YOU. Phone — NEEDS-YOU. Otherwise, leave this item blank.
+- **B22** Leave blank because you have rental history.
+
+### 11–12. References and pets
+
+- **B23** First referee’s name — NEEDS-YOU. Phone — NEEDS-YOU. Email — NEEDS-YOU. Connection to you — NEEDS-YOU.
+- **B24** Second referee’s name — NEEDS-YOU. Phone — NEEDS-YOU. Email — NEEDS-YOU. Connection to you — NEEDS-YOU.
+- **B25** Whether pet rules apply at the premises — NEEDS-YOU. The property manager or owner completes this item.
+- **B26** Do you intend to keep pets? **No**.
+- **B27** Leave the pet detail fields blank.
+
+If your wife is also applying, she completes a separate Form 22. The occupant count on your form includes all three of you.

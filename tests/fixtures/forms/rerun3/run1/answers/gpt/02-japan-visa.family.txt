@@ -1,0 +1,71 @@
+### Japan visa application — your form
+
+| Blank | Field | Entry |
+|---|---|---|
+| B01 | Surname | SURNAME_P1 |
+| B02 | Given name | GIVEN_P1 |
+| B02 | Middle name | MIDDLE_P1 |
+| B03 | Other names | NEEDS-YOU |
+| B04 | Date of birth | DATE_P1 |
+| B05 | Place of birth | PLACE_P1 |
+| B06 | Sex | Male |
+| B07 | Marital status | Married |
+| B08 | Nationality or citizenship | Indian |
+| B09 | Former or other nationalities or citizenships | NEEDS-YOU |
+| B10 | Government-issued ID number | NEEDS-YOU |
+| B11 | Passport type | NEEDS-YOU |
+| B12 | Passport number | ID_P1 |
+| B13 | Place of issue | NEEDS-YOU |
+| B14 | Date of issue | ISSUED_P1 |
+| B15 | Issuing authority | AUTHORITY_P1 |
+| B16 | Date of expiry | 04/06/2029 |
+| B17 | Certificate of Eligibility number | NEEDS-YOU |
+| B18 | Purpose of visit | Tourism |
+| B19 | Intended length of stay | 7 days |
+| B20 | Date of arrival | 20 April 2027 |
+| B21 | Port of entry | Kansai Airport |
+| B22 | Airline or ship | NEEDS-YOU |
+| B23 | Hotel or host name | NEEDS-YOU |
+| B23 | Hotel or host telephone | NEEDS-YOU |
+| B24 | Hotel or host address | NEEDS-YOU |
+| B25 | Previous stay | One stay of 9 days in October 2023 |
+| B25 | Exact dates of previous stay | NEEDS-YOU |
+| B26 | Current residential address | ADDRESS_P1 |
+| B27 | Telephone | PHONE_P1 |
+| B27 | Mobile number | NEEDS-YOU |
+| B28 | Email | NEEDS-YOU |
+| B29 | Occupation and position | Software engineer |
+| B30 | Employer name | NEEDS-YOU |
+| B30 | Employer telephone | NEEDS-YOU |
+| B31 | Employer address | NEEDS-YOU |
+| B32 | Partner’s occupation | Pharmacist |
+
+| Field | B33 Guarantor or reference | B34 Inviter |
+|---|---|---|
+| Name | NEEDS-YOU | NEEDS-YOU |
+| Telephone | NEEDS-YOU | NEEDS-YOU |
+| Address | NEEDS-YOU | NEEDS-YOU |
+| Date of birth | NEEDS-YOU | NEEDS-YOU |
+| Sex | NEEDS-YOU | NEEDS-YOU |
+| Relationship to you | NEEDS-YOU | NEEDS-YOU |
+| Occupation and position | NEEDS-YOU | NEEDS-YOU |
+| Nationality and immigration status | NEEDS-YOU | NEEDS-YOU |
+
+| Blank | Field | Entry |
+|---|---|---|
+| B35 | Remarks or special circumstances, if any | NEEDS-YOU |
+| B36 | Criminal conviction | NEEDS-YOU |
+| B37 | Sentence of imprisonment of one year or more | NEEDS-YOU |
+| B38 | Deportation or removal | NEEDS-YOU |
+| B39 | Drug conviction and sentence | NEEDS-YOU |
+| B40 | Prostitution-related activity | NEEDS-YOU |
+| B41 | Trafficking in persons or involvement in it | NEEDS-YOU |
+| B42 | Details for any Yes answer | NEEDS-YOU |
+| B43 | Application date | NEEDS-YOU |
+| B44 | Applicant signature | NEEDS-YOU |
+
+After the values are restored, put both parts of B02 into the single blank in passport order. Format B04 and B14 as day/month/year. Arrange B05 as city, state or province, and country, adding any missing component by hand. If the B27 telephone is your mobile, put it in the Mobile No. blank and add a separate telephone number if you have one. List any additional current residential addresses in B26.
+
+For B10, supply your government-issued ID number if applicable. For B11, check whether your passport is Diplomatic, Official, Ordinary, or Other, and for B13, enter its place of issue. Confirm whether B03, B09, B17, B33, B34, and B35 apply to you. If your inviter and guarantor are the same person, the form directs you to write “same as above” in B34.
+
+Complete B36–B41 yourself and provide details in B42 for any Yes answer. Add the application date in day/month/year format and sign B44 by hand.

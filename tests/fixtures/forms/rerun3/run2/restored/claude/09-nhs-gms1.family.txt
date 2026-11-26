@@ -1,0 +1,34 @@
+This GMS1 is for your daughter (P3). Here is how to fill it in:
+
+[B01] Title: NEEDS-YOU. No title is listed for your daughter. Children often leave this blank, or you can tick Miss if you want a title on the record.
+[B02] Surname: RAGHUNATHAN
+[B03] Date of birth: 17/09/2019
+[B04] First names: ANIKA
+[B05] NHS No.: NEEDS-YOU. Her NHS number isn't listed. She has never been registered with a GP, so she may not have one. If she has none, leave this blank and the practice will arrange one. If she does have one (for example, if she was born in England), write it in by hand.
+[B06] Previous surname/s: leave blank, unless she has ever had a different surname.
+[B07] [✔] Female
+[B08] Town and country of birth: MANCHESTER, U.K.
+[B09] Home address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B10] Postcode: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B11] Telephone number: +44 7700 900123 (she is a child, so the form gets your number as the contact)
+[B12] Your previous address in UK: NEEDS-YOU. If she lived at another UK address before your current home, write it here. If not, leave it blank.
+[B13] Name of previous doctor while at that address: leave blank (she has never had a GP)
+[B14] Address of previous doctor: leave blank (she has never had a GP)
+[B15] Your first UK address where registered with a GP: leave blank (this is her first GP registration)
+[B16] If previously resident in UK, date of leaving: leave blank, unless she lived in the UK before, left, and has now come back. In that case it is NEEDS-YOU: write the date she left.
+[B17] Date you first came to live in UK: NEEDS-YOU. If she was born outside the UK, write the date she arrived to live here. If she was born in the UK, leave it blank.
+[B18]-[B20] Armed Forces section: leave blank
+[B21] Child Health Surveillance: NEEDS-YOU. Tick it if she is under 5 and you want her registered for child health checks. If she is 5 or older, leave it blank.
+[B22] Dispensing: leave both boxes blank, unless you really do live more than a mile from a chemist or would struggle to get medicines from one. That is unlikely in Manchester.
+[B23] [✔] Signature on behalf of patient. Sign it yourself by hand.
+[B24] Date: write the date you sign, by hand.
+
+Things to do by hand:
+- Use BLOCK CAPITALS. If the restored surname, first name, place of birth or address aren't already in capitals, rewrite them in capitals.
+- B03: the date comes back as printed in her passport. If that isn't a plain day/month/year (for example, if the month is a word), rewrite it as DD/MM/YYYY.
+- B04: put in any middle names she has. None are listed here.
+- B08: the form asks for both town and country. If her place of birth comes back as just a town, add the country.
+- B09 and B10: the full address goes in both. In B09, cross out the postcode. In B10, keep only the postcode.
+- Don't forget the organ donation section overleaf. It isn't shown here, so complete it yourself if you want to.
+
+You don't need any passport details on this form.

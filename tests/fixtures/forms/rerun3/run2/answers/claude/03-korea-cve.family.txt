@@ -1,0 +1,68 @@
+Here is the Certificate of Visa Eligibility form filled in for you (P1). The form asks for block letters, so if any value comes back on your device in lower case, copy it out in capitals.
+
+1. PERSONAL DETAILS
+[B01] Family Name: SURNAME_P1
+[B02] Given Names: GIVEN_P1 MIDDLE_P1
+[B03] Chinese-character name: leave blank (it doesn't apply to you)
+[B04] Sex: Male [√]
+[B05] Date of Birth (yyyy/mm/dd): DATE_P1
+      -> By hand: copy it as year/month/day, e.g. year first. Your passport most likely prints it day/month/year.
+[B06] Nationality: INDIAN
+[B07] Country of Birth: NEEDS-YOU. The form wants only the country you were born in. Your place of birth (PLACE_P1) may be a city or state, so write the country by hand.
+[B08] National Identity No.: NEEDS-YOU. This is your Indian national ID number, not your passport number. Write it by hand if you have one, or leave it blank.
+[B09] Other names used to enter/leave Korea: NEEDS-YOU. Tick No unless you have entered or left Korea under a different name. If you have, tick Yes and give that name.
+[B10] Citizen of more than one country: NEEDS-YOU. India doesn't allow dual citizenship, so this is normally No, but please confirm it yourself.
+
+2. PASSPORT INFORMATION
+[B11] Passport Type: Regular [√]
+      -> Check that the "Type" box on your passport's data page shows P (ordinary). If it shows anything else, tick the matching box instead.
+[B12] Passport No.: ID_P1
+[B13] Country of Passport: INDIA
+[B14] Place of Issue: AUTHORITY_P1
+      -> The form wants a place. If what your passport prints there is an office name rather than a city, write the city of that office by hand.
+[B15] Date of Issue: ISSUED_P1
+      -> By hand: write it as yyyy/mm/dd to match the other dates.
+[B16] Date of Expiry: 2029/06/04
+[B17] Other valid passport: NEEDS-YOU. Tick No unless you hold another valid passport. If you do, fill in a) to d) for it.
+
+3. CONTACT INFORMATION
+[B18] Home Country Address: NEEDS-YOU. Your home country is India, and I don't have an address there for you. Write your Indian address by hand. If you have none, write your UK address here (ADDRESS_P1) and leave 3.2 blank.
+[B19] Current Residential Address: ADDRESS_P1
+[B20] Cell Phone No.: PHONE_P1
+      -> Make sure it shows the international code (+44 for a UK number). Add it by hand if it's missing.
+[B21] Telephone No.: NEEDS-YOU. Add a landline if you have one, or leave it blank.
+[B22] E-mail: NEEDS-YOU. Write your email address by hand.
+3.6 Emergency Contact
+[B23] Full Name in English: SURNAME_P2 GIVEN_P2
+[B24] Country of Residence: UNITED KINGDOM
+[B25] Telephone No.: PHONE_P2
+[B26] Relationship: WIFE
+
+4. MARITAL STATUS AND FAMILY DETAILS
+[B27] Current Marital Status: Married [√]
+[B28] Spouse Family Name: SURNAME_P2
+[B29] Spouse Given Names: GIVEN_P2
+      -> If your wife has a middle name in her passport, add it after this by hand. I wasn't given one.
+[B30] Spouse Date of Birth (yyyy/mm/dd): DATE_P2
+      -> By hand: copy it as year/month/day.
+[B31] Spouse Nationality: INDIAN
+[B32] Spouse Residential Address: ADDRESS_P1 (you live together in the UK)
+[B33] Spouse Contact No.: PHONE_P2
+[B34] Children: Yes [√]   Number of children [1]
+
+5. EDUCATION
+[B35] Highest degree: Master's/Doctoral Degree [√]
+[B36] Name of School: NEEDS-YOU. Write the university where you got your master's in computer science.
+[B37] Location of School (city/province/country): NEEDS-YOU. Write where that university is.
+
+6. EMPLOYMENT
+[B38] Current circumstances: Employed [√]
+[B39] Name of Company: NEEDS-YOU. Write your employer's name.
+[B40] Position: NEEDS-YOU. Write your job title.
+[B41] Address of Company: NEEDS-YOU. Write the address of the office you work at now. Your HR team can tell you whether they want this one or the Seoul office.
+[B42] Telephone No.: NEEDS-YOU. Write that office's phone number.
+
+Some other things to know:
+- This application covers only you. If your wife and daughter will join you later, they usually need their own applications as your dependents. Their passport details aren't needed on this form.
+- Your daughter's passport expires on 1 January 2027. If she'll be travelling to Korea around then, renew it first, because a visa is normally refused or cut short when a passport is that close to expiring.
+- This excerpt ends at section 6. The rest of the form (purpose of visit, sponsor details, signature and date) still needs filling in. A Certificate of Visa Eligibility is usually filed in Korea by the inviting company, so check with your Seoul office who submits it.

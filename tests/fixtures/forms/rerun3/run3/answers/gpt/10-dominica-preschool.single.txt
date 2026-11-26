@@ -1,0 +1,30 @@
+Leave **B01–B07** blank for preschool/daycare staff. Your sister can complete the entries marked **NEEDS-YOU**. The preschool/daycare name is needed in both the title and B08.
+
+| Field | Entry |
+|---|---|
+| B08 | I hereby make application for admission of NEEDS-YOU to the NEEDS-YOU Preschool/Daycare. The blanks are for your nephew’s name and the preschool/daycare name. |
+| B09 Applicant name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 |
+| B10 Applicant phone | PHONE_P1 |
+| B11 Applicant email | NEEDS-YOU — your email address |
+| B12 Relationship to child | Aunt |
+| B13 Child’s name | NEEDS-YOU |
+| B14 Person the child lives with | NEEDS-YOU |
+| B15 Address for the child’s household | NEEDS-YOU |
+| B16 Number of children in the family | (M) NEEDS-YOU / (F) NEEDS-YOU |
+| B17 Child’s place in the family | NEEDS-YOU — birth order |
+| B18 Mother’s name | NEEDS-YOU |
+| B19 Mother’s address | NEEDS-YOU |
+| B20 Mother’s phone numbers | (C) NEEDS-YOU / (W) NEEDS-YOU / (H) NEEDS-YOU |
+| B21 Mother’s email | NEEDS-YOU |
+| B22 Mother’s occupation | NEEDS-YOU |
+| B23 Father’s name | NEEDS-YOU |
+| B24 Father’s address | NEEDS-YOU |
+| B25 Father’s phone numbers | (C) NEEDS-YOU / (W) NEEDS-YOU / (H) NEEDS-YOU |
+| B26 Father’s email | NEEDS-YOU |
+| B27 Father’s occupation | NEEDS-YOU |
+| B28 People authorized to collect the child | NEEDS-YOU |
+| B29 First emergency contact | Name NEEDS-YOU / (C) NEEDS-YOU / (W) NEEDS-YOU / (H) NEEDS-YOU |
+| B30 Second emergency contact | GIVEN_P1 MIDDLE_P1 SURNAME_P1 |
+| B30 Second emergency contact phone | PHONE_P1 |
+
+In B10 and B30, put your restored phone number in the matching slot by hand. **C** is cell, **W** is work, and **H** is home. Any additional phone numbers the form requires are **NEEDS-YOU**.

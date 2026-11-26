@@ -1,0 +1,42 @@
+Here is Section 1 of your Form I-9, filled in for you (P1). Your wife's and daughter's details aren't used: the I-9 covers only the employee.
+
+Section 1. Employee Information and Attestation
+
+[B01] Last Name (Family Name): RAGHUNATHAN
+[B02] First Name (Given Name): VIKRAM
+[B03] Middle Initial (if any): ANAND
+      By hand: this blank needs only your middle initial. Keep the first letter of your middle name and delete the rest.
+[B04] Other Last Names Used (if any): N/A
+[B05] Address (Street Number and Name): NEEDS-YOU
+[B06] Apt. Number (if any): NEEDS-YOU
+[B07] City or Town: NEEDS-YOU
+[B08] State: NEEDS-YOU
+[B09] ZIP Code: NEEDS-YOU
+      Missing: your new US address in Seattle. It isn't saved in mdoc, and the address I have (14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom) is a different one, so don't use it here. Write the street number and name, the apartment number (N/A if there isn't one), the city (Seattle), the state (WA) and the ZIP code.
+[B10] Date of Birth (mm/dd/yyyy): 22/11/1983
+      By hand: this alias holds your date of birth as printed in your passport. If it isn't already in US order, rewrite it as month/day/year with two digits for the month, two for the day and four for the year, e.g. 2-digit month first, then day, then year.
+[B11] U.S. Social Security Number: leave blank
+      You don't have one yet, so leave it blank. If your employer uses E-Verify, give them the number once you receive it so they can finish the check.
+[B12] Employee's Email Address: NEEDS-YOU
+      Missing: no email address is listed. This field is optional: write your email address, or N/A.
+[B13] Employee's Telephone Number: +44 7700 900123
+      This field is optional. If you get a US number, you can write that instead, or N/A.
+
+Citizenship or immigration status:
+[B14] [ ] 1. A citizen of the United States
+      [ ] 2. A noncitizen national of the United States
+      [ ] 3. A lawful permanent resident
+      [X] 4. An alien authorized to work until (exp. date, if any): 01/15/2029
+
+[B15] USCIS A-Number: N/A
+      OR Form I-94 Admission Number: N/A
+      OR Foreign Passport Number and Country of Issuance: Z4827163, India
+      You only need one of the three numbers. I used your passport. If you'd rather give your I-94 admission number (you can download your I-94 from the CBP website), write it in that blank and cross out the passport entry. It isn't listed here, so I haven't filled it in.
+
+[B16] Signature of Employee: sign it yourself.
+[B17] Today's Date (mm/dd/yyyy): write the date you sign, month/day/year.
+
+Some notes:
+- Check that 01/15/2029 matches the "Admit Until Date" on your I-94. That date governs your L-1 work authorization.
+- You're filling in and signing Section 1 yourself, so the Preparer and/or Translator Certification isn't needed.
+- Complete and sign Section 1 no later than your first day of work. Within three business days of your start date, show your employer original documents for Section 2. For an L-1 worker this is usually your Indian passport (valid until 4 June 2029) together with your Form I-94.

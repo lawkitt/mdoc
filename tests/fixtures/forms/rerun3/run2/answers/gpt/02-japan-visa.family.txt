@@ -1,0 +1,69 @@
+## Japan visa application for P1
+
+| Field | Entry | What to complete by hand |
+|---|---|---|
+| B01 Surname | SURNAME_P1 | |
+| B02 Given and middle names | GIVEN_P1 MIDDLE_P1 | After restoration, check that both names appear in the passport’s order and spelling in the same field. |
+| B03 Other names | NEEDS-YOU | Enter any other names you are or have been known by, if applicable. |
+| B04 Date of birth | DATE_P1 | After restoration, write the date in day/month/year order. |
+| B05 Place of birth | PLACE_P1 | After restoration, place the city, state or province, and country in their respective positions. Supply any missing component by hand. |
+| B06 Sex | Male | Tick Male. |
+| B07 Marital status | Married | Tick Married. |
+| B08 Nationality or citizenship | Indian | |
+| B09 Former or other nationalities or citizenships | NEEDS-YOU | Enter any former or additional nationalities or citizenships, if applicable. |
+| B10 Government-issued ID number | NEEDS-YOU | Enter the government-issued ID number requested in this field. |
+| B11 Passport type | NEEDS-YOU | Check the passport and tick its category. |
+| B12 Passport number | ID_P1 | |
+| B13 Place of issue | NEEDS-YOU | Enter the passport’s place of issue. |
+| B14 Date of issue | ISSUED_P1 | After restoration, write the date in day/month/year order. |
+| B15 Issuing authority | AUTHORITY_P1 | |
+| B16 Date of expiry | 04/06/2029 | |
+| B17 Certificate of Eligibility number | NEEDS-YOU | Enter the number if applicable. |
+| B18 Purpose of visit | Tourism with family | |
+| B19 Intended length of stay | 7 days | |
+| B20 Date of arrival | 20/04/2027 | |
+| B21 Port of entry | Kansai Airport | |
+| B22 Ship or airline name | NEEDS-YOU | Enter the carrier for your arrival in Japan. |
+| B23 Hotel or host name | NEEDS-YOU | |
+| B23 Hotel or host telephone | NEEDS-YOU | |
+| B24 Hotel or host address | NEEDS-YOU | |
+| B25 Previous stays in Japan | October 2023, 9 days | NEEDS-YOU for the exact arrival and departure dates. |
+| B26 Current residential address | ADDRESS_P1 | Add any other current residential addresses, if applicable. |
+| B27 Telephone | PHONE_P1 | If the restored number is your mobile, put it in the Mobile No. field and complete Tel. as applicable. |
+| B27 Mobile number | NEEDS-YOU | Complete if applicable, using the restored number here if it is your mobile. |
+| B28 Email | NEEDS-YOU | |
+| B29 Current profession or occupation and position | Software engineer | |
+| B30 Employer name | NEEDS-YOU | |
+| B30 Employer telephone | NEEDS-YOU | |
+| B31 Employer address | NEEDS-YOU | |
+| B32 Partner’s profession or occupation | Pharmacist | |
+
+### B33 Guarantor or reference and B34 inviter
+
+Complete the applicable details. If the inviter and guarantor are the same person, write “same as above” in B34 as the form directs.
+
+| Field | B33 | B34 |
+|---|---|---|
+| Name | NEEDS-YOU | NEEDS-YOU |
+| Telephone | NEEDS-YOU | NEEDS-YOU |
+| Address | NEEDS-YOU | NEEDS-YOU |
+| Date of birth (day/month/year) | NEEDS-YOU | NEEDS-YOU |
+| Sex | NEEDS-YOU | NEEDS-YOU |
+| Relationship to you | NEEDS-YOU | NEEDS-YOU |
+| Profession or occupation and position | NEEDS-YOU | NEEDS-YOU |
+| Nationality and immigration status | NEEDS-YOU | NEEDS-YOU |
+
+### Remarks, declarations, and signature
+
+| Field | Entry | What to complete by hand |
+|---|---|---|
+| B35 Remarks or special circumstances | NEEDS-YOU | Add details if applicable. |
+| B36 Criminal conviction | NEEDS-YOU | Tick your Yes or No answer. |
+| B37 Sentence of imprisonment | NEEDS-YOU | Tick your Yes or No answer using the form’s Note 2. |
+| B38 Deportation or removal | NEEDS-YOU | Tick your Yes or No answer. |
+| B39 Drug offence conviction and sentence | NEEDS-YOU | Tick your Yes or No answer using the form’s Note 2. |
+| B40 Prostitution-related activity | NEEDS-YOU | Tick your Yes or No answer. |
+| B41 Trafficking in persons | NEEDS-YOU | Tick your Yes or No answer. |
+| B42 Details of any Yes answers | NEEDS-YOU | Provide details if you tick Yes in B36–B41. |
+| B43 Date of application | NEEDS-YOU | Enter the application date in day/month/year order. |
+| B44 Applicant’s signature | NEEDS-YOU | Sign by hand after reviewing the completed form. |

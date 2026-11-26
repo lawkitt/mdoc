@@ -1,0 +1,74 @@
+I’ve listed the father as the applicant, both parents as living with the child, and the current home address wherever the form asks for an address. The preschool can use the entries under **Official use only** to complete its section.
+
+After mdoc restores the aliases, write the child’s birth date in day, month, year order. I’ve placed the supplied phone numbers in the cell fields. If either number belongs in a work or home field, move it there by hand. Complete the `NEEDS-YOU` entries on your device.
+
+### Form heading
+
+| Blank | Entry | Missing information |
+|---|---|---|
+| Preschool/daycare name | NEEDS-YOU | Name of the preschool or daycare in Roseau |
+
+### Official use only
+
+| Blank | Entry | Notes |
+|---|---|---|
+| B01 Child’s name | GIVEN_P3 SURNAME_P3 | |
+| B02 Date of birth | DATE_P3 | After restoration, enter the day, month, and year in the corresponding spaces. |
+| B03 Male | Leave unchecked | |
+| B03 Female | Check | |
+| B04 Religion | NEEDS-YOU | Child’s religion |
+| B05 Home address | ADDRESS_P1 | |
+| B06 Date of full immunization | NEEDS-YOU | Date of full immunization from the child’s health records |
+| B07 Dates of admission | NEEDS-YOU | Exact admission date or dates from the preschool. The requested start is January 2027. |
+
+### Application and contact information
+
+| Blank | Entry | Missing information |
+|---|---|---|
+| B08 Child’s name | GIVEN_P3 SURNAME_P3 | |
+| B08 Preschool/daycare name | NEEDS-YOU | Name of the preschool or daycare in Roseau |
+| B09 Applicant’s name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 | |
+| B10 Cell | PHONE_P1 | |
+| B10 Work | NEEDS-YOU | Applicant’s work phone, if applicable |
+| B10 Home | NEEDS-YOU | Applicant’s home phone, if applicable |
+| B11 Email | NEEDS-YOU | Applicant’s email address |
+| B12 Relationship to child | Father | |
+
+### Child and family information
+
+| Blank | Entry | Missing information |
+|---|---|---|
+| B13 Child’s name | GIVEN_P3 SURNAME_P3 | |
+| B14 Person the child lives with | GIVEN_P1 MIDDLE_P1 SURNAME_P1 and GIVEN_P2 SURNAME_P2 | |
+| B15 Address | ADDRESS_P1 | |
+| B16 Number of boys (M) | 0 | |
+| B16 Number of girls (F) | 1 | |
+| B17 Place in the family | First and only child | |
+| B18 Mother’s name | GIVEN_P2 SURNAME_P2 | |
+| B19 Mother’s address | ADDRESS_P1 | |
+| B20 Mother’s cell | PHONE_P2 | |
+| B20 Mother’s work phone | NEEDS-YOU | Mother’s work phone, if applicable |
+| B20 Mother’s home phone | NEEDS-YOU | Mother’s home phone, if applicable |
+| B21 Mother’s email | NEEDS-YOU | Mother’s email address |
+| B22 Mother’s occupation | Pharmacist | |
+| B23 Father’s name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 | |
+| B24 Father’s address | ADDRESS_P1 | |
+| B25 Father’s cell | PHONE_P1 | |
+| B25 Father’s work phone | NEEDS-YOU | Father’s work phone, if applicable |
+| B25 Father’s home phone | NEEDS-YOU | Father’s home phone, if applicable |
+| B26 Father’s email | NEEDS-YOU | Father’s email address |
+| B27 Father’s occupation | Software engineer | |
+| B28 People authorized to collect the child | GIVEN_P1 MIDDLE_P1 SURNAME_P1 and GIVEN_P2 SURNAME_P2 | |
+
+### Emergency contacts
+
+| Blank | Entry | Missing information |
+|---|---|---|
+| B29 First contact’s name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 | |
+| B29 Cell | PHONE_P1 | |
+| B29 Work | NEEDS-YOU | First contact’s work phone, if applicable |
+| B29 Home | NEEDS-YOU | First contact’s home phone, if applicable |
+| B30 Second contact’s name | GIVEN_P2 SURNAME_P2 | |
+| B30 Cell | PHONE_P2 | |
+| B30 Work | NEEDS-YOU | Second contact’s work phone, if applicable |
+| B30 Home | NEEDS-YOU | Second contact’s home phone, if applicable |

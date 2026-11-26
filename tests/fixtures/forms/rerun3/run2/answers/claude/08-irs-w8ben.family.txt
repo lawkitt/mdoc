@@ -1,0 +1,42 @@
+Here is your W-8BEN, filled in for you as the author receiving the royalties. Your wife's and daughter's details aren't needed on this form, because only you, the beneficial owner, fill it in.
+
+Part I – Identification of Beneficial Owner
+
+[B01] 1 Name of individual who is the beneficial owner: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+[B02] 2 Country of citizenship: India
+[B03] 3 Permanent residence address: ADDRESS_P1
+[B04]   City or town, state or province, postal code: see the note below
+[B05]   Country: United Kingdom
+[B06] 4 Mailing address: leave blank (same as line 3)
+[B07] 5 U.S. taxpayer identification number (SSN or ITIN): leave blank
+[B08] 6a Foreign tax identifying number: NEEDS-YOU
+[B09] 6b Check if FTIN not legally required: leave unticked
+[B10] 7 Reference number(s): leave blank unless your publisher gives you one
+[B11] 8 Date of birth (MM-DD-YYYY): DATE_P1
+
+Part II – Claim of Tax Treaty Benefits
+
+[B12] 9 The beneficial owner is a resident of: United Kingdom
+[B13] 10 Special rates and conditions:
+  Article and paragraph: Article 12, paragraph 1
+  Rate of withholding: 0 %
+  Type of income: Royalties (copyright royalties for a literary work, my book)
+  Additional conditions: The beneficial owner is an individual resident in the United Kingdom under the treaty, is the beneficial owner of the royalties, and is a qualified person under Article 23 (Limitation on Benefits). The royalties are not connected with a permanent establishment or fixed base in the United States.
+
+Part III – Certification
+
+[B14] Tick the box (you have the capacity to sign for yourself, the person on line 1).
+[B15] Signature: sign by hand. Date (MM-DD-YYYY): write the date you sign, by hand.
+[B16] Print name of signer: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+
+Things to do by hand
+
+1. Address (lines 3 and the line below it): ADDRESS_P1 is your whole home address in one value. Once it's back on your device, keep the street, house or flat number on line 3. Move the city or town and the postcode to the "City or town, state or province" line. Line 5 says "United Kingdom". If your home address is outside the UK, change this to match, but line 3 must be the address where you are tax resident.
+
+2. Foreign tax identifying number (line 6a): this is NEEDS-YOU because your UK National Insurance number isn't saved in mdoc. Write your NI number on line 6a yourself, directly on the form. Your HMRC Unique Taxpayer Reference (UTR) also works if you have one. Please don't type either number into this chat. You need a number here: you have no SSN or ITIN, and the treaty claim needs a U.S. or foreign tax number. Leave 6b unticked, because the UK does issue tax numbers.
+
+3. Date of birth (line 8): DATE_P1 is your date of birth as printed in your passport. The form needs it as MM-DD-YYYY (month first, two digits, then a 4-digit year). Rewrite it in that format if your passport shows it differently.
+
+4. Signature and date: sign and date the form yourself. Then give it to your publisher, not the IRS.
+
+A note on the treaty claim: under Article 12(1) of the UK–US treaty, royalties owned by a UK resident are taxed only in the UK. That is why the rate is 0%. Your publisher may ask for proof of UK residence. If so, HMRC can issue a certificate of residence.

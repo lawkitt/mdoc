@@ -1,0 +1,90 @@
+## Schengen visa application for P1
+
+The trade fair runs from **8 to 13 March 2027** in Munich. Enter your actual Schengen arrival and departure dates in B28 and B29.
+
+**B01 · Surname**
+
+RAGHUNATHAN
+
+**B02 · Surname at birth or former family names**
+
+NEEDS-YOU
+
+Check whether you have a birth surname or former family name to enter.
+
+**B03 · Given names**
+
+VIKRAM
+
+ANAND
+
+Enter the given names together in the order and spelling shown in your passport. Include the middle name if it appears among the passport’s given names.
+
+**B04 · Date of birth**
+
+22/11/1983
+
+After substitution, write the date in day-month-year order by hand if needed.
+
+**B05 · Place of birth**
+
+PUNE, MAHARASHTRA
+
+| Blank | Entry |
+|---|---|
+| B06 · Country of birth | NEEDS-YOU — country of birth |
+| B07 · Nationality | Indian. Nationality at birth and other nationalities are NEEDS-YOU if applicable. |
+| B08 · Sex | Male |
+| B09 · Civil status | Married |
+| B10 · Parental authority or legal guardian | Leave blank for an adult applicant. |
+| B11 · National identity number | NEEDS-YOU — enter your national identity number privately if applicable. |
+| B12 · Travel document type | NEEDS-YOU — confirm the passport category and tick the matching box. |
+
+**B13 · Travel document number**
+
+Z4827163
+
+**B14 · Date of issue**
+
+05/06/2019
+
+After substitution, put the date in the form’s required format by hand if needed.
+
+| Blank | Entry |
+|---|---|
+| B15 · Valid until | 04-06-2029 |
+| B16 · Issuing country | India |
+| B17–B18 · Qualifying family member and relationship | Leave blank unless applicable. If applicable, NEEDS-YOU — the qualifying family member’s details and your relationship. |
+
+**B19 · Home address and email**
+
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+NEEDS-YOU — add your email address in the same field.
+
+**B19 · Telephone**
+
++44 7700 900123
+
+| Blank | Entry |
+|---|---|
+| B20 · Residence outside country of nationality | Tick **Yes**. Document type is **UK residence permit**. Permit number is **NEEDS-YOU**. Expiry date is **NEEDS-YOU**. |
+| B21 · Current occupation | Software engineer |
+| B22 · Employer | NEEDS-YOU — employer name, address and telephone number |
+| B23 · Purpose of journey | Tick **Business**. |
+| B24 · Additional information | Attending a trade fair in Munich, Germany, from 8 to 13 March 2027. |
+| B25 · Main destination | Germany. Any additional Schengen destinations are NEEDS-YOU if applicable. |
+| B26 · First entry | NEEDS-YOU — the first Schengen Member State you will enter on your itinerary. |
+| B27 · Number of entries | NEEDS-YOU — select the number of entries you are requesting. |
+| B28 · Arrival | NEEDS-YOU — intended date you enter the Schengen area. |
+| B29 · Departure | NEEDS-YOU — intended date you leave the Schengen area. |
+| B30 · Previous fingerprints | Tick **Yes**. Enter **2023** if the form accepts a year alone. Leave the exact date blank if unknown. Enter the visa sticker number privately if known. |
+| B31 · Entry permit for final destination | Leave blank unless applicable. If applicable, NEEDS-YOU — issuing authority, valid-from date and expiry date. |
+| B32 · Inviting person or accommodation | NEEDS-YOU — inviting person’s surname and given name, or the name of your hotel or other accommodation. |
+| B33 · Contact details | NEEDS-YOU — address, email and telephone number for the person or accommodation in B32. |
+| B34 · Inviting company or organisation | If applicable, NEEDS-YOU — name and address of the inviting company or organisation. |
+| B35 · Inviting company contacts | If B34 applies, NEEDS-YOU — contact person’s surname, given name, address, telephone and email, plus the organisation’s telephone number. |
+| B36 · Travel and living costs | Tick **by a sponsor**. Select the field 30 or 31 option if your employer is named there. Otherwise select **other** and enter the employer’s name, **NEEDS-YOU**. The means of support are **NEEDS-YOU** — tick the boxes that match what your employer is covering. |
+| B37–B38 · Person filling in the form | Leave blank when you complete your own application. |
+| B39 · Place and date | NEEDS-YOU — enter the place and date of signing. |
+| B40 · Signature | NEEDS-YOU — sign the applicant field yourself. Leave the parental authority or legal guardian signature blank if inapplicable. |

@@ -1,0 +1,34 @@
+Here is what you can fill in now. Everything about your nephew, his parents, the people allowed to collect him and the first emergency contact is left blank for your sister, as you asked.
+
+Title line: Application for Admission of a Child to the NEEDS-YOU Preschool/Daycare
+(The name of the preschool isn't in what you gave me. Write it here and in B08.)
+
+FOR OFFICIAL USE ONLY (B01 to B07): leave blank. The school office fills this box in, and it is all about the child anyway.
+
+[B08] I hereby make application for admission of (leave for your sister: child's name) to the NEEDS-YOU Preschool/Daycare
+(The preschool name again, same as the title line.)
+
+[B09] Name of Applicant: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+
+Contact Information
+[B10] Tel: (C) PHONE_P1 / (W) leave blank / (H) leave blank
+(I don't know whether your number is a mobile, work or home line. If it isn't a mobile, move it to the (W) or (H) box.)
+
+[B11] Email: NEEDS-YOU
+(Your email address isn't in your details. Write it in by hand, or leave it blank if you'd rather not give one.)
+
+[B12] Relationship to child: Aunt (maternal)
+
+Information about the Child and Family
+[B13] to [B27]: leave blank for your sister (the child, who he lives with, the address, the children in the family, and the mother's and father's details).
+
+[B28] Names of people authorized to collect your child: leave blank for your sister.
+
+In case of an emergency please call:
+[B29] 1. Name of Person / Tel: leave blank for your sister.
+[B30] 2. Name of Person: GIVEN_P1 MIDDLE_P1 SURNAME_P1   Tel: (C) PHONE_P1 / (W) leave blank / (H) leave blank
+(Same as B10: if your number isn't a mobile, move it to the right box.)
+
+Notes:
+- You don't need your passport details, date of birth or home address on this form. The address boxes (B05, B15, B19, B24) are for the child and his parents, so I've left them for your sister.
+- Your sister may want to sign or check the form herself as the parent. The form has no signature line, so ask the preschool whether they need a parent's signature or a note from her saying you're applying for her.

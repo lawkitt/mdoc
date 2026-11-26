@@ -1,0 +1,47 @@
+Here is the GMS1 filled in for your daughter (P3), with you signing on her behalf.
+
+Patient's details
+[B01] Title: NEEDS-YOU. No title is listed for her. For a girl you would usually tick Miss, or you can leave it blank. Tick it by hand.
+[B02] Surname: RAGHUNATHAN
+[B03] Date of birth: 17/09/2019
+[B04] First names: ANIKA
+[B05] NHS No.: leave blank. She has never been registered with a GP, so she probably doesn't have one yet. If she does have one, NEEDS-YOU: write it in by hand.
+[B06] Previous surname/s: leave blank, unless she has had a different surname. If she has, NEEDS-YOU.
+[B07] [✔] Female
+[B08] Town and country of birth: MANCHESTER, U.K.
+[B09] Home address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B10] Postcode: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B11] Telephone number: +44 7700 900123 (she has no phone number listed, so this is yours as her parent. Use +44 7700 900456 instead if her mother should be the contact.)
+
+Previous medical records
+[B12] Your previous address in UK: leave blank if she has always lived at your current address. If she lived at another UK address before, NEEDS-YOU.
+[B13] Name of previous doctor while at that address: leave blank (never registered with a GP).
+[B14] Address of previous doctor: leave blank (never registered with a GP).
+
+If you are from abroad (fill in only if she moved to the UK from abroad)
+[B15] Your first UK address where registered with a GP: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom (this is her first GP registration)
+[B16] If previously resident in UK, date of leaving: leave blank if she never lived in the UK before. Otherwise, NEEDS-YOU.
+[B17] Date you first came to live in UK: NEEDS-YOU. This date isn't listed.
+If she was born in the UK or has always lived here, leave B15 to B17 blank.
+
+If you are returning from the Armed Forces
+[B18] to [B20]: leave blank (doesn't apply).
+
+If you are registering a child under 5
+[B21] NEEDS-YOU. I can't see her date of birth, so I can't tell her age. If she is under 5, tick this box to sign her up for Child Health Surveillance.
+
+Dispensing
+[B22] Leave both boxes blank, unless one of them is true for you.
+
+Signature
+[B23] [✔] Signature on behalf of patient. Sign it yourself by hand.
+[B24] Date: NEEDS-YOU. Write the date you sign, by hand.
+
+Things to do by hand once the values are filled in:
+- The form asks for BLOCK CAPITALS. If any value comes back in lower case, rewrite it in capitals on the paper form.
+- B03: the date comes back as it is printed in her passport. If it isn't in day/month/year order with numbers (for example 05/03/2019), rewrite it that way.
+- B04: the form asks for all her first names. If she has a middle name, add it after ANIKA.
+- B08: if MANCHESTER, U.K. shows only a town, add her country of birth after it.
+- B09 and B10: your address is in one piece. In B10, keep only the postcode and cross out the rest. In B09, you can then remove the postcode so it isn't written twice.
+- B11: if the practice wants a number in UK format, check the country code and spacing of the number by hand.
+- The practice may ask to see her passport and proof of your address when you hand the form in.

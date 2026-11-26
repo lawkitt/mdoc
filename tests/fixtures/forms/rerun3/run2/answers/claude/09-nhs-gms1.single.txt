@@ -1,0 +1,50 @@
+Here is the GMS1 filled in. The form asks for BLOCK CAPITALS, so when you copy the restored values onto the paper form, write them in capitals.
+
+Patient's details
+[B01] [✔] Ms
+[B02] Surname: SURNAME_P1
+[B03] Date of birth: DATE_P1
+[B04] First names: GIVEN_P1 MIDDLE_P1
+[B05] NHS No.: leave blank. You are new to the UK and don't have an NHS number yet. The practice will arrange one when you register.
+[B06] Previous surname/s: NONE
+[B07] [✔] Female
+[B08] Town and country of birth: PLACE_P1
+[B09] Home address: NEEDS-YOU (your new Leeds address)
+[B10] Postcode: NEEDS-YOU (the postcode of your new Leeds address)
+[B11] Telephone number: PHONE_P1
+
+Previous medical records
+[B12] Your previous address in UK: N/A (never lived in the UK)
+[B13] Name of previous doctor while at that address: N/A
+[B14] Address of previous doctor: N/A
+
+If you are from abroad
+[B15] Your first UK address where registered with a GP: NEEDS-YOU (your new Leeds address. This is your first GP registration in the UK, so it's the same address as B09)
+[B16] If previously resident in UK, date of leaving: N/A (never lived in the UK)
+[B17] Date you first came to live in UK: 03/11/2026
+
+If you are returning from the Armed Forces
+[B18] Address before enlisting: N/A
+[B19] Service or Personnel number: N/A
+[B20] Enlistment date: N/A
+
+If you are registering a child under 5
+[B21] [ ] leave unticked (doesn't apply)
+
+Dispensing
+[B22] [ ] leave both unticked unless one is true for you. In Leeds you'll almost certainly be within a mile of a chemist.
+
+[B23] [✔] Signature of Patient (sign by hand)
+[B24] Date: NEEDS-YOU (write the date you sign, by hand)
+
+What you need to do by hand:
+- B02, B04, B08: write these in capitals once the values are restored.
+- B03: the value is your date of birth as printed in your passport. UK forms usually expect DD/MM/YYYY, so rewrite it in that form if your passport prints it differently (for example with the month in letters).
+- B04: write your first name and then your middle name, both in capitals.
+- B08: the form asks for both town and country. If your stored place of birth is only a town, add the country after it.
+- B09, B10 and B15: your Leeds address isn't saved in mdoc. Write the full address and postcode yourself, on the paper form or in mdoc, not here.
+- B11: if PHONE_P1 is still your Singapore number and you now have a UK mobile, the practice will find the UK number more useful. Write that one instead.
+- B24: write the date on the day you sign.
+- Overleaf: the form points to an organ donation section on the back. Fill it in if you want to; it's optional.
+
+The GMS1 doesn't ask for your passport details, so I left your passport number, issue date and issuing authority off it. The practice may still ask to see your passport or BRP/eVisa and proof of your Leeds address when you hand the form in. Bring them with you rather than writing them on the form.

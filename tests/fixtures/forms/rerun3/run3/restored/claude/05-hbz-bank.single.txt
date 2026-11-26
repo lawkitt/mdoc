@@ -1,0 +1,52 @@
+Here is the HBZ Bank individual account opening form, filled in from what you told me. The form asks for capital letters. Your details go back in exactly as they are stored, so if any of them are not in capitals, rewrite them in capitals when you copy them onto the paper form.
+
+HEADER
+[B01] Date: NEEDS-YOU. Write the date you sign and hand in the form, one digit per box (8 boxes, e.g. DD MM YYYY).
+[B02] Branch: NEEDS-YOU. Write the HBZ Bank branch where you are opening the account. You didn't tell me which one.
+[B03] Type of Account: Current [X]  Saving [ ]
+
+A. ACCOUNT HOLDER'S DETAIL
+[B04] Surname: ESCALANTE
+[B05] First name: MARICEL
+      (If the bank wants your full given names as they appear in your passport, add your middle name after it by hand: BUENAFLOR.)
+[B06] Identity number: N/A (you have no South African ID number; your passport number goes in B08)
+[B07] Date of Birth: 09 AUG 1991
+[B08] Passport number: P4829173B
+[B09] Passport issuing country: PHILIPPINES   Expiry date: 13/03/2032
+[B10] Work / study / residence permit: N/A   Expiry date: N/A
+[B11] Alternative type of permit (specify): N/A   Expiry date: N/A
+[B12] Nationality: FILIPINO   Country of birth: CEBU CITY
+      (The form wants a country. If CEBU CITY is a town or city, write the country it is in instead.)
+[B13] Additional nationality: leave blank, unless you hold a second nationality you didn't mention. If you do, write it here.
+[B14] Physical residential address: Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418   Postal code: see note
+      (Spread the address over the three lines by hand, and copy its Singapore postal code into the Postal code box rather than leaving it on the address lines.)
+[B15] Postal address: Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418   Postal code: see note
+      (Same as B14: split it over the two lines and put the postal code in its own box. If you want post sent somewhere else, write that address here instead.)
+[B16] Email address: NEEDS-YOU. You didn't give me an email address. Write the one you want the bank to use.
+[B17] Home telephone no: leave blank (or see B19)
+[B18] Work telephone no: leave blank, unless you want to give your work number
+[B19] Cell. no: Country Code ....  Area Code ....  Number +65 8555 0143
+      (Write +65 8555 0143 in the Number box, then split it by hand: move the country code into the Country Code box, leaving only the local number in Number. Singapore numbers have no area code, so leave Area Code blank if this is a Singapore number. If +65 8555 0143 is a landline rather than a mobile, put it in B17 instead.)
+[B20] Fax no: leave blank
+[B21] Nature of profession / occupation: STAFF NURSE
+
+There are no US indicia here (no US phone number, postal address or email), so you don't need the W-8BEN form.
+
+B. BENEFICIAL OWNERSHIP
+[B22] Are you the beneficial owner of the funds to be deposited with the bank? Yes [X]  No [ ]
+[B23] Beneficial owner details: leave blank (only needed if you answered "No")
+
+C. FATCA
+[B24] Are you a U.S. citizen? Yes [ ]  No [X]
+[B25] Are you a lawful permanent resident? Yes [ ]  No [X]
+[B26] Were you born in the United States or a U.S. territory? Yes [ ]  No [X]
+[B27] Are you a 'US Person' for any other reason? Yes [ ]  No [X]   (leave "please specify" blank)
+[B28] Instructions to transfer funds to U.S. accounts, or directions from a U.S. address? Yes [ ]  No [X]
+[B29] Power of Attorney or signing authority to anyone with a U.S. address? Yes [ ]  No [X]
+[B30] "In care of" / "hold mail" address, U.S. P.O. Box or U.S. telephone number? Yes [ ]  No [X]
+
+Things you still need to do:
+- Fill in the four NEEDS-YOU items: the date (B01), the branch (B02), your email address (B16) and, if you have one, a second nationality (B13).
+- Do the hand edits described above for the postal codes (B14, B15), the phone number split (B19) and the country of birth (B12).
+- This part of the form doesn't ask for your title (Ms), sex, passport issue date or issuing authority. If later pages ask for them, they are: Ms; female; 14 MAR 2022; DFA MANILA.
+- As a non-resident, the bank will probably also want a certified copy of your passport, proof of your Singapore address, and possibly proof of where the funds come from (for example, the lease for the Durban flat). Ask the branch what they need.

@@ -1,0 +1,61 @@
+Use the entries below for the Form 22 excerpt. The property manager or owner supplies the submission methods, document requests and pet-rule information.
+
+| Blank | Entry |
+|---|---|
+| B01 | Full name — NEEDS-YOU. Phone — NEEDS-YOU. Email — NEEDS-YOU. Agency details, if applicable — NEEDS-YOU. |
+| B02 | Premises address — NEEDS-YOU. Postcode — NEEDS-YOU. |
+| B03 | Method 1 — NEEDS-YOU. Method 2 — NEEDS-YOU. The property manager or owner specifies both methods. |
+| B04 | 1 |
+| B05 | 0 |
+
+```text
+B06 Full name
+GIVEN_P1
+MIDDLE_P1
+SURNAME_P1
+
+B07 Date of birth
+DATE_P1
+
+B08 Current address
+ADDRESS_P1
+Postcode
+NEEDS-YOU
+
+B09 Phone
+PHONE_P1
+```
+
+Enter the restored name parts together in the full-name blank. If the form requires a different date format, reformat the restored date by hand.
+
+| Blank | Entry |
+|---|---|
+| B10 | Applicant email — NEEDS-YOU. |
+| B11 | Current employer — NEEDS-YOU. |
+| B12 | Nursing role in Brisbane, starting 1 February 2027. If the field asks for your current job title, that title is NEEDS-YOU. |
+| B13 | Length of current employment — NEEDS-YOU. Gross weekly income — NEEDS-YOU. |
+| B14 | Employer name — NEEDS-YOU. Employer phone — NEEDS-YOU. Employer email — NEEDS-YOU. |
+| B15 | Document 1 — NEEDS-YOU. Document 2 — NEEDS-YOU. The property manager or owner specifies the documents. If you need to use the “Other” field, the details of your supporting evidence are NEEDS-YOU. |
+| B16 | Document 1 — NEEDS-YOU. Document 2 — NEEDS-YOU. The property manager or owner specifies the documents. You have a passport available if requested. |
+| B17 | Document 1 — NEEDS-YOU. Document 2 — NEEDS-YOU. The property manager or owner specifies the documents. |
+
+```text
+B18 Current rental address
+ADDRESS_P1
+Postcode
+NEEDS-YOU
+```
+
+If the restored Singapore address includes the postcode, copy it by hand into the postcode blanks in B08 and B18. Otherwise, fill in the postcode yourself.
+
+| Blank | Entry |
+|---|---|
+| B19 | June 2021 – Present |
+| B20 | Property manager or owner name — NEEDS-YOU. Email — NEEDS-YOU. Phone — NEEDS-YOU. |
+| B21 | If you have a second rental to list, previous address — NEEDS-YOU. Postcode — NEEDS-YOU. Rental period — NEEDS-YOU. Property manager or owner name — NEEDS-YOU. Email — NEEDS-YOU. Phone — NEEDS-YOU. |
+| B22 | Leave blank. You have rental history. |
+| B23 | First referee’s name — NEEDS-YOU. Phone — NEEDS-YOU. Email — NEEDS-YOU. Connection to you — NEEDS-YOU. |
+| B24 | Second referee’s name — NEEDS-YOU. Phone — NEEDS-YOU. Email — NEEDS-YOU. Connection to you — NEEDS-YOU. |
+| B25 | NEEDS-YOU. The property manager or owner indicates whether pet rules apply. |
+| B26 | No |
+| B27 | Leave the pet-detail fields blank. |

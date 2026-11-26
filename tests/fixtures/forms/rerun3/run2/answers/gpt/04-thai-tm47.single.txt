@@ -1,0 +1,19 @@
+| Blank | Entry | What to do by hand |
+|---|---|---|
+| B01 Written at | Chiang Mai Immigration Office | |
+| B02 Report date | 24 November 2569 | |
+| B03 Full name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 | Write the restored name in block letters. |
+| B04 Nationality | Filipino | |
+| B05 Visa | NON-IMM | Tick the NON-IMM box. |
+| B06 Date of entry | 25 August 2569 | |
+| B07 By | Air | |
+| B08 Passport number | ID_P1 | |
+| B09 Arrival card number | NEEDS-YOU | Enter your arrival card number. |
+| B10 Lane or road | NEEDS-YOU | Enter the lane or road of your current Thai address. |
+| B11 Tambol | NEEDS-YOU | Enter your subdistrict. |
+| B12 Amphur | NEEDS-YOU | Enter your district. |
+| B13 Province | Chiang Mai | |
+| B14 Phone | PHONE_P1 | |
+| B15 Signature | NEEDS-YOU | Sign by hand. |
+
+Both date rows use Buddhist Era year **2569**, which corresponds to **2026**.

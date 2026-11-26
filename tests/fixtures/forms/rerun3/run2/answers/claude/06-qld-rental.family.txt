@@ -1,0 +1,58 @@
+Here is your Form 22, filled in as far as your details allow. You are the applicant, so only your details go on this form. Your wife and daughter count towards the number of occupants, but none of their personal details are asked for here.
+
+Items for the property manager/owner (leave these for them)
+- [B01] Property manager/owner details: leave blank. The agent fills these in.
+- [B03] Ways to submit: leave blank. The agent fills these in.
+- [B15] Financial documents requested: leave blank. The agent lists what they want. Once they do, you will need to supply it (for example pay slips or bank statements).
+- [B16] Identity documents requested: leave blank. The agent lists these. If they ask for your passport, you show it to them directly. Your passport number does not go on this form.
+- [B17] Suitability documents requested: leave blank. The agent lists these.
+- [B25] Body corporate by-laws / park rules about pets: leave blank. The agent ticks this one.
+
+2 Address of the premises
+- [B02] NEEDS-YOU. Postcode: NEEDS-YOU. You haven't given me the address of the Brisbane house or its postcode.
+
+4 Number of occupants
+- [B04] Total number of occupants: 3
+- [B05] Number of occupants under 18: NEEDS-YOU. Write 1 if your daughter is under 18, or 0 if she is 18 or older. I can't tell her age from what I have.
+
+5 Applicant details
+- [B06] Full name: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+- [B07] Date of birth: DATE_P1
+  By hand: this is your date of birth exactly as your passport prints it. Australian forms usually expect DD/MM/YYYY, so once it is filled in, rewrite it in that shape if it doesn't already match.
+- [B08] Current address: ADDRESS_P1
+  Postcode: leave the box empty for now (see the note).
+  By hand: your Manchester postcode is part of ADDRESS_P1. Once the address is filled in, copy the postcode into the Postcode box and, if you like, delete it from the address line. Add "United Kingdom" if the address doesn't already end with it.
+- [B09] Phone: PHONE_P1
+  By hand: because you are applying from the UK, check that the number starts with the international code (+44), so the Australian agent can call it.
+- [B10] Email: NEEDS-YOU. You haven't given me an email address.
+
+6 Employment details
+- [B11] Current employer: NEEDS-YOU
+- [B12] Job title: NEEDS-YOU
+- [B13] Length of employment: NEEDS-YOU. Gross weekly income: NEEDS-YOU
+- [B14] Employer name: NEEDS-YOU. Employer phone: NEEDS-YOU. Employer email: NEEDS-YOU
+None of your employment details were given. If you will be between jobs when you move to Brisbane, you can leave item 6 blank. In that case, give evidence of your ability to pay rent under item 7 instead (savings, bank statements without transaction details, or previous pay slips).
+
+10 Rental history
+Property 1
+- [B18] Current/previous address: ADDRESS_P1
+  Postcode: leave the box empty for now. As in B08, once the address is filled in, copy the postcode into this box by hand.
+- [B19] Rental period (Start – End): March 2020 – present
+- [B20] Property manager/owner name: NEEDS-YOU. Email: NEEDS-YOU. Phone: NEEDS-YOU. You haven't given me your Manchester landlord's or letting agent's details.
+Property 2
+- [B21] NEEDS-YOU, but only if you rented somewhere before March 2020: the address, postcode, rental period and that property manager's or owner's name, email and phone. If you didn't, leave Property 2 blank.
+- [B22] Prior living arrangements: leave blank. You have a rental history, so this optional box doesn't apply.
+
+11 References
+- [B23] Name: NEEDS-YOU. Phone: NEEDS-YOU. Email: NEEDS-YOU. Connection to applicant: NEEDS-YOU
+- [B24] Name: NEEDS-YOU. Phone: NEEDS-YOU. Email: NEEDS-YOU. Connection to applicant: NEEDS-YOU
+The form wants two referees who can vouch for how you look after a property, such as a past landlord, an employer or a long-standing contact. Family members are usually not accepted.
+
+12 Pet details
+- [B26] Do you intend to keep pets? [X] No
+- [B27] Leave blank (only needed if you answered Yes).
+
+Other things to know
+- Your wife: the form says each applicant fills in a separate form. If she is going to be on the lease as well, she needs her own Form 22. I can fill one in for her using her aliases (GIVEN_P2, SURNAME_P2, DATE_P2, PHONE_P2). There is no address alias for her. If she lives with you, her current address and rental history would be the same Manchester home, so tell me if you want me to use ADDRESS_P1 for her too.
+- Your daughter: she doesn't need a form of her own. She is only counted in B04 and B05.
+- What's still missing: the Brisbane property address, your email, your employment and income, your Manchester landlord's contact details, any rental before 2020, and two referees.

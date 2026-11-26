@@ -1,0 +1,21 @@
+| Field | Draft entry | What to do by hand |
+|---|---|---|
+| B01 Last name | SURNAME_P1 | |
+| B02 First name | GIVEN_P1 | |
+| B03 Middle initial | MIDDLE_P1 | Enter only the first letter of your middle name. |
+| B04 Other last names used | N/A | You’ve never used another last name. |
+| B05 Street number and name | NEEDS-YOU | Enter your new U.S. home street address. |
+| B06 Apartment number | NEEDS-YOU | Enter your apartment number if you have one. |
+| B07 City or town | NEEDS-YOU | Enter the city or town where you live. |
+| B08 State | NEEDS-YOU | Enter the state where you live. |
+| B09 ZIP Code | NEEDS-YOU | Enter the ZIP Code for your home address. |
+| B10 Date of birth | DATE_P1 | Rewrite the passport date in month/day/year order, with two digits each for the month and day and four for the year. |
+| B11 U.S. Social Security number | Leave blank in this draft | You don’t have an SSN yet. |
+| B12 Email address | NEEDS-YOU | Your email address wasn’t provided. |
+| B13 Telephone number | PHONE_P1 | |
+| B14 Citizenship or immigration status | Box 4, authorized to work until **09/30/2029** | Check box 4 and enter the work authorization expiration date. |
+| B15 Foreign passport number and country of issuance | ID_P1 | Use the foreign passport option. Add **Philippines** as the country of issuance in the same field. Leave the A-Number and I-94 alternatives blank. |
+| B16 Employee signature | NEEDS-YOU | Sign the form yourself. |
+| B17 Today’s date | NEEDS-YOU | Enter the date you actually sign, in mm/dd/yyyy format. |
+
+Fill any applicable `NEEDS-YOU` fields directly on your form. The excerpt says to complete and sign Section 1 after accepting the offer and by your first day of employment. If a preparer or translator assisted you, the excerpt says that person must complete the certification on page 3.

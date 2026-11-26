@@ -1,0 +1,74 @@
+Here is your Application for Certificate of Visa Eligibility, filled in as far as your details allow. Where I've written NEEDS-YOU, the form needs something you haven't given me. Fill those in yourself on the form, not in this chat.
+
+1. PERSONAL DETAILS
+[B01] Family Name: SURNAME_P1
+[B02] Given Names: GIVEN_P1
+[B03] 漢字姓名: leave blank (it doesn't apply to you)
+[B04] Sex: Female [√]
+[B05] Date of Birth (yyyy/mm/dd): DATE_P1
+[B06] Nationality: FILIPINO
+[B07] Country of Birth: PLACE_P1
+[B08] National Identity No.: NEEDS-YOU
+[B09] Other names used to enter or leave Korea: NEEDS-YOU
+[B10] Citizen of more than one country: NEEDS-YOU
+
+2. PASSPORT INFORMATION
+[B11] Passport Type: Regular [√]
+[B12] Passport No.: ID_P1
+[B13] Country of Passport: PHILIPPINES
+[B14] Place of Issue: AUTHORITY_P1
+[B15] Date of Issue: ISSUED_P1
+[B16] Date of Expiry: 2032/03/13
+[B17] Other valid passport: NEEDS-YOU
+
+3. CONTACT INFORMATION
+[B18] Home Country Address: NEEDS-YOU
+[B19] Current Residential Address: ADDRESS_P1
+[B20] Cell Phone No.: PHONE_P1
+[B21] Telephone No.: NEEDS-YOU
+[B22] E-mail: NEEDS-YOU
+3.6 Emergency Contact
+[B23] Full Name in English: NEEDS-YOU
+[B24] Country of Residence: PHILIPPINES
+[B25] Telephone No.: NEEDS-YOU
+[B26] Relationship to the applicant: MOTHER
+
+4. MARITAL STATUS AND FAMILY DETAILS
+[B27] Current Marital Status: Single [√]
+[B28]-[B33] Spouse details: leave blank (only for married applicants)
+[B34] Children: No [√] (leave "Number of children" blank)
+
+5. EDUCATION
+[B35] Highest level of education: Bachelor's Degree [√]
+[B36] Name of School: NEEDS-YOU
+[B37] Location of School (city/province/country): NEEDS-YOU
+
+6. EMPLOYMENT
+[B38] Current personal circumstances: NEEDS-YOU
+[B39] Name of Company/Institute/School: NEEDS-YOU
+[B40] Position/Course: NEEDS-YOU
+[B41] Address of Company/Institute/School: NEEDS-YOU
+[B42] Telephone No.: NEEDS-YOU
+
+Things to fix by hand once your details are back:
+- B02: I put only your first name, because a Philippine passport lists the middle name separately. If your employer wants the middle name in this box too, add MIDDLE_P1 after GIVEN_P1, separated by a space.
+- B05: Rewrite your date of birth as year/month/day in numbers, for example a passport date of "05 JAN 1990" becomes 1990/01/05. Use your own date, not this example.
+- B07: The form asks for a country, not a place. If PLACE_P1 is a city or province, write the country it's in instead (PHILIPPINES if you were born there).
+- B11: I ticked Regular because that's the normal passport for a job applicant. Check the "Type" on your passport's data page. "P" means a regular passport.
+- B14: The form wants a place. If your passport's issuing authority doesn't name a city (for example, it gives only "DFA"), write the city of the office that issued it.
+- B15: Write the issue date the same way as B05 (yyyy/mm/dd) so the form is consistent.
+- B19 and B18: I took ADDRESS_P1 to be your address in Singapore, so it goes in Current Residential Address. If it's actually your address in the Philippines, move it to B18 and write your Singapore address in B19.
+- B20: Make sure the number includes the country code (+65 for a Singapore number).
+- The form asks for block letters. If you fill it in by hand, write everything in capitals.
+
+What NEEDS-YOU means for each blank:
+- B08: Your Philippine national ID number (PhilSys), if you have one. This is not your passport number. If you don't have one, leave it blank.
+- B09: Whether you've ever entered or left Korea under a different name. If yes, give the other family and given names.
+- B10: Whether you hold another citizenship (for example Singaporean). If yes, name the country.
+- B17: Whether you have another valid passport. If yes, give its type, number, country and expiry date.
+- B18: Your permanent address in the Philippines.
+- B21: A landline number, if you have one. Otherwise leave it blank.
+- B22: Your email address.
+- B23 and B25: Your mother's full name in English and her phone number, with the +63 country code.
+- B36 and B37: The name and location of the school where you got your nursing degree.
+- B38 to B42: What you do now, for example Employed if you work as a nurse in Singapore, and your current employer's name, your position, and the employer's address and phone. This section is about your current situation, not the job in Seoul.

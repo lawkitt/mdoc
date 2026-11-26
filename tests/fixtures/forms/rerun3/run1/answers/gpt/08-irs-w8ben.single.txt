@@ -1,0 +1,20 @@
+| Blank | Entry | What to do by hand |
+|---|---|---|
+| B01 · Beneficial owner’s name | GIVEN_P1 MIDDLE_P1 SURNAME_P1 | Enter all three on the same line. |
+| B02 · Citizenship | Philippines | |
+| B03 · Permanent residence street address | ADDRESS_P1 | Keep only the street address and any apartment or unit number. |
+| B04 · City and postal code | ADDRESS_P1 | Keep only the city and postal code from the restored address. |
+| B05 · Country | Singapore | |
+| B06 · Mailing address | Leave blank if it matches your permanent address | If it differs, use NEEDS-YOU for the missing mailing address, including city, postal code, and country. |
+| B07 · U.S. SSN or ITIN | Leave blank unless required | If required, use NEEDS-YOU for the missing U.S. tax ID and enter it directly on the form. |
+| B08 · Foreign tax identifying number | NEEDS-YOU | Enter your Singapore tax number directly on the form. |
+| B09 · FTIN checkbox | Leave unchecked | |
+| B10 · Reference number | Leave blank unless the brokerage requires one | If required, use NEEDS-YOU for the missing brokerage reference. |
+| B11 · Date of birth | DATE_P1 | Convert the restored date to MM-DD-YYYY. |
+| B12 · Treaty residence | Leave blank | The information supplied does not establish a treaty claim. |
+| B13 · Special rates and conditions | Leave blank | |
+| B14 · Capacity to sign | Check when you sign for yourself | |
+| B15 · Signature and signing date | NEEDS-YOU for signature. NEEDS-YOU for date. | Sign yourself and enter the date you sign in MM-DD-YYYY format. |
+| B16 · Printed name of signer | GIVEN_P1 MIDDLE_P1 SURNAME_P1 | Enter all three on the same line. |
+
+Give the completed form to the brokerage.

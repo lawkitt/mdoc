@@ -1,0 +1,22 @@
+For Section 1, check **Box 4** and enter **01/15/2029** as your work authorization expiration date. For B15, use the foreign passport option and enter **India** as the country of issuance.
+
+| Blank | Entry | What to do by hand |
+|---|---|---|
+| B01 · Last name | SURNAME_P1 | |
+| B02 · First name | GIVEN_P1 | |
+| B03 · Middle initial | MIDDLE_P1 | Use only the first letter of your middle name. |
+| B04 · Other last names | N/A | You’ve never used another last name. |
+| B05 · Street number and name | NEEDS-YOU | Enter the street number and name of your new U.S. home address. |
+| B06 · Apartment number | NEEDS-YOU | Enter your apartment number if you have one. |
+| B07 · City or town | NEEDS-YOU | Enter the city or town where you live. |
+| B08 · State | NEEDS-YOU | Enter your home address state. |
+| B09 · ZIP code | NEEDS-YOU | Enter your home address ZIP code. |
+| B10 · Date of birth | DATE_P1 | Put the date in month/day/year order, using two digits each for the month and day and four for the year. |
+| B11 · U.S. Social Security number | NEEDS-YOU | You don’t have an SSN yet. Leave the digit boxes empty for now. |
+| B12 · Email address | NEEDS-YOU | Your email address wasn’t provided. |
+| B13 · Telephone number | PHONE_P1 | |
+| B14 · Status and work authorization expiration | Box 4 · 01/15/2029 | Check only Box 4. |
+| B15 · Foreign passport number | ID_P1 | |
+| B15 · Country of issuance | India | Enter this alongside the passport number in the same field. |
+| B16 · Employee signature | NEEDS-YOU | Sign the form yourself. |
+| B17 · Today’s date | NEEDS-YOU | Enter the date you sign in MM/DD/YYYY format. |

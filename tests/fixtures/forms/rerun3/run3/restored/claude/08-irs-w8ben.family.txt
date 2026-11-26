@@ -1,0 +1,46 @@
+Here is your W-8BEN for the book royalties. The form is only about you, so your wife's and daughter's details are not used.
+
+Part I: Identification of Beneficial Owner
+
+[B01] 1 Name of individual who is the beneficial owner: VIKRAM ANAND RAGHUNATHAN
+[B02] 2 Country of citizenship: India
+[B03] 3 Permanent residence address (street, apt. or suite no., or rural route): 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B04]   City or town, state or province, postal code: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B05]   Country: United Kingdom
+[B06] 4 Mailing address (if different from above): leave blank
+[B07] 5 U.S. taxpayer identification number (SSN or ITIN): leave blank
+[B08] 6a Foreign tax identifying number: NEEDS-YOU
+[B09] 6b Check if FTIN not legally required: leave unchecked
+[B10] 7 Reference number(s): leave blank
+[B11] 8 Date of birth (MM-DD-YYYY): 22/11/1983
+
+Part II: Claim of Tax Treaty Benefits
+
+[B12] 9 I certify that the beneficial owner is a resident of: United Kingdom
+[B13] 10 Special rates and conditions:
+  - Article and paragraph: Article 12, paragraph 1
+  - Rate of withholding: 0 %
+  - Type of income: Royalties (copyright royalties for a literary work)
+  - Additional conditions: The beneficial owner is an individual resident in the United Kingdom, and so a qualified person under Article 23 (Limitation on Benefits). The royalties are beneficially owned by that individual and are not connected with a permanent establishment in the United States.
+
+Part III: Certification
+
+[B14] I certify that I have the capacity to sign for the person identified on line 1: [X] checked
+[B15] Signature of beneficial owner: sign by hand. Date (MM-DD-YYYY): write the date you sign, by hand.
+[B16] Print name of signer: VIKRAM ANAND RAGHUNATHAN
+
+What you need to do by hand
+
+1. Line 6a (NEEDS-YOU): your UK tax number isn't saved in mdoc. Write your National Insurance number on line 6a yourself, on the form, not in this chat. A UK Unique Taxpayer Reference (UTR) also works if you'd rather use that. With a foreign tax number on 6a, you don't need a US SSN or ITIN on line 5 to claim the treaty rate. Leave 6b unchecked, because the UK does issue tax numbers.
+
+2. Lines 3 and 4 of the address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom is your whole home address in one piece. When it is filled in, split it by hand. The street and house or flat number stay on line 3, and the town or city and postcode move to the "City or town" line. Write "United Kingdom" on the Country line. Line 3 has to be a street address, not a P.O. box or "care of" address. If your home address is not in the UK, tell me, because lines 3 to 5 and line 9 would need another look.
+
+3. Line 8, date of birth: 22/11/1983 is your date as printed in your passport. Indian passports print it day first (DD/MM/YYYY). The form needs month first, with dashes (MM-DD-YYYY). For example, the 5th of March 1980 becomes 03-05-1980. Rewrite it in that order.
+
+4. Signature and date: sign it yourself and write today's date in MM-DD-YYYY order. Then give the form to your publisher. Don't send it to the IRS.
+
+Notes
+
+- Under Article 12(1) of the UK–US treaty, royalties paid to a UK resident are taxed only in the UK, so the US withholding rate is 0%. Some publishers fill in only line 9. If yours does, line 10 does no harm, and most payers ask for it for royalties.
+- You stay an Indian citizen (line 2), but the treaty you claim is set by where you are tax resident (line 9), which is the UK.
+- The form is generally valid until the end of the third calendar year after you sign it. If you stop being UK resident, tell the publisher within 30 days.

@@ -1,0 +1,28 @@
+Fill out the W-8BEN in your name as the author receiving the royalties.
+
+| Field | Entry | What to do on the form |
+|---|---|---|
+| B01 · Beneficial owner’s name | VIKRAM ANAND RAGHUNATHAN | Put the three names on one line in passport order. |
+| B02 · Country of citizenship | India | |
+| B03 · Permanent residence street address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom | Keep the street address and any apartment or suite number. |
+| B04 · City, state or province, postal code | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom | Keep the city or town, state or province, and postal code as applicable. |
+| B05 · Permanent residence country | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom | Use the country from your home address. If the restored address omits it, add it by hand. |
+| B06 · Mailing street address | NEEDS-YOU | Leave blank if it matches your permanent address. Otherwise, enter the mailing street address. |
+| B06 · Mailing city, state or province, postal code | NEEDS-YOU | Complete only if the mailing address differs. |
+| B06 · Mailing country | NEEDS-YOU | Complete only if the mailing address differs. |
+| B07 · U.S. SSN or ITIN | NEEDS-YOU | Determine whether this field is required. If it is, enter your SSN or ITIN privately on the form. |
+| B08 · Foreign tax identifying number | NEEDS-YOU | Enter your UK National Insurance number privately on the form. |
+| B09 · FTIN not legally required | Leave unchecked | |
+| B10 · Reference number(s) | NEEDS-YOU | Use any reference the publisher asks for. Otherwise, leave blank. |
+| B11 · Date of birth | 22/11/1983 | Rewrite the restored date as month-day-year, using two digits each for the month and day and four for the year. |
+| B12 · Treaty country | United Kingdom | |
+| B13 · Treaty article and paragraph | NEEDS-YOU | The supplied text does not identify the provision for book royalties. |
+| B13 · Withholding rate | NEEDS-YOU | The supplied text does not give the treaty percentage. |
+| B13 · Type of income | Royalties from a book I wrote | |
+| B13 · Additional conditions | NEEDS-YOU | Check the applicable treaty provision and state any conditions you meet that the form requires you to explain. |
+| B14 · Capacity to sign | Check at signing | Check the box if you can make the capacity certification. |
+| B15 · Signature | NEEDS-YOU | Sign the form yourself. |
+| B15 · Date signed | NEEDS-YOU | Enter the date you sign in MM-DD-YYYY format. |
+| B16 · Printed name of signer | VIKRAM ANAND RAGHUNATHAN | Use the same name as in B01. |
+
+Give the signed, completed form to your publisher.

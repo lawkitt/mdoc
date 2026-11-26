@@ -1,0 +1,64 @@
+Here is your Schengen visa form filled in for a tourist trip to Italy, using only what you gave me. Where you see NEEDS-YOU, I'm missing a detail. The list after the form says what each one needs.
+
+[B01] 1. Surname (Family name): ESCALANTE
+[B02] 2. Surname at birth (Former family name(s)): NEEDS-YOU
+[B03] 3. First name(s) (Given name(s)): MARICEL
+[B04] Date of birth (day-month-year): 09 AUG 1991
+[B05] 5. Place of birth: CEBU CITY
+[B06] 6. Country of birth: NEEDS-YOU
+[B07] 7. Current nationality: Filipino   Nationality at birth, if different: NEEDS-YOU   Other nationalities: NEEDS-YOU
+[B08] 8. Sex: [X] Female
+[B09] 9. Civil status: [X] Single
+[B10] 10. Parental authority / legal guardian: leave blank (you are not a minor)
+[B11] 11. National identity number, where applicable: NEEDS-YOU
+[B12] 12. Type of travel document: [X] Ordinary passport
+[B13] 13. Number of travel document: P4829173B
+[B14] 14. Date of issue: 14 MAR 2022
+[B15] 15. Valid until: 13-03-2032
+[B16] 16. Issued by (country): Philippines
+[B17] Field 17, EU/EEA/CH/UK family member: leave blank (not applicable)
+[B18] 18. Family relationship with an EU, EEA or CH citizen: leave blank (not applicable)
+[B19] 19. Applicant's home address and e-mail address: Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418, NEEDS-YOU (e-mail)   Tel.: +65 8555 0143
+[B20] 20. Residence in a country other than the country of current nationality: [X] Yes. Residence permit or equivalent: Singapore Employment Pass   No. NEEDS-YOU   Valid until NEEDS-YOU
+[B21] *21. Current occupation: Staff nurse
+[B22] *22. Employer and employer's address and telephone number: NEEDS-YOU
+[B23] 23. Purpose(s) of the journey: [X] Tourism
+[B24] 24. Additional information on purpose of stay: Holiday in Italy
+[B25] 25. Member State of main destination: Italy
+[B26] 26. Member State of first entry: Italy
+[B27] 27. Number of entries requested: [X] Single entry
+[B28] Intended date of arrival of the first intended stay in the Schengen area: 14-05-2027
+[B29] Intended date of departure from the Schengen area after the first intended stay: 28-05-2027
+[B30] 28. Fingerprints collected previously for the purpose of applying for a Schengen visa: [X] No
+[B31] 29. Entry permit for the final country of destination: leave blank (not applicable)
+[B32] *30. Name of hotel(s) or temporary accommodation(s): NEEDS-YOU
+[B33] Address and e-mail address of hotel(s)/temporary accommodation(s): NEEDS-YOU   Telephone No.: NEEDS-YOU
+[B34] *31. Name and address of inviting company/organisation: leave blank (not applicable)
+[B35] Contact person in company/organisation: leave blank (not applicable)
+[B36] *32. Cost of travelling and living during the applicant's stay is covered:
+  [X] by the applicant himself/herself. Means of support: NEEDS-YOU
+[B37] 33. Person filling in the application form, if different from the applicant: leave blank (you are filling it in yourself)
+[B38] Address and email address of the person filling in the form: leave blank   Telephone No.: leave blank
+[B39] Place and date: NEEDS-YOU
+[B40] Signature of applicant: sign by hand   (Signature of parental authority/legal guardian): leave blank
+
+What each NEEDS-YOU needs:
+- B02, surname at birth: I don't know whether your family name has ever changed. If it hasn't, leave the field blank or repeat your current surname, whichever the visa centre prefers. If it has, write your former family name.
+- B06, country of birth: not in your details. Write the country you were born in.
+- B07, nationality at birth and other nationalities: fill these only if your nationality at birth wasn't Filipino, or if you hold another nationality. Otherwise leave them blank.
+- B11, national identity number: not in your details. If you have a Philippine national ID (PhilSys) number, you can write it in by hand. If not, leave the field blank.
+- B19, e-mail address: not in your details. Add it after the address.
+- B20, Employment Pass number and expiry date: copy them by hand from your Employment Pass card.
+- B22, employer: write the name, address and phone number of the hospital or clinic you work for in Singapore.
+- B32 and B33, accommodation: write the name, address, e-mail and phone number of your hotel or other place to stay in Italy. If you'll stay in several places, list each one, or write the first one and attach the rest of your bookings.
+- B36, means of support: tick how you'll pay, e.g. Cash, Credit card, Pre-paid accommodation or Pre-paid transport. Tick all that apply.
+- B39, place and date: write the city where you sign, probably Singapore, and the date, on the day you sign.
+
+Things to check by hand:
+- B03, given names: I wrote only your first name. Philippine passports print the middle name (usually your mother's maiden surname) on its own line, separate from the given names. Fields 1 to 3 must match the passport, so copy exactly what is printed under "Given names". If the Italian visa centre asks for your middle name too, add it after your first name.
+- B04 and B14, dates: the form wants day-month-year. Your passport may print dates with a month abbreviation, e.g. "14 MAR 1990". Either way, check that each date reads in day-month-year order. If it doesn't, rewrite it that way by hand.
+- B12: I ticked "Ordinary passport" because that is the standard Philippine passport. If yours is a diplomatic or official one, tick that box instead.
+- B26: if your flight changes planes at another Schengen airport (e.g. Frankfurt, Paris or Amsterdam) before Rome, the first entry is that country, not Italy. Write that country instead.
+- B27: single entry suits one 14-day holiday. If you plan more Schengen trips, you can ask for multiple entries, but you'd then need to show travel medical insurance for all of them.
+
+As a Singapore resident, you would usually apply through the Italian visa centre in Singapore. Bring your Employment Pass, your flight and hotel bookings, travel medical insurance and proof of funds.

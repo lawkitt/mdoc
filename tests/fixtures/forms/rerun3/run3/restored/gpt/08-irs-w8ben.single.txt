@@ -1,0 +1,59 @@
+### Part I · Identification of Beneficial Owner
+
+```text
+B01 · Beneficial owner’s name
+MARICEL
+BUENAFLOR
+ESCALANTE
+
+B02 · Country of citizenship
+Philippines
+
+B03 · Permanent residence street address
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+
+B04 · City or town, state or province, and postal code
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+
+B05 · Country of permanent residence
+Singapore
+
+B08 · Foreign tax identifying number
+NEEDS-YOU
+
+B11 · Date of birth
+09 AUG 1991
+```
+
+- **B01** Combine the restored name parts into one line in the order your name appears on your brokerage records. Omit the title.
+- **B03–B04** Split the restored home address by hand. Put the street and unit details in B03 and the locality and postal code in B04. Use the relevant portion of the address in each blank.
+- **B06** Leave all three mailing blanks empty if you receive mail at your permanent address. If your mailing address differs, the mailing street address, locality and postal code, and country each need **NEEDS-YOU**. Enter those details directly on the form.
+- **B07** Leave blank unless a U.S. SSN or ITIN is required. If required, use **NEEDS-YOU** and enter your SSN or ITIN directly on the form.
+- **B08–B09** Enter your Singapore tax number directly on the form and leave the checkbox clear.
+- **B10** Use **NEEDS-YOU** if the brokerage requires an account or other reference number. Otherwise, leave blank.
+- **B11** After your date of birth is restored, write it in **MM-DD-YYYY** format by hand.
+
+### Part II · Claim of Tax Treaty Benefits
+
+Leave **B12** and all **B13** blanks empty. The information supplied does not establish a treaty claim.
+
+### Part III · Certification
+
+```text
+B15 · Signature
+NEEDS-YOU
+
+B15 · Date
+NEEDS-YOU
+
+B16 · Printed name of signer
+MARICEL
+BUENAFLOR
+ESCALANTE
+```
+
+- **B14** Check the box when you sign for yourself and can make the certification.
+- **B15** Sign the form and enter the date you actually sign in **MM-DD-YYYY** format.
+- **B16** Combine the restored name parts on one line, in the same order as B01.
+
+Give the completed form to your brokerage.

@@ -1,0 +1,55 @@
+Here is the form filled in. Leave "FOR OFFICIAL USE ONLY" blank for the school.
+
+Application for Admission of a Child to the NEEDS-YOU Preschool/Daycare
+
+[B01] Name of Child: ANIKA RAGHUNATHAN
+[B02] Date of Birth: 17/09/2019
+[B03] Sex: Male: (leave blank)  Female: X
+[B04] Religion: NEEDS-YOU
+[B05] Home Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B06] Date of Full Immunization: NEEDS-YOU
+[B07] Dates of Admission: NEEDS-YOU / 01 / 2027
+
+[B08] I hereby make application for admission of ANIKA RAGHUNATHAN to the NEEDS-YOU Preschool/Daycare
+[B09] Name of Applicant: VIKRAM ANAND RAGHUNATHAN
+Contact Information
+[B10] Tel: (C) +44 7700 900123 / (W) leave blank / (H) leave blank
+[B11] Email: NEEDS-YOU
+[B12] Relationship to child: Father
+
+Information about the Child and Family
+[B13] Name of Child: ANIKA RAGHUNATHAN
+[B14] Person with whom your child lives: Both parents, VIKRAM ANAND RAGHUNATHAN and MEERA RAGHUNATHAN
+[B15] Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B16] Number of Children in the Family: 1  (M) 0  (F) 1
+[B17] Place of Child in the Family: 1st (only child)
+[B18] Name of Mother: MEERA RAGHUNATHAN
+[B19] Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B20] Tel: Numbers: (C) +44 7700 900456 / (W) leave blank / (H) leave blank
+[B21] Email: NEEDS-YOU
+[B22] Mother's Occupation: Pharmacist
+[B23] Name of Father: VIKRAM ANAND RAGHUNATHAN
+[B24] Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B25] Tel: Numbers: (C) +44 7700 900123 / (W) leave blank / (H) leave blank
+[B26] Email: NEEDS-YOU
+[B27] Father's Occupation: Software engineer
+[B28] Names of people authorized to collect your child: VIKRAM ANAND RAGHUNATHAN and MEERA RAGHUNATHAN
+In case of an emergency please call:
+[B29] 1. Name of Person: MEERA RAGHUNATHAN  Tel: (C) +44 7700 900456 / (W) leave blank / (H) leave blank
+[B30] 2. Name of Person: VIKRAM ANAND RAGHUNATHAN  Tel: (C) +44 7700 900123 / (W) leave blank / (H) leave blank
+
+What to do by hand
+- B02: the form wants the date split as day / month / year. Once 17/09/2019 is filled in, rewrite it in that shape, with the month as a number (for example, a month printed as a word becomes 01 to 12).
+- Phones: I put both numbers under (C), cell. If either one is really a work or home line, move it to (W) or (H). The same goes for B10, B20, B25, B29 and B30.
+
+What is missing (NEEDS-YOU)
+- The name of the preschool or daycare in Roseau (header and B08).
+- Your daughter's religion (B04). You can write "None" if that fits, or ask the school whether it is optional.
+- The date she finished her immunizations (B06). This should be on her vaccination record. The school will probably ask for a copy too.
+- The exact start day in January 2027 (B07). I have filled in the month (01) and year (2027).
+- Email addresses for you and your wife (B11, B21, B26).
+
+Things to check
+- Address: as you asked, I used your current home address everywhere (B05, B15, B19, B24). I assumed your wife lives there too. Send the school your Dominica address once you have it.
+- Your daughter's passport expires on 1 January 2027, which is when she is meant to start and when you move. Renew it well before you travel. Once the new passport is issued, update her passport details in mdoc.
+- Your only emergency contacts are the two of you. The school may want someone local in Dominica who can be reached if neither of you answers. If you find someone, give me their name and number and I'll add them.

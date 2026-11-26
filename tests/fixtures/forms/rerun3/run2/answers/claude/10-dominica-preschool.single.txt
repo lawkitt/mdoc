@@ -1,0 +1,30 @@
+I filled only the parts about you, as the applicant and the second emergency contact. Everything about your nephew, his parents, the people allowed to collect him and the first emergency contact is left blank for your sister.
+
+Application for Admission of a Child to the NEEDS-YOU Preschool/Daycare
+
+FOR OFFICIAL USE ONLY
+[B01] to [B07]: leave blank. This box is for the school's staff. (Your sister will give his name, date of birth and other details in the sections below.)
+
+[B08] I hereby make application for admission of (blank, for your sister: her son's name) to the NEEDS-YOU Preschool/Daycare
+[B09] Name of Applicant: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+Contact Information
+[B10] Tel: (C) PHONE_P1 / (W) (blank) / (H) (blank)
+[B11] Email: NEEDS-YOU
+[B12] Relationship to child: Aunt (mother's sister), applying on the mother's behalf
+
+Information about the Child and Family
+[B13] to [B28]: leave blank, for your sister.
+
+In case of an emergency please call:
+[B29] 1. Name of Person: (blank, for your sister)  Tel: (blank)
+[B30] 2. Name of Person: GIVEN_P1 MIDDLE_P1 SURNAME_P1  Tel: (C) PHONE_P1 / (W) (blank) / (H) (blank)
+
+What is missing or needs you:
+- Preschool/Daycare name (title and B08): the school's name isn't in what you sent. Write it in both places.
+- Email (B11): no email address is listed for you. Add yours, or leave it blank if the school doesn't need one.
+- Phone (B10 and B30): I put your number under (C), meaning cell or mobile. If it's really a work or home number, move it to (W) or (H) in both places.
+
+Notes:
+- The form doesn't ask for your address, date of birth or passport details, so I left those out.
+- B28 asks who is allowed to collect your nephew. That's for your sister to decide. If she wants you on the list, she can add your name there.
+- The form has no signature or date line for the applicant. If the school asks you to sign, check whether they also need a note from your sister saying she authorised you to apply for her.

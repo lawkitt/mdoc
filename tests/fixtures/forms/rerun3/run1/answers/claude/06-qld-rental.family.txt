@@ -1,0 +1,59 @@
+Here is your Form 22 filled in as far as your details allow. You are the applicant. Your wife has to fill in her own separate Form 22, because the form asks for one per adult applicant. Your daughter doesn't need one.
+
+LEAVE FOR THE PROPERTY MANAGER/OWNER
+These items are theirs to fill in, so leave them blank or use what they have already entered:
+- [B01] Property manager/owner details
+- [B02] Address of the premises (the Brisbane house)
+- [B03] Ways to submit your application
+- [B15] Financial documents requested (item 7)
+- [B16] Identity documents requested (item 8)
+- [B17] Suitability documents requested (item 9)
+- [B25] Body corporate by-laws / park rules about pets
+
+4 NUMBER OF OCCUPANTS
+[B04] Total number of occupants: 3
+[B05] Number of occupants under 18 years of age: NEEDS-YOU. Write 1 if your daughter is under 18 on the move-in date, otherwise write 0. Her date of birth is hidden from me, so I can't tell.
+
+5 APPLICANT DETAILS
+[B06] Full name: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+[B07] Date of birth: DATE_P1
+  By hand: this is copied as printed in your passport. Queensland forms usually take DD/MM/YYYY, so rewrite it that way if it's printed differently.
+[B08] Current address: ADDRESS_P1   Postcode: ADDRESS_P1
+  By hand: in the Postcode box, delete everything except your UK postcode (the Manchester postcode at the end of your address). Then delete the postcode from the address line so it isn't there twice.
+[B09] Phone: PHONE_P1
+  By hand: if the number doesn't already start with +44, add it so an Australian agent can call you from abroad.
+[B10] Email: NEEDS-YOU. Your email address isn't in the details I have.
+
+6 EMPLOYMENT DETAILS
+[B11] Current employer: NEEDS-YOU
+[B12] Job title: NEEDS-YOU
+[B13] Length of employment: NEEDS-YOU   Gross weekly income: NEEDS-YOU
+[B14] Employer name: NEEDS-YOU   Employer phone: NEEDS-YOU   Employer email: NEEDS-YOU
+  None of your work details are in the details I have. If you're between jobs or your job is changing with the move to Brisbane, say so under item 7. You could give previous payslips, bank statements without transaction details, or proof of savings instead.
+
+10 RENTAL HISTORY
+Property 1
+[B18] Current/previous address: ADDRESS_P1   Postcode: ADDRESS_P1
+  By hand: same as B08. Keep only the postcode in the Postcode box and remove it from the address line.
+[B19] Rental period (Start – End): March 2020 – current
+[B20] Property manager/owner name: NEEDS-YOU   Property manager/owner email: NEEDS-YOU   Property manager/owner phone: NEEDS-YOU
+  These are your current Manchester landlord's or agent's details. They aren't in the details I have.
+
+Property 2
+[B21] NEEDS-YOU if you rented somewhere before March 2020: give its address, postcode, rental period and the landlord's/agent's name, email and phone. If you didn't, leave Property 2 blank.
+[B22] Prior living arrangements (optional): leave blank, since you have a rental history.
+
+11 REFERENCES
+[B23] Name: NEEDS-YOU   Phone: NEEDS-YOU   Email: NEEDS-YOU   Referee's connection to applicant: NEEDS-YOU
+[B24] Name: NEEDS-YOU   Phone: NEEDS-YOU   Email: NEEDS-YOU   Referee's connection to applicant: NEEDS-YOU
+  You need two referees who can vouch that you look after a home well, for example a past landlord, an employer or a long-standing colleague. Don't use your wife, because she's a co-applicant.
+
+12 PET DETAILS
+[B26] Do you intend to keep pets at the premises? [X] No
+[B27] Pet details: leave blank.
+
+A FEW NOTES
+- The form has no blank for passport details, so I haven't used your passport number, issue date or issuing authority anywhere. If the agent asks for your passport under item 8, send them a copy of the passport itself. Don't copy the number onto the form. Your passport is valid until 4 June 2029, which is fine.
+- Your daughter's passport expires on 1 January 2027. That has nothing to do with this form, but you may want to renew it before you move.
+- Things still missing from you: your email address, your employment details, your Manchester landlord's contact details, any rental before March 2020, two referees, and whether your daughter is under 18.
+- If you'd like, I can also fill in your wife's separate Form 22 using her aliases.

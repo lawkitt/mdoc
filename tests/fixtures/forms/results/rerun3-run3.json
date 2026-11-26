@@ -1,0 +1,422 @@
+{
+ "claude": {
+  "total": {
+   "answers": 20,
+   "r1_pass": 19,
+   "r1_tokens": 240,
+   "r1_bad": 1,
+   "r2_pass": 20,
+   "flags": 17,
+   "r3_pass": 20,
+   "blanks": 127,
+   "blanks_ok": 127,
+   "facts": 94,
+   "facts_ok": 94
+  },
+  "answers": {
+   "01-schengen.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? - B20: write your UK residence permit's number and expiry date on the form yourself. Please don't type them here.",
+     "hand rule 2: pass: 'write your UK residence permit's number and expiry date on the form yourself. Please don't type them here.'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 12
+   },
+   "01-schengen.single": {
+    "r1": [
+     "attached: \"so ISSUED_P1's \""
+    ],
+    "r2": [],
+    "flags": [
+     "ask? No.: NEEDS-YOU (your Employment Pass number. Copy it from your pass onto the form; don't type it here)",
+     "hand rule 2: pass: Employment Pass number 'Copy it from your pass onto the form; don't type it here'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 13
+   },
+   "02-japan-visa.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? - B10: your government ID number. I don't have it, so write it on the form yourself; don't type it here. If the consulate doesn't ask for one, leave it blank.",
+     "hand rule 2: pass: 'write it on the form yourself; don't type it here'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 15
+   },
+   "02-japan-visa.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 11
+   },
+   "03-korea-cve.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? [B08] National Identity No.: NEEDS-YOU. I don't have a national ID number for you (for example an Aadhaar number). Write it in yourself, or leave it blank if you don't have one. Please don't type it h",
+     "hand rule 2: pass: national ID 'Write it in yourself ... Please don't type it here'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 18
+   },
+   "03-korea-cve.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 14
+   },
+   "04-thai-tm47.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 5
+   },
+   "04-thai-tm47.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "05-hbz-bank.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? - B10: if the branch wants the work permit number as well as its type, write it on the form yourself. Don't send it here.",
+     "hand rule 2: pass: work permit number 'write it on the form yourself. Don't send it here.'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 18
+   },
+   "05-hbz-bank.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? (Same as B14: split it over the two lines and put the postal code in its own box. If you want post sent somewhere else, write that address here instead.)",
+     "ask? [B16] Email address: NEEDS-YOU. You didn't give me an email address. Write the one you want the bank to use.",
+     "hand rule 2: pass: both flagged lines tell the user to write on the form"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 14
+   },
+   "06-qld-rental.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "06-qld-rental.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "07-us-i9.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "07-us-i9.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 8
+   },
+   "08-irs-w8ben.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? 2. Lines 3 and 4 of the address: ADDRESS_P1 is your whole home address in one piece. When it is filled in, split it by hand. The street and house or flat number stay on line 3, and the town or city an",
+     "hand rule 2: pass: by-hand instruction to split ADDRESS_P1 across lines 3 and 4"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 11
+   },
+   "08-irs-w8ben.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? 3. Line 6a, your Singapore tax number: this isn't saved in mdoc, so you need to write it on the form yourself. Don't type it into this chat. For individuals, the Singapore tax reference number is norm",
+     "hand rule 2: pass: tax number 'write it on the form yourself. Don't type it into this chat.'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 11
+   },
+   "09-nhs-gms1.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 8
+   },
+   "09-nhs-gms1.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "10-dominica-preschool.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 37
+   },
+   "10-dominica-preschool.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 10
+   }
+  }
+ },
+ "gpt": {
+  "total": {
+   "answers": 20,
+   "r1_pass": 20,
+   "r1_tokens": 208,
+   "r1_bad": 0,
+   "r2_pass": 20,
+   "flags": 0,
+   "r3_pass": 19,
+   "blanks": 127,
+   "blanks_ok": 126,
+   "facts": 94,
+   "facts_ok": 89
+  },
+  "answers": {
+   "01-schengen.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B12",
+      "ordinary",
+      "B12 · Travel document type | NEEDS-YOU | Check your passport’s category and tick the matching box. |\n|"
+     ]
+    ],
+    "tokens": 9
+   },
+   "01-schengen.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "02-japan-visa.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B11",
+      "ordinary",
+      "B11 | Passport type | NEEDS-YOU |\n| \nB09–B11, B13, B17** — Confirm any other names and former or additional citizenships. Supply the government-issued ID number requested in B10, confirm the passport category and place o"
+     ]
+    ],
+    "tokens": 10
+   },
+   "02-japan-visa.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B11",
+      "ordinary",
+      "B11] Passport type\nNEEDS-YOU\n\n[\nB09–B13.** Confirm whether you have any other names or former or other citizenships. Fill in the government-issued ID number separately from the passport number. Check your passport for it"
+     ]
+    ],
+    "tokens": 10
+   },
+   "03-korea-cve.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 17
+   },
+   "03-korea-cve.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "04-thai-tm47.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 5
+   },
+   "04-thai-tm47.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 5
+   },
+   "05-hbz-bank.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 15
+   },
+   "05-hbz-bank.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 14
+   },
+   "06-qld-rental.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B05",
+      "\\b1\\b|one",
+      "B05** Occupants under 18 — **NEEDS-YOU**. Enter the number after checking whether your daughter is under 18.\n\n**"
+     ]
+    ],
+    "tokens": 7
+   },
+   "06-qld-rental.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "07-us-i9.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "07-us-i9.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "08-irs-w8ben.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B05",
+      "united kingdom|\\buk\\b",
+      "B05 · Permanent residence country | ADDRESS_P1 | Use the country from your home address. If the restored address omits it, add it by hand. |\n|"
+     ]
+    ],
+    "tokens": 10
+   },
+   "08-irs-w8ben.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "09-nhs-gms1.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [
+     [
+      "B10",
+      [
+       "ADDRESS_P1"
+      ],
+      "missing ADDRESS_P1",
+      "B10 Postcode | NEEDS-YOU | Copy just the postcode from the restored home address if it includes one. Otherwise enter it by hand. |\n|"
+     ]
+    ],
+    "facts": [],
+    "tokens": 7
+   },
+   "09-nhs-gms1.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "10-dominica-preschool.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 39
+   },
+   "10-dominica-preschool.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 8
+   }
+  }
+ }
+}

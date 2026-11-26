@@ -1,0 +1,92 @@
+```text
+[B01] Property manager or owner details
+Full name: NEEDS-YOU
+Phone: NEEDS-YOU
+Email: NEEDS-YOU
+Agency details, if applicable: NEEDS-YOU
+
+[B02] Premises address: NEEDS-YOU
+Postcode: NEEDS-YOU
+
+[B03] Submission method 1: NEEDS-YOU
+Submission method 2: NEEDS-YOU
+
+[B04] Total occupants: 1
+[B05] Occupants under 18: 0
+
+[B06] Full name
+MARICEL
+BUENAFLOR
+ESCALANTE
+
+[B07] Date of birth
+09 AUG 1991
+
+[B08] Current address
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+Postcode: NEEDS-YOU
+
+[B09] Phone
++65 8555 0143
+
+[B10] Email: NEEDS-YOU
+
+[B11] Current employer: NEEDS-YOU
+[B12] Current job title: NEEDS-YOU
+[B13] Length of employment: NEEDS-YOU
+Gross weekly income: NEEDS-YOU
+[B14] Employer name: NEEDS-YOU
+Employer phone: NEEDS-YOU
+Employer email: NEEDS-YOU
+
+[B15] Financial documents requested by the property manager or owner
+Document 1: NEEDS-YOU
+Document 2: NEEDS-YOU
+Other evidence of ability to pay rent, if applicable: NEEDS-YOU
+
+[B16] Identity documents requested by the property manager or owner
+Document 1: NEEDS-YOU
+Document 2: NEEDS-YOU
+
+[B17] Suitability documents requested by the property manager or owner
+Document 1: NEEDS-YOU
+Document 2: NEEDS-YOU
+
+[B18] Property 1 address
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+Postcode: NEEDS-YOU
+[B19] Rental period: June 2021 – present
+[B20] Property manager or owner name: NEEDS-YOU
+Email: NEEDS-YOU
+Phone: NEEDS-YOU
+
+[B21] Property 2, if applicable
+Previous address: NEEDS-YOU
+Postcode: NEEDS-YOU
+Rental period: NEEDS-YOU
+Property manager or owner name: NEEDS-YOU
+Email: NEEDS-YOU
+Phone: NEEDS-YOU
+
+[B22] Prior living arrangements: Not applicable
+
+[B23] First referee
+Name: NEEDS-YOU
+Phone: NEEDS-YOU
+Email: NEEDS-YOU
+Connection to applicant: NEEDS-YOU
+
+[B24] Second referee
+Name: NEEDS-YOU
+Phone: NEEDS-YOU
+Email: NEEDS-YOU
+Connection to applicant: NEEDS-YOU
+
+[B25] Laws or rules about keeping pets: NEEDS-YOU
+[B26] Intend to keep pets: No
+[B27] Pet details: Not applicable
+```
+
+After the aliases are restored, combine the three name values in B06 into one line in the order shown on your passport. In B08 and B18, put your Singapore postcode in the separate postcode box. If it appears in the restored address, move it from the address line. If B07 specifies a date format, enter the restored date by hand in that format.
+
+For B11–B14, add any applicable current employment details directly to the form. If you use your incoming job to explain your ability to pay rent under B15, describe it as **a nursing job in Brisbane starting on 1 February 2027**. The property manager or owner supplies the submission methods, document requests and information about pet rules.

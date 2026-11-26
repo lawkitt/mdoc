@@ -1,0 +1,40 @@
+```text
+[B01] Tick Ms
+[B02]
+ESCALANTE
+[B03]
+09 AUG 1991
+[B04]
+MARICEL
+BUENAFLOR
+[B05] NEEDS-YOU
+[B06] NONE
+[B07] Tick Female
+[B08]
+CEBU CITY
+[B09] NEEDS-YOU
+[B10] NEEDS-YOU
+[B11]
++65 8555 0143
+[B12] NOT APPLICABLE
+[B13] NOT APPLICABLE
+[B14] NOT APPLICABLE
+[B15] NEEDS-YOU
+[B16] NOT APPLICABLE
+[B17] 3 NOVEMBER 2026
+[B18] Leave blank unless returning from the Armed Forces
+[B19] Leave blank unless returning from the Armed Forces
+[B20] Leave blank unless returning from the Armed Forces
+[B21] Leave unticked
+[B22] NEEDS-YOU
+[B23] Tick Signature of Patient. Signature NEEDS-YOU
+[B24] NEEDS-YOU
+```
+
+- **B03–B04.** After the aliases are restored, write the date of birth by hand in the form’s required format if it differs from the passport. Write your first and middle names together in the First names box, in that order.
+- **B05.** Enter your NHS number by hand if you have one. Otherwise, leave the box blank.
+- **B08.** Check that the restored place of birth includes both the town and country. Add either part by hand if it’s missing.
+- **B09–B10 and B15.** Enter your current Leeds address and its postcode in B09 and B10. Repeat the Leeds address in B15 if this is your first UK GP registration.
+- **B18–B20.** If the Armed Forces section applies, enter your address before enlisting, your service or personnel number, and your enlistment date by hand.
+- **B22.** Tick each statement that applies if you need your GP to dispense medicines or appliances. Otherwise, leave both boxes unticked.
+- **B23–B24.** Sign by hand and enter the date you sign. Use block capitals for the written entries.

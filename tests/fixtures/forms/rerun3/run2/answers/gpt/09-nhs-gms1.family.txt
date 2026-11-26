@@ -1,0 +1,30 @@
+### GMS1 for your daughter
+
+| Box | Field | Entry | What to do by hand |
+|---|---|---|---|
+| B01 | Title | NEEDS-YOU | Tick her title if applicable. |
+| B02 | Surname | SURNAME_P3 | |
+| B03 | Date of birth | DATE_P3 | If the form requires a different date format, rewrite the restored date by hand. |
+| B04 | First names | GIVEN_P3 | |
+| B05 | NHS number | NEEDS-YOU | Enter her NHS number if she has one and you know it. |
+| B06 | Previous surnames | NEEDS-YOU | Enter any previous surnames. Leave blank if she has had none. |
+| B07 | Sex | Tick Female | |
+| B08 | Town and country of birth | PLACE_P3 | Arrange the restored value as town and country. Add either part by hand if it is missing. |
+| B09 | Home address | ADDRESS_P1 | Use your shared home address. |
+| B10 | Postcode | NEEDS-YOU | Copy the postcode from the restored home address if it includes one. Otherwise, add it by hand. |
+| B11 | Telephone number | PHONE_P1 | Use your number as the parent contact. |
+| B12 | Previous UK address | NEEDS-YOU | Enter her previous UK address if she had one. |
+| B13 | Previous doctor’s name | Not applicable | She has never been registered with a GP. |
+| B14 | Previous doctor’s address | Not applicable | |
+| B15 | First UK address where registered with a GP | ADDRESS_P1 | If the “from abroad” section applies, use your shared home address for this first registration. |
+| B16 | Date of leaving the UK | NEEDS-YOU | Complete only if the “from abroad” section applies and she previously lived in the UK and left. |
+| B17 | Date first came to live in the UK | NEEDS-YOU | If the “from abroad” section applies, enter the date she first came to live in the UK. |
+| B18 | Address before enlisting | Not applicable | |
+| B19 | Service or personnel number | Not applicable | |
+| B20 | Enlistment date | Not applicable | |
+| B21 | Child Health Surveillance | NEEDS-YOU | Tick only if she is under five and you want to register her for this service. |
+| B22 | Dispensing medicines and appliances | NEEDS-YOU | If you need the GP to dispense medicines or appliances, tick whichever statement applies. |
+| B23 | Signature | Tick Signature on behalf of patient | Sign by hand. |
+| B24 | Date | NEEDS-YOU | Enter the date you sign. |
+
+After the values are restored, write the text entries in block capitals.

@@ -1,0 +1,58 @@
+Here is the preschool application filled in. I've written the aliases on their own so they can be swapped back in on your device. Where I'm missing something, I've put NEEDS-YOU.
+
+Title line: Application for Admission of a Child to the NEEDS-YOU Preschool/Daycare
+(the name of the preschool in Roseau)
+
+FOR OFFICIAL USE ONLY
+B01 to B07 sit under the "For official use only" heading, so the school will probably fill them in. Leave them blank unless the school asks you to complete them. If it does, use these:
+[B01] Name of Child: ANIKA RAGHUNATHAN
+[B02] Date of Birth: 17/09/2019
+[B03] Sex: Male: (leave blank)  Female: X
+[B04] Religion: NEEDS-YOU
+[B05] Home Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B06] Date of Full Immunization: NEEDS-YOU
+[B07] Dates of Admission: NEEDS-YOU / 01 / 2027
+
+[B08] I hereby make application for admission of ANIKA RAGHUNATHAN to the NEEDS-YOU Preschool/Daycare
+[B09] Name of Applicant: VIKRAM ANAND RAGHUNATHAN
+
+Contact Information
+[B10] Tel: (C) +44 7700 900123 / (W) (leave blank) / (H) (leave blank)
+[B11] Email: NEEDS-YOU
+[B12] Relationship to child: Father
+
+Information about the Child and Family
+[B13] Name of Child: ANIKA RAGHUNATHAN
+[B14] Person with whom your child lives: VIKRAM RAGHUNATHAN and MEERA RAGHUNATHAN (parents)
+[B15] Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B16] Number of Children in the Family: 1  (M) 0  (F) 1
+[B17] Place of Child in the Family: 1st (only child)
+[B18] Name of Mother: MEERA RAGHUNATHAN
+[B19] Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B20] Tel: Numbers: (C) +44 7700 900456 / (W) (leave blank) / (H) (leave blank)
+[B21] Email: NEEDS-YOU
+[B22] Mother's Occupation: Pharmacist
+[B23] Name of Father: VIKRAM ANAND RAGHUNATHAN
+[B24] Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B25] Tel: Numbers: (C) +44 7700 900123 / (W) (leave blank) / (H) (leave blank)
+[B26] Email: NEEDS-YOU
+[B27] Father's Occupation: Software Engineer
+[B28] Names of people authorized to collect your child: VIKRAM RAGHUNATHAN and MEERA RAGHUNATHAN
+
+In case of an emergency please call:
+[B29] 1. Name of Person: VIKRAM RAGHUNATHAN  Tel: (C) +44 7700 900123 / (W) (leave blank) / (H) (leave blank)
+[B30] 2. Name of Person: MEERA RAGHUNATHAN  Tel: (C) +44 7700 900456 / (W) (leave blank) / (H) (leave blank)
+
+Still needed from you (NEEDS-YOU):
+- The name of the preschool or daycare in Roseau (title line and B08).
+- Your daughter's religion (B04), if the school needs it.
+- The date she completed her immunizations (B06). Her vaccination record should show it.
+- Her exact start day in January 2027 (B07). I've filled in the month and year.
+- Email addresses for you and your wife (B11, B21, B26).
+
+What to do by hand:
+- B02: 17/09/2019 is her date of birth as her passport prints it. The form wants it split into Date / Month / Year boxes. Once the real value is back, rewrite it as day/month/year, for example in numbers.
+- B10, B20, B25, B29, B30: I put your phone numbers in the (C) cell column. If either number is a work line or a landline, move it to (W) or (H). Leave the other columns blank unless you have more numbers to add.
+- B29 and B30: I read your note as saying you and your wife are the two emergency contacts. Many preschools prefer at least one contact who isn't a parent, in case neither of you can be reached. If the school asks for that, give me the person's details as an alias, or write them on the form yourself.
+
+One more thing to check: your daughter's passport is valid only until 1 January 2027, the month she's due to start. You'll probably need to renew it before the move to Dominica.

@@ -59,3 +59,30 @@ phone numbers in the chat.
 
 Not shown: more than one run per prompt, other models or the chat apps
 themselves, forms read from PDFs or photos, replies in other languages.
+
+## Rerun with both fixes, three runs (2026-11-26, #1264 decision 5)
+
+`rerun3/` holds the note with both wording fixes (`people/`): the proposed
+note above, plus "never ask me to type an identifier, mine or anyone's, into
+this chat". The same 20 prompts (`prompts/`) ran three times per model
+(`run1/` to `run3/`, each with `answers/`, `restored/` and `hand.json`), the
+same way as the first run: Claude as fresh Agent sub-agents (model `opus`),
+GPT through `run-gpt.sh` (gpt-6.2-sol, high). `rule4.json` is the hand
+sample. Scores: `results/rerun3-run*.txt` and `.json`.
+
+Rules 1, 2 and 4 must hold at 100%; rule 3 is a reported number.
+
+| Run | Rule 1 Claude / GPT | Rule 2 Claude / GPT | Rule 3 blanks Claude / GPT | Rule 4 Claude / GPT |
+| --- | --- | --- | --- | --- |
+| 1 | 20/20 / 20/20 | **19/20** / 20/20 | 127/127 / 125/127 | 9/9 / 9/9 |
+| 2 | 20/20 / 20/20 | 20/20 / 20/20 | 127/127 / 126/127 | 9/9 / 9/9 |
+| 3 | **19/20** / 20/20 | 20/20 / 20/20 | 127/127 / 126/127 | 9/9 / 9/9 |
+
+Claude's two failures: run 1, `10-dominica-preschool.family`, "give me their
+name and number and I'll add them" (another person's phone number asked for
+in the chat, as in the first rerun); run 3, `01-schengen.single`, a
+possessive on an alias in a comment, "ISSUED_P1's partner AUTHORITY_P1".
+GPT's rule 3 misses: `09-nhs-gms1.family` B10 Postcode in all three runs
+(NEEDS-YOU, "copy it from the restored address") and
+`10-dominica-preschool.family` B02 in run 1 (the FOR OFFICIAL USE ONLY box
+left blank). The gate passes for GPT and fails for Claude.

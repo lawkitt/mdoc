@@ -1,0 +1,61 @@
+Here is your Schengen application (Germany, business), filled in for you only. Your wife and daughter are not travelling, so none of their details go on this form.
+
+[B01] 1. Surname (Family name): SURNAME_P1
+[B02] 2. Surname at birth (Former family name(s)): NEEDS-YOU. Leave this blank if your family name has never changed. If it has, write your former family name here.
+[B03] 3. First name(s) (Given name(s)): GIVEN_P1 MIDDLE_P1
+   Fields 1-3 must match your passport. If your passport shows only your first name under "Given name(s)", cross out MIDDLE_P1 by hand.
+[B04] Date of birth (day-month-year): DATE_P1
+   If your passport prints the date in another order, rewrite it by hand as day-month-year (for example two digits, two digits, four digits).
+[B05] 5. Place of birth: PLACE_P1
+[B06] 6. Country of birth: NEEDS-YOU. I don't have the country you were born in. Being an Indian national doesn't tell me that.
+[B07] 7. Current nationality: Indian   Nationality at birth, if different: leave blank if you were Indian at birth (otherwise NEEDS-YOU)   Other nationalities: leave blank if you have none (otherwise NEEDS-YOU)
+[B08] 8. Sex: [X] Male  [ ] Female  [ ] Other
+[B09] 9. Civil status: [ ] Single  [X] Married  [ ] Registered Partnership  [ ] Separated  [ ] Divorced  [ ] Widow(er)  [ ] Other
+[B10] 10. Parental authority / legal guardian: Not applicable (you are an adult). Leave blank.
+[B11] 11. National identity number, where applicable: NEEDS-YOU. No national ID number is listed. This field is only "where applicable", so leave it blank if you don't have one or the consulate doesn't ask for it.
+[B12] 12. Type of travel document: [X] Ordinary passport  [ ] Diplomatic passport  [ ] Service passport  [ ] Official passport  [ ] Special passport  [ ] Other travel document
+   Check this: I only know it's a passport. If yours is an official or diplomatic passport, tick that box instead.
+[B13] 13. Number of travel document: ID_P1
+[B14] 14. Date of issue: ISSUED_P1
+   If the date is printed in another order, rewrite it by hand as day-month-year.
+[B15] 15. Valid until: 04-06-2029
+[B16] 16. Issued by (country): India
+17. Personal data of the EU, EEA or CH / UK family member
+[B17] Not applicable. Leave all of it blank.
+[B18] 18. Family relationship with an EU, EEA or CH citizen: Not applicable. Leave blank.
+[B19] 19. Applicant's home address and e-mail address: ADDRESS_P1, e-mail: NEEDS-YOU (I don't have your e-mail address)   Tel.: PHONE_P1
+[B20] 20. Residence in a country other than the country of current nationality: [ ] No  [X] Yes. Residence permit or equivalent: UK residence permit   No.: NEEDS-YOU   Valid until: NEEDS-YOU
+   Copy your UK permit's number and expiry date onto the form by hand from the permit or your UK status record. Don't send them here.
+[B21] *21. Current occupation: Software engineer
+[B22] *22. Employer and employer's address and telephone number: NEEDS-YOU. I need your company's name, address and phone number.
+[B23] 23. Purpose(s) of the journey: [ ] Tourism  [X] Business  [ ] Visiting family or friends  [ ] Cultural  [ ] Sports  [ ] Official visit  [ ] Medical reasons  [ ] Study  [ ] Airport transit  [ ] Other
+[B24] 24. Additional information on purpose of stay: Attending a trade fair in Munich, Germany, 8 to 13 March 2027, on behalf of my employer. (Optional: add the fair's name. NEEDS-YOU if you want it included.)
+[B25] 25. Member State of main destination: Germany
+[B26] 26. Member State of first entry: NEEDS-YOU. This depends on your route. If you fly straight from the UK to Germany, write Germany. If you change planes or enter elsewhere in the Schengen area first, write that country.
+[B27] 27. Number of entries requested: [X] Single entry  [ ] Two entries  [ ] Multiple entries
+   Single entry fits one trip. Tick Multiple entries if you want to ask for a visa that covers future trips too.
+[B28] Intended date of arrival of the first intended stay in the Schengen area: 08-03-2027
+[B29] Intended date of departure from the Schengen area after the first intended stay: 13-03-2027
+   These are the fair dates you gave me. Change them if you arrive earlier or leave later.
+[B30] 28. Fingerprints collected previously: [ ] No  [X] Yes. Date, if known: not known (2023)   Visa sticker number, if known: leave blank, or copy it by hand from the visa in your old passport if you have it
+[B31] 29. Entry permit for the final country of destination: Not applicable. Leave blank.
+[B32] *30. Inviting person(s), or if not applicable, hotel(s) or temporary accommodation(s): NEEDS-YOU. I need the name of your hotel in Munich.
+[B33] Address and e-mail address of the hotel: NEEDS-YOU   Telephone No.: NEEDS-YOU
+[B34] *31. Name and address of inviting company/organisation: NEEDS-YOU. Give the German company or trade fair organiser that invited you, if there is one. If nobody invited you, write "Not applicable".
+[B35] Contact person in company/organisation (surname, first name, address, telephone no., e-mail): NEEDS-YOU   Telephone No. of company/organisation: NEEDS-YOU
+   Both are only needed if you filled in field 31.
+[B36] *32. Cost of travelling and living during the applicant's stay is covered:
+  [ ] by the applicant himself/herself.
+  [X] by a sponsor: [ ] referred to in field 30 or 31  [X] other (please specify): my employer, NEEDS-YOU (company name, same as field 22)
+      Means of support: NEEDS-YOU. Tick whichever your company covers: [ ] Cash  [ ] Accommodation provided  [ ] All expenses covered during the stay  [ ] Pre-paid transport  [ ] Other. If it pays for everything, tick "All expenses covered during the stay".
+   If the company that invited you in field 31 is also the one paying, tick "referred to in field 30 or 31" instead of "other".
+[B37] 33. Person filling in the application form, if different from the applicant: Leave blank (you are filling it in yourself).
+[B38] Address and email address of that person / Telephone No.: Leave blank.
+[B39] Place and date: NEEDS-YOU. When you sign, write the town where you sign and that day's date.
+[B40] Signature of applicant: sign by hand.   (Signature of parental authority/legal guardian): Not applicable. Leave blank.
+
+Before you submit:
+- Fields marked * (21, 22, 30, 31, 32) are filled in because you are not applying as the family member of an EU, EEA, Swiss or UK citizen.
+- Your passport's issuing authority (AUTHORITY_P1) isn't asked for on this form, so it isn't used.
+- Your passport is valid until 4 June 2029, well beyond the 3 months after your trip that the rules require.
+- Still to fill: country of birth, e-mail, UK permit number and expiry date, employer details, first-entry country, hotel, inviting company (if any), means of support, and the place and date when you sign.

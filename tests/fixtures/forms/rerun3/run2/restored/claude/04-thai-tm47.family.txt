@@ -1,0 +1,27 @@
+Here is your TM.47 (90-day report), filled for you (P1) only, since your wife and daughter file their own.
+
+[B01] WRITTEN AT: Bangkok Immigration Office
+[B02] DATE: 24  MONTH: November  YEAR (B.E.): 2569
+[B03] FULL NAME IN BLOCK LETTERS: VIKRAM ANAND RAGHUNATHAN
+[B04] NATIONALITY: Indian
+[B05] VISA: [ ] TOURIST  [X] NON-IMM
+[B06] ENTERED THAILAND ON: 26  MONTH: August  YEAR (B.E.): 2569
+[B07] BY: Air (Suvarnabhumi Airport)
+[B08] PASSPORT NO.: Z4827163
+[B09] ARRIVAL CARD NO.: NEEDS-YOU
+[B10] LANE/ROAD: NEEDS-YOU
+[B11] TAMBOL: NEEDS-YOU
+[B12] AMPHUR: NEEDS-YOU
+[B13] PROVINCE: NEEDS-YOU
+[B14] PHONE: +44 7700 900123
+[B15] SIGNATURE: (sign by hand)
+
+What to do by hand:
+- B03: the form wants your name in block letters. After the values are put back, check that your first, middle and family names come out in capitals; if not, write them in capitals yourself.
+- B02 and B06: Thai forms use the Buddhist Era year, which is the Western year plus 543, so 2026 is 2569.
+- B09: your arrival card number (the TM.6 / entry record number) is not in mdoc. Copy it from your entry stamp or the arrival record in your passport.
+- B10 to B13: your Thai address in Bangkok is not in mdoc (14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom is your home address, so I did not use it here). Write the soi/road, tambon (khwaeng in Bangkok), amphoe (khet in Bangkok) and province (Bangkok) of where you are staying.
+- B14: this is the phone number mdoc has for you. If you have a Thai number, the office may prefer that one.
+- B15: sign by hand.
+
+Your entry on 26 August 2026 makes 24 November 2026 exactly your 90th day, so you are filing on time. Bring your passport (and usually a copy of its photo page, visa and latest entry stamp) to the office.

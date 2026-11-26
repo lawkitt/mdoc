@@ -1,0 +1,49 @@
+## HBZ Bank savings account form
+
+Complete the unshaded fields in capital letters. The draft uses your UK home address for both residential and postal mail. Use a different postal address in B15 if that is where you receive mail.
+
+| Field | Entry |
+|---|---|
+| B01 Date | NEEDS-YOU |
+| B02 Branch | CAPE TOWN |
+| B03 Account type | SAVING ☒ |
+| B04 Surname | RAGHUNATHAN |
+| B05 First name | VIKRAM |
+| B06 Identity number | N/A |
+| B07 Date of birth | 22/11/1983 |
+| B08 Passport number | Z4827163 |
+| B09 Passport issuing country | INDIA |
+| B09 Passport expiry date | 4 JUNE 2029 |
+| B10 Permit | SOUTH AFRICAN WORK PERMIT |
+| B10 Permit expiry date | 31 DECEMBER 2027 |
+| B11 Alternative permit and expiry date | Leave both blank |
+| B12 Nationality | INDIAN |
+| B12 Country of birth | PUNE, MAHARASHTRA |
+| B13 Additional nationality | NEEDS-YOU |
+| B14 Residential address, line 1 | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B14 Residential address, line 2 | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B14 Residential address, line 3 | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B14 Residential postal code | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B15 Postal address, line 1 | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B15 Postal address, line 2 | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B15 Postal code | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B16 Email address | NEEDS-YOU |
+| B17 Home telephone | NEEDS-YOU |
+| B18 Work telephone | NEEDS-YOU |
+| B19 Cell country code | +44 7700 900123 |
+| B19 Cell area code | +44 7700 900123 |
+| B19 Cell number | +44 7700 900123 |
+| B20 Fax | NEEDS-YOU |
+| B21 Occupation | SOFTWARE ENGINEER |
+| B22 Beneficial owner | YES ☒ |
+| B23 Other beneficial owner details | Leave all fields blank |
+| B24–B30 FATCA | Tick NO for each question. Leave the B27 explanation blank. |
+
+**Complete by hand after the values are restored**
+
+- **B01, B07, B09 and B10.** Enter the date you sign in B01 using the bank’s eight-box date order. Reformat the birth and expiry dates by hand if the form requires a particular date format.
+- **B06.** The N/A entry reflects that you have no South African ID number.
+- **B12.** Enter only the country from your place of birth. If the restored birthplace omits the country, enter it by hand.
+- **B13.** Enter any additional nationality you hold. Leave the field blank if Indian is your only nationality.
+- **B14 and B15.** Split the restored address across the lines available in each section. Put only the UK postcode in each postal-code box. Supply it by hand if the stored address omits it.
+- **B16–B20.** Enter your email address. The draft puts your supplied phone number in B19 on the assumption it is a mobile. If it is your home landline, use B17 instead. Split the number by hand into the applicable country code, area code and remaining number. Enter any other applicable home, work or fax number by hand, and leave unused contact fields blank.

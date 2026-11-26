@@ -1,0 +1,55 @@
+Here is the GMS1 filled in for your daughter as the patient. Write everything in BLOCK CAPITALS.
+
+Patient's details
+[B01] Title: NEEDS-YOU. No title is listed for your daughter. Children are often registered without one, so you can leave all four boxes empty, or tick Miss if you prefer.
+[B02] Surname: RAGHUNATHAN
+[B03] Date of birth: 17/09/2019
+      (This is stored as printed in her passport. If it is not already in day/month/year form, rewrite it by hand as DD/MM/YYYY.)
+[B04] First names: ANIKA
+      (If she has a middle name, add it by hand. None is listed for her.)
+[B05] NHS No.: leave blank. She has never been registered with a GP, and no NHS number is listed. The practice will find or issue one.
+[B06] Previous surname/s: leave blank, unless she has ever been known by a different surname.
+[B07] [ ] Male  [✔] Female
+[B08] Town and country of birth: MANCHESTER, U.K.
+      (The form wants both the town and the country. If the stored value has only the town, add the country after it by hand.)
+[B09] Home address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+      (She lives with you, so this is your home address. If the stored address ends with the postcode, cross the postcode out here, because it goes in B10.)
+[B10] Postcode: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+      (Keep only the postcode part of the address in this box and cross out the rest.)
+[B11] Telephone number: +44 7700 900123
+      (Your number, as her parent and contact. Use +44 7700 900456 instead if the practice should call her mother.)
+
+Previous medical records
+[B12] Your previous address in UK: leave blank. She has never been registered with a GP.
+[B13] Name of previous doctor while at that address: leave blank.
+[B14] Address of previous doctor: leave blank.
+
+If you are from abroad
+[B15] Your first UK address where registered with a GP: leave blank. This registration is her first.
+[B16] If previously resident in UK, date of leaving: leave blank, unless she lived in the UK before, left, and came back.
+[B17] Date you first came to live in UK: NEEDS-YOU. If she was born abroad or moved to the UK, write the date she came to live here. I don't have this date. If she was born in the UK and has always lived here, leave it blank.
+
+If you are returning from the Armed Forces
+[B18] Address before enlisting: leave blank.
+[B19] Service or Personnel number: leave blank.
+[B20] Enlistment date: leave blank.
+
+If you are registering a child under 5
+[B21] [ ] Child Health Surveillance: NEEDS-YOU. Tick this box only if she is under 5. I can't see her date of birth, so please check her age yourself.
+
+Dispensing
+[B22] Leave both boxes empty, unless you live more than a mile from the nearest chemist or would have serious difficulty getting medicines from one. That's unlikely in Manchester.
+
+Signature
+[B23] [ ] Signature of Patient  [✔] Signature on behalf of patient
+      Sign here yourself, by hand.
+[B24] Date: write the date you sign it, by hand.
+
+Things to finish by hand:
+- B01: choose Miss or no title.
+- B03: check the date format.
+- B08: add the country if the town is there alone.
+- B09/B10: split the address so the postcode is only in B10.
+- B17 and B21: they depend on when she came to the UK and her age.
+- Sign and date B23/B24.
+- Look at the back of the form too. It has the organ donation section and asks for the practice or doctor you are registering with.

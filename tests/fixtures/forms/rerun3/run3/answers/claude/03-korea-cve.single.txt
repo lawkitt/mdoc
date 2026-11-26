@@ -1,0 +1,70 @@
+Here is the Certificate of Visa Eligibility application, filled in as far as your details allow. The form must be in block letters, so wherever a value comes back from your device in lowercase, rewrite it in CAPITALS exactly as it appears in your passport.
+
+1. PERSONAL DETAILS
+[B01] Family Name: SURNAME_P1
+[B02] Given Names: GIVEN_P1
+      (Copy the "Given names" field of your passport exactly. A Philippine passport prints the middle name in its own field, so I left MIDDLE_P1 out. If the employer or the embassy tells you to add it, write GIVEN_P1 MIDDLE_P1 here.)
+[B03] 漢字姓名 (Chinese characters): leave blank. It does not apply to you.
+[B04] Sex: Female [√]
+[B05] Date of Birth (yyyy/mm/dd): DATE_P1
+      (By hand: this is stored as printed in your passport. Rewrite it in yyyy/mm/dd order, for example year/month/day with a two-digit month.)
+[B06] Nationality: FILIPINO
+[B07] Country of Birth: PLACE_P1
+      (By hand: the form wants a country. If your place of birth is a town or city, write the country it is in instead.)
+[B08] National Identity No.: NEEDS-YOU. This asks for your Philippine national ID (PhilSys) number. It isn't in your details. Write it on the form yourself, not in this chat. If you don't have one, leave it blank.
+[B09] Other names used to enter or leave Korea: NEEDS-YOU. Tick No if you have never used another name. Otherwise tick Yes and give the other name.
+[B10] Citizen of more than one country: NEEDS-YOU. Tick No or Yes. If Yes, name the other country.
+
+2. PASSPORT INFORMATION
+[B11] Passport Type: Regular [√]
+      (Check: this assumes you hold an ordinary passport, not a diplomatic or official one.)
+[B12] Passport No.: ID_P1
+[B13] Country of Passport: PHILIPPINES
+[B14] Place of Issue: AUTHORITY_P1
+      (By hand: if the authority is printed as an office, such as a DFA branch, keep it as printed. If the form is checked for a city, write the city of that office.)
+[B15] Date of Issue: ISSUED_P1
+      (By hand: rewrite it in yyyy/mm/dd order to match the rest of the form.)
+[B16] Date of Expiry: 2032/03/13
+[B17] Any other valid passport: NEEDS-YOU. Tick No, or tick Yes and fill in a) to d) for the other passport.
+
+3. CONTACT INFORMATION
+[B18] Home Country Address: NEEDS-YOU. This asks for your address in the Philippines. Your listed home address is probably the one in Singapore (see B19).
+[B19] Current Residential Address: ADDRESS_P1
+      (If ADDRESS_P1 is actually your Philippine address, put it in B18 instead, and write your Singapore address here by hand.)
+[B20] Cell Phone No.: PHONE_P1
+      (By hand: make sure it includes the country code, for example a leading + and the code for the country of the number.)
+[B21] Telephone No.: NEEDS-YOU. Give a landline if you have one. Otherwise leave it blank.
+[B22] E-mail: NEEDS-YOU. Your email address isn't in your details.
+3.6 Emergency Contact
+[B23] Full Name in English: NEEDS-YOU. Your mother's full name.
+[B24] Country of Residence: PHILIPPINES
+[B25] Telephone No.: NEEDS-YOU. Your mother's phone number, with the Philippine country code.
+[B26] Relationship: MOTHER
+
+4. MARITAL STATUS AND FAMILY DETAILS
+[B27] Current Marital Status: Single [√]
+[B28] to [B33] Spouse details: leave blank. These are only for married applicants.
+[B34] Children: No [√]. Leave Number of children blank.
+
+5. EDUCATION
+[B35] Highest education: Bachelor's Degree [√]
+[B36] Name of School: NEEDS-YOU. The school where you earned your nursing degree.
+[B37] Location of School (city/province/country): NEEDS-YOU.
+
+6. EMPLOYMENT
+[B38] Current personal circumstances: NEEDS-YOU. Tick the box for what you do now, before the Seoul job starts. For example, tick Employed if you currently work as a nurse in Singapore.
+[B39] Name of Company/Institute/School: NEEDS-YOU. Your current employer.
+[B40] Position/Course: NEEDS-YOU. Your current job title, for example STAFF NURSE.
+[B41] Address of Company/Institute/School: NEEDS-YOU.
+[B42] Telephone No.: NEEDS-YOU. Your current employer's phone number.
+      (If you are not working at the moment, tick Unemployed or Other in B38 and leave B39 to B42 blank. The Seoul employer goes elsewhere in the full application, not here.)
+
+What's still missing:
+- Your Philippine address. Also check which address ADDRESS_P1 is (B18/B19).
+- Your national ID number, if you have one. Write it on the form, not here.
+- Whether you've used other names, hold another citizenship, or hold another passport (B09, B10, B17).
+- Your email, and a landline if you have one.
+- Your mother's name and phone number.
+- The name and location of your nursing school.
+- Your current job details.
+- Things to do by hand: put both dates in yyyy/mm/dd order, check that the phone number has its country code, and make sure the country of birth is a country.

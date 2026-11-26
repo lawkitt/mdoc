@@ -1,0 +1,52 @@
+| Blank | Entry | What to complete on your device |
+|---|---|---|
+| B01 · Surname | ESCALANTE | |
+| B02 · Surname at birth | NEEDS-YOU | Enter your surname at birth and any former family names the form calls for. If your surname at birth is the same as your current surname, copy the value from B01. |
+| B03 · Given name(s) | MARICEL | Follow the passport’s Given Name(s) field and preserve the order shown there. See the middle-name note below. |
+| B04 · Date of birth | 09 AUG 1991 | After substitution, reformat it by hand to day-month-year if needed. |
+| B05 · Place of birth | CEBU CITY | |
+| B06 · Country of birth | NEEDS-YOU | Enter your country of birth. |
+| B07 · Current nationality | Filipino | |
+| B07 · Nationality at birth | NEEDS-YOU | Fill this in if it differs from your current nationality. |
+| B07 · Other nationalities | NEEDS-YOU | List any other nationalities you hold, if applicable. |
+| B08 · Sex | Check Female | |
+| B09 · Civil status | Check Single | |
+| B10 · Parental authority or guardian | NEEDS-YOU | Leave blank if inapplicable. If applicable, enter the parent or guardian’s name, address if different from yours, phone, email, and nationality. |
+| B11 · National identity number | NEEDS-YOU | Enter your national identity number if applicable. Your passport number goes in B13. |
+| B12 · Travel document type | NEEDS-YOU | Confirm your passport subtype and check the matching box. |
+| B13 · Travel document number | P4829173B | |
+| B14 · Date of issue | 14 MAR 2022 | After substitution, adjust the date format by hand if the form requires it. |
+| B15 · Valid until | 13-03-2032 | |
+| B16 · Issued by (country) | Philippines | |
+| B17 · Qualifying family member | NEEDS-YOU | If applicable, enter their surname, given names, date of birth, nationality, and travel document or ID card number. Otherwise leave blank. |
+| B18 · Family relationship | NEEDS-YOU | If applicable, check the relationship and specify it if you select Other. Otherwise leave blank. |
+| B19 · Home address | Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 | |
+| B19 · Email address | NEEDS-YOU | Add your email address in the same field as your home address. |
+| B19 · Telephone | +65 8555 0143 | |
+| B20 · Residence outside country of nationality | Check Yes. Singapore Employment Pass | This assumes you live in Singapore. **NEEDS-YOU** for the pass number and expiry date. If you live elsewhere, complete this field based on where you live. |
+| B21 · Current occupation | Staff nurse | |
+| B22 · Employer | NEEDS-YOU | Enter your employer’s name, address, and telephone number. |
+| B23 · Purpose of journey | Check Tourism | |
+| B24 · Additional information | Holiday in Italy | |
+| B25 · Main destination | Italy | Add any other Schengen Member States you plan to visit, if applicable. |
+| B26 · Member State of first entry | Italy | Rome is your stated arrival city. If your itinerary includes a Schengen connection before Rome, use the Member State where you first enter the Schengen area. |
+| B27 · Number of entries | NEEDS-YOU | Check Single entry if you’re requesting one entry for this trip. |
+| B28 · Intended arrival | 14-05-2027 | |
+| B29 · Intended departure | 28-05-2027 | |
+| B30 · Previous Schengen fingerprints | Check No | Leave the follow-up date and visa sticker number blank. |
+| B31 · Entry permit for final destination | NEEDS-YOU | If applicable, enter the issuing authority and the permit’s start and expiry dates. Otherwise leave blank. |
+| B32 · Host or accommodation | NEEDS-YOU | Enter the name of your host or the name of each hotel or other temporary accommodation. |
+| B33 · Host or accommodation contact details | NEEDS-YOU | Enter the address, email, and telephone number for each entry in B32. |
+| B34 · Inviting company or organisation | NEEDS-YOU | Leave blank if none. Otherwise enter its name and address. |
+| B35 · Inviting organisation contact details | NEEDS-YOU | Leave blank if B34 is inapplicable. Otherwise enter the contact person’s name, address, phone, and email, plus the organisation’s phone number. |
+| B36 · Travel and living costs | Check “by the applicant himself/herself” | **NEEDS-YOU** for the means of support. Check the boxes that apply to how you’ll cover your costs. |
+| B37 · Person completing the form | Leave blank if you complete it yourself | If someone else completes it, **NEEDS-YOU** for their surname and given name. |
+| B38 · That person’s contact details | Leave blank if you complete it yourself | If someone else completes it, **NEEDS-YOU** for their address, email, and phone number. |
+| B39 · Place and date | NEEDS-YOU | Enter the place and date where you sign. |
+| B40 · Signature | NEEDS-YOU | Sign the applicant’s signature field. Have the parent or guardian sign the separate field if applicable. |
+
+For B03, include the following value only if your passport lists it as part of your given names. If it appears in a separate Middle Name field, use the passport’s Given Name(s) entry for B03.
+
+BUENAFLOR
+
+If the family-member exemption printed on the form applies to you, leave starred fields 21, 22, 30, 31, and 32 blank. This covers B21, B22, and B32–B36.

@@ -1,0 +1,114 @@
+### Part I · Identification of beneficial owner
+
+**B01 — Name of beneficial owner**
+
+```text
+MARICEL
+BUENAFLOR
+ESCALANTE
+```
+
+Put all three values in the same name field in the order shown.
+
+**B02 — Country of citizenship**  
+Philippines
+
+**B03 — Permanent residence street address**
+
+```text
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+```
+
+Copy the street and any apartment or unit number from the restored address into this field.
+
+**B04 — City or town, state or province, and postal code**
+
+```text
+Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+```
+
+Copy the city or town, any applicable state or province, and the postal code from the restored address into this field.
+
+**B05 — Country**  
+Singapore
+
+**B06 — Mailing address**  
+Leave all three blanks empty if your mailing address is the same. If it differs, each blank needs its corresponding value from your mailing address.
+
+```text
+NEEDS-YOU
+NEEDS-YOU
+NEEDS-YOU
+```
+
+**B07 — U.S. taxpayer identification number**  
+Leave blank unless required. If required, enter your U.S. SSN or ITIN yourself.
+
+```text
+NEEDS-YOU
+```
+
+**B08 — Foreign tax identifying number**
+
+```text
+NEEDS-YOU
+```
+
+Enter your Singapore tax number directly on the form.
+
+**B09 — FTIN not legally required**  
+Leave unchecked.
+
+**B10 — Reference number(s)**  
+Leave blank unless the brokerage asks for a reference. If it does, enter the reference it specifies.
+
+```text
+NEEDS-YOU
+```
+
+**B11 — Date of birth**
+
+```text
+09 AUG 1991
+```
+
+Reformat the restored date by hand as MM-DD-YYYY.
+
+### Part II · Claim of tax treaty benefits
+
+**B12 — Treaty residence**  
+Leave blank for this draft, which makes no treaty claim.
+
+**B13 — Special rates and conditions**  
+Leave all four blanks empty.
+
+### Part III · Certification
+
+**B14 — Capacity to sign**  
+Leave unchecked when signing for yourself as the beneficial owner.
+
+**B15 — Signature**
+
+```text
+NEEDS-YOU
+```
+
+Sign the form yourself.
+
+**B15 — Date**
+
+```text
+NEEDS-YOU
+```
+
+Enter the date you sign in MM-DD-YYYY format.
+
+**B16 — Printed name of signer**
+
+```text
+MARICEL
+BUENAFLOR
+ESCALANTE
+```
+
+Put all three values in the same printed-name field in the order shown.

@@ -1,0 +1,179 @@
+```text
+[B01] Surname
+SURNAME_P1
+
+[B02] Given and middle names
+GIVEN_P1
+MIDDLE_P1
+
+[B03] Other names
+NEEDS-YOU
+
+[B04] Date of birth
+DATE_P1
+
+[B05] Place of birth
+PLACE_P1
+
+[B06] Sex
+Female
+
+[B07] Marital status
+Single
+
+[B08] Nationality or citizenship
+Filipino
+
+[B09] Former or other nationalities or citizenships
+NEEDS-YOU
+
+[B10] Government-issued ID number
+NEEDS-YOU
+
+[B11] Passport type
+NEEDS-YOU
+
+[B12] Passport number
+ID_P1
+
+[B13] Place of issue
+NEEDS-YOU
+
+[B14] Date of issue
+ISSUED_P1
+
+[B15] Issuing authority
+AUTHORITY_P1
+
+[B16] Date of expiry
+13/03/2032
+
+[B17] Certificate of Eligibility number
+NEEDS-YOU
+
+[B18] Purpose of visit
+Tourism (holiday)
+
+[B19] Intended length of stay
+10 days
+
+[B20] Date of arrival
+02/04/2027
+
+[B21] Port of entry
+Narita International Airport
+
+[B22] Airline name
+NEEDS-YOU
+
+[B23] Hotel name
+NEEDS-YOU
+Hotel telephone
+NEEDS-YOU
+
+[B24] Hotel address
+NEEDS-YOU
+
+[B25] Previous stays in Japan
+None
+
+[B26] Current residential address
+ADDRESS_P1
+
+[B27] Telephone
+PHONE_P1
+Mobile number
+NEEDS-YOU
+
+[B28] Email address
+NEEDS-YOU
+
+[B29] Current occupation and position
+Staff nurse
+
+[B30] Employer name
+NEEDS-YOU
+Employer telephone
+NEEDS-YOU
+
+[B31] Employer address
+NEEDS-YOU
+
+[B32] Partner’s occupation, or parents’ occupation if applicant is a minor
+NEEDS-YOU
+
+[B33] Guarantor or reference in Japan
+Name
+NEEDS-YOU
+Telephone
+NEEDS-YOU
+Address
+NEEDS-YOU
+Date of birth
+NEEDS-YOU
+Sex
+NEEDS-YOU
+Relationship to applicant
+NEEDS-YOU
+Occupation and position
+NEEDS-YOU
+Nationality and immigration status
+NEEDS-YOU
+
+[B34] Inviter in Japan
+Name
+NEEDS-YOU
+Telephone
+NEEDS-YOU
+Address
+NEEDS-YOU
+Date of birth
+NEEDS-YOU
+Sex
+NEEDS-YOU
+Relationship to applicant
+NEEDS-YOU
+Occupation and position
+NEEDS-YOU
+Nationality and immigration status
+NEEDS-YOU
+
+[B35] Remarks or special circumstances
+NEEDS-YOU
+
+[B36] Ever convicted of a crime or offence
+NEEDS-YOU
+
+[B37] Ever sentenced to imprisonment for one year or more
+NEEDS-YOU
+
+[B38] Ever deported or removed for overstaying or violating a law or regulation
+NEEDS-YOU
+
+[B39] Ever convicted and sentenced for a drug offence
+NEEDS-YOU
+
+[B40] Ever engaged in the prostitution-related activities listed on the form
+NEEDS-YOU
+
+[B41] Ever committed, incited or aided trafficking in persons
+NEEDS-YOU
+
+[B42] Details of any Yes answers to B36–B41
+NEEDS-YOU
+
+[B43] Date of application
+NEEDS-YOU
+
+[B44] Applicant’s signature
+NEEDS-YOU
+```
+
+**Finish these fields on the form after the values are restored**
+
+- **B02, B04, B05 and B14.** Combine your given and middle names in B02 as they appear in your passport. Put your birth date and passport issue date in day/month/year order. Arrange your birthplace as city, state or province, and country. If the restored birthplace omits a component, add it by hand.
+- **B03 and B09–B13.** Confirm whether you have any other names or former or other citizenships. Fill in the government-issued ID number separately from the passport number. Check your passport for its type and place of issue.
+- **B17 and B22–B24.** Confirm whether a Certificate of Eligibility applies. Add your airline and, once booked, the name, telephone number and address of each hotel in Tokyo and Kyoto.
+- **B26–B32.** Add any other current residential addresses. I placed your phone number under **Tel.** because its type was unspecified. Move it to **Mobile No.** if it’s a mobile number, and add a separate telephone number if you have one. Add your email address and your employer’s name, telephone number and address. B32 is optional.
+- **B33–B35.** Confirm whether you have a guarantor or reference and an inviter in Japan, then enter their details where applicable. If the inviter and guarantor are the same person, write “same as above” in B34. B35 is optional.
+- **B36–B44.** Mark Yes or No for each declaration. Apply Note 2 to B37 and B39, including suspended sentences. Complete B42 only if any answer is Yes. Enter the application date in day/month/year order and sign the form yourself.

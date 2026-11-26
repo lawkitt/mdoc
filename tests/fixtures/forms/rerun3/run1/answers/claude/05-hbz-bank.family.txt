@@ -1,0 +1,54 @@
+Here is the HBZ Bank individual account opening form filled in for you (P1). This is a sole account for you, so your wife's and daughter's details don't go on it. The form asks for capital letters. If your stored values aren't in capitals, write them in capitals by hand.
+
+[B01] Date: NEEDS-YOU. Put the date you sign the form in the 8 boxes (DDMMYYYY).
+[B02] Branch: CAPE TOWN
+[B03] Type of Account: Current [ ]  Saving [X]
+
+A. ACCOUNT HOLDER'S DETAIL
+[B04] Surname: SURNAME_P1
+[B05] First name: GIVEN_P1
+      (If the bank wants your names exactly as in your passport, you can add your middle name, MIDDLE_P1, after your first name by hand.)
+[B06] Identity number: N/A (no South African ID number)
+[B07] Date of Birth: DATE_P1
+      (If the form or bank wants a set format such as DD/MM/YYYY, rewrite it in that format by hand.)
+[B08] Passport number: ID_P1
+[B09] Passport issuing country: INDIA   Expiry date: 04/06/2029
+[B10] Work / study / residence permit: SOUTH AFRICAN WORK PERMIT   Expiry date: 31/12/2027
+      (If the bank wants the permit number here too, that's NEEDS-YOU because I don't have it. Copy it from the permit yourself.)
+[B11] Alternative type of permit (specify): leave blank   Expiry date: leave blank
+[B12] Nationality: INDIAN   Country of birth: PLACE_P1
+      (This box wants a country, but PLACE_P1 is your place of birth. By hand, keep only the country of that place.)
+[B13] Additional nationality: leave blank (none given)
+[B14] Physical residential address: ADDRESS_P1   Postal code: see note
+      (By hand: spread the address over the three parts of the line and move the postcode into the Postal code box. This is your current UK address, as you asked. The bank may ask for your Cape Town address once you have one.)
+[B15] Postal address: ADDRESS_P1   Postal code: see note
+      (Same as above: split it over the two parts and move the postcode into the Postal code box.)
+[B16] Email address: NEEDS-YOU. Your email address isn't in the list.
+[B17] Home telephone no: leave blank
+[B18] Work telephone no: leave blank
+[B19] Cell. no: Country Code see note  Area Code see note  Number PHONE_P1
+      (By hand: split the number into country code, area code and the rest. If PHONE_P1 is a landline and not a mobile, move it to B17.)
+[B20] Fax no: leave blank
+[B21] Nature of profession / occupation: SOFTWARE ENGINEER
+
+Nothing above is US-linked, so you don't need the W-8BEN form.
+
+B. BENEFICIAL OWNERSHIP
+[B22] Are you the beneficial owner of the funds? Yes [X]  No [ ]
+[B23] Beneficial owner details: leave blank (you are the beneficial owner)
+
+C. FATCA
+[B24] U.S. citizen? Yes [ ]  No [X]
+[B25] Lawful permanent resident (green card / substantial presence)? Yes [ ]  No [X]
+[B26] Born in the United States or a U.S. territory? Yes [ ]  No [X]
+[B27] 'US Person' for any other reason? Yes [ ]  No [X]   Specify: leave blank
+[B28] Transfers to U.S. accounts or directions from a U.S. address? Yes [ ]  No [X]
+[B29] Power of Attorney or signing authority to anyone with a U.S. address? Yes [ ]  No [X]
+[B30] "In care of" / "hold mail" / U.S. P.O. Box / U.S. telephone number? Yes [ ]  No [X]
+
+Still missing (NEEDS-YOU):
+- B01: the date you sign.
+- B16: your email address.
+- B10: the work permit number, if the bank asks for it.
+
+Bring your passport and your South African work permit to the branch. The bank will want to see them along with this form.

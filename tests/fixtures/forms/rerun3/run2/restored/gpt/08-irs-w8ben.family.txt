@@ -1,0 +1,36 @@
+## W-8BEN for P1
+
+| Blank | Entry |
+|---|---|
+| B01 First name | VIKRAM |
+| B01 Middle name | ANAND |
+| B01 Family name | RAGHUNATHAN |
+| B02 Country of citizenship | India |
+| B03 Permanent residence street address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B04 City, state or province, and postal code | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B05 Permanent residence country | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom |
+| B06 Mailing address | Leave blank if it matches your permanent residence address. If it differs, NEEDS-YOU |
+| B07 U.S. taxpayer identification number | Leave blank unless required. If required, NEEDS-YOU |
+| B08 Foreign tax identifying number | NEEDS-YOU |
+| B09 FTIN not legally required | Leave unchecked |
+| B10 Reference number | Leave blank unless the publisher requires a reference. If required, NEEDS-YOU |
+| B11 Date of birth | 22/11/1983 |
+| B12 Treaty residence | United Kingdom |
+| B13 Treaty article and paragraph | NEEDS-YOU |
+| B13 Withholding rate | NEEDS-YOU |
+| B13 Type of income | Royalties on a book I wrote |
+| B13 Explanation of additional conditions, if required | NEEDS-YOU |
+| B14 Capacity to sign | Check when you sign for yourself and can make the certification |
+| B15 Signature | NEEDS-YOU |
+| B15 Signing date | NEEDS-YOU |
+| B16 Signer’s first name | VIKRAM |
+| B16 Signer’s middle name | ANAND |
+| B16 Signer’s family name | RAGHUNATHAN |
+
+- **B01 and B16** Combine the restored first, middle, and family names into one full name on each line.
+- **B03–B05** Split the restored home address across the three fields. If the address omits the country, enter the country where the home is located.
+- **B06–B10** If your mailing address differs, enter its street, locality, postal code, and country. Enter your SSN or ITIN on B07 only if required. Enter your UK National Insurance number directly on B08. Use the publisher’s reference on B10 if required.
+- **B11 and B15** Reformat the restored birth date by hand as MM-DD-YYYY. Sign the form and enter the actual signing date in the same format.
+- **B13** The supplied text leaves the treaty article, paragraph, rate, and any additional eligibility conditions open. Confirm which apply to your book royalties and complete those fields before signing.
+
+Give the completed form to your publisher.

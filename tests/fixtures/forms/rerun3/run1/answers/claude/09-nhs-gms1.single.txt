@@ -1,0 +1,50 @@
+Here is your GMS1 filled in. The form asks for BLOCK CAPITALS, so when the values come back, check they are in capitals, and rewrite any that are not.
+
+Patient's details
+[B01] [✔] Ms   (leave Mr, Mrs and Miss unticked)
+[B02] Surname: SURNAME_P1
+[B03] Date of birth: DATE_P1
+[B04] First names: GIVEN_P1 MIDDLE_P1
+[B05] NHS No.: leave blank (you have never lived in the UK, so you do not have one yet; the practice will arrange it)
+[B06] Previous surname/s: leave blank or write NONE (you have never had another surname)
+[B07] [✔] Female
+[B08] Town and country of birth: PLACE_P1
+[B09] Home address: NEEDS-YOU
+[B10] Postcode: NEEDS-YOU
+[B11] Telephone number: PHONE_P1
+
+Previous medical records
+[B12] Your previous address in UK: leave blank or write NONE (never lived in the UK)
+[B13] Name of previous doctor while at that address: leave blank
+[B14] Address of previous doctor: leave blank
+
+If you are from abroad
+[B15] Your first UK address where registered with a GP: NEEDS-YOU (this is your first GP registration, so it is your new Leeds address, the same as B09 and B10)
+[B16] If previously resident in UK, date of leaving: leave blank (not previously resident)
+[B17] Date you first came to live in UK: 03/11/2026
+
+If you are returning from the Armed Forces
+[B18] Address before enlisting: leave blank
+[B19] Service or Personnel number: leave blank
+[B20] Enlistment date: leave blank
+
+If you are registering a child under 5
+[B21] [ ] leave unticked (not applicable)
+
+Dispensing
+[B22] [ ] [ ] leave both unticked, unless one of them is true for your Leeds address
+
+[B23] [✔] Signature of Patient, then sign by hand
+[B24] Date: NEEDS-YOU (write the date on the day you sign)
+
+What is missing (NEEDS-YOU)
+- B09, B10 and B15: your new Leeds address and its postcode. It is not saved in mdoc, so write it in by hand. Do not use ADDRESS_P1 here unless you have already updated it to the Leeds address; if it is still your Singapore address, it is wrong for this form. Put the postcode on its own in B10, not in B09.
+- B24: the date you sign the form.
+
+Things to check by hand
+- B03: UK forms usually expect DD/MM/YYYY. DATE_P1 is stored as printed in your passport, so if it comes back in another shape (for example with the month in letters), rewrite it as day/month/year.
+- B04: if you have no middle name stored, MIDDLE_P1 will simply be empty; that is fine.
+- B08: the form wants both town and country. If PLACE_P1 comes back as only a town, add the country after it by hand.
+- B11: if PHONE_P1 is still your Singapore number, cross it out and write your UK mobile number instead, so the practice can reach you.
+
+Your passport number, issue date and issuing authority are not needed on this form. The practice may ask to see your passport and visa (BRP or eVisa share code) as ID and proof of address, but that is shown in person, not written here. The organ donation section on the back was not included in what you sent, so I have not filled it.

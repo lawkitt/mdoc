@@ -1,0 +1,455 @@
+{
+ "_": "Rule 4 hand sample: the same nine reshaping blanks in every run, read in each answer and applied to the restored value. Wording varies by run; the instruction column is a summary.",
+ "runs": {
+  "run1": {
+   "claude": [
+    {
+     "answer": "07-us-i9.single",
+     "blank": "B03",
+     "instruction": "keep the first letter of MIDDLE_P1",
+     "restored": "BUENAFLOR",
+     "entry": "B",
+     "right": "yes"
+    },
+    {
+     "answer": "07-us-i9.single",
+     "blank": "B10",
+     "instruction": "rewrite DATE_P1 as mm/dd/yyyy",
+     "restored": "09 AUG 1991",
+     "entry": "08/09/1991",
+     "right": "yes"
+    },
+    {
+     "answer": "07-us-i9.family",
+     "blank": "B10",
+     "instruction": "rewrite DATE_P1 month/day/year, day first in passports",
+     "restored": "22/11/1983",
+     "entry": "11/22/1983",
+     "right": "yes"
+    },
+    {
+     "answer": "08-irs-w8ben.single",
+     "blank": "B11",
+     "instruction": "rewrite DATE_P1 as MM-DD-YYYY with hyphens",
+     "restored": "09 AUG 1991",
+     "entry": "08-09-1991",
+     "right": "yes"
+    },
+    {
+     "answer": "08-irs-w8ben.family",
+     "blank": "B03-B04",
+     "instruction": "street and number on line 3, town and postcode on line 4",
+     "restored": "14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom",
+     "entry": "14 Quillon Mews / Didsbury, Manchester M20 6QX",
+     "right": "yes"
+    },
+    {
+     "answer": "03-korea-cve.family",
+     "blank": "B05",
+     "instruction": "rewrite DATE_P1 as yyyy/mm/dd",
+     "restored": "22/11/1983",
+     "entry": "1983/11/22",
+     "right": "yes"
+    },
+    {
+     "answer": "03-korea-cve.family",
+     "blank": "B30",
+     "instruction": "rewrite DATE_P2 as yyyy/mm/dd",
+     "restored": "03/02/1986",
+     "entry": "1986/02/03",
+     "right": "yes"
+    },
+    {
+     "answer": "05-hbz-bank.family",
+     "blank": "B19",
+     "instruction": "split PHONE_P1 into country code, area code, number; landline to B17",
+     "restored": "+44 7700 900123",
+     "entry": "44 / 7700 / 900123",
+     "right": "yes"
+    },
+    {
+     "answer": "09-nhs-gms1.family",
+     "blank": "B10",
+     "instruction": "keep only the postcode of ADDRESS_P1",
+     "restored": "14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom",
+     "entry": "M20 6QX",
+     "right": "yes"
+    }
+   ],
+   "gpt": [
+    {
+     "answer": "07-us-i9.single",
+     "blank": "B03",
+     "instruction": "keep only the first letter of MIDDLE_P1",
+     "restored": "BUENAFLOR",
+     "entry": "B",
+     "right": "yes"
+    },
+    {
+     "answer": "07-us-i9.single",
+     "blank": "B10",
+     "instruction": "rewrite DATE_P1 as mm/dd/yyyy",
+     "restored": "09 AUG 1991",
+     "entry": "08/09/1991",
+     "right": "yes"
+    },
+    {
+     "answer": "07-us-i9.family",
+     "blank": "B10",
+     "instruction": "rewrite DATE_P1 as mm/dd/yyyy",
+     "restored": "22/11/1983",
+     "entry": "11/22/1983",
+     "right": "yes"
+    },
+    {
+     "answer": "08-irs-w8ben.single",
+     "blank": "B11",
+     "instruction": "reformat DATE_P1 as MM-DD-YYYY",
+     "restored": "09 AUG 1991",
+     "entry": "08-09-1991",
+     "right": "yes"
+    },
+    {
+     "answer": "08-irs-w8ben.family",
+     "blank": "B03-B05",
+     "instruction": "split ADDRESS_P1: street on B03, locality and postcode on B04, country on B05",
+     "restored": "14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom",
+     "entry": "14 Quillon Mews / Didsbury, Manchester M20 6QX / United Kingdom",
+     "right": "yes"
+    },
+    {
+     "answer": "03-korea-cve.family",
+     "blank": "B05",
+     "instruction": "rewrite DATE_P1 as yyyy/mm/dd",
+     "restored": "22/11/1983",
+     "entry": "1983/11/22",
+     "right": "yes"
+    },
+    {
+     "answer": "03-korea-cve.family",
+     "blank": "B30",
+     "instruction": "rewrite DATE_P2 as yyyy/mm/dd",
+     "restored": "03/02/1986",
+     "entry": "1986/02/03",
+     "right": "yes"
+    },
+    {
+     "answer": "05-hbz-bank.family",
+     "blank": "B19",
+     "instruction": "use the row matching the number; split into country code, area code, rest",
+     "restored": "+44 7700 900123",
+     "entry": "44 / 7700 / 900123",
+     "right": "yes"
+    },
+    {
+     "answer": "09-nhs-gms1.family",
+     "blank": "B10",
+     "instruction": "NEEDS-YOU: copy the postcode from the restored address (no alias: a rule 3 miss)",
+     "restored": "14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom",
+     "entry": "M20 6QX",
+     "right": "yes"
+    }
+   ]
+  },
+  "run2": {
+   "claude": [
+    {
+     "answer": "07-us-i9.single",
+     "blank": "B03",
+     "instruction": "keep the first letter of MIDDLE_P1",
+     "restored": "BUENAFLOR",
+     "entry": "B",
+     "right": "yes"
+    },
+    {
+     "answer": "07-us-i9.single",
+     "blank": "B10",
+     "instruction": "rewrite DATE_P1 as mm/dd/yyyy",
+     "restored": "09 AUG 1991",
+     "entry": "08/09/1991",
+     "right": "yes"
+    },
+    {
+     "answer": "07-us-i9.family",
+     "blank": "B10",
+     "instruction": "rewrite DATE_P1 month/day/year, day first in passports",
+     "restored": "22/11/1983",
+     "entry": "11/22/1983",
+     "right": "yes"
+    },
+    {
+     "answer": "08-irs-w8ben.single",
+     "blank": "B11",
+     "instruction": "rewrite DATE_P1 as MM-DD-YYYY with hyphens",
+     "restored": "09 AUG 1991",
+     "entry": "08-09-1991",
+     "right": "yes"
+    },
+    {
+     "answer": "08-irs-w8ben.family",
+     "blank": "B03-B04",
+     "instruction": "street and number on line 3, town and postcode on line 4",
+     "restored": "14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom",
+     "entry": "14 Quillon Mews / Didsbury, Manchester M20 6QX",
+     "right": "yes"
+    },
+    {
+     "answer": "03-korea-cve.family",
+     "blank": "B05",
+     "instruction": "rewrite DATE_P1 as yyyy/mm/dd",
+     "restored": "22/11/1983",
+     "entry": "1983/11/22",
+     "right": "yes"
+    },
+    {
+     "answer": "03-korea-cve.family",
+     "blank": "B30",
+     "instruction": "rewrite DATE_P2 as yyyy/mm/dd",
+     "restored": "03/02/1986",
+     "entry": "1986/02/03",
+     "right": "yes"
+    },
+    {
+     "answer": "05-hbz-bank.family",
+     "blank": "B19",
+     "instruction": "split PHONE_P1 into country code, area code, number; landline to B17",
+     "restored": "+44 7700 900123",
+     "entry": "44 / 7700 / 900123",
+     "right": "yes"
+    },
+    {
+     "answer": "09-nhs-gms1.family",
+     "blank": "B10",
+     "instruction": "keep only the postcode of ADDRESS_P1",
+     "restored": "14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom",
+     "entry": "M20 6QX",
+     "right": "yes"
+    }
+   ],
+   "gpt": [
+    {
+     "answer": "07-us-i9.single",
+     "blank": "B03",
+     "instruction": "keep only the first letter of MIDDLE_P1",
+     "restored": "BUENAFLOR",
+     "entry": "B",
+     "right": "yes"
+    },
+    {
+     "answer": "07-us-i9.single",
+     "blank": "B10",
+     "instruction": "rewrite DATE_P1 as mm/dd/yyyy",
+     "restored": "09 AUG 1991",
+     "entry": "08/09/1991",
+     "right": "yes"
+    },
+    {
+     "answer": "07-us-i9.family",
+     "blank": "B10",
+     "instruction": "rewrite DATE_P1 as mm/dd/yyyy",
+     "restored": "22/11/1983",
+     "entry": "11/22/1983",
+     "right": "yes"
+    },
+    {
+     "answer": "08-irs-w8ben.single",
+     "blank": "B11",
+     "instruction": "reformat DATE_P1 as MM-DD-YYYY",
+     "restored": "09 AUG 1991",
+     "entry": "08-09-1991",
+     "right": "yes"
+    },
+    {
+     "answer": "08-irs-w8ben.family",
+     "blank": "B03-B05",
+     "instruction": "split ADDRESS_P1: street on B03, locality and postcode on B04, country on B05",
+     "restored": "14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom",
+     "entry": "14 Quillon Mews / Didsbury, Manchester M20 6QX / United Kingdom",
+     "right": "yes"
+    },
+    {
+     "answer": "03-korea-cve.family",
+     "blank": "B05",
+     "instruction": "rewrite DATE_P1 as yyyy/mm/dd",
+     "restored": "22/11/1983",
+     "entry": "1983/11/22",
+     "right": "yes"
+    },
+    {
+     "answer": "03-korea-cve.family",
+     "blank": "B30",
+     "instruction": "rewrite DATE_P2 as yyyy/mm/dd",
+     "restored": "03/02/1986",
+     "entry": "1986/02/03",
+     "right": "yes"
+    },
+    {
+     "answer": "05-hbz-bank.family",
+     "blank": "B19",
+     "instruction": "use the row matching the number; split into country code, area code, rest",
+     "restored": "+44 7700 900123",
+     "entry": "44 / 7700 / 900123",
+     "right": "yes"
+    },
+    {
+     "answer": "09-nhs-gms1.family",
+     "blank": "B10",
+     "instruction": "NEEDS-YOU: copy the postcode from the restored address (no alias: a rule 3 miss)",
+     "restored": "14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom",
+     "entry": "M20 6QX",
+     "right": "yes"
+    }
+   ]
+  },
+  "run3": {
+   "claude": [
+    {
+     "answer": "07-us-i9.single",
+     "blank": "B03",
+     "instruction": "keep the first letter of MIDDLE_P1",
+     "restored": "BUENAFLOR",
+     "entry": "B",
+     "right": "yes"
+    },
+    {
+     "answer": "07-us-i9.single",
+     "blank": "B10",
+     "instruction": "rewrite DATE_P1 as mm/dd/yyyy",
+     "restored": "09 AUG 1991",
+     "entry": "08/09/1991",
+     "right": "yes"
+    },
+    {
+     "answer": "07-us-i9.family",
+     "blank": "B10",
+     "instruction": "rewrite DATE_P1 month/day/year, day first in passports",
+     "restored": "22/11/1983",
+     "entry": "11/22/1983",
+     "right": "yes"
+    },
+    {
+     "answer": "08-irs-w8ben.single",
+     "blank": "B11",
+     "instruction": "rewrite DATE_P1 as MM-DD-YYYY with hyphens",
+     "restored": "09 AUG 1991",
+     "entry": "08-09-1991",
+     "right": "yes"
+    },
+    {
+     "answer": "08-irs-w8ben.family",
+     "blank": "B03-B04",
+     "instruction": "street and number on line 3, town and postcode on line 4",
+     "restored": "14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom",
+     "entry": "14 Quillon Mews / Didsbury, Manchester M20 6QX",
+     "right": "yes"
+    },
+    {
+     "answer": "03-korea-cve.family",
+     "blank": "B05",
+     "instruction": "rewrite DATE_P1 as yyyy/mm/dd",
+     "restored": "22/11/1983",
+     "entry": "1983/11/22",
+     "right": "yes"
+    },
+    {
+     "answer": "03-korea-cve.family",
+     "blank": "B30",
+     "instruction": "rewrite DATE_P2 as yyyy/mm/dd",
+     "restored": "03/02/1986",
+     "entry": "1986/02/03",
+     "right": "yes"
+    },
+    {
+     "answer": "05-hbz-bank.family",
+     "blank": "B19",
+     "instruction": "split PHONE_P1 into country code, area code, number; landline to B17",
+     "restored": "+44 7700 900123",
+     "entry": "44 / 7700 / 900123",
+     "right": "yes"
+    },
+    {
+     "answer": "09-nhs-gms1.family",
+     "blank": "B10",
+     "instruction": "keep only the postcode of ADDRESS_P1",
+     "restored": "14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom",
+     "entry": "M20 6QX",
+     "right": "yes"
+    }
+   ],
+   "gpt": [
+    {
+     "answer": "07-us-i9.single",
+     "blank": "B03",
+     "instruction": "keep only the first letter of MIDDLE_P1",
+     "restored": "BUENAFLOR",
+     "entry": "B",
+     "right": "yes"
+    },
+    {
+     "answer": "07-us-i9.single",
+     "blank": "B10",
+     "instruction": "rewrite DATE_P1 as mm/dd/yyyy",
+     "restored": "09 AUG 1991",
+     "entry": "08/09/1991",
+     "right": "yes"
+    },
+    {
+     "answer": "07-us-i9.family",
+     "blank": "B10",
+     "instruction": "rewrite DATE_P1 as mm/dd/yyyy",
+     "restored": "22/11/1983",
+     "entry": "11/22/1983",
+     "right": "yes"
+    },
+    {
+     "answer": "08-irs-w8ben.single",
+     "blank": "B11",
+     "instruction": "reformat DATE_P1 as MM-DD-YYYY",
+     "restored": "09 AUG 1991",
+     "entry": "08-09-1991",
+     "right": "yes"
+    },
+    {
+     "answer": "08-irs-w8ben.family",
+     "blank": "B03-B05",
+     "instruction": "split ADDRESS_P1: street on B03, locality and postcode on B04, country on B05",
+     "restored": "14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom",
+     "entry": "14 Quillon Mews / Didsbury, Manchester M20 6QX / United Kingdom",
+     "right": "yes"
+    },
+    {
+     "answer": "03-korea-cve.family",
+     "blank": "B05",
+     "instruction": "rewrite DATE_P1 as yyyy/mm/dd",
+     "restored": "22/11/1983",
+     "entry": "1983/11/22",
+     "right": "yes"
+    },
+    {
+     "answer": "03-korea-cve.family",
+     "blank": "B30",
+     "instruction": "rewrite DATE_P2 as yyyy/mm/dd",
+     "restored": "03/02/1986",
+     "entry": "1986/02/03",
+     "right": "yes"
+    },
+    {
+     "answer": "05-hbz-bank.family",
+     "blank": "B19",
+     "instruction": "use the row matching the number; split into country code, area code, rest",
+     "restored": "+44 7700 900123",
+     "entry": "44 / 7700 / 900123",
+     "right": "yes"
+    },
+    {
+     "answer": "09-nhs-gms1.family",
+     "blank": "B10",
+     "instruction": "NEEDS-YOU: copy the postcode from the restored address (no alias: a rule 3 miss)",
+     "restored": "14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom",
+     "entry": "M20 6QX",
+     "right": "yes"
+    }
+   ]
+  }
+ }
+}

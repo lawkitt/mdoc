@@ -1,0 +1,73 @@
+Here is your form (P1 only), filled from what you gave me.
+
+Important first: your daughter's passport expires on 1 January 2027, before you arrive on 20 April 2027. Japan will not issue her a visa on that passport, so she needs a new one before her application. Her passport number and dates of issue and expiry will change, so update her stored details once she has it. Your passport (valid to 4 June 2029) and your wife's (valid to 10 August 2030) are fine.
+
+VISA APPLICATION FORM TO ENTER JAPAN
+
+[B01] Surname (as shown in passport): RAGHUNATHAN
+[B02] Given and middle names (as shown in passport): VIKRAM ANAND
+[B03] Other names: NEEDS-YOU
+[B04] Date of birth: 22/11/1983
+[B05] Place of birth: PUNE, MAHARASHTRA
+[B06] Sex: Male [X]  Female [ ]
+[B07] Marital status: Single [ ]  Married [X]  Widowed [ ]  Divorced [ ]
+[B08] Nationality or citizenship: Indian
+[B09] Former and/or other nationalities or citizenships: NEEDS-YOU
+[B10] ID No. issued to you by your government: NEEDS-YOU
+[B11] Passport type: NEEDS-YOU
+[B12] Passport No.: Z4827163
+[B13] Place of issue: NEEDS-YOU
+[B14] Date of issue: 05/06/2019
+[B15] Issuing authority: HIGH COMMISSION OF INDIA, LONDON
+[B16] Date of expiry: 04/06/2029
+[B17] Certificate of Eligibility No.: Not applicable
+[B18] Purpose of visit to Japan/Status of residence: Tourism (Temporary Visitor)
+[B19] Intended length of stay in Japan: 7 days
+[B20] Date of arrival in Japan: 20/04/2027
+[B21] Port of entry into Japan: Kansai International Airport
+[B22] Name of ship or airline: NEEDS-YOU
+[B23] Name: NEEDS-YOU   Tel.: NEEDS-YOU
+[B24] Address: NEEDS-YOU
+[B25] Dates and duration of previous stays in Japan: October 2023, 9 days
+[B26] Address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B27] Tel.: +44 7700 900123   Mobile No.: +44 7700 900123
+[B28] E-Mail: NEEDS-YOU
+[B29] Current profession or occupation and position: Software Engineer
+[B30] Name: NEEDS-YOU   Tel.: NEEDS-YOU
+[B31] Address: NEEDS-YOU
+[B32] Partner's profession/occupation: Pharmacist
+[B33] Guarantor or reference in Japan: NEEDS-YOU
+[B34] Inviter in Japan: NEEDS-YOU
+[B35] Remarks/Special circumstances: Travelling with my wife, MEERA RAGHUNATHAN, and my daughter, ANIKA RAGHUNATHAN, who are applying separately.
+[B36] Convicted of a crime or offence: NEEDS-YOU
+[B37] Sentenced to imprisonment for 1 year or more: NEEDS-YOU
+[B38] Deported or removed: NEEDS-YOU
+[B39] Convicted and sentenced for a drug offence: NEEDS-YOU
+[B40] Prostitution-related activity: NEEDS-YOU
+[B41] Trafficking in persons: NEEDS-YOU
+[B42] Details if "Yes": leave blank if every answer above is "No"
+[B43] Date of application: NEEDS-YOU
+[B44] Signature of applicant: NEEDS-YOU
+
+Things to fix by hand once your details are put back:
+- B04 and B14: the form wants Day/Month/Year. If your passport prints these dates in another shape (for example "15 MAR 1988"), rewrite them as DD/MM/YYYY.
+- B05: the form wants city, state or province, and country as separate parts. If your stored place of birth is only a city, add the state and country yourself.
+- B27: if your number is stored without the country code, add +91 in front. If it is a mobile, you can leave the Tel. box blank or keep it there too. If you have a separate landline, put that in Tel.
+
+What's missing (marked NEEDS-YOU):
+- B03: any other names you use or have used. Write "None" if there aren't any.
+- B09: any former or other nationality. Write "None" if there isn't one.
+- B10: your government ID number. I don't have it, so write it on the form yourself; don't type it here. If the consulate doesn't ask for one, leave it blank.
+- B11: tick the passport type. A regular Indian passport (type "P") is "Ordinary", but check yours.
+- B13: copy "Place of Issue" from your passport. It's a separate line from the issuing authority.
+- B22: your airline, and flight number if you have one.
+- B23 and B24: name, phone number and address of your hotel (the first one, if you stay at several).
+- B25: if you know the exact dates of your October 2023 visit, add them (for example "DD/10/2023 to DD/10/2023, 9 days").
+- B28: your email address.
+- B29: change the position if your actual title is different (for example "Senior Software Engineer").
+- B30 and B31: your employer's name, phone number and address.
+- B33 and B34: for a self-funded holiday with no one hosting you in Japan, these are usually left blank or marked "None". Fill them in only if someone in Japan is guaranteeing or inviting you.
+- B36 to B41: these are your own declaration, so tick Yes or No yourself. If any answer is Yes, explain in B42.
+- B43 and B44: date and sign by hand on the day you submit.
+
+B35 is optional, so you can leave it out. Your wife and daughter each need their own form. Your daughter's should wait until she has her new passport.

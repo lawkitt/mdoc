@@ -1,0 +1,31 @@
+Here is your TM.47 (90-day report), filled for you only. Your wife and daughter file their own, so their details are not used here.
+
+[B01] WRITTEN AT: Bangkok Immigration Office
+[B02] DATE: 24   MONTH: November   YEAR (B.E.): 2569
+[B03] FULL NAME: VIKRAM ANAND RAGHUNATHAN
+[B04] NATIONALITY: Indian
+[B05] VISA: [ ] TOURIST  [X] NON-IMM
+[B06] ENTERED THAILAND ON: 26   MONTH: August   YEAR (B.E.): 2569
+[B07] BY: Air (Suvarnabhumi Airport)
+[B08] PASSPORT NO.: Z4827163
+[B09] ARRIVAL CARD NO.: NEEDS-YOU
+[B10] LANE/ROAD: NEEDS-YOU
+[B11] TAMBOL: NEEDS-YOU
+[B12] AMPHUR: NEEDS-YOU
+[B13] PROVINCE: Bangkok
+[B14] PHONE: +44 7700 900123
+[B15] SIGNATURE: (sign by hand)
+
+Things to do by hand:
+
+- B03: the form wants your full name in BLOCK LETTERS. When the name comes back, write it in capitals, in the order printed in your passport.
+- B02 and B06: Thai forms use the Buddhist Era year. 2026 is 2569 B.E., which is already filled in.
+- B14: this is the phone number you have saved. If that is not a number you can be reached on in Thailand, write your Thai mobile number instead.
+- B15: sign it yourself.
+
+What is missing (NEEDS-YOU):
+
+- B09: your arrival card number. It is not saved in mdoc. You will find it on your arrival card, or on the confirmation of your Thailand Digital Arrival Card if you filled one in online before you flew.
+- B10 to B12: your current Thai address. It is not saved in mdoc, and the home address I have for you is not your Bangkok address, so I have not used it. In Bangkok, "Tambol" is your khwaeng (sub-district) and "Amphur" is your khet (district). Put the soi/road and house or building number in B10. I filled B13 as Bangkok because you said you are staying there. Change it if your address is in another province.
+
+On timing: 26 August 2026 plus 90 days is 24 November 2026, so today is your due day. Bring your passport with you, including the page with your entry stamp.

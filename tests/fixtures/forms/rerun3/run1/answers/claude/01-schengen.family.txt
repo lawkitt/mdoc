@@ -1,0 +1,72 @@
+Here is your Schengen visa form, filled for you only. Your wife's and daughter's details are not used, because they are not travelling. If they come later, each needs her own form.
+
+B01  1. Surname: SURNAME_P1
+B02  2. Surname at birth: NEEDS-YOU. Fill this in only if your family name at birth was different. If it was the same, leave it blank.
+B03  3. First name(s): GIVEN_P1 MIDDLE_P1
+     By hand: copy the given names in the same order as your passport. If your passport doesn't show the middle name, leave it out.
+B04  Date of birth (day-month-year): DATE_P1
+     By hand: the form wants day-month-year (for example 01-02-1990 shape). If your passport prints the date in another shape, rewrite it that way.
+B05  5. Place of birth: PLACE_P1
+B06  6. Country of birth: NEEDS-YOU. Your country of birth isn't in what I have.
+B07  7. Current nationality: Indian
+     Nationality at birth, if different: leave blank if it was Indian. Otherwise NEEDS-YOU.
+     Other nationalities: leave blank if you have none. Otherwise NEEDS-YOU.
+B08  8. Sex: [X] Male
+B09  9. Civil status: [X] Married
+B10  10. Parental authority / legal guardian: not applicable. Leave blank.
+B11  11. National identity number, where applicable: leave blank. No number is listed, and the form only needs one where applicable.
+B12  12. Type of travel document: [X] Ordinary passport
+     (Check that your passport is an ordinary one, not diplomatic or official.)
+B13  13. Number of travel document: ID_P1
+B14  14. Date of issue: ISSUED_P1
+     By hand: write it as day-month-year if the passport shows it another way.
+B15  15. Valid until: 04-06-2029
+B16  16. Issued by (country): India
+B17  17. EU/EEA/CH/UK family member: not applicable. Leave blank.
+B18  18. Family relationship with an EU, EEA or CH citizen: not applicable. Leave blank.
+B19  19. Home address and e-mail address: ADDRESS_P1
+     E-mail: NEEDS-YOU. Your e-mail address isn't in what I have.
+     Tel.: PHONE_P1
+     By hand: if the form or online system wants the number with the country code (+44), add it.
+B20  20. Residence in a country other than the country of current nationality: [X] Yes
+     Residence permit or equivalent: United Kingdom residence permit
+     No.: NEEDS-YOU. Your UK residence permit number isn't listed. Copy it from your permit or eVisa yourself.
+     Valid until: NEEDS-YOU. The expiry date of your UK permit isn't listed. Copy it from your permit.
+B21  *21. Current occupation: Software engineer
+B22  *22. Employer, address and phone number: NEEDS-YOU. Your company's name, address and phone number aren't listed.
+B23  23. Purpose(s) of the journey: [X] Business
+B24  24. Additional information on purpose of stay: Attending a trade fair in Munich, Germany, from 8 to 13 March 2027.
+     NEEDS-YOU: add the fair's name if you want it here.
+B25  25. Member State of main destination: Germany
+B26  26. Member State of first entry: Germany
+     (This is right if you fly or travel straight to Germany. If your first stop in the Schengen area is another country, for example a connecting flight in Amsterdam or Paris, write that country instead.)
+B27  27. Number of entries requested: [X] Single entry
+     (One trip needs one entry. If you expect more trips soon, you can ask for multiple entries instead.)
+B28  Intended date of arrival: 08-03-2027
+B29  Intended date of departure: 13-03-2027
+B30  28. Fingerprints collected previously: [X] Yes
+     Date, if known: 2023 (you don't know the exact date, so give only the year)
+     Visa sticker number, if known: leave blank unless you have your old visa to hand. If you do, copy the number yourself.
+B31  29. Entry permit for the final country of destination: not applicable. Leave blank.
+B32  *30. Inviting person(s) or hotel(s): NEEDS-YOU. The name of your hotel in Munich (or of the person or place where you'll stay) isn't listed.
+B33  Address and e-mail of the hotel/accommodation: NEEDS-YOU.
+     Telephone No.: NEEDS-YOU.
+B34  *31. Name and address of inviting company/organisation: NEEDS-YOU. If the trade fair organiser or a German company sent you an invitation letter, put its name and address here. If not, leave blank.
+B35  Contact person in the company/organisation (surname, first name, address, phone, e-mail): NEEDS-YOU, from the invitation letter if you have one.
+     Telephone No. of company/organisation: NEEDS-YOU.
+B36  *32. Cost of travelling and living:
+     [X] by a sponsor
+     [X] other (please specify): my employer. NEEDS-YOU: add your company's name.
+     Means of support: [X] All expenses covered during the stay
+     (Also tick Pre-paid transport, Accommodation provided or Other if those apply to how your company is paying.)
+     If an inviting company in field 31 is paying instead, tick "referred to in field 30 or 31".
+B37  33. Person filling in the form, if different from the applicant: leave blank (you are filling it in yourself).
+B38  Address, e-mail and phone of that person: leave blank.
+B39  Place and date: NEEDS-YOU. Write the town where you sign and that day's date, in your own hand, when you sign.
+B40  Signature of applicant: sign by hand.
+     Signature of parental authority/legal guardian: leave blank.
+
+Things to check before you submit:
+- Your passport is valid until 4 June 2029, well beyond the 3 months after your trip that a Schengen visa needs.
+- As a UK resident, you'll usually apply at the German visa centre in the UK, since Germany is your main destination.
+- A business visa usually also needs a letter from your employer confirming the trip and that they pay, the trade fair registration or invitation, travel medical insurance, and proof of your UK residence status.

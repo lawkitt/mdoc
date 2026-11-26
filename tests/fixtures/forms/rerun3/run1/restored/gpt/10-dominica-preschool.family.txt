@@ -1,0 +1,132 @@
+Leave B01–B07 blank for preschool staff. The requested start is January 2027. If the preschool asks for a specific start day, that day is **NEEDS-YOU**.
+
+```text
+Application heading — preschool/daycare name
+NEEDS-YOU
+
+B08 — Child to be admitted
+ANIKA
+RAGHUNATHAN
+
+B08 — Preschool/daycare name
+NEEDS-YOU
+
+B09 — Applicant’s name
+VIKRAM
+ANAND
+RAGHUNATHAN
+
+B10 — Applicant’s telephone
+(C)
++44 7700 900123
+(W)
+NEEDS-YOU
+(H)
+NEEDS-YOU
+
+B11 — Applicant’s email
+NEEDS-YOU
+
+B12 — Relationship to child
+Father
+
+B13 — Child’s name
+ANIKA
+RAGHUNATHAN
+
+B14 — People the child lives with
+Mother
+MEERA
+RAGHUNATHAN
+
+Father
+VIKRAM
+ANAND
+RAGHUNATHAN
+
+B15 — Current home address
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+B16 — Number of children in the family
+(M) 0
+(F) 1
+
+B17 — Place of child in the family
+First and only child
+
+B18 — Mother’s name
+MEERA
+RAGHUNATHAN
+
+B19 — Mother’s address
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+B20 — Mother’s telephone
+(C)
++44 7700 900456
+(W)
+NEEDS-YOU
+(H)
+NEEDS-YOU
+
+B21 — Mother’s email
+NEEDS-YOU
+
+B22 — Mother’s occupation
+Pharmacist
+
+B23 — Father’s name
+VIKRAM
+ANAND
+RAGHUNATHAN
+
+B24 — Father’s address
+14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+
+B25 — Father’s telephone
+(C)
++44 7700 900123
+(W)
+NEEDS-YOU
+(H)
+NEEDS-YOU
+
+B26 — Father’s email
+NEEDS-YOU
+
+B27 — Father’s occupation
+Software engineer
+
+B28 — People authorized to collect the child
+MEERA
+RAGHUNATHAN
+
+VIKRAM
+ANAND
+RAGHUNATHAN
+
+B29 — Emergency contact 1
+MEERA
+RAGHUNATHAN
+(C)
++44 7700 900456
+(W)
+NEEDS-YOU
+(H)
+NEEDS-YOU
+
+B30 — Emergency contact 2
+VIKRAM
+ANAND
+RAGHUNATHAN
+(C)
++44 7700 900123
+(W)
+NEEDS-YOU
+(H)
+NEEDS-YOU
+```
+
+After mdoc restores the values, join each person’s name parts with spaces in the form’s single name blank. In B14 and B28, separate the two full names. B14 assumes your daughter currently lives with both parents.
+
+I placed the supplied phone numbers under **(C)**. Confirm they are cell numbers and move them to **(W)** or **(H)** by hand if appropriate. Fill in any additional work or home numbers that apply, along with the preschool’s name and the requested email addresses, directly on the form.

@@ -1,0 +1,57 @@
+Here is your W-8BEN, filled in for an individual who is a Philippine citizen and a tax resident of Singapore only.
+
+One thing to know first: the United States has no income tax treaty with Singapore. Your treaty country is where you are tax resident (Singapore), not your country of citizenship, so you cannot claim the US–Philippines treaty either. Part II stays blank. In practice this usually means US dividends are withheld at the standard 30%, while most capital gains, and interest that qualifies as portfolio interest or bank deposit interest, are usually not withheld. Your broker will apply this.
+
+Part I – Identification of Beneficial Owner
+
+[B01] 1 Name of individual who is the beneficial owner: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+
+[B02] 2 Country of citizenship: Philippines
+
+[B03] 3 Permanent residence address: ADDRESS_P1
+  By hand: keep only the street, block/building, and unit number on this line. Move the rest to the next line.
+
+[B04]   City or town, state or province, postal code: ADDRESS_P1
+  By hand: keep only "Singapore" and your postal code on this line (for example the form of "Singapore" followed by your 6-digit postal code). Remove the street part.
+
+[B05]   Country: Singapore
+
+[B06] 4 Mailing address: leave blank (your mailing address is the same as your home address). If your broker sends post somewhere else, fill that address in here.
+
+[B07] 5 U.S. taxpayer identification number (SSN or ITIN): leave blank. You are not claiming treaty benefits, and you don't need a US number for an ordinary brokerage account. Only fill this in if you already have an SSN or ITIN.
+
+[B08] 6a Foreign tax identifying number: NEEDS-YOU
+  Missing: your Singapore tax number. For most people this is your NRIC or FIN number (or your IRAS tax reference number). It is not saved in mdoc, so write it on the form or in the broker's online form yourself. Please don't type it into this chat.
+
+[B09] 6b Check if FTIN not legally required: leave unchecked. Singapore issues tax numbers to its residents, so this box does not apply to you.
+
+[B10] 7 Reference number(s): leave blank, unless your broker asks you to put your account number here.
+
+[B11] 8 Date of birth (MM-DD-YYYY): DATE_P1
+  By hand: rewrite it as month-day-year with two digits for the month, two digits for the day and four digits for the year, separated by hyphens. Your passport may print it differently (for example day first or with the month in letters), so check the order carefully.
+
+Part II – Claim of Tax Treaty Benefits
+
+[B12] 9 Resident of: leave blank. No US–Singapore income tax treaty exists.
+
+[B13] 10 Special rates and conditions: leave blank.
+
+Part III – Certification
+
+[B14] [X] I certify that I have the capacity to sign for the person identified on line 1 of this form.
+  Tick this box. The form asks every signer to tick it, including when you sign for yourself.
+
+[B15] Signature of beneficial owner: NEEDS-YOU
+  Missing: your own signature. Sign by hand, or use the broker's e-signature step.
+  Date (MM-DD-YYYY): NEEDS-YOU
+  Missing: the date you actually sign, written as MM-DD-YYYY.
+
+[B16] Print name of signer: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+
+Before you send it
+
+- Give the form to the brokerage, not to the IRS.
+- Read the perjury certification in Part III before signing. You are confirming that you are not a US person and that the account income is yours.
+- The form is usually valid until the end of the third calendar year after the year you sign it. If anything changes (for example you move out of Singapore, or you become a US tax resident), tell the broker within 30 days and give them a new form.
+- Your passport number, phone number, and passport issue details are not needed on this form.
+- This is general help with filling in the form, not tax advice. If you have US-connected income other than ordinary investments, check with a tax adviser.

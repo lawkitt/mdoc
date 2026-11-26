@@ -1,0 +1,51 @@
+Here is Section 1 of your Form I-9, filled in for an H-1B worker with no Social Security number yet.
+
+Section 1. Employee Information and Attestation
+
+[B01] Last Name (Family Name): SURNAME_P1
+[B02] First Name (Given Name): GIVEN_P1
+[B03] Middle Initial (if any): MIDDLE_P1
+      By hand: this box takes only your middle initial. Keep the first letter of your middle name and delete the rest.
+[B04] Other Last Names Used (if any): N/A
+[B05] Address (Street Number and Name): NEEDS-YOU (your new US street address, which isn't saved in mdoc)
+[B06] Apt. Number (if any): NEEDS-YOU (your apartment number, or N/A if you don't have one)
+[B07] City or Town: NEEDS-YOU (the city of your new US address, probably Houston)
+[B08] State: NEEDS-YOU (the state of your new US address, probably TX)
+[B09] ZIP Code: NEEDS-YOU (the ZIP code of your new US address)
+[B10] Date of Birth (mm/dd/yyyy): DATE_P1
+      By hand: rewrite it as mm/dd/yyyy (two-digit month, two-digit day, four-digit year). Passports often print dates in a different order or with the month in letters.
+[B11] U.S. Social Security Number: leave blank
+[B12] Employee's Email Address: NEEDS-YOU (optional; write your email or N/A)
+[B13] Employee's Telephone Number: PHONE_P1
+      This box is optional. If this number is a Philippine number and you'll have a US number soon, you can use the US one or write N/A.
+
+[B14] Citizenship or immigration status:
+      [ ] 1. A citizen of the United States
+      [ ] 2. A noncitizen national of the United States
+      [ ] 3. A lawful permanent resident
+      [X] 4. An alien authorized to work until (exp. date, if any): 09/30/2029
+
+[B15] Enter one of these (only one):
+      USCIS A-Number: leave blank
+      Form I-94 Admission Number: leave blank
+      Foreign Passport Number: ID_P1
+      Country of Issuance: Philippines
+
+[B16] Signature of Employee: NEEDS-YOU (sign it yourself)
+[B17] Today's Date (mm/dd/yyyy): NEEDS-YOU (the date you sign, as mm/dd/yyyy)
+
+Preparer and/or Translator Certification: you don't need it if you fill in Section 1 yourself. If someone helps you, they must complete it.
+
+Notes
+
+1. Social Security number (B11). Leave it blank. It's optional unless your employer uses E-Verify. If they do, you can still complete the I-9 without it: tell HR you've applied (or will apply) for a number, and give it to them once it arrives so they can finish the E-Verify case.
+
+2. Work authorization date (B14). 09/30/2029 should match the "Admit Until" date on your I-94 record. Check your I-94 before you sign. If it shows a different date, use that one.
+
+3. B15. You only need one of the three options. I used your passport number because it's in mdoc. You could use your I-94 admission number instead, but it isn't saved in mdoc, so that would be NEEDS-YOU. Either way, leave the other two options blank.
+
+4. Address (B05 to B09). This must be your US address. I didn't use the home address saved in mdoc because you said your new US address isn't stored there.
+
+5. Timing. You must complete and sign Section 1 no later than your first day of work (next Monday). You can do it earlier, but only after accepting the job offer.
+
+6. Section 2 (your employer completes this). Within three business days of your start date, you'll need to show original documents in person. For an H-1B worker, a common List A combination is your Philippine passport plus your Form I-94. Bring both on your first day.

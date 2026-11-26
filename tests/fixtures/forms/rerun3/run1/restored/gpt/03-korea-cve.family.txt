@@ -1,0 +1,86 @@
+## Certificate of Visa Eligibility application for P1
+
+Copy the entries by field number. Complete each `NEEDS-YOU` item by hand using the notes below. Write text entries in block letters, as the form instructs.
+
+```text
+1. PERSONAL DETAILS
+B01  RAGHUNATHAN
+B02  VIKRAM
+     ANAND
+B03  NEEDS-YOU
+B04  Check Male
+B05  22/11/1983
+B06  INDIAN
+B07  PUNE, MAHARASHTRA
+B08  NEEDS-YOU
+B09  NEEDS-YOU
+B10  NEEDS-YOU
+
+2. PASSPORT INFORMATION
+B11  NEEDS-YOU
+B12  Z4827163
+B13  INDIA
+B14  NEEDS-YOU
+B15  05/06/2019
+B16  2029/06/04
+B17  NEEDS-YOU
+
+3. CONTACT INFORMATION
+B18  NEEDS-YOU
+B19  14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+B20  +44 7700 900123
+B21  NEEDS-YOU
+B22  NEEDS-YOU
+B23  MEERA
+     RAGHUNATHAN
+B24  UNITED KINGDOM
+B25  +44 7700 900456
+B26  WIFE
+
+4. MARITAL STATUS AND FAMILY DETAILS
+B27  Check Married
+B28  RAGHUNATHAN
+B29  MEERA
+B30  03/02/1986
+B31  INDIAN
+B32  14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+B33  +44 7700 900456
+B34  Check Yes and enter 1
+
+5. EDUCATION
+B35  Check Master's / Doctoral Degree
+B36  NEEDS-YOU
+B37  NEEDS-YOU
+
+6. EMPLOYMENT
+B38  Check Employed
+B39  NEEDS-YOU
+B40  NEEDS-YOU
+B41  NEEDS-YOU
+B42  NEEDS-YOU
+```
+
+### Adjust these entries by hand
+
+- **B02** Combine the restored names in the one Given Names blank. Match the passport’s Given Names field exactly, including the middle name only if it appears there.
+- **B05 and B30** Rewrite each restored birth date as `yyyy/mm/dd`. **B15** Use the same format for the passport issue date to match the expiry date above.
+- **B07** Enter only the country from the restored birthplace. If it lists only a city or region, fill in the country yourself.
+- **B19 and B32** I’ve treated the saved home address as the UK residence you share. Use it in both fields if it is that address.
+- **B20 and B21** Use the restored phone number in B20 if it is your mobile. If it is your landline, put it in B21 and supply your mobile in B20.
+- **B23** Combine the two restored names in the single Full Name blank, using your wife’s full English name.
+
+### Supply the missing information
+
+| Field | What to supply |
+|---|---|
+| B03 | Your name in Chinese characters, if applicable. |
+| B08 | Your national identity number, if applicable. |
+| B09 | Whether you ever entered or departed Korea under another name. If yes, supply the family and given names used. |
+| B10 | Whether you hold another citizenship. If yes, supply the details. |
+| B11 | Your passport category. Check Regular if it is an ordinary passport. If you check Other, specify the type. |
+| B14 | The place of issue shown in your passport. |
+| B17 | Whether you hold another valid passport. If yes, supply its type, number, issuing country, and expiry date. |
+| B18 | Your home-country address in India, if applicable. |
+| B21–B22 | Your landline number, if you have one, and your email address. |
+| B36–B37 | The school that awarded your master’s degree and its city, province or equivalent, and country. |
+| B39–B42 | Your employer’s name, your job title, and the employer’s address and telephone number. |

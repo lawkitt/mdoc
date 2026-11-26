@@ -1,0 +1,69 @@
+## Japan visa application
+
+| Box | Field | Entry |
+|---|---|---|
+| B01 | Surname | SURNAME_P1 |
+| B02 | Given name | GIVEN_P1 |
+| B02 | Middle name | MIDDLE_P1 |
+| B03 | Other names | NEEDS-YOU |
+| B04 | Date of birth | DATE_P1 |
+| B05 | Place of birth | PLACE_P1 |
+| B06 | Sex | Tick Male |
+| B07 | Marital status | Tick Married |
+| B08 | Nationality or citizenship | Indian |
+| B09 | Former or other nationalities or citizenships | NEEDS-YOU |
+| B10 | Government-issued ID number | NEEDS-YOU |
+| B11 | Passport type | NEEDS-YOU |
+| B12 | Passport number | ID_P1 |
+| B13 | Place of issue | NEEDS-YOU |
+| B14 | Date of issue | ISSUED_P1 |
+| B15 | Issuing authority | AUTHORITY_P1 |
+| B16 | Date of expiry | 04/06/2029 |
+| B17 | Certificate of Eligibility number | NEEDS-YOU |
+| B18 | Purpose of visit | Tourism |
+| B19 | Intended length of stay | 7 days |
+| B20 | Date of arrival | 20/04/2027 |
+| B21 | Port of entry | Kansai International Airport |
+| B22 | Airline | NEEDS-YOU |
+| B23 | Hotel or host name | NEEDS-YOU |
+| B23 | Hotel or host telephone | NEEDS-YOU |
+| B24 | Hotel or host address | NEEDS-YOU |
+| B25 | Dates and duration of previous stays | NEEDS-YOU |
+| B26 | Current residential address | ADDRESS_P1 |
+| B27 | Telephone | PHONE_P1 |
+| B27 | Mobile number | NEEDS-YOU |
+| B28 | Email | NEEDS-YOU |
+| B29 | Current profession or position | Software engineer |
+| B30 | Employer name | NEEDS-YOU |
+| B30 | Employer telephone | NEEDS-YOU |
+| B31 | Employer address | NEEDS-YOU |
+| B32 | Partner’s profession | Pharmacist |
+| B35 | Remarks or special circumstances, if any | NEEDS-YOU |
+| B36 | Criminal conviction | NEEDS-YOU |
+| B37 | Sentence of imprisonment | NEEDS-YOU |
+| B38 | Deportation or removal | NEEDS-YOU |
+| B39 | Drug offence conviction and sentence | NEEDS-YOU |
+| B40 | Prostitution-related activity | NEEDS-YOU |
+| B41 | Trafficking in persons | NEEDS-YOU |
+| B42 | Details of any Yes answers | NEEDS-YOU |
+| B43 | Date of application | NEEDS-YOU |
+| B44 | Applicant’s signature | NEEDS-YOU |
+
+| Field | B33 Guarantor or reference in Japan | B34 Inviter in Japan |
+|---|---|---|
+| Name | NEEDS-YOU | NEEDS-YOU |
+| Telephone | NEEDS-YOU | NEEDS-YOU |
+| Address | NEEDS-YOU | NEEDS-YOU |
+| Date of birth | NEEDS-YOU | NEEDS-YOU |
+| Sex | NEEDS-YOU | NEEDS-YOU |
+| Relationship to you | NEEDS-YOU | NEEDS-YOU |
+| Profession or occupation and position | NEEDS-YOU | NEEDS-YOU |
+| Nationality and immigration status | NEEDS-YOU | NEEDS-YOU |
+
+**Complete by hand**
+
+- **B02, B04, B05, B14, B26–B27** — Put both restored names into the single B02 field in passport order. Write the restored dates in day/month/year order and arrange the restored birthplace as city, state or province, and country. Add any other current residential addresses. I placed your phone number under Tel. Move it to Mobile No. if it is a mobile number, and add a separate telephone number if applicable.
+- **B03, B09–B11, B13, B17** — Confirm any other names and former or additional citizenships. Supply the government-issued ID number requested in B10, confirm the passport category and place of issue from your passport, and enter a Certificate of Eligibility number if applicable.
+- **B22–B25, B28, B30–B31** — Add the airline, accommodation or host details, your email, and your employer’s name, telephone, and address. For B25, record your one previous stay as **9 days in October 2023** and add the exact arrival and departure dates.
+- **B33–B35** — Supply the guarantor or reference and inviter details as applicable. If the same person fills both roles, write “same as above” in B34. Add any special circumstances in B35 if applicable.
+- **B36–B44** — Tick your own Yes or No answers, following Note 2 on suspended sentences. Give details in B42 for any Yes answer. Enter the application date in day/month/year order and sign the declaration yourself.

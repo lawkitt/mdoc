@@ -1,0 +1,52 @@
+Here is the HBZ Bank individual account opening form, filled from what you gave me. The form asks for capital letters, so I've written my own entries in capitals. Your real values go back in exactly as they are stored, so if any of them are stored in lower case, rewrite them in capitals by hand.
+
+[B01] Date: NEEDS-YOU (the date you sign the form, one digit per box, 8 boxes)
+[B02] Branch: NEEDS-YOU (the HBZ branch you are applying at; you didn't say which)
+[B03] Type of Account: Current [X]  Saving [ ]
+
+A. ACCOUNT HOLDER'S DETAIL
+[B04] Surname: SURNAME_P1
+[B05] First name: GIVEN_P1
+[B06] Identity number: N/A (NON-RESIDENT, NO SOUTH AFRICAN ID NUMBER)
+[B07] Date of Birth: DATE_P1
+[B08] Passport number: ID_P1
+[B09] Passport issuing country: PHILIPPINES   Expiry date: 13 MARCH 2032
+[B10] Work / study / residence permit: N/A   Expiry date: N/A
+[B11] Alternative type of permit (specify): N/A   Expiry date: N/A
+[B12] Nationality: FILIPINO   Country of birth: PLACE_P1
+[B13] Additional nationality: leave blank (fill it in only if you hold a second nationality)
+[B14] Physical residential address: ADDRESS_P1 (spread over the three lines)   Postal code: ADDRESS_P1
+[B15] Postal address: ADDRESS_P1 (spread over the two lines)   Postal code: ADDRESS_P1
+[B16] Email address: NEEDS-YOU (your email address isn't in the list)
+[B17] Home telephone no: leave blank, or see the note on B19
+[B18] Work telephone no: leave blank (no work number was given)
+[B19] Cell. no: Country Code: see note   Area Code: see note   Number: PHONE_P1
+[B20] Fax no: leave blank
+[B21] Nature of profession / occupation: STAFF NURSE
+
+B. BENEFICIAL OWNERSHIP
+[B22] Are you the beneficial owner of the funds? Yes [X]  No [ ]
+[B23] Beneficial owner details: leave blank (only needed if you answered No)
+
+C. FATCA
+[B24] U.S. citizen? Yes [ ]  No [X]
+[B25] Lawful permanent resident (green card / substantial presence)? Yes [ ]  No [X]
+[B26] Born in the United States or a U.S. territory? Yes [ ]  No [X]
+[B27] 'US Person' for any other reason? Yes [ ]  No [X]  (leave "please specify" blank)
+[B28] Instructions to transfer funds to U.S. accounts, or directions from a U.S. address? Yes [ ]  No [X]
+[B29] Power of Attorney or signing authority to anyone with a U.S. address? Yes [ ]  No [X]
+[B30] "In care of" / "hold mail" address, U.S. P.O. Box or U.S. telephone number? Yes [ ]  No [X]
+
+Things to do by hand:
+- B12 Country of birth: the form wants a country, but PLACE_P1 is your place of birth. If the stored value is a town or city, keep only the country part. I haven't assumed it's the Philippines, because your passport being Philippine doesn't tell me where you were born.
+- B14 address: write your Singapore address across the three lines. Then, in the Postal code box, cross out everything except the postal code and remove the postal code from the address lines.
+- B15 postal address: I've used your home address on the assumption that the bank's post should go there. Do the same split as in B14. If you want post sent somewhere else, write that address instead.
+- B19 phone: your phone number needs splitting into boxes. Put its country code (without "+" or "00") in Country Code and the rest in Number. If it's a Singapore number, leave Area Code blank, because Singapore has no area codes. If the number is a landline rather than a mobile, move it to the Home telephone row (B17) instead.
+- B07: your date of birth is written as it appears in your passport. The form doesn't ask for any particular date format, so that should be fine.
+
+Still missing (NEEDS-YOU): the date (B01), the branch (B02) and your email address (B16).
+
+Notes:
+- Your middle name, the passport's date of issue and the issuing authority aren't asked for anywhere on this page, so I didn't use them. If the bank wants your full name as it appears in the passport, you could add MIDDLE_P1 after GIVEN_P1 in B05.
+- You answered No to every US question and gave no US phone number, US address or US email, so the W-8BEN note under section A shouldn't apply to you.
+- Expect the bank to ask for a copy of your passport and proof of your Singapore address. Because you'll be receiving rent from the Durban flat, it may also ask for proof that you own it or a copy of the lease.

@@ -1,0 +1,38 @@
+Select **CURRENT** for the account type. Enter text in capital letters when you transfer it to the form. The address and phone entries below repeat the stored value for each component. Split each value by hand before entering it.
+
+| Field | Entry |
+|---|---|
+| B01 Date | NEEDS-YOU. Enter the date you complete the form, using the form’s eight-box date order. |
+| B02 Branch | NEEDS-YOU. Enter the HBZ branch handling the application. |
+| B03 Type of account | CURRENT |
+| B04 Surname | ESCALANTE |
+| B05 First name | MARICEL |
+| B06 Identity number | N/A for a South African ID. If HBZ requires a foreign national ID here, the entry is NEEDS-YOU. |
+| B07 Date of birth | 09 AUG 1991 |
+| B08 Passport number | P4829173B |
+| B09 Passport issuing country / expiry date | PHILIPPINES / 13 MARCH 2032 |
+| B10 Work, study or residence permit / expiry date | N/A / N/A |
+| B11 Alternative permit / expiry date | N/A / N/A |
+| B12 Nationality / “County of birth” | FILIPINO / CEBU CITY |
+| B13 Additional nationality | NEEDS-YOU. Enter any additional nationality, or NONE if you have none. |
+| B14 Physical residential address, lines 1–3 / postal code | Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 / Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 / Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 / NEEDS-YOU |
+| B15 Postal address, lines 1–2 / postal code | NEEDS-YOU / NEEDS-YOU / NEEDS-YOU. Confirm your mailing address and postal code. |
+| B16 Email address | NEEDS-YOU. Enter your email address. |
+| B17 Home telephone, country code / area code / number | +65 8555 0143 / +65 8555 0143 / +65 8555 0143 — use this row if the stored number is your home phone. |
+| B18 Work telephone, country code / area code / number | NEEDS-YOU / NEEDS-YOU / NEEDS-YOU. Confirm your work number or that you have none. |
+| B19 Cell phone, country code / area code / number | +65 8555 0143 / +65 8555 0143 / +65 8555 0143 — use this row if the stored number is your mobile. |
+| B20 Fax, country code / area code / number | NEEDS-YOU / NEEDS-YOU / NEEDS-YOU. Confirm your fax number or that you have none. |
+| B21 Occupation | STAFF NURSE |
+| B22 Beneficial owner | YES |
+| B23 Beneficial owner details | Leave blank because B22 is YES. |
+| B24 U.S. citizen | NO |
+| B25 U.S. permanent residence or substantial presence, as asked on the form | NO |
+| B26 Born in the United States or a U.S. territory | NEEDS-YOU. Check your birthplace before ticking Yes or No. |
+| B27 U.S. person for any other reason | NO |
+| B28 U.S. transfer instructions or regular directions from a U.S. address | NEEDS-YOU. Confirm whether either applies. |
+| B29 Power of attorney or signing authority granted to someone with a U.S. address | NEEDS-YOU. Confirm whether this applies. |
+| B30 In-care-of or hold-mail address, U.S. P.O. box or U.S. phone number | NEEDS-YOU. Confirm whether any of these will be on file. |
+
+For **B07**, reformat the passport date by hand if the bank specifies a date format. For **B12**, confirm whether “County of birth” means country or county, then enter the corresponding part of your stored birthplace. For **B14**, split your Singapore address across the lines you need and enter the postal code separately. For **B17 or B19**, split the stored number into its country code, area code if applicable, and remaining number. Confirm separately whether you have a number for the other row.
+
+I treated **B10 and B11** as asking about South African permits.

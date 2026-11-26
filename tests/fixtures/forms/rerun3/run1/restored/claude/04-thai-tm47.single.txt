@@ -1,0 +1,28 @@
+Here is your TM.47 (90-day report), blank by blank.
+
+[B01] WRITTEN AT: Chiang Mai Immigration Office
+[B02] DATE: 24  MONTH: November (พฤศจิกายน)  YEAR (B.E.): 2569
+[B03] FULL NAME IN BLOCK LETTERS: MARICEL BUENAFLOR ESCALANTE
+[B04] NATIONALITY: FILIPINO
+[B05] VISA: [ ] TOURIST  [X] NON-IMM
+[B06] ENTERED THAILAND ON: 25  MONTH: August (สิงหาคม)  YEAR (B.E.): 2569
+[B07] BY: AIR
+[B08] PASSPORT NO.: P4829173B
+[B09] ARRIVAL CARD NO.: NEEDS-YOU
+[B10] LANE/ROAD: NEEDS-YOU
+[B11] TAMBOL: NEEDS-YOU
+[B12] AMPHUR: NEEDS-YOU
+[B13] PROVINCE: CHIANG MAI
+[B14] PHONE: +65 8555 0143
+[B15] SIGNATURE: (leave blank and sign by hand)
+
+What you need to do by hand:
+
+1. Full name (B03): the form wants block letters. Your name goes back in exactly as it is stored, so if it isn't stored in capitals, rewrite it in capitals on the paper form. Put it in the order your passport shows (first, middle, family name), and make sure it matches your passport exactly.
+2. Arrival card number (B09): this isn't saved in mdoc. Copy it from your TM.6 arrival card or departure stub, or from the entry stamp or e-arrival record in your passport.
+3. Thai address (B10 to B12): this isn't saved in mdoc either. Fill in your lane or road (with house number and building if you have them), your tambol (sub-district) and your amphur (district) in Chiang Mai. I didn't use Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 because that's your home address, not where you're staying in Thailand. I put Chiang Mai for the province (B13) because you said you live there. Check it matches the address your landlord or hotel reported for you (TM.30).
+4. Years (B02, B06): Thai forms use the Buddhist Era, which is the Western year plus 543, so 2026 becomes 2569. Day and month are filled in already.
+5. Phone (B14): this is your usual number. If it isn't a Thai number and you have one here, the office may prefer the Thai one.
+6. Signature (B15): sign by hand at the office.
+
+Bring your passport (it should show your non-immigrant visa and the 25 August 2026 entry stamp) and your arrival card stub if you still have it. Some offices also ask for a copy of the passport photo page, visa page and entry stamp page, so bring those too.

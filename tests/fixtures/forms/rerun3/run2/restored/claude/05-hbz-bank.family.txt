@@ -1,0 +1,55 @@
+Here is the HBZ Bank individual account opening form filled in for you as the account holder. This form covers only one person, so your wife's and daughter's details are not used. If they need accounts too, each of them fills in a separate form.
+
+The form asks for capital letters. When your values are put back, check that they are in capitals. If any are not, write them in capitals by hand.
+
+HEADER
+[B01] Date: NEEDS-YOU. This is the date you sign the form. Write it in the 8 boxes as DDMMYYYY.
+[B02] Branch: CAPE TOWN. If HBZ has more than one branch in Cape Town, add the branch name.
+[B03] Type of Account: Current [ ]  Saving [X]
+
+A. ACCOUNT HOLDER'S DETAIL
+[B04] Surname: RAGHUNATHAN
+[B05] First name: VIKRAM
+   (The form has no box for a middle name, so ANAND is not used. If the bank wants your full name as it appears in your passport, ask them where to put it.)
+[B06] Identity number: N/A. You have no South African ID number. Do not put your passport number here, because it has its own box.
+[B07] Date of Birth: 22/11/1983
+[B08] Passport number: Z4827163
+[B09] Passport issuing country: INDIA   Expiry date: 04 JUNE 2029
+[B10] Work / study / residence permit: SOUTH AFRICAN WORK PERMIT   Expiry date: 31 DECEMBER 2027
+   (If the bank also wants the permit number, copy it by hand from your permit. I don't have it.)
+[B11] Alternative type of permit (specify): leave blank   Expiry date: leave blank
+[B12] Nationality: INDIAN   Country of birth: PUNE, MAHARASHTRA
+   (This box asks for a country, but PUNE, MAHARASHTRA is your place of birth. If that value is a town or city, cross it out and write only the country.)
+[B13] Additional nationality: leave blank (you have only Indian nationality)
+[B14] Physical residential address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom / ... / ...   Postal code: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+   (Your UK home address is stored as one value. Write it across the three parts of the line, then move the UK postcode into the Postal code box and cross it out of the address lines.)
+[B15] Postal address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom / ...   Postal code: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+   (Same address, so do the same as for B14: spread it over the two parts and put the postcode in its own box.)
+[B16] Email address: NEEDS-YOU. I don't have your email address.
+[B17] Home telephone no: leave blank, unless you have a home landline
+[B18] Work telephone no: leave blank for now. Optional; add your Cape Town work number once you have one.
+[B19] Cell. no: Country Code +44 7700 900123  Area Code +44 7700 900123  Number +44 7700 900123
+   (Your phone number is stored as one value. Split it by hand: the country code (without "+" or "00") goes in the first box, the area or network code in the second, and the rest in Number. Cross out what doesn't belong in each box. If this number is a landline and not a mobile, put it under B17 instead.)
+[B20] Fax no: leave blank
+[B21] Nature of profession / occupation: SOFTWARE ENGINEER
+
+The US note under A does not apply: you have no US phone number, address or email, so you don't need a W-8BEN form.
+
+B. BENEFICIAL OWNERSHIP
+[B22] Are you the beneficial owner of the funds? Yes [X]  No [ ]
+[B23] Beneficial owner details: leave blank, because you answered Yes
+
+C. FATCA
+[B24] U.S. citizen? Yes [ ]  No [X]
+[B25] Lawful permanent resident (green card / substantial presence)? Yes [ ]  No [X]
+[B26] Born in the United States or a U.S. territory? Yes [ ]  No [X]
+[B27] US Person for any other reason? Yes [ ]  No [X]   (leave "please specify" blank)
+[B28] Instructions to transfer funds to U.S. accounts / directions from a U.S. address? Yes [ ]  No [X]
+[B29] Power of Attorney / signing authority to a person with a U.S. address? Yes [ ]  No [X]
+[B30] "In care of" / "hold mail" / U.S. P.O. Box / U.S. telephone number on file? Yes [ ]  No [X]
+
+Things to check before you go:
+1. Email (B16) and the date (B01) still need filling in.
+2. As you asked, I used your UK home address. South African banks usually ask for proof of address, and some branches want a local one. Ask HBZ whether a UK address is fine for now. Once you have a Cape Town address, update it with the bank.
+3. Your work permit runs to 31 December 2027, so it covers your one-year assignment. Bring the permit and your passport, which is valid until 4 June 2029, when you open the account.
+4. The text you sent doesn't include the form's declaration or signature pages. Sign and date wherever the full form asks you to.

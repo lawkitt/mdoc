@@ -1,0 +1,77 @@
+```text
+B01
+SURNAME_P1
+
+B02
+GIVEN_P1
+MIDDLE_P1
+
+B03  NEEDS-YOU
+B04  Female [√]
+B05
+DATE_P1
+
+B06  FILIPINO
+B07
+PLACE_P1
+
+B08  NEEDS-YOU
+B09  NEEDS-YOU
+B10  NEEDS-YOU
+B11  NEEDS-YOU
+B12
+ID_P1
+
+B13  PHILIPPINES
+B14  NEEDS-YOU
+B15
+ISSUED_P1
+
+B16  2032/03/13
+B17  NEEDS-YOU
+B18
+ADDRESS_P1
+
+B19  NEEDS-YOU
+B20
+PHONE_P1
+
+B21  NEEDS-YOU
+B22  NEEDS-YOU
+B23  NEEDS-YOU
+B24  PHILIPPINES
+B25  NEEDS-YOU
+B26  MOTHER
+B27  Single [√]
+B28  Leave blank
+B29  Leave blank
+B30  Leave blank
+B31  Leave blank
+B32  Leave blank
+B33  Leave blank
+B34  No [√], 0 children
+B35  Bachelor's Degree [√]
+B36  NEEDS-YOU
+B37  NEEDS-YOU
+B38  NEEDS-YOU
+B39  NEEDS-YOU
+B40  NEEDS-YOU
+B41  NEEDS-YOU
+B42  NEEDS-YOU
+```
+
+**After mdoc restores the values**
+
+- **B02** Put both names in the same Given Names box, in the order and spelling shown in your passport.
+- **B05 and B15** Format the restored dates as `yyyy/mm/dd`.
+- **B07** Enter only the country of birth. If the restored birthplace is a city or region, confirm the country before entering it.
+- **B18 and B19** Use the restored address in B18 if it is your home-country address in the Philippines. If it is your current Singapore address, move it to B19 and fill in B18 separately. B19 asks for your full current address if it differs from B18.
+- **B20 and B21** Use the restored number in B20 if it is your mobile number. If it is your landline, move it to B21. Supply the other number if you have one.
+
+**Details to complete on the form**
+
+- **B03, B08–B11** Supply your Chinese-character name and national identity number if applicable. Confirm whether you used another name to enter or leave Korea and whether you hold another citizenship. Add details for each Yes answer. Check your passport to confirm its type and provide details if you select Other.
+- **B14 and B17** Check your passport for its place of issue. Confirm whether you hold another valid passport and, if Yes, fill in its type, number, issuing country, and expiry date.
+- **B22, B23, B25** Add your email address and your mother’s full name in English and telephone number.
+- **B36 and B37** Add the name and location of the school where you earned your nursing degree.
+- **B38–B42** Select your current circumstances. The Seoul job offer leaves your current status open. Where applicable, add the current company, institution, or school, your position or course, and its address and telephone number.

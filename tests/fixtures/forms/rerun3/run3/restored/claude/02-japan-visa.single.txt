@@ -1,0 +1,75 @@
+Here is your Japan visa application form filled in for a 10-day holiday. NEEDS-YOU marks a blank I can't fill from what you gave me. The list after the form says what each one needs and which aliases you need to reformat by hand.
+
+VISA APPLICATION FORM TO ENTER JAPAN
+
+[B01] Surname (as shown in passport): ESCALANTE
+[B02] Given and middle names (as shown in passport): MARICEL BUENAFLOR
+[B03] Other names: None
+[B04] Date of birth: 09 AUG 1991 (Day)/(Month)/(Year)
+[B05] Place of birth: CEBU CITY
+[B06] Sex: Male [ ]  Female [X]
+[B07] Marital status: Single [X]  Married [ ]  Widowed [ ]  Divorced [ ]
+[B08] Nationality or citizenship: Filipino
+[B09] Former and/or other nationalities or citizenships: NEEDS-YOU
+[B10] ID No. issued to you by your government: NEEDS-YOU
+[B11] Passport type: Diplomatic [ ]  Official [ ]  Ordinary [X]  Other [ ]
+[B12] Passport No.: P4829173B
+[B13] Place of issue: NEEDS-YOU
+[B14] Date of issue: 14 MAR 2022 (Day)/(Month)/(Year)
+[B15] Issuing authority: DFA MANILA
+[B16] Date of expiry: 13/03/2032
+[B17] Certificate of Eligibility No.: N/A
+[B18] Purpose of visit to Japan/Status of residence: Tourism (sightseeing) / Temporary Visitor
+[B19] Intended length of stay in Japan: 10 days
+[B20] Date of arrival in Japan: 02/04/2027
+[B21] Port of entry into Japan: Narita International Airport
+[B22] Name of ship or airline: NEEDS-YOU
+Names and addresses of hotels or persons with whom applicant intends to stay
+[B23] Name: NEEDS-YOU   Tel.: NEEDS-YOU
+[B24] Address: NEEDS-YOU
+[B25] Dates and duration of previous stays in Japan: None
+Your current residential address
+[B26] Address: Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+[B27] Tel.: +65 8555 0143   Mobile No.: +65 8555 0143
+[B28] E-Mail: NEEDS-YOU
+[B29] Current profession or occupation and position: Staff Nurse
+Name and address of employer
+[B30] Name: NEEDS-YOU   Tel.: NEEDS-YOU
+[B31] Address: NEEDS-YOU
+[B32] Partner's profession/occupation: N/A
+Guarantor or reference in Japan
+[B33] Name: None  Tel.: None  Address: None  Date of birth: None  Sex: Male [ ] Female [ ]  Relationship to applicant: None  Profession or occupation and position: None  Nationality and immigration status: None
+Inviter in Japan
+[B34] Name: None  Tel.: None  Address: None  Date of birth: None  Sex: Male [ ] Female [ ]  Relationship to applicant: None  Profession or occupation and position: None  Nationality and immigration status: None
+[B35] Remarks/Special circumstances, if any: (leave blank)
+Have you ever:
+[B36] Yes [ ] No [ ]  NEEDS-YOU
+[B37] Yes [ ] No [ ]  NEEDS-YOU
+[B38] Yes [ ] No [ ]  NEEDS-YOU
+[B39] Yes [ ] No [ ]  NEEDS-YOU
+[B40] Yes [ ] No [ ]  NEEDS-YOU
+[B41] Yes [ ] No [ ]  NEEDS-YOU
+[B42] Details if any answer is "Yes": (leave blank if all are "No")
+[B43] Date of application: NEEDS-YOU (Day)/(Month)/(Year)
+[B44] Signature of applicant: NEEDS-YOU
+
+Things to fix by hand after the aliases are filled in:
+- B04 and B14: these dates go in exactly as your passport prints them. The form wants Day/Month/Year, so if your passport uses another layout, such as "15 JAN 1990", rewrite it as DD/MM/YYYY.
+- B05: the form asks for City, State or Province, and Country. If your stored place of birth is only a city, add the province and "Philippines". The form must still match your passport.
+- B27: your number goes in both boxes. If it's a landline, replace the Mobile No. with your mobile number. If you don't have a separate landline, you can also leave Tel. as it is.
+
+What I need from you (NEEDS-YOU):
+- B03 and B09: I put "None" for other names. If you've used another name, such as a maiden name or alias, write it there. For B09, write any former or other nationality, or "None".
+- B10: a government-issued ID number other than your passport, if you have one, such as a PhilSys national ID number. Write it in yourself, not here. If you don't have one, write "None".
+- B11: I ticked Ordinary because that's the usual passport for a holiday. If yours is diplomatic or official, change it.
+- B13: your passport's place of issue, as printed in the passport. Fill this in yourself.
+- B22: your airline, and the flight number if you have it. If you haven't booked a flight yet, the embassy or agency usually wants a flight reservation with the application.
+- B23 and B24: name, phone and address of at least your first hotel. Your hotels in Tokyo and Kyoto aren't booked yet, so you'll need reservations, or at least a planned itinerary with hotel names. You can list both hotels.
+- B28: your email address.
+- B30 and B31: your employer's name, phone and address, such as your hospital or clinic.
+- B33 and B34: I wrote "None" because you're paying for your own holiday and not visiting anyone. If someone in Japan is guaranteeing or inviting you, give their details instead.
+- B36 to B41: only you can answer these. Tick Yes or No for each. If any answer is Yes, explain in B42.
+- B43: the date you submit the application, as DD/MM/YYYY.
+- B44: sign by hand. It should match the signature in your passport.
+
+Also: B17 is N/A because a Certificate of Eligibility is only for long-term residence, not tourist visas. B32 is N/A because you're single and an adult.

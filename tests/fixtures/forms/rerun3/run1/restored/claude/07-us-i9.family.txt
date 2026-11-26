@@ -1,0 +1,41 @@
+Here is Section 1 of your Form I-9. It is only about you, the employee. Your wife's and daughter's details are not used anywhere on this form.
+
+Section 1. Employee Information and Attestation
+
+[B01] Last Name (Family Name): RAGHUNATHAN
+[B02] First Name (Given Name): VIKRAM
+[B03] Middle Initial (if any): ANAND
+      By hand: the form wants the initial only. Keep the first letter of your middle name and delete the rest.
+[B04] Other Last Names Used (if any): N/A
+[B05] Address (Street Number and Name): NEEDS-YOU
+[B06] Apt. Number (if any): NEEDS-YOU
+[B07] City or Town: NEEDS-YOU (presumably Seattle, but enter what your address actually says)
+[B08] State: NEEDS-YOU (WA if the address is in Washington)
+[B09] ZIP Code: NEEDS-YOU
+      Your new US address is not saved in mdoc, so fill B05 to B09 yourself. Don't use your saved home address (14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom): the I-9 asks for where you live now in the US.
+[B10] Date of Birth (mm/dd/yyyy): 22/11/1983
+      By hand: this is your date of birth as printed in your passport. Rewrite it in US order, month/day/year with four digits for the year (for example, the 3rd of May becomes 05/03/...). Don't leave it in the day-first order passports usually use.
+[B11] U.S. Social Security Number: leave blank
+      You don't have an SSN yet. That's fine, because the SSN is optional on the I-9 unless your employer uses E-Verify. If they do, tell HR you've applied for (or will apply for) a number. They will add it once you get it. Don't make one up or write something like "applied" in the boxes.
+[B12] Employee's Email Address: optional. NEEDS-YOU if you want to give one. No email address is saved in mdoc.
+[B13] Employee's Telephone Number: +44 7700 900123
+      This field is optional. If your saved number isn't the one you'll use in the US, put your US number here yourself or leave it blank.
+
+Citizenship or immigration status:
+[B14] [X] 4. An alien authorized to work until (exp. date, if any): 01/15/2029
+      Leave boxes 1, 2 and 3 empty.
+
+[B15] Enter ONE of these (you only need one):
+      Foreign Passport Number and Country of Issuance: Z4827163, India
+      Leave USCIS A-Number and Form I-94 Admission Number empty.
+      Note: L-1 holders usually don't have an A-Number. If you'd rather give your I-94 Admission Number, that is equally fine, but it isn't saved in mdoc (NEEDS-YOU). In that case, leave the passport line empty.
+
+[B16] Signature of Employee: sign by hand (or with the employer's e-signature system)
+[B17] Today's Date (mm/dd/yyyy): the date you sign, written by hand
+      Sign no later than your first day of work, but not before you accepted the job offer.
+
+Preparer and/or Translator Certification: leave it blank if you fill in and sign Section 1 yourself.
+
+Before you submit, check these:
+- The expiry date in B14 (01/15/2029) should match the "Admit Until Date" on your I-94 record. If they differ, use the I-94 date.
+- On or before your third day of work, your employer will need to see your documents for Section 2. For an L-1 that is usually your Indian passport plus your I-94 showing L-1 status (a List A document). Your passport is valid until 4 June 2029, so it is unexpired.

@@ -1,0 +1,33 @@
+Here is your TM.47 (90-day report), filled in for today at the Chiang Mai immigration office.
+
+[B01] WRITTEN AT: Chiang Mai Immigration Office
+[B02] DATE: 24  MONTH: November  YEAR: 2569
+[B03] FULL NAME: Ms GIVEN_P1 MIDDLE_P1 SURNAME_P1
+[B04] NATIONALITY: Filipino
+[B05] VISA: [ ] TOURIST  [X] NON-IMM
+[B06] ENTERED THAILAND ON: 25  MONTH: August  YEAR: 2569
+[B07] BY: Air
+[B08] PASSPORT NO.: ID_P1
+[B09] ARRIVAL CARD NO.: NEEDS-YOU
+[B10] LANE/ROAD: NEEDS-YOU
+[B11] TAMBOL: NEEDS-YOU
+[B12] AMPHUR: NEEDS-YOU
+[B13] PROVINCE: Chiang Mai
+[B14] PHONE: PHONE_P1
+[B15] SIGNATURE: (leave blank and sign by hand)
+
+Things to do by hand:
+
+1. Years: the form uses the Thai Buddhist calendar (พ.ศ.), which is 543 years ahead of the Western one. That makes 2026 the year 2569, in both B02 and B06.
+
+2. Name (B03): the form asks for block letters. Once your name is filled in, write it out again in capital letters, given name, middle name and family name in that order, exactly as they appear in your passport.
+
+3. Arrival card number (B09): it isn't saved in mdoc. Take it from your arrival card. If you came in through the digital arrival card (TDAC), the number is on your TDAC confirmation. The departure part of a paper TM.6 card stapled in your passport may also show it.
+
+4. Thai address (B10 to B12): it isn't saved in mdoc. Write your Chiang Mai address there: soi or road (with house number), tambol (sub-district) and amphur (district). I've put Chiang Mai as the province because you said you live there. I haven't used ADDRESS_P1, because that's your home address, not where you're staying in Thailand.
+
+5. Travel (B07): I wrote "Air". Some offices also want the flight number. If you have it from your ticket or boarding pass, you can add it next to "Air".
+
+6. Signature (B15): sign by hand at the office.
+
+Also bring your passport (with the entry stamp and visa page) and your arrival card or TDAC. Some offices also ask for a copy of your passport's photo page and the TM.30 receipt your landlord or hotel got when they reported your stay.

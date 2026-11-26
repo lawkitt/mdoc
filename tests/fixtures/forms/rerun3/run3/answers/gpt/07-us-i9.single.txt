@@ -1,0 +1,22 @@
+| Field | Entry | What to do by hand |
+|---|---|---|
+| B01 Last name | SURNAME_P1 | |
+| B02 First name | GIVEN_P1 | |
+| B03 Middle initial | MIDDLE_P1 | After the alias is restored, keep only the first letter. |
+| B04 Other last names used | N/A | You’ve never used another last name. |
+| B05 Street number and name | NEEDS-YOU | Enter the street number and name for your new U.S. home address. |
+| B06 Apartment number | NEEDS-YOU | Enter your apartment number if you have one. |
+| B07 City or town | NEEDS-YOU | Enter the city or town where you live. |
+| B08 State | NEEDS-YOU | Enter the state where you live. |
+| B09 ZIP code | NEEDS-YOU | Enter the ZIP code for your home address. |
+| B10 Date of birth | DATE_P1 | After the alias is restored, rewrite the date in `mm/dd/yyyy` format. |
+| B11 U.S. Social Security number | NEEDS-YOU | You don’t have an SSN yet. Check the form instructions or ask your employer how to handle this field while you wait. |
+| B12 Email address | NEEDS-YOU | Enter your email address directly on the form. |
+| B13 Telephone number | PHONE_P1 | |
+| B14 Citizenship or immigration status | Box 4, authorized to work until **09/30/2029** | Check box 4 and enter the work authorization expiration date shown here. |
+| B15 Foreign passport number | ID_P1 | Use the foreign passport option. |
+| B15 Country of issuance | Philippines | |
+| B16 Employee signature | NEEDS-YOU | Sign after accepting the job offer and no later than your first day of employment. |
+| B17 Today’s date | NEEDS-YOU | Enter the date you sign, in `mm/dd/yyyy` format. |
+
+Use only the foreign passport option in B15. If a preparer or translator assisted you, the form says that person must complete the certification on page 3.

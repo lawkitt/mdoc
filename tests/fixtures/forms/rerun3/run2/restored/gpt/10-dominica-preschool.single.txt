@@ -1,0 +1,76 @@
+### For official use only
+
+Leave B01–B07 for preschool staff.
+
+- **B01 Child’s name** — NEEDS-YOU
+- **B02 Child’s date of birth** — NEEDS-YOU
+- **B03 Child’s sex** — Male NEEDS-YOU / Female NEEDS-YOU
+- **B04 Child’s religion** — NEEDS-YOU
+- **B05 Child’s home address** — NEEDS-YOU
+- **B06 Date of full immunization** — NEEDS-YOU
+- **B07 Date of admission** — NEEDS-YOU
+
+### Application and contact information
+
+- **Preschool/daycare name in the title** — NEEDS-YOU
+- **B08** I hereby make application for admission of NEEDS-YOU to the NEEDS-YOU Preschool/Daycare. Your sister can enter her son’s name and the preschool/daycare name.
+
+**B09 Name of applicant**
+
+```text
+MARICEL
+BUENAFLOR
+ESCALANTE
+```
+
+**B10 Applicant’s telephone**
+
+```text
++65 8555 0143
+```
+
+Place the restored number in the applicable slot by hand: C for cell, W for work, or H for home. Any additional number needed for the other slots is NEEDS-YOU.
+
+- **B11 Applicant’s email** — NEEDS-YOU
+- **B12 Relationship to child** — Aunt
+
+### Child and family information
+
+Your sister can complete these fields.
+
+- **B13 Child’s name** — NEEDS-YOU
+- **B14 Person the child lives with** — NEEDS-YOU
+- **B15 Address** — NEEDS-YOU
+- **B16 Number of children in the family** — Male NEEDS-YOU / Female NEEDS-YOU
+- **B17 Child’s place in the family** — NEEDS-YOU
+- **B18 Mother’s name** — NEEDS-YOU
+- **B19 Mother’s address** — NEEDS-YOU
+- **B20 Mother’s telephone** — C NEEDS-YOU / W NEEDS-YOU / H NEEDS-YOU
+- **B21 Mother’s email** — NEEDS-YOU
+- **B22 Mother’s occupation** — NEEDS-YOU
+- **B23 Father’s name** — NEEDS-YOU
+- **B24 Father’s address** — NEEDS-YOU
+- **B25 Father’s telephone** — C NEEDS-YOU / W NEEDS-YOU / H NEEDS-YOU
+- **B26 Father’s email** — NEEDS-YOU
+- **B27 Father’s occupation** — NEEDS-YOU
+- **B28 People authorized to collect the child** — NEEDS-YOU
+
+### Emergency contacts
+
+- **B29 First contact, for your sister to complete** — Name NEEDS-YOU / C NEEDS-YOU / W NEEDS-YOU / H NEEDS-YOU
+
+**B30 Second contact’s name**
+
+```text
+MARICEL
+BUENAFLOR
+ESCALANTE
+```
+
+**B30 Second contact’s telephone**
+
+```text
++65 8555 0143
+```
+
+Use the same telephone slot as in B10. Any additional number needed for the other slots is NEEDS-YOU.

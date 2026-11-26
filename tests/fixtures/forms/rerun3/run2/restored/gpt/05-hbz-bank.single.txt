@@ -1,0 +1,47 @@
+Use capital letters on the form and place a cross in each selected box. After mdoc restores the values, make the formatting changes by hand.
+
+| Blank | Field | Entry | What to do by hand |
+|---|---|---|---|
+| B01 | Date | NEEDS-YOU | Enter the date you complete the form in the bank’s eight-box format. |
+| B02 | Branch | NEEDS-YOU | Enter the branch handling your application. |
+| B03 | Type of account | CURRENT | Cross Current. |
+| B04 | Surname | ESCALANTE | |
+| B05 | First name | MARICEL | |
+| B06 | Identity number | N/A | You have no South African identity number. |
+| B07 | Date of birth | 09 AUG 1991 | If the form requires a different date format, rewrite the restored date in that format. |
+| B08 | Passport number | P4829173B | |
+| B09 | Passport issuing country | PHILIPPINES | |
+| B09 | Passport expiry date | 13 MARCH 2032 | |
+| B10 | Work, study or residence permit | N/A | |
+| B10 | Permit expiry date | N/A | |
+| B11 | Alternative permit type | N/A | |
+| B11 | Alternative permit expiry date | N/A | |
+| B12 | Nationality | FILIPINO | |
+| B12 | County of birth | CEBU CITY | Confirm whether the bank means country or county, then enter the corresponding part of your birthplace. |
+| B13 | Additional nationality | NEEDS-YOU | Enter any additional nationality you hold, or N/A if you have none. |
+| B14 | Physical residential address, line 1 | Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 | Split the restored Singapore home address across the available lines as needed. |
+| B14 | Physical residential address, line 2 | Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 | Use this line as needed when splitting the address. |
+| B14 | Physical residential address, line 3 | Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418 | Use this line as needed when splitting the address. |
+| B14 | Residential postal code | NEEDS-YOU | Copy the postal code from the restored address if it is included. Otherwise, add it by hand. |
+| B15 | Postal address, lines 1 and 2 | NEEDS-YOU | Enter your mailing address. If you receive mail at home, use the restored residential address. |
+| B15 | Postal code | NEEDS-YOU | Enter the postal code for your mailing address. |
+| B16 | Email address | NEEDS-YOU | Enter your email address. |
+| B20 | Fax, all three parts | NEEDS-YOU | Enter your fax details if you have them, or N/A if you have no fax. |
+| B21 | Occupation | STAFF NURSE | |
+| B22 | Beneficial owner | YES | Cross Yes. |
+| B23 | Other beneficial owner’s details | Leave blank | The form requires this section only when B22 is No. |
+| B24 | U.S. citizen | NO | Cross No. |
+| B25 | U.S. permanent residence or substantial presence | NO | Cross No. |
+| B26 | Born in the U.S. or a U.S. territory | NEEDS-YOU | Check your restored birthplace and cross the applicable box. |
+| B27 | U.S. person for another reason | NO | Cross No and leave the explanation blank. |
+| B28 | Transfers to U.S. accounts or regular directions from a U.S. address | NEEDS-YOU | Cross Yes if either applies, otherwise cross No. |
+| B29 | Power of attorney or signing authority for someone with a U.S. address | NEEDS-YOU | Cross Yes if this applies, otherwise cross No. |
+| B30 | In-care-of or hold-mail address, U.S. P.O. box, or U.S. phone number | NEEDS-YOU | Cross Yes if any listed item will be on file, otherwise cross No. |
+
+For B17–B19, use the restored number in the row or rows that describe it. Extract the country code and any applicable area code, then put the remaining digits in the Number box. Supply a missing code by hand if the form requires it. For any other row, enter the corresponding number if you have one, or N/A if you do not.
+
+| Blank | Use this row if the stored number is your… | Country Code | Area Code | Number |
+|---|---|---|---|---|
+| B17 | Home telephone | +65 8555 0143 | +65 8555 0143 | +65 8555 0143 |
+| B18 | Work telephone | +65 8555 0143 | +65 8555 0143 | +65 8555 0143 |
+| B19 | Cell phone | +65 8555 0143 | +65 8555 0143 | +65 8555 0143 |

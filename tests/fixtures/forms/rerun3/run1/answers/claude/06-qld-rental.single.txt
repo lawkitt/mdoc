@@ -1,0 +1,74 @@
+Here is Form 22 filled in from what you told me. Items 1, 2, 3, 7, 8, 9 and the first pet question (B25) are for the property manager or owner. I've left those for them, except where you'll know the answer from the listing.
+
+1 Property manager/owner details
+[B01] Full name: NEEDS-YOU  Phone: NEEDS-YOU  Email: NEEDS-YOU  Agency details (if applicable): NEEDS-YOU
+(Take these from the listing for the flat or from the agent. The property manager may fill them in themselves.)
+
+2 Address of the premises
+[B02] NEEDS-YOU  Postcode: NEEDS-YOU
+(The address of the one-bedroom flat in Brisbane you're applying for, from the listing.)
+
+3 Ways to submit your application
+[B03] Leave blank. The property manager fills this in.
+
+4 Number of occupants
+[B04] Total number of occupants: 1
+[B05] Number of occupants under 18 years of age: 0
+
+5 Applicant details
+[B06] Full name: GIVEN_P1 MIDDLE_P1 SURNAME_P1
+[B07] Date of birth: DATE_P1
+[B08] Current address: ADDRESS_P1  Postcode: ADDRESS_P1
+[B09] Phone: PHONE_P1
+[B10] Email: NEEDS-YOU (your email address isn't in the list)
+
+Things to fix by hand in item 5:
+- Date of birth: your passport may print the date in a style like "12 JAN 1990". That's fine in words, but if the form wants numbers, write it day/month/year, the usual order in Australia.
+- Postcode: ADDRESS_P1 is your whole Singapore address. In the Postcode box keep only the 6-digit postal code and delete the rest. Also make sure "Singapore" appears at the end of the address line.
+- Phone: make sure the number starts with the Singapore country code (+65) so an Australian agent can call it.
+
+6 Employment details
+[B11] Current employer: NEEDS-YOU
+[B12] Job title: NEEDS-YOU
+[B13] Length of employment: NEEDS-YOU   Gross weekly income: NEEDS-YOU
+[B14] Employer name: NEEDS-YOU  Employer phone: NEEDS-YOU  Employer email: NEEDS-YOU
+
+You didn't say who you work for now or what you earn. There are two ways to fill this in:
+- Current job: give your current employer in Singapore, your job title, how long you've worked there, your gross weekly income (convert to AUD if the agent asks), and a contact there.
+- New job: you could also, or instead, describe the Brisbane nursing job. Give the employer's name, your job title (e.g. the exact title in your offer, such as Registered Nurse), the start date of 1 February 2027, your expected gross weekly pay and a contact at the employer. Attach your offer letter or employment contract. It's the strongest evidence that you can pay the rent in Brisbane.
+
+7 Financial information
+[B15] Leave blank. The property manager lists the documents they want. Under "Other" it may help to offer your signed job offer for the Brisbane nursing role. Recent payslips or bank statements (without transaction details) are also useful.
+
+8 Verification of identity
+[B16] Leave blank. The property manager lists the documents. Your Philippine passport (valid until 13 March 2032) is the obvious one to offer. Show or send a copy only through the agent's own channel, not by email to an address you haven't checked.
+
+9 Applicant suitability
+[B17] Leave blank. The property manager lists the documents.
+
+10 Rental history
+Property 1
+[B18] Current/previous address: ADDRESS_P1  Postcode: ADDRESS_P1
+[B19] Rental period (Start – End): June 2021 – present
+[B20] Property manager/owner name: NEEDS-YOU  Property manager/owner email: NEEDS-YOU  Property manager/owner phone: NEEDS-YOU
+(Your Singapore landlord or agent's details. As in item 5, keep only the 6-digit postal code in the Postcode box. If you know your move-out date, you can write "June 2021 – January 2027" instead of "present".)
+
+Property 2
+[B21] Previous address: NEEDS-YOU  Postcode: NEEDS-YOU  Rental period (Start – End): NEEDS-YOU  Property manager/owner name: NEEDS-YOU  Property manager/owner email: NEEDS-YOU  Property manager/owner phone: NEEDS-YOU
+(Where you lived before June 2021, if you rented it. If you didn't rent before then, leave Property 2 blank.)
+
+[B22] Leave blank. You have a rental history. If you leave Property 2 blank, you could optionally describe where you lived before June 2021 here (for example, living with family).
+
+11 References
+[B23] Name: NEEDS-YOU  Phone: NEEDS-YOU  Email: NEEDS-YOU  Referee's connection to applicant: NEEDS-YOU
+[B24] Name: NEEDS-YOU  Phone: NEEDS-YOU  Email: NEEDS-YOU  Referee's connection to applicant: NEEDS-YOU
+(You need two referees who can say you look after a home well, for example your current landlord or agent and a manager or colleague. Ask them first.)
+
+12 Pet details
+[B25] Leave blank. The property manager answers this.
+[B26] Do you intend to keep pets at the premises? [x] No
+[B27] Leave blank (no pets).
+
+Before you submit:
+- This page doesn't show the form's later items, including item 15 on tenancy databases. Read and fill any remaining parts, then sign and date the declaration if there is one.
+- This form doesn't need your place of birth or passport details (number, issue date, issuing authority), so I haven't used them.

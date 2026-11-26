@@ -1,0 +1,29 @@
+Here is your TM.47 (90-day report), filled for you only. Your wife and daughter each need their own form.
+
+[B01] WRITTEN AT: Bangkok Immigration Office
+[B02] DATE: 24  MONTH: November (พฤศจิกายน)  YEAR: 2569
+[B03] FULL NAME IN BLOCK LETTERS: VIKRAM ANAND RAGHUNATHAN
+[B04] NATIONALITY: Indian
+[B05] VISA: [ ] TOURIST  [X] NON-IMM
+[B06] ENTERED THAILAND ON: 26  MONTH: August (สิงหาคม)  YEAR: 2569
+[B07] BY: Air (Suvarnabhumi Airport)
+[B08] PASSPORT NO.: Z4827163
+[B09] ARRIVAL CARD NO.: NEEDS-YOU
+[B10] LANE/ROAD: NEEDS-YOU
+[B11] TAMBOL: NEEDS-YOU
+[B12] AMPHUR: NEEDS-YOU
+[B13] PROVINCE: Bangkok
+[B14] PHONE: +44 7700 900123
+[B15] SIGNATURE: (leave blank and sign by hand)
+
+What to do by hand:
+
+- B02 and B06: the form asks for the Thai Buddhist year (พ.ศ.). 2026 is 2569, which I've already put in.
+- B03: the form wants block letters. Write your name in capitals, in the same order as your passport: first name, then middle name, then family name.
+- B09: your arrival card number isn't saved in mdoc. It's on the TM.6 card or the entry record stapled in or stamped into your passport from 26 August 2026. If you never got a paper card, ask the officer what to write.
+- B10 to B12: your Thai address isn't saved in mdoc. 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom is your home address, so I didn't use it here. Write the soi or road (with the house or building number) of the place you're staying in Bangkok. In Bangkok, "Tambol" is your khwaeng (sub-district) and "Amphur" is your khet (district).
+- B13: I put Bangkok because you said you're working from Bangkok. Change it if you're actually staying in another province.
+- B14: the office will use this number to reach you. If +44 7700 900123 isn't a number that works in Thailand, write your Thai number instead.
+- B15: sign it by hand at the office.
+
+Something to check for your daughter: her passport expires on 1 January 2027, so plan to renew it soon. Her next 90-day report and any visa extension will need a valid passport.

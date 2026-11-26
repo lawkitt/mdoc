@@ -1,0 +1,28 @@
+GMS1 patient details for your daughter. After the aliases are restored, write the entries on the form in block capitals. Complete any applicable `NEEDS-YOU` fields by hand.
+
+| Field | Entry | What to do on the form |
+|---|---|---|
+| B01 Title | NEEDS-YOU | Tick her title. |
+| B02 Surname | RAGHUNATHAN | |
+| B03 Date of birth | 17/09/2019 | If the form needs a different date format, rewrite the restored date by hand. |
+| B04 First names | ANIKA | Add any other given names from her passport by hand, if she has them. |
+| B05 NHS number | NEEDS-YOU | Enter her NHS number if she has one and you know it. |
+| B06 Previous surnames | NEEDS-YOU | Enter any previous surnames. Leave blank if she has had none. |
+| B07 Sex | Tick Female | |
+| B08 Town and country of birth | MANCHESTER, U.K. | Check that the restored entry includes both the town and country. Add either by hand if missing. |
+| B09 Home address | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom | |
+| B10 Postcode | NEEDS-YOU | Copy just the postcode from the restored home address if it includes one. Otherwise enter it by hand. |
+| B11 Telephone number | +44 7700 900123 | Use your number as her parent contact. |
+| B12 Previous UK address | NEEDS-YOU | Enter her previous UK address if she had one. |
+| B13 Previous doctor’s name | Leave blank | She has never been registered with a GP. |
+| B14 Previous doctor’s address | Leave blank | |
+| B15 First UK address where registered with a GP | 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom | Use this if the “from abroad” section applies to her. This is her address for her first GP registration. Otherwise leave blank. |
+| B16 Date of leaving the UK | NEEDS-YOU | If the “from abroad” section applies and she previously lived in the UK and then left, enter the date she left. |
+| B17 Date first came to live in the UK | NEEDS-YOU | If the “from abroad” section applies, enter the date she first came to live in the UK. |
+| B18 Address before enlisting | NEEDS-YOU | Complete only if she is returning from the Armed Forces. |
+| B19 Service or personnel number | NEEDS-YOU | Complete only if she is returning from the Armed Forces. |
+| B20 Enlistment date | NEEDS-YOU | Complete only if she is returning from the Armed Forces. |
+| B21 Child Health Surveillance | NEEDS-YOU | Tick only if she is under five and you want her registered for Child Health Surveillance. |
+| B22 Dispensing medicines and appliances | NEEDS-YOU | If she needs the GP to dispense, tick whichever statement applies. |
+| B23 Signature | Tick Signature on behalf of patient | Sign by hand. |
+| B24 Date | NEEDS-YOU | Enter the date you sign. |

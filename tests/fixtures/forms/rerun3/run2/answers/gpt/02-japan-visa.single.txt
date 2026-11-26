@@ -1,0 +1,118 @@
+## Personal and passport details
+
+**[B01] Surname**
+
+SURNAME_P1
+
+**[B02] Given and middle names**
+
+GIVEN_P1
+
+MIDDLE_P1
+
+After the values are restored, enter both names in the same blank in the order shown in your passport.
+
+**[B03] Other names** — NEEDS-YOU. Confirm whether you have ever used any other names.
+
+**[B04] Date of birth**
+
+DATE_P1
+
+After the value is restored, enter it in day/month/year order.
+
+**[B05] Place of birth**
+
+PLACE_P1
+
+After the value is restored, put the city, state or province, and country in the corresponding parts of the field. Supply any missing component by hand.
+
+**[B06] Sex** — Tick Female.  
+**[B07] Marital status** — Tick Single.  
+**[B08] Nationality or citizenship** — Filipino  
+**[B09] Former or other nationalities or citizenships** — NEEDS-YOU. Confirm whether you have any to report.  
+**[B10] Government-issued ID number** — NEEDS-YOU. Enter the applicable government-issued ID number directly on the form.  
+**[B11] Passport type** — NEEDS-YOU. Check the passport and tick its category.
+
+**[B12] Passport number**
+
+ID_P1
+
+**[B13] Place of issue** — NEEDS-YOU. Check the passport for the place of issue. The information supplied gives the issuing country.
+
+**[B14] Date of issue**
+
+ISSUED_P1
+
+After the value is restored, enter it in day/month/year order.
+
+**[B15] Issuing authority**
+
+AUTHORITY_P1
+
+**[B16] Date of expiry** — 13/03/2032  
+**[B17] Certificate of Eligibility number** — NEEDS-YOU. Confirm whether you have a certificate and enter its number if applicable.
+
+## Trip and accommodation
+
+| Field | Entry |
+|---|---|
+| **[B18] Purpose of visit** | Tourism (holiday) |
+| **[B19] Intended length of stay** | 10 days |
+| **[B20] Date of arrival** | 02/04/2027 |
+| **[B21] Port of entry** | Narita |
+| **[B22] Airline** | NEEDS-YOU. Enter the airline for your arriving flight. |
+| **[B23] Hotel name** | NEEDS-YOU. Enter the names of your Tokyo and Kyoto hotels once booked. |
+| **[B23] Hotel telephone** | NEEDS-YOU. Enter each hotel’s telephone number. |
+| **[B24] Hotel address** | NEEDS-YOU. Enter each hotel’s full address. |
+| **[B25] Previous stays in Japan** | None |
+
+## Contact and employment
+
+**[B26] Residential address**
+
+ADDRESS_P1
+
+Add any other current residential addresses by hand if applicable.
+
+**[B27] Telephone**
+
+PHONE_P1
+
+**[B27] Mobile number** — NEEDS-YOU. If the restored number above is your mobile number, use it in the Mobile No. field. Supply a separate telephone number if applicable.
+
+**[B28] Email** — NEEDS-YOU. Enter your email address.  
+**[B29] Profession and position** — Staff nurse  
+**[B30] Employer name** — NEEDS-YOU. Enter your employer’s name.  
+**[B30] Employer telephone** — NEEDS-YOU. Enter your employer’s telephone number.  
+**[B31] Employer address** — NEEDS-YOU. Enter your employer’s address.  
+**[B32] Partner’s or parents’ occupation** — NEEDS-YOU. Supply the relevant occupation if this optional item applies.
+
+## Guarantor and inviter
+
+For **[B33]**, confirm whether you have a guarantor or reference in Japan. For **[B34]**, confirm whether you have an inviter. If the inviter and guarantor are the same person, write “same as above” in B34 as directed by the form. Where a person’s details apply, complete the corresponding fields by hand.
+
+| Detail | [B33] Guarantor or reference | [B34] Inviter |
+|---|---|---|
+| Name | NEEDS-YOU | NEEDS-YOU |
+| Telephone | NEEDS-YOU | NEEDS-YOU |
+| Address | NEEDS-YOU | NEEDS-YOU |
+| Date of birth (day/month/year) | NEEDS-YOU | NEEDS-YOU |
+| Sex | NEEDS-YOU | NEEDS-YOU |
+| Relationship to applicant | NEEDS-YOU | NEEDS-YOU |
+| Occupation and position | NEEDS-YOU | NEEDS-YOU |
+| Nationality and immigration status | NEEDS-YOU | NEEDS-YOU |
+
+## Declarations and signature
+
+| Field | Entry |
+|---|---|
+| **[B35] Remarks or special circumstances** | NEEDS-YOU. Add any remarks if this optional item applies. |
+| **[B36] Criminal conviction** | NEEDS-YOU. Tick your Yes or No answer. |
+| **[B37] Imprisonment for one year or more** | NEEDS-YOU. Tick your Yes or No answer, following Note 2. |
+| **[B38] Deportation or removal** | NEEDS-YOU. Tick your Yes or No answer. |
+| **[B39] Drug offence conviction and sentence** | NEEDS-YOU. Tick your Yes or No answer, following Note 2. |
+| **[B40] Prostitution-related activity** | NEEDS-YOU. Tick your Yes or No answer. |
+| **[B41] Trafficking in persons** | NEEDS-YOU. Tick your Yes or No answer. |
+| **[B42] Details of any Yes answers** | NEEDS-YOU. Supply details if you ticked Yes to any question above. |
+| **[B43] Date of application** | NEEDS-YOU. Enter the application date in day/month/year order. |
+| **[B44] Applicant’s signature** | NEEDS-YOU. Sign the form yourself. |

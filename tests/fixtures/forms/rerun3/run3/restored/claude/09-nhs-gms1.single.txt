@@ -1,0 +1,46 @@
+Here is your GMS1, filled in from what you've told me.
+
+Patient's details
+[B01] [✔] Ms
+[B02] Surname: ESCALANTE
+[B03] Date of birth: 09 AUG 1991
+[B04] First names: MARICEL BUENAFLOR
+[B05] NHS No.: leave blank (you've just arrived, so you won't have one yet. The practice will get one for you.)
+[B06] Previous surname/s: NONE
+[B07] [✔] Female
+[B08] Town and country of birth: CEBU CITY
+[B09] Home address: NEEDS-YOU (your new Leeds address)
+[B10] Postcode: NEEDS-YOU (your Leeds postcode)
+[B11] Telephone number: +65 8555 0143
+
+Please help us trace your previous medical records
+[B12] Your previous address in UK: NONE (never lived in the UK)
+[B13] Name of previous doctor while at that address: leave blank
+[B14] Address of previous doctor: leave blank
+
+If you are from abroad
+[B15] Your first UK address where registered with a GP: NEEDS-YOU (this is your first UK GP registration, so write your new Leeds address here as well)
+[B16] If previously resident in UK, date of leaving: leave blank (not applicable)
+[B17] Date you first came to live in UK: 03/11/2026
+
+If you are returning from the Armed Forces
+[B18] to [B20]: leave blank (not applicable)
+
+If you are registering a child under 5
+[B21] [ ] leave unticked (not applicable)
+
+Dispensing
+[B22] [ ] [ ] leave both unticked, unless one of them is true for you at your Leeds address
+
+[B23] [✔] Signature of Patient (sign this yourself by hand)
+[B24] Date: write the date you sign the form, by hand
+
+What you need to do by hand
+- Block capitals: the form asks for BLOCK CAPITALS. Your details go back in exactly as they are saved, so if your surname, first names or place of birth don't come out in capitals, copy them over in capitals.
+- Date of birth (B03): this comes back the way it's printed in your passport. UK forms usually use DD/MM/YYYY, so if your passport prints it differently (for example "15 JAN 1990"), rewrite it as day/month/year.
+- First names (B04): your first name and then your middle name, with a space between them.
+- Town and country of birth (B08): check that both the town and the country show. If only the town is there, add the country after it.
+- Leeds address and postcode (B09, B10, B15): mdoc doesn't have your Leeds address saved, so write it in yourself. Don't use your saved home address here, because that's your old one, not your Leeds one.
+- Telephone (B11): this is the number you have saved. If you now have a UK mobile number, put that one in instead, so the practice can reach you.
+
+The practice may also ask to see your passport and your visa (your BRP or eVisa share code) when you hand the form in, so have them ready.

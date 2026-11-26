@@ -1,0 +1,412 @@
+{
+ "claude": {
+  "total": {
+   "answers": 20,
+   "r1_pass": 20,
+   "r1_tokens": 237,
+   "r1_bad": 0,
+   "r2_pass": 20,
+   "flags": 11,
+   "r3_pass": 20,
+   "blanks": 127,
+   "blanks_ok": 127,
+   "facts": 94,
+   "facts_ok": 94
+  },
+  "answers": {
+   "01-schengen.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? Copy your UK permit's number and expiry date onto the form by hand from the permit or your UK status record. Don't send them here.",
+     "hand rule 2: pass: 'Copy your UK permit's number and expiry date onto the form by hand ... Don't send them here.'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 11
+   },
+   "01-schengen.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 8
+   },
+   "02-japan-visa.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 16
+   },
+   "02-japan-visa.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 12
+   },
+   "03-korea-cve.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 19
+   },
+   "03-korea-cve.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 13
+   },
+   "04-thai-tm47.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "04-thai-tm47.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "05-hbz-bank.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 14
+   },
+   "05-hbz-bank.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? 2. Addresses (B14, B15): ADDRESS_P1 is your whole Singapore home address in one piece. On paper, split it over the address lines, put its postal code in the \"Postal code\" box rather than on the addres",
+     "hand rule 2: pass: by-hand instruction to split ADDRESS_P1 on paper; nothing asked for in the chat"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 16
+   },
+   "06-qld-rental.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? - Your wife: the form says each applicant fills in a separate form. If she is going to be on the lease as well, she needs her own Form 22. I can fill one in for her using her aliases (GIVEN_P2, SURNAM",
+     "hand rule 2: pass: offers a second form for the wife using her aliases; asks for no value"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 13
+   },
+   "06-qld-rental.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "07-us-i9.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "07-us-i9.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 10
+   },
+   "08-irs-w8ben.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? 2. Foreign tax identifying number (line 6a): this is NEEDS-YOU because your UK National Insurance number isn't saved in mdoc. Write your NI number on line 6a yourself, directly on the form. Your HMRC ",
+     "hand rule 2: pass: 'Write your NI number on line 6a yourself, directly on the form'"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 10
+   },
+   "08-irs-w8ben.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "ask? Missing: your Singapore tax number, which isn't saved in mdoc. Write it on the form yourself. It's the tax reference number IRAS uses for you, usually the number on your NRIC or FIN card. Please don't",
+     "hand rule 2: pass: 'Write it on the form yourself ... Please don't' type it here"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "09-nhs-gms1.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "09-nhs-gms1.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "10-dominica-preschool.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [
+     "hand rule 2: pass: 'give me the person's details as an alias, or write them on the form yourself' asks for an alias, not a value (not flagged by the script; read by hand)"
+    ],
+    "r3": [],
+    "facts": [],
+    "tokens": 37
+   },
+   "10-dominica-preschool.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 8
+   }
+  }
+ },
+ "gpt": {
+  "total": {
+   "answers": 20,
+   "r1_pass": 20,
+   "r1_tokens": 210,
+   "r1_bad": 0,
+   "r2_pass": 20,
+   "flags": 0,
+   "r3_pass": 19,
+   "blanks": 127,
+   "blanks_ok": 126,
+   "facts": 94,
+   "facts_ok": 89
+  },
+  "answers": {
+   "01-schengen.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B12",
+      "ordinary",
+      "B12 · Travel document type | NEEDS-YOU — confirm the passport category and tick the matching box. |\n\n**"
+     ]
+    ],
+    "tokens": 9
+   },
+   "01-schengen.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "02-japan-visa.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B11",
+      "ordinary",
+      "B11 Passport type | NEEDS-YOU | Check the passport and tick its category. |\n|"
+     ]
+    ],
+    "tokens": 10
+   },
+   "02-japan-visa.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B11",
+      "ordinary",
+      "B11] Passport type** — NEEDS-YOU. Check the passport and tick its category.\n\n**["
+     ]
+    ],
+    "tokens": 10
+   },
+   "03-korea-cve.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 17
+   },
+   "03-korea-cve.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 8
+   },
+   "04-thai-tm47.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 5
+   },
+   "04-thai-tm47.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 5
+   },
+   "05-hbz-bank.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 15
+   },
+   "05-hbz-bank.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 17
+   },
+   "06-qld-rental.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B05",
+      "\\b1\\b|one",
+      "B05 — Occupants under 18**  \nNEEDS-YOU  \nCheck the ages of the three intended occupants and enter the number under 18.\n\n**"
+     ]
+    ],
+    "tokens": 7
+   },
+   "06-qld-rental.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 7
+   },
+   "07-us-i9.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "07-us-i9.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "08-irs-w8ben.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [
+     [
+      "B05",
+      "united kingdom|\\buk\\b",
+      "B05 Permanent residence country | ADDRESS_P1 |\n| \nB03–B05** Split the restored home address across the three fields. If the address omits the country, enter the country where the home is located.\n- **"
+     ]
+    ],
+    "tokens": 10
+   },
+   "08-irs-w8ben.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 9
+   },
+   "09-nhs-gms1.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [
+     [
+      "B10",
+      [
+       "ADDRESS_P1"
+      ],
+      "missing ADDRESS_P1",
+      "B10 | Postcode | NEEDS-YOU | Copy the postcode from the restored home address if it includes one. Otherwise, add it by hand. |\n|"
+     ]
+    ],
+    "facts": [],
+    "tokens": 7
+   },
+   "09-nhs-gms1.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 6
+   },
+   "10-dominica-preschool.family": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 39
+   },
+   "10-dominica-preschool.single": {
+    "r1": [],
+    "r2": [],
+    "flags": [],
+    "r3": [],
+    "facts": [],
+    "tokens": 8
+   }
+  }
+ }
+}

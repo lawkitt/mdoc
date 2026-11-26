@@ -1,0 +1,80 @@
+Here is your Japan visa application form filled in from what you gave me. Items marked NEEDS-YOU are ones I don't have the information for. Notes on what to do by hand come after the form.
+
+VISA APPLICATION FORM TO ENTER JAPAN
+
+[B01] Surname (as shown in passport): ESCALANTE
+[B02] Given and middle names (as shown in passport): MARICEL BUENAFLOR
+[B03] Other names: NEEDS-YOU (any other names you use or have used, such as a maiden name or a previous name. If you have none, write "None")
+[B04] Date of birth: 09 AUG 1991 (Day)/(Month)/(Year)
+[B05] Place of birth: CEBU CITY (City) (State or Province) (Country)
+[B06] Sex: Male [ ]  Female [X]
+[B07] Marital status: Single [X]  Married [ ]  Widowed [ ]  Divorced [ ]
+[B08] Nationality or citizenship: Filipino
+[B09] Former and/or other nationalities or citizenships: NEEDS-YOU (write "None" if you have never held another nationality)
+[B10] ID No. issued to you by your government: NEEDS-YOU (a government ID number other than your passport, such as your PhilSys national ID number. I don't have one listed for you)
+[B11] Passport type: Diplomatic [ ]  Official [ ]  Ordinary [X]  Other [ ]
+[B12] Passport No.: P4829173B
+[B13] Place of issue: NEEDS-YOU (the city or office where your passport was issued)
+[B14] Date of issue: 14 MAR 2022 (Day)/(Month)/(Year)
+[B15] Issuing authority: DFA MANILA
+[B16] Date of expiry: 13/03/2032
+[B17] Certificate of Eligibility No.: N/A
+[B18] Purpose of visit to Japan/Status of residence: Tourism (Temporary Visitor)
+[B19] Intended length of stay in Japan: 10 days
+[B20] Date of arrival in Japan: 02/04/2027
+[B21] Port of entry into Japan: Narita International Airport
+[B22] Name of ship or airline: NEEDS-YOU (your airline and flight number, once booked)
+Names and addresses of hotels or persons with whom applicant intends to stay
+[B23] Name: NEEDS-YOU   Tel.: NEEDS-YOU
+[B24] Address: NEEDS-YOU
+[B25] Dates and duration of previous stays in Japan: None
+Your current residential address
+[B26] Address: Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+[B27] Tel.: +65 8555 0143   Mobile No.: +65 8555 0143
+[B28] E-Mail: NEEDS-YOU
+[B29] Current profession or occupation and position: Staff Nurse
+Name and address of employer
+[B30] Name: NEEDS-YOU   Tel.: NEEDS-YOU
+[B31] Address: NEEDS-YOU
+[B32] Partner's profession/occupation (or that of parents, if applicant is a minor): N/A
+Guarantor or reference in Japan
+[B33] Name: N/A  Tel.: N/A  Address: N/A  Date of birth: N/A  Sex: Male [ ] Female [ ]  Relationship to applicant: N/A  Profession or occupation and position: N/A  Nationality and immigration status: N/A
+Inviter in Japan
+[B34] Name: N/A  Tel.: N/A  Address: N/A  Date of birth: N/A  Sex: Male [ ] Female [ ]  Relationship to applicant: N/A  Profession or occupation and position: N/A  Nationality and immigration status: N/A
+[B35] Remarks/Special circumstances, if any: (leave blank)
+Have you ever:
+[B36] been convicted of a crime or offence in any country? NEEDS-YOU
+[B37] been sentenced to imprisonment for 1 year or more in any country? NEEDS-YOU
+[B38] been deported or removed from Japan or any country? NEEDS-YOU
+[B39] been convicted and sentenced for a drug offence in any country? NEEDS-YOU
+[B40] engaged in prostitution or related activities? NEEDS-YOU
+[B41] committed trafficking in persons or incited or aided another to commit such an offence? NEEDS-YOU
+[B42] If you answered "Yes" to any of the above questions, details: (only if you tick Yes anywhere above)
+[B43] Date of application: NEEDS-YOU (the date you sign and submit)
+[B44] Signature of applicant: (sign by hand)
+
+What to do by hand
+
+1. Date formats (B04, B14). The form wants Day/Month/Year. 09 AUG 1991 and 14 MAR 2022 are your dates exactly as printed in your passport, which may be in a different style (for example with the month in letters). If so, rewrite them as day/month/year on the form, matching what the passport shows.
+2. Place of birth (B05). The form splits this into City, State or Province, and Country. If CEBU CITY holds more than one of these, put each part in its own space. If it gives only a city, add the province and "Philippines" yourself.
+3. Phone (B27). I put +65 8555 0143 in both Tel. and Mobile No. If it's a landline, not a mobile, delete it from Mobile No. and write your mobile number there yourself, or leave Mobile blank.
+4. Passport type (B11). I ticked Ordinary because you're travelling on a regular passport for a holiday. Change it only if your passport is actually diplomatic or official.
+5. Place of issue (B13). This is separate from the issuing authority (B15). Copy it from your passport's data page, or use the DFA office or city where you got the passport.
+
+What's missing (NEEDS-YOU)
+
+- B03, B09: other names and other nationalities. Write "None" if they don't apply.
+- B10: a government ID number other than your passport, if you have one (such as your PhilSys ID).
+- B22: airline and flight, once booked.
+- B23, B24: your hotels. Since you haven't booked yet, you'll need at least the first hotel's name, phone and address. The embassy and its accredited agencies usually want a day-by-day itinerary with where you'll stay in Tokyo and Kyoto, so it's best to book (refundable bookings are fine) before you apply. If you stay in more than one hotel, list the first one here and the rest in your itinerary.
+- B28: your email address.
+- B30, B31: your employer's name, phone and address (the hospital or clinic where you work as a staff nurse).
+- B36 to B41: only you can answer these. Tick Yes or No for each. If any answer is Yes, give details in B42.
+- B43: the date you submit the application.
+- B44: sign by hand.
+
+Other notes
+
+- I marked B33 and B34 (guarantor and inviter) N/A because you're travelling on your own for a holiday and paying for it yourself. If someone in Japan is sponsoring or inviting you, tell me and those sections need filling in.
+- B17 (Certificate of Eligibility) is only for long-term stays, so N/A is correct for a 10-day trip.
+- B32 is optional and doesn't apply to you, since you're single and an adult.

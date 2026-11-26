@@ -1,0 +1,72 @@
+Here is Form 22 filled in for you as the applicant. Items marked "leave for the property manager" are theirs to complete. NEEDS-YOU marks details I don't have.
+
+1 Property manager/owner details
+[B01] Full name: NEEDS-YOU  Phone: NEEDS-YOU  Email: NEEDS-YOU  Agency details (if applicable): NEEDS-YOU
+(Copy these from the listing or the agent's contact details.)
+
+2 Address of the premises
+[B02] NEEDS-YOU  Postcode: NEEDS-YOU
+(This is the address and postcode of the Brisbane house you're applying for.)
+
+3 Ways to submit your application
+[B03] Leave for the property manager.
+
+4 Number of occupants
+[B04] Total number of occupants: 3
+[B05] Number of occupants under 18 years of age: NEEDS-YOU
+(Write 1 if your daughter is under 18 and 0 if she isn't. Her date of birth is hidden from me, so I can't work it out.)
+
+5 Applicant details
+[B06] Full name: VIKRAM ANAND RAGHUNATHAN
+[B07] Date of birth: 22/11/1983
+[B08] Current address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom  Postcode: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B09] Phone: +44 7700 900123
+[B10] Email: NEEDS-YOU
+
+6 Employment details
+[B11] Current employer: NEEDS-YOU
+[B12] Job title: NEEDS-YOU
+[B13] Length of employment: NEEDS-YOU   Gross weekly income: NEEDS-YOU
+[B14] Employer name: NEEDS-YOU  Employer phone: NEEDS-YOU  Employer email: NEEDS-YOU
+(If you won't have a job in Brisbane when you apply, or can't give these details, you can describe your ability to pay rent under item 7 instead, for example with savings or bank statements.)
+
+7 Financial information
+[B15] Leave for the property manager. Attach whatever documents they ask for.
+
+8 Verification of identity
+[B16] Leave for the property manager. If they ask for a passport, your Indian passport is valid until 4 June 2029.
+
+9 Applicant suitability
+[B17] Leave for the property manager.
+
+10 Rental history
+Property 1
+[B18] Current/previous address: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom  Postcode: 14 Quillon Mews, Didsbury, Manchester M20 6QX, United Kingdom
+[B19] Rental period (Start – End): March 2020 – present
+[B20] Property manager/owner name: NEEDS-YOU  Property manager/owner email: NEEDS-YOU  Property manager/owner phone: NEEDS-YOU
+(These are the details of your current landlord or letting agent in Manchester.)
+
+Property 2
+[B21] Previous address: NEEDS-YOU  Postcode: NEEDS-YOU  Rental period (Start – End): NEEDS-YOU  Property manager/owner name: NEEDS-YOU  Property manager/owner email: NEEDS-YOU  Property manager/owner phone: NEEDS-YOU
+(Only needed if you rented somewhere before March 2020. Otherwise leave it blank.)
+
+[B22] Leave blank, since you already have a rental history.
+
+11 References
+[B23] Name: NEEDS-YOU  Phone: NEEDS-YOU  Email: NEEDS-YOU  Referee's connection to applicant: NEEDS-YOU
+[B24] Name: NEEDS-YOU  Phone: NEEDS-YOU  Email: NEEDS-YOU  Referee's connection to applicant: NEEDS-YOU
+(You need two people who can confirm you look after a property well, such as a past landlord, letting agent or employer.)
+
+12 Pet details
+[B25] Leave for the property manager.
+[B26] Do you intend to keep pets at the premises? [ ] Yes  [X] No
+[B27] Leave blank.
+
+Things to fix by hand after the real values go back in:
+- B08 and B18, Postcode: these boxes get your whole home address. Delete everything except the UK postcode, and in the address boxes before them, delete the postcode so it doesn't appear twice.
+- B07, Date of birth: your date goes in the way your passport prints it. If that isn't a plain day/month/year (for example 15/03/1985), rewrite it in that form, which is what Australian forms use.
+- B09, Phone: add the UK country code if it's missing. Write +44 and drop the leading 0, so an Australian agent can call you.
+
+Also note:
+- The form says every adult applicant needs their own separate form. Your wife should fill in her own Form 22. Your daughter needs one too if she is 18 or older. If she is under 18, she only counts in item 4.
+- The form mentions information about tenancy databases (item 15), but that part wasn't in the text you sent. Read it on the full form before you sign.

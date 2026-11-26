@@ -1,0 +1,105 @@
+Here is your Schengen visa form filled in for the Italy holiday. Aliases are written exactly as listed. Where a value has to be in another shape, or something is missing, I say so under the field.
+
+[B01] 1. Surname (Family name): SURNAME_P1
+
+[B02] 2. Surname at birth (Former family name(s)): SURNAME_P1
+  You're single, so this is normally the same as your current surname. If your family name at birth was different, write that one instead.
+
+[B03] 3. First name(s) (Given name(s)): GIVEN_P1
+  Copy it exactly as your passport's "Given names" line shows it. Philippine passports print the middle name (usually your mother's maiden surname) in a separate field, and it isn't normally a given name. If the embassy or VFS asks for it here, add MIDDLE_P1 after GIVEN_P1.
+
+[B04] Date of birth (day-month-year): DATE_P1
+  The form wants day-month-year in numbers (for example 05-11-1990 style). If your passport prints the month as a word, rewrite it by hand as day-month-year with the month as a number.
+
+[B05] 5. Place of birth: PLACE_P1
+
+[B06] 6. Country of birth: NEEDS-YOU
+  Your country of birth isn't in the details I was given. Write it by hand.
+
+[B07] 7. Current nationality: Filipino   Nationality at birth, if different: (leave blank)   Other nationalities: (leave blank)
+  Leave the last two blank unless you had a different nationality at birth or hold another one now.
+
+[B08] 8. Sex: [X] Female
+
+[B09] 9. Civil status: [X] Single
+
+[B10] 10. Parental authority / legal guardian: Not applicable (adult applicant)
+
+[B11] 11. National identity number, where applicable: NEEDS-YOU
+  If you have a Philippine national ID (PhilSys) number, write it here by hand. If you don't, leave it blank. Don't send it to me.
+
+[B12] 12. Type of travel document: [X] Ordinary passport
+  This assumes you have a regular passport, not a diplomatic or official one.
+
+[B13] 13. Number of travel document: ID_P1
+
+[B14] 14. Date of issue: ISSUED_P1
+  Same as the date of birth: rewrite it by hand as day-month-year in numbers if the passport spells out the month.
+
+[B15] 15. Valid until: 13-03-2032
+
+[B16] 16. Issued by (country): Philippines
+  The form asks for the country, so I've written Philippines rather than the issuing authority (AUTHORITY_P1 isn't needed here).
+
+[B17] 17. EU/EEA/CH/UK family member: Not applicable
+
+[B18] 18. Family relationship with an EU, EEA or CH citizen: Not applicable
+
+[B19] 19. Applicant's home address and e-mail address: ADDRESS_P1, e-mail: NEEDS-YOU   Tel.: PHONE_P1
+  Your e-mail address isn't in the details I was given. Add it by hand after the address.
+
+[B20] 20. Residence in a country other than the country of current nationality: [X] Yes. Residence permit or equivalent: Singapore Employment Pass   No. NEEDS-YOU   Valid until NEEDS-YOU
+  Copy the number and expiry date from your Employment Pass card. Many embassies want the pass to stay valid for a while after you get back (often 3 months after you leave the Schengen area), so check the expiry date against 28 May 2027.
+
+[B21] *21. Current occupation: Staff nurse
+
+[B22] *22. Employer and employer's address and telephone number: NEEDS-YOU
+  Write your employer's name (the hospital or clinic), its address in Singapore and its phone number.
+
+[B23] 23. Purpose(s) of the journey: [X] Tourism
+
+[B24] 24. Additional information on purpose of stay: Holiday in Italy, 14 May to 28 May 2027
+
+[B25] 25. Member State of main destination: Italy
+
+[B26] 26. Member State of first entry: Italy
+  This is correct if your flight lands in Rome directly from outside the Schengen area. If you change planes at another Schengen airport (for example Frankfurt, Paris, Amsterdam or Zurich), write that country instead, because that's where you go through passport control.
+
+[B27] 27. Number of entries requested: [X] Single entry
+  One trip in and out is enough for this holiday. Tick Multiple entries only if you want the option to come back again later.
+
+[B28] Intended date of arrival of the first intended stay in the Schengen area: 14-05-2027
+
+[B29] Intended date of departure from the Schengen area after the first intended stay: 28-05-2027
+
+[B30] 28. Fingerprints collected previously for the purpose of applying for a Schengen visa: [X] No
+
+[B31] 29. Entry permit for the final country of destination: Not applicable
+
+[B32] *30. Name of hotel(s) or temporary accommodation(s): NEEDS-YOU
+  Write the name of your hotel(s) or other accommodation in Italy. If you're staying in more than one place, list them all.
+
+[B33] Address and e-mail address of hotel(s)/temporary accommodation(s): NEEDS-YOU   Telephone No.: NEEDS-YOU
+  Copy these from your booking confirmations.
+
+[B34] *31. Name and address of inviting company/organisation: Not applicable
+
+[B35] Contact person in company/organisation: Not applicable
+
+[B36] *32. Cost of travelling and living during the applicant's stay is covered:
+  [X] by the applicant himself/herself. Means of support: NEEDS-YOU
+  Tick whichever apply to you: Cash, Traveller's cheques, Credit card, Pre-paid accommodation, Pre-paid transport. If your hotel and flights are already paid, tick those two as well.
+
+[B37] 33. Person filling in the application form, if different from the applicant: (leave blank)
+[B38] Address, e-mail and telephone of that person: (leave blank)
+  Leave both blank if you're submitting the form yourself.
+
+[B39] Place and date: NEEDS-YOU
+  Write the city where you sign it (for example Singapore) and the date you sign, when you sign.
+
+[B40] Signature of applicant: NEEDS-YOU (sign by hand)   Parental authority/legal guardian: not applicable
+
+A few things to check before you apply:
+- From Singapore, you'd normally apply through Italy's visa centre or embassy there, because Italy is your main destination.
+- You'll need travel medical insurance covering at least EUR 30,000 for the whole trip, plus your flight bookings, hotel bookings, your Employment Pass, recent bank statements and a letter from your employer approving your leave.
+- Your passport meets the usual rules: it's valid well beyond 3 months after 28 May 2027. It also needs to have been issued within the last 10 years and to have at least two blank pages.

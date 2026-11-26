@@ -1,0 +1,50 @@
+Here's how to fill in your W-8BEN for the brokerage. This assumes you are not a U.S. citizen, don't hold a green card and don't live in the U.S. long enough to count as a U.S. resident. If any of those is true, you need Form W-9 instead.
+
+Part I: Identification of Beneficial Owner
+
+[B01] Line 1, Name: MARICEL BUENAFLOR ESCALANTE
+
+[B02] Line 2, Country of citizenship: Philippines
+
+[B03] Line 3, Permanent residence address (street, apt. or suite no.): Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+  By hand: keep only the street, block, unit and building part of the address on this line.
+
+[B04] City or town, state or province, postal code: Blk 418 Bedok North Avenue 2, #07-215, Singapore 460418
+  By hand: on this line write only "Singapore" and your 6-digit postal code, taken from the same address. Don't repeat the street. Don't use a P.O. box or a c/o address anywhere on line 3.
+
+[B05] Country: Singapore
+
+[B06] Line 4, Mailing address: leave blank. You said you live at your home address, so your mailing address is the same.
+
+[B07] Line 5, U.S. taxpayer identification number (SSN or ITIN): leave blank. You don't need one for an ordinary brokerage account when you claim no treaty benefits (see Part II).
+
+[B08] Line 6a, Foreign tax identifying number: NEEDS-YOU
+  Missing: your Singapore tax number, which isn't saved in mdoc. Write it on the form yourself. It's the tax reference number IRAS uses for you, usually the number on your NRIC or FIN card. Please don't type it into this chat.
+
+[B09] Line 6b, FTIN not legally required: leave unchecked. Singapore issues tax numbers to its tax residents, so you should fill in 6a instead.
+
+[B10] Line 7, Reference number(s): leave blank, unless the brokerage asked you to put your account number here.
+
+[B11] Line 8, Date of birth (MM-DD-YYYY): 09 AUG 1991
+  By hand: the form wants month-day-year in numbers (for example, the 5th of February of a year becomes 02-05- and then the 4-digit year). Your passport may print the date another way, so rewrite it in that MM-DD-YYYY order.
+
+Part II: Claim of Tax Treaty Benefits
+
+[B12] Line 9: leave blank.
+[B13] Line 10: leave blank.
+  The United States and Singapore have no income tax treaty, so as a resident of Singapore only, you have no treaty rate to claim. Don't put "Philippines" here either: treaty benefits depend on where you're tax resident, not on your citizenship. In practice the brokerage will usually withhold 30% U.S. tax on U.S. dividends. U.S. bank and portfolio interest, and most capital gains on shares, are generally not taxed for non-U.S. persons. The form still matters, because it certifies that you're not a U.S. person and keeps you out of U.S. backup withholding and 1099 reporting.
+
+Part III: Certification
+
+[B14] Capacity to sign: [X] check it. The current form asks you to tick this box even when you sign for yourself.
+
+[B15] Signature: NEEDS-YOU. You have to sign this yourself.
+  Date (MM-DD-YYYY): NEEDS-YOU. Write the date you sign, as month-day-year.
+
+[B16] Print name of signer: MARICEL BUENAFLOR ESCALANTE
+
+Before you send it:
+- Read the penalties-of-perjury statement before you sign.
+- Give the form to the brokerage, not the IRS.
+- A W-8BEN normally stays valid until the end of the third calendar year after you sign it. Tell the brokerage within 30 days if anything changes, for example if you move out of Singapore or become a U.S. person.
+- Your passport details aren't needed on this form.
