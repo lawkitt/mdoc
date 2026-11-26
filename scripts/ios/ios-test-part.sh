@@ -20,23 +20,28 @@
 #     initializing for UI testing; no test case ran and the runner's own
 #     error is the only failure (scripts/ios/ios-failed-tests.py runner);
 #   - it hung (#1215, #1226): no test case started within
-#     MDOC_IOS_FIRST_TEST_LIMIT seconds (8 minutes; the slowest first test
-#     seen started 4 minutes in, on a cold Simulator). The job then sat
-#     silent until its 45-minute limit. A test case has started once the
-#     runner's output, staged in the result bundle while it runs, says so;
-#     past the limit xcodebuild is stopped and the end of its session log
-#     printed.
+#     MDOC_IOS_FIRST_TEST_LIMIT seconds (5 minutes; after the warm-up the
+#     first test started 1 to 2.2 minutes in on hosted runners). The job
+#     then sat silent until its 45-minute limit. A test case has started
+#     once the runner's output, staged in the result bundle while it runs,
+#     says so; past the limit xcodebuild is stopped and the end of its
+#     session log printed. A run counts as hung only when, stopped, it
+#     still shows no test started, so a test that started at the limit
+#     keeps its result.
 # The device is then shut down, erased and warmed up again, the failed
 # attempt's .xcresult moves to target/ios/DerivedData/Logs/RunnerFailed (the
 # later steps read the retry's), and `ios-test` runs the same tests again.
-# When the device cannot be found or erased, or the .xcresult moved, it does
-# not retry and fails as before. A pass keeps the part green with a warning,
-# `ci/ios (<part>): UI test runner failed to start; retried once` (or `hung
-# before the first test`), an infrastructure failure that charges no test;
-# a failure fails the part as before, and a second hang fails it naming the
-# hang, well inside the job's limit. A failure or hang after a test started,
-# and the unit part, never retry (docs/specs/ci.md: unit tests do not
-# retry), so no test result is hidden. Bash 3.2 compatible.
+# When the device cannot be found or erased, the .xcresult moved, or more
+# than MDOC_IOS_RETRY_BUDGET seconds (15 minutes) have gone, so that a
+# shard's tests (20 to 30 minutes) would not fit in the job's 45 before the
+# retry starts, it does not retry and fails as before. A pass keeps the
+# part green with a warning, `ci/ios (<part>): UI test runner failed to
+# start; retried once` (or `hung before the first test`), an
+# infrastructure failure that charges no test; a failure fails the part as
+# before, and a second hang fails it naming the hang. A failure or hang
+# after a test started, and the unit part, never retry (docs/specs/ci.md:
+# unit tests do not retry), so no test result is hidden. Bash 3.2
+# compatible.
 set -uo pipefail
 if [ "$#" -lt 1 ]; then
   echo "usage: scripts/ios/ios-test-part.sh <part> [<test>...]" >&2
@@ -48,7 +53,8 @@ device="iPhone 17"
 logs=target/ios/DerivedData/Logs
 app=target/ios/DerivedData/Build/Products/Debug-iphonesimulator/mdoc.app
 bundle=io.github.lawkitt.mdoc
-first_test_limit=${MDOC_IOS_FIRST_TEST_LIMIT:-480}
+first_test_limit=${MDOC_IOS_FIRST_TEST_LIMIT:-300}
+retry_budget=${MDOC_IOS_RETRY_BUDGET:-900}
 ui=
 case "$part" in "ui "*) ui=1 ;; esac
 # The watch's mark that it stopped a hung run.
@@ -72,8 +78,8 @@ limited() {
 # tests' flag, which gives it a library of its own (apps/ios/ui-tests.md).
 warm_up() {
   local udid=$1 start=$SECONDS booted
-  if ! limited 600 xcrun simctl bootstatus "$udid" -b >/dev/null; then
-    echo "Simulator warm-up: $device ($udid) did not boot within 10 minutes; testing without the warm-up"
+  if ! limited 300 xcrun simctl bootstatus "$udid" -b >/dev/null; then
+    echo "Simulator warm-up: $device ($udid) did not boot within 5 minutes; testing without the warm-up"
     return 0
   fi
   booted=$((SECONDS - start))
@@ -81,11 +87,11 @@ warm_up() {
     echo "Simulator warm-up: $device booted in ${booted}s; no app at $app to launch"
     return 0
   fi
-  if limited 300 xcrun simctl install "$udid" "$app" &&
-    limited 300 xcrun simctl launch "$udid" "$bundle" -mdoc-ui-testing >/dev/null; then
+  if limited 120 xcrun simctl install "$udid" "$app" &&
+    limited 120 xcrun simctl launch "$udid" "$bundle" -mdoc-ui-testing >/dev/null; then
     echo "Simulator warm-up: $device booted in ${booted}s; the app installed and launched in $((SECONDS - start - booted))s"
   else
-    echo "Simulator warm-up: $device booted in ${booted}s; the app did not install and launch within 5 minutes each"
+    echo "Simulator warm-up: $device booted in ${booted}s; the app did not install and launch within 2 minutes each"
   fi
 }
 
@@ -134,8 +140,9 @@ tests() {
     kill "$watcher" 2>/dev/null
     wait "$watcher" 2>/dev/null
   fi
-  # A run that passed as the limit came was no hang.
-  if [ -f "$hung" ] && [ "$rc" -ne 0 ]; then
+  # A run that passed as the limit came, or whose first test started
+  # then, was no hang: its result stands.
+  if [ -f "$hung" ] && [ "$rc" -ne 0 ] && ! started; then
     rc=124
   fi
   rm -f "$hung"
@@ -170,13 +177,18 @@ else
   what="failed to start"
 fi
 
+if [ "$SECONDS" -gt "$retry_budget" ]; then
+  echo "::error::ci/ios ($part): UI test runner $what ${SECONDS}s in, too late for a retry to finish within the job's limit"
+  [ "$rc" != 124 ] || exit 1
+  exit "$rc"
+fi
 echo "The UI test runner $what: resetting the Simulator and testing once more without building (#1065, #1226)"
 if [ -z "$udid" ]; then
   echo "::warning::no $device on iOS ${os:-?} to reset, so no retry"
   exit "$rc"
 fi
-xcrun simctl shutdown all || true
-if ! xcrun simctl erase "$udid"; then
+limited 120 xcrun simctl shutdown all || true
+if ! limited 120 xcrun simctl erase "$udid"; then
   echo "::warning::could not erase $device ($udid), so no retry"
   exit "$rc"
 fi

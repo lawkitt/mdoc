@@ -350,7 +350,7 @@ jobs:
       # job's app. A UI part first boots its Simulator and launches the app
       # once (#1226); one whose test runner failed to start, before any
       # test (the xcode-27 image's crash while preparing, or its AX
-      # time-out), or started no test within 8 minutes, runs once more on a
+      # time-out), or started no test within 5 minutes, runs once more on a
       # reset Simulator: green with a warning on a pass
       # (scripts/ios/ios-test-part.sh, #1065, #1226).
       - name: Tests

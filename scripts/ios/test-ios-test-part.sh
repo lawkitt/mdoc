@@ -45,8 +45,9 @@ mkdir -p "$tmp/bin"
 # holding that JSON and exits 65, as xcodebuild's failed test does;
 # `exit <n>` alone, as a failed build does; `hang`, which stages a session
 # log in an .xcresult and never ends, as a runner stuck before its first
-# test; `nobundle-hang`, the same before any .xcresult; or `slow`, which
-# stages a started test case and passes 5 seconds later.
+# test; `nobundle-hang`, the same before any .xcresult; `late-fail`, a test
+# that starts as the limit stops the run and fails ($TEST_JSON); or `slow`,
+# which stages a started test case and passes 5 seconds later.
 cat >"$tmp/bin/just" <<'EOF'
 #!/usr/bin/env bash
 echo "${MDOC_IOS_TEST_ACTION:-}|$*" >>"$JUST_LOG"
@@ -68,6 +69,15 @@ case "$step" in
     sleep 4321
     ;;
   nobundle-hang) sleep 4321 ;;
+  late-fail)
+    # A first test that starts as the limit stops the run, and fails.
+    trap '' TERM
+    sleep 3.5
+    mkdir -p "$diagnostics/mdocUITests-1-Iteration-1/mdocUITests-2"
+    echo "Test Case '-[mdocUITests.AUITests testA]' started." >"$diagnostics/mdocUITests-1-Iteration-1/mdocUITests-2/StandardOutputAndStandardError.txt"
+    cp "$TEST_JSON" "$result/tests.json"
+    exit 65
+    ;;
   slow)
     mkdir -p "$diagnostics/mdocUITests-1-Iteration-1/mdocUITests-2"
     echo "Test Case '-[mdocUITests.AUITests testA]' started." >"$diagnostics/mdocUITests-1-Iteration-1/mdocUITests-2/StandardOutputAndStandardError.txt"
@@ -160,7 +170,7 @@ simctl launch $pin_udid io.github.lawkitt.mdoc -mdoc-ui-testing" ] || fail "not 
 # A launch that fails leaves the warm-up, and the tests run.
 XCRUN_LAUNCH_FAIL=1 run nolaunch 'ui 1' pass
 [ "$rc" = 0 ] || fail "a failed warm-up failed the part: $(cat "$out")"
-grep -q '^Simulator warm-up: iPhone 17 booted in [0-9]*s; the app did not install and launch within 5 minutes each$' "$out" ||
+grep -q '^Simulator warm-up: iPhone 17 booted in [0-9]*s; the app did not install and launch within 2 minutes each$' "$out" ||
   fail "no failed warm-up line: $(cat "$out")"
 
 # A first test that starts in time is not stopped, however long the tests take.
@@ -197,6 +207,23 @@ run hungtwice 'ui 3' hang hang
 has "$out" '::error::ci/ios (ui 3): UI test runner hung twice before the first test'
 grep -q '^::warning::' "$out" && fail "two hangs warned: $(cat "$out")"
 pgrep -f 'sleep 4321' >/dev/null && fail "a hung run is still running"
+
+# A first test that starts as the limit comes, and fails: its failure
+# stands, with no retry to hide it.
+TEST_JSON="$tmp/test.json" run late 'ui 1' late-fail pass
+[ "$rc" = 65 ] || fail "a test failing at the limit exited $rc: $(cat "$out")"
+has "$out" 'No UI test started within 3s: stopping xcodebuild. The end of its session log:'
+[ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 1 ] || fail "a test failing at the limit retried: $(cat "$JUST_LOG")"
+grep -q '^::warning::' "$out" && fail "a test failing at the limit warned: $(cat "$out")"
+
+# A hang past the retry budget fails at once, naming it, with no retry
+# that could not finish within the job's limit.
+MDOC_IOS_RETRY_BUDGET=0 run late-hang 'ui 1' hang pass
+[ "$rc" = 1 ] || fail "a late hang exited $rc: $(cat "$out")"
+[ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 1 ] || fail "a late hang retried: $(cat "$JUST_LOG")"
+grep -q "^::error::ci/ios (ui 1): UI test runner hung before the first test [0-9]*s in, too late for a retry to finish within the job's limit$" "$out" ||
+  fail "no late-hang error: $(cat "$out")"
+grep -qE 'simctl (shutdown|erase)' "$XCRUN_LOG" && fail "a late hang reset the Simulator: $(cat "$XCRUN_LOG")"
 
 # The runner fails to start, then passes: one retry, without building, of
 # the same tests on the erased iPhone 17 of the pin's runtime (not another
