@@ -123,7 +123,7 @@ impl Fit {
                 gpui_macos::set_window_height_keeping_top(window, cx, wanted);
                 // Only the companion fits itself there (item 17).
                 #[cfg(all(windows, not(test)))]
-                crate::companion::windows::set_height(window, wanted);
+                crate::companion::windows::set_height(window, wanted, cx);
                 let _ = (window, cx);
             });
         });

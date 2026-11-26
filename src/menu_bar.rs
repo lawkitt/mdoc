@@ -331,6 +331,7 @@ pub(crate) fn set_enabled(enabled: bool, cx: &mut App) {
 /// Whether closing the workspace window hides it instead of quitting.
 pub(crate) fn keeps_running(cx: &App) -> bool {
     crate::tray::CLOSE_TO_TRAY
+        && crate::tray::icon_usable()
         && cx
             .try_global::<MenuBar>()
             .is_some_and(|bar| bar.state.keeps_running())

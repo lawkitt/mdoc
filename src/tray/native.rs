@@ -44,8 +44,8 @@ use windows_sys::{
                 IMAGE_ICON, IsWindowVisible, LR_DEFAULTCOLOR, LoadIconW, LoadImageW, MF_SEPARATOR,
                 MF_STRING, PostMessageW, RegisterClassW, RegisterWindowMessageW, SM_CXSMICON,
                 SM_CYSMICON, SW_HIDE, SW_SHOW, SetForegroundWindow, ShowWindow, TPM_NONOTIFY,
-                TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WM_APP, WM_CONTEXTMENU, WM_NULL,
-                WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
+                TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WM_APP, WM_CONTEXTMENU,
+                WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
             },
         },
     },
@@ -72,6 +72,9 @@ struct Tray {
     icon: HICON,
     /// The icon is in the notification area now.
     added: bool,
+    /// The shell took `NOTIFYICON_VERSION_4`; else it sends the old
+    /// mouse messages.
+    version_4: bool,
     cx: AsyncApp,
     guard: SelectGuard,
     _quit: Subscription,
@@ -131,12 +134,21 @@ pub(crate) fn show(cx: &mut App) {
         owner,
         icon: load_icon(),
         added: false,
+        version_4: false,
         cx: cx.to_async(),
         guard: SelectGuard::default(),
         _quit: quit,
     };
-    tray.added = add_icon(&tray);
+    // Before Explorer's notification area is up this fails, and
+    // `TaskbarCreated` adds it later.
+    (tray.added, tray.version_4) = add_icon(&tray);
     TRAY.set(Some(tray));
+}
+
+/// Whether the icon is in the notification area, so a hidden window can
+/// come back through it.
+pub(crate) fn usable() -> bool {
+    TRAY.with_borrow(|tray| tray.as_ref().is_some_and(|tray| tray.added))
 }
 
 /// Remove the icon and its owner.
@@ -288,8 +300,9 @@ fn icon_data(owner: HWND) -> NOTIFYICONDATAW {
     }
 }
 
-/// Add the icon, and ask for version 4 messages; whether it was added.
-fn add_icon(tray: &Tray) -> bool {
+/// Add the icon and ask for version 4 messages: whether it was added, and
+/// whether the shell took version 4.
+fn add_icon(tray: &Tray) -> (bool, bool) {
     let mut tip = [0u16; 128];
     for (slot, unit) in tip.iter_mut().zip(TIP.encode_utf16()) {
         *slot = unit;
@@ -304,12 +317,11 @@ fn add_icon(tray: &Tray) -> bool {
     // SAFETY: `data` is fully initialised and outlives each call.
     unsafe {
         if Shell_NotifyIconW(NIM_ADD, &data) == 0 {
-            return false;
+            return (false, false);
         }
         data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
-        Shell_NotifyIconW(NIM_SETVERSION, &data);
+        (true, Shell_NotifyIconW(NIM_SETVERSION, &data) != 0)
     }
-    true
 }
 
 /// Run `then` in the app, after the message that asked for it.
@@ -337,12 +349,32 @@ fn selected() {
     }
 }
 
-/// The icon's menu at `x`, `y` (screen pixels): the shell needs the owner
-/// in front while it tracks, and the notification area gets the focus back
-/// however it closes.
-fn show_menu(owner: HWND, x: i32, y: i32) {
-    // SAFETY: a new menu, destroyed below; `owner` is live; `data`
-    // outlives the call that reads it.
+/// Where the menu opens: at the pointer when it is on the icon (a right
+/// click), else at the icon (Shift+F10), else at the pointer. The shell
+/// gives no place with its context menu message.
+fn menu_point(owner: HWND) -> POINT {
+    let mut cursor = POINT::default();
+    // SAFETY: `cursor` outlives the call.
+    unsafe { GetCursorPos(&mut cursor) };
+    match icon_rect(owner) {
+        Some(rect)
+            if !(rect.left..rect.right).contains(&cursor.x)
+                || !(rect.top..rect.bottom).contains(&cursor.y) =>
+        {
+            POINT {
+                x: (rect.left + rect.right) / 2,
+                y: (rect.top + rect.bottom) / 2,
+            }
+        }
+        _ => cursor,
+    }
+}
+
+/// The icon's menu: the shell needs the owner in front while it tracks,
+/// and the notification area gets the focus back however it closes.
+fn show_menu(owner: HWND) {
+    let at = menu_point(owner);
+    // SAFETY: a new menu, destroyed below; `owner` is live.
     let chosen = unsafe {
         let menu = CreatePopupMenu();
         if menu.is_null() {
@@ -356,8 +388,8 @@ fn show_menu(owner: HWND, x: i32, y: i32) {
         let chosen = TrackPopupMenu(
             menu,
             TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
-            x,
-            y,
+            at.x,
+            at.y,
             0,
             owner,
             null(),
@@ -384,25 +416,31 @@ fn show_menu(owner: HWND, x: i32, y: i32) {
     }
 }
 
-/// Explorer restarted: the icon goes back.
+/// Explorer restarted: the icon goes back. If it cannot, a window hidden
+/// in the tray shows, as nothing else could bring it back.
 fn taskbar_created() {
-    TRAY.with_borrow_mut(|tray| {
-        if let Some(tray) = tray.as_mut() {
-            tray.added = add_icon(tray);
-        }
+    let added = TRAY.with_borrow_mut(|tray| {
+        let tray = tray.as_mut()?;
+        (tray.added, tray.version_4) = add_icon(tray);
+        Some(tray.added)
     });
+    if added == Some(false) {
+        queue(|cx| {
+            if crate::menu_bar::window_hidden(cx) {
+                crate::menu_bar::reveal(cx, |_, _, _| {});
+            }
+        });
+    }
 }
 
 extern "system" fn owner_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if msg == WM_TRAY {
-        // Version 4: the event in the low word, the place in `wparam`.
-        match (lparam as u32) & 0xffff {
-            NIN_SELECT | NIN_KEYSELECT => selected(),
-            WM_CONTEXTMENU => {
-                let x = i32::from(wparam as u16 as i16);
-                let y = i32::from((wparam >> 16) as u16 as i16);
-                show_menu(hwnd, x, y);
-            }
+        let version_4 = TRAY.with_borrow(|tray| tray.as_ref().is_some_and(|tray| tray.version_4));
+        // Version 4: the event in the low word; before it, the mouse
+        // message itself.
+        match ((lparam as u32) & 0xffff, version_4) {
+            (NIN_SELECT | NIN_KEYSELECT, true) | (WM_LBUTTONUP, false) => selected(),
+            (WM_CONTEXTMENU, true) | (WM_RBUTTONUP, false) => show_menu(hwnd),
             _ => {}
         }
         return 0;

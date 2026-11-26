@@ -82,6 +82,16 @@ pub(crate) fn preview_changed(on: bool, cx: &mut App) {
     }
 }
 
+/// Whether the item can bring a hidden window back: on Windows, whether
+/// the icon is in the notification area (Explorer may not be up yet).
+pub(crate) fn icon_usable() -> bool {
+    #[cfg(all(windows, not(test)))]
+    let usable = native::usable();
+    #[cfg(not(all(windows, not(test))))]
+    let usable = true;
+    usable
+}
+
 /// Whether Settings › General shows the switch: always on macOS; on
 /// Windows only while the preview is on, as only then does it act.
 pub(crate) fn setting_shown(preview: bool) -> bool {

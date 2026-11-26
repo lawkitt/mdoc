@@ -343,6 +343,8 @@ pub(crate) fn run() -> ! {
                  terminal with another app in front"
             );
         }
+        // Its one window closes on the way to reopening: that is no quit.
+        cx.set_quit_mode(gpui::QuitMode::Explicit);
         crate::tray::show(cx);
         let clicks = Rc::new(Cell::new(0));
         let Some(window) = open_probe(cx, clicks.clone()) else {

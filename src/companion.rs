@@ -80,6 +80,13 @@ pub(crate) fn open<V: Render + 'static>(
         windows::float(window, bounds);
         build(window, cx)
     })?;
+    // Never up where a capture would see it: notifications and the Reply
+    // page remain.
+    #[cfg(all(windows, not(test)))]
+    if !window.update(cx, |_, window, _| windows::excluded(window))? {
+        window.update(cx, |_, window, _| window.remove_window())?;
+        return Err(std::io::Error::other("the companion cannot be left out of capture").into());
+    }
     #[cfg(all(target_os = "macos", not(test)))]
     window.update(cx, |_, window, _| native::float(window))?;
     Ok(window)

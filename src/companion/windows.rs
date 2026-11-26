@@ -18,7 +18,7 @@
 //! The probe (`probe_windows.rs`, debug builds) reads it all back.
 #![allow(unsafe_code)] // Win32 calls, each under a `SAFETY:` note.
 
-use gpui::{Bounds, Pixels, Window};
+use gpui::{App, Bounds, Pixels, Window};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::{
     ptr::null_mut,
@@ -30,10 +30,10 @@ use windows_sys::Win32::{
         ClientToScreen, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
     },
     UI::WindowsAndMessaging::{
-        CallWindowProcW, GWL_EXSTYLE, GWLP_WNDPROC, GetWindowLongPtrW, GetWindowRect, HWND_TOPMOST,
-        MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
-        SetWindowDisplayAffinity, SetWindowLongPtrW, SetWindowPos, WDA_EXCLUDEFROMCAPTURE,
-        WM_MOUSEACTIVATE, WNDPROC, WS_EX_NOACTIVATE,
+        CallWindowProcW, GWL_EXSTYLE, GWLP_WNDPROC, GetClientRect, GetWindowDisplayAffinity,
+        GetWindowLongPtrW, GetWindowRect, HWND_TOPMOST, IsWindow, MA_NOACTIVATE, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowDisplayAffinity, SetWindowLongPtrW,
+        SetWindowPos, WDA_EXCLUDEFROMCAPTURE, WM_MOUSEACTIVATE, WNDPROC, WS_EX_NOACTIVATE,
     },
 };
 
@@ -48,6 +48,17 @@ pub(crate) fn hwnd(window: &Window) -> HWND {
         Ok(RawWindowHandle::Win32(handle)) => handle.hwnd.get() as HWND,
         _ => null_mut(),
     }
+}
+
+/// Whether Windows left `window` out of capture: `float` asked, and an
+/// older or refusing system may not have.
+pub(crate) fn excluded(window: &Window) -> bool {
+    let hwnd = hwnd(window);
+    let mut affinity = 0;
+    // SAFETY: a live window; `affinity` outlives the call.
+    !hwnd.is_null()
+        && unsafe { GetWindowDisplayAffinity(hwnd, &mut affinity) } != 0
+        && affinity == WDA_EXCLUDEFROMCAPTURE
 }
 
 /// Whether `hwnd` answers through `companion_proc`.
@@ -137,28 +148,37 @@ extern "system" fn companion_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 }
 
 /// Make the companion `window` `height` tall (logical pixels), keeping the
-/// edge next to the taskbar where it is. Outside layout.
-pub(crate) fn set_height(window: &Window, height: f32) {
+/// edge next to the taskbar where it is. The resize runs once the app is
+/// free: Windows reports it at once, and GPUI must take it in.
+pub(crate) fn set_height(window: &Window, height: f32, cx: &mut App) {
     let hwnd = hwnd(window);
     if hwnd.is_null() {
         return;
     }
-    let delta =
-        ((height - window.viewport_size().height.as_f32()) * window.scale_factor()).round() as i32;
-    if delta == 0 {
-        return;
-    }
+    let client_height = (height * window.scale_factor()).round() as i32;
+    cx.foreground_executor()
+        .spawn(async move { resize(hwnd, client_height) })
+        .detach();
+}
+
+/// Make `hwnd`'s client area `client_height` device pixels tall.
+fn resize(hwnd: HWND, client_height: i32) {
     let mut outer = RECT::default();
+    let mut client = RECT::default();
     let mut info = MONITORINFO {
         cbSize: size_of::<MONITORINFO>() as u32,
         ..Default::default()
     };
-    // SAFETY: a live window; `outer` and `info` outlive the calls.
+    // SAFETY: `IsWindow` first, as the companion may have closed since;
+    // the rest outlive their calls.
     let read = unsafe {
-        GetWindowRect(hwnd, &mut outer) != 0
+        IsWindow(hwnd) != 0
+            && GetWindowRect(hwnd, &mut outer) != 0
+            && GetClientRect(hwnd, &mut client) != 0
             && GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mut info) != 0
     };
-    if !read {
+    let delta = client_height - (client.bottom - client.top);
+    if !read || delta == 0 {
         return;
     }
     let (top, bottom) = crate::tray::resized(
