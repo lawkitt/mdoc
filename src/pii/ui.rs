@@ -842,7 +842,7 @@ impl DocumentView {
         let action = target.map(|target| mdoc_editor::SelectionAction {
             range: selection,
             label: "Replace".into(),
-            menu_label: "Replace with placeholder".into(),
+            menu_label: "Replace with alias".into(),
             shortcut: if cfg!(target_os = "macos") {
                 "⌘⌥P"
             } else {

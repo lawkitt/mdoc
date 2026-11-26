@@ -457,7 +457,7 @@ pub struct SelectionAction {
     pub range: Range<usize>,
     /// Pill label, e.g. "Replace".
     pub label: SharedString,
-    /// Right-click item label, e.g. "Replace with placeholder".
+    /// Right-click item label, e.g. "Replace with alias".
     pub menu_label: SharedString,
     pub shortcut: SharedString,
     /// Why the action is unavailable; the pill and item show disabled.
