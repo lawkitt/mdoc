@@ -133,6 +133,204 @@ fn shortcuts_work_right_after_share_move_to_new_project(cx: &mut TestAppContext)
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
 }
 
+/// #1313: Share's Move to New Project, in a window that takes focus; the
+/// active tab, its view and the new Project's id once the move landed.
+fn share_move_to_new_project<'a>(
+    cx: &'a mut TestAppContext,
+    dir: &std::path::Path,
+) -> (
+    Entity<Workspace>,
+    &'a mut VisualTestContext,
+    Entity<DocumentView>,
+    String,
+) {
+    cx.update(crate::bind_all_keys);
+    let (tabs, cx, _) = applied_document(cx, dir, Session::default());
+    // Focus-out events reach listeners only in an active window.
+    cx.update(|window, _| window.activate_window());
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.inspector = crate::document_view::Inspector::Share;
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    let button = cx.debug_bounds("share-new-project").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let id = project_of_tab(&tabs, cx, tab).expect("the tab moved into a new Project");
+    (tabs, cx, view, id)
+}
+
+/// The name field Move to New Project left open, with its Project's id.
+fn name_field(
+    tabs: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+) -> Option<(String, Entity<crate::markdown_search::SearchInput>)> {
+    cx.update(|_, cx| tabs.read(cx).project_ui.renaming.clone())
+}
+
+fn breadcrumb(view: &Entity<DocumentView>, cx: &mut VisualTestContext) -> String {
+    cx.update(|_, cx| view.read(cx).project.link().unwrap().name.clone())
+}
+
+#[gpui::test]
+fn move_to_new_project_leaves_its_name_ready_to_edit_and_typing_renames_it(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, view, id) = share_move_to_new_project(cx, dir.path());
+    // One click moved it, named after the document, and it stays undoable.
+    assert_eq!(vault(&tabs, cx).project(&id).unwrap().name, "contract");
+    assert!(cx.debug_bounds("move-toast-undo").is_some());
+    // Its name is ready to edit in the header, focused, the document's
+    // name in it.
+    let (renaming, input) = name_field(&tabs, cx).expect("the name is ready to edit");
+    assert_eq!(renaming, id);
+    cx.update(|window, cx| {
+        assert_eq!(input.read(cx).value(), "contract");
+        assert!(input.read(cx).focus_handle(cx).is_focused(window));
+    });
+    assert!(cx.debug_bounds("header-project-name").is_some());
+    // The name is selected: typing replaces it, and Enter keeps it.
+    cx.simulate_input("Lease 2026");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    draw(cx);
+    assert!(name_field(&tabs, cx).is_none());
+    assert!(cx.debug_bounds("header-project-name").is_none());
+    assert_eq!(breadcrumb(&view, cx), "Lease 2026");
+    assert_eq!(vault(&tabs, cx).project(&id).unwrap().name, "Lease 2026");
+    // The editor has the keyboard again.
+    cx.update(|window, cx| {
+        assert!(
+            view.read(cx)
+                .editor
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        );
+    });
+}
+
+#[gpui::test]
+fn escape_in_move_to_new_projects_name_keeps_the_documents_name(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, view, id) = share_move_to_new_project(cx, dir.path());
+    assert!(name_field(&tabs, cx).is_some());
+    cx.simulate_input("Not kept");
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    draw(cx);
+    assert!(name_field(&tabs, cx).is_none());
+    assert!(cx.debug_bounds("header-project-name").is_none());
+    assert_eq!(breadcrumb(&view, cx), "contract");
+    assert_eq!(vault(&tabs, cx).project(&id).unwrap().name, "contract");
+}
+
+#[gpui::test]
+fn undo_closes_move_to_new_projects_name_unsaved(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, view, id) = share_move_to_new_project(cx, dir.path());
+    cx.simulate_input("Not kept");
+    tabs.update_in(cx, |tabs, window, cx| tabs.undo_move(window, cx));
+    cx.run_until_parked();
+    draw(cx);
+    assert!(name_field(&tabs, cx).is_none());
+    assert!(cx.debug_bounds("header-project-name").is_none());
+    cx.update(|_, cx| assert!(view.read(cx).project.link().is_none()));
+    assert!(
+        vault(&tabs, cx).project(&id).is_err(),
+        "the Project went with the undo"
+    );
+}
+
+/// Review of #1318: the toast's Undo, clicked with a name typed, takes the
+/// document back to Unfiled and the Project with it.
+#[gpui::test]
+fn clicking_undo_with_a_name_typed_takes_the_new_project_away(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, view, id) = share_move_to_new_project(cx, dir.path());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    cx.simulate_input("Typed then undone");
+    draw(cx);
+    let undo = cx.debug_bounds("move-toast-undo").unwrap();
+    cx.simulate_click(undo.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    assert!(name_field(&tabs, cx).is_none());
+    cx.update(|_, cx| assert!(view.read(cx).project.link().is_none()));
+    assert_eq!(stored(&tabs, cx, tab).project, None);
+    assert!(vault(&tabs, cx).project(&id).is_err());
+    assert!(vault(&tabs, cx).projects().is_empty());
+}
+
+/// Review of #1318: Ask's app coming forward right after the move leaves
+/// the name field open; a focus move inside mdoc still saves it.
+#[gpui::test]
+fn another_app_in_front_keeps_move_to_new_projects_name_open(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, view, id) = share_move_to_new_project(cx, dir.path());
+    cx.simulate_input("Lease 2026");
+    cx.deactivate_window();
+    draw(cx);
+    assert!(name_field(&tabs, cx).is_some());
+    cx.update(|window, _| window.activate_window());
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|window, _| assert!(window.is_window_active()));
+    let (_, input) = name_field(&tabs, cx).expect("still open");
+    cx.update(|window, cx| {
+        assert_eq!(input.read(cx).value(), "Lease 2026");
+        assert!(input.read(cx).focus_handle(cx).is_focused(window));
+    });
+    cx.simulate_keystrokes("tab");
+    cx.run_until_parked();
+    draw(cx);
+    assert!(name_field(&tabs, cx).is_none());
+    assert_eq!(breadcrumb(&view, cx), "Lease 2026");
+    assert_eq!(vault(&tabs, cx).project(&id).unwrap().name, "Lease 2026");
+}
+
+/// The sidebar's Move to New Project on a document not in view: the new
+/// Project's page opens with its name ready to edit.
+#[gpui::test]
+fn move_to_new_project_of_a_document_not_in_view_names_it_on_its_page(cx: &mut TestAppContext) {
+    cx.update(crate::bind_all_keys);
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    cx.update(|window, _| window.activate_window());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.show_home(window, cx);
+        tabs.move_document_to_new_project(document, window, cx);
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let id = project_of_tab(&tabs, cx, tab).expect("it moved into a new Project");
+    let (renaming, input) = name_field(&tabs, cx).expect("the name is ready to edit");
+    assert_eq!(renaming, id);
+    cx.update(|_, cx| {
+        let page = tabs
+            .read(cx)
+            .project_ui
+            .page
+            .as_ref()
+            .map(|page| page.id().to_string());
+        assert_eq!(page.as_deref(), Some(id.as_str()));
+        assert_eq!(input.read(cx).value(), "contract");
+    });
+    assert!(cx.debug_bounds("header-project-name").is_none());
+    cx.simulate_input("Lease 2026");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert_eq!(vault(&tabs, cx).project(&id).unwrap().name, "Lease 2026");
+}
+
 #[gpui::test]
 fn a_long_project_name_keeps_categories_page_controls_inside_the_card(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();

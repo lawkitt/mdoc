@@ -4,7 +4,10 @@ use crate::{
     pii::ui::{CopyForAi, PiiApplyAll},
     spelling::ToggleDocumentSpelling,
     style, ui,
-    workspace::{Close, Import, Open, PasteAiResponse},
+    workspace::{
+        CancelProjectName, Close, ConfirmProjectName, Import, Open, PasteAiResponse, ProjectEvent,
+        TabEvent,
+    },
 };
 use gpui::{App, Context, Focusable, Window, div, prelude::*, px};
 
@@ -252,6 +255,51 @@ impl DocumentView {
             || self.preview.failed();
         let reviewable = self.can_show_replacements();
         let name = self.display_name();
+        // Right after Move to New Project the Project's name is ready to
+        // edit here (#1313): Enter, Tab or a click away saves, Esc keeps it.
+        let project = self.project.link().cloned().map(|link| {
+            let name = match self.project_name_field.clone() {
+                Some(input) => ui::no_drag(
+                    div()
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "header-project-name".into())
+                        })
+                        .flex()
+                        .flex_shrink(1.)
+                        .min_w(px(80.))
+                        .w(px(200.))
+                        .px_1()
+                        .border_1()
+                        .border_color(p.border)
+                        .rounded_sm()
+                        .bg(p.bg)
+                        .text_color(p.header_fg)
+                        .on_action(cx.listener(|_, _: &ConfirmProjectName, _, cx| {
+                            cx.emit(TabEvent::Project(ProjectEvent::FinishRename { save: true }));
+                            cx.stop_propagation();
+                        }))
+                        .on_action(cx.listener(|_, _: &CancelProjectName, _, cx| {
+                            cx.emit(TabEvent::Project(ProjectEvent::FinishRename {
+                                save: false,
+                            }));
+                            cx.stop_propagation();
+                        }))
+                        .on_mouse_down_out(cx.listener(|_, _, _, cx| {
+                            cx.emit(TabEvent::Project(ProjectEvent::FinishRename { save: true }));
+                        }))
+                        .child(input),
+                )
+                .into_any_element(),
+                None => div()
+                    .flex_shrink(1.)
+                    .min_w(px(24.))
+                    .truncate()
+                    .text_color(p.header_muted)
+                    .child(link.name.clone())
+                    .into_any_element(),
+            };
+            (name, link)
+        });
         let crumb = div()
             .flex()
             .items_center()
@@ -259,7 +307,7 @@ impl DocumentView {
             .min_w_0()
             .flex_shrink(1.)
             .text_size(px(13.))
-            .when_some(self.project.link().cloned(), |v, link| {
+            .when_some(project, |v, (project_name, link)| {
                 v.child(
                     div()
                         .size(px(7.))
@@ -267,14 +315,7 @@ impl DocumentView {
                         .flex_shrink_0()
                         .bg(style::project_color(link.hue(), theme)),
                 )
-                .child(
-                    div()
-                        .flex_shrink(1.)
-                        .min_w(px(24.))
-                        .truncate()
-                        .text_color(p.header_muted)
-                        .child(link.name.clone()),
-                )
+                .child(project_name)
                 .child(
                     gpui::svg()
                         .data(ui::Icon::ChevronRight.data())
