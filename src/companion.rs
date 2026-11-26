@@ -4,8 +4,9 @@
 //! toggles it in place of the shelf popup. It holds a fixed set:
 //!
 //! - the AI project, with Stop sharing, or that nothing is shared;
-//! - the latest review request: its proposals and Replace all, or Open in
-//!   mdoc for the rest (item 16);
+//! - the latest review request: its proposals, real names shown only while
+//!   the pointer is over them as the reply's are, and Replace all, or Open
+//!   in mdoc for the rest (item 16);
 //! - the AI project's documents by AI label, with their state;
 //! - the latest reply, restored, with Copy and Save as document;
 //! - a drop target, which imports into the AI project;
@@ -18,9 +19,8 @@
 //! Open mdoc, Settings, a drop) brings mdoc forward; Replace all runs in
 //! mdoc's window behind other apps. It asks to be left out
 //! of screen capture (`NSWindowSharingNone`, which not every capture path
-//! honours), and the restored reply and a review's proposals show only
-//! while the pointer is over them: until then the window holds a
-//! placeholder, not the names.
+//! honours), and the restored reply shows only while the pointer is over
+//! it: until then the window holds a placeholder, not the text.
 //! `native.rs` makes the window; Personal and search (ADR 0128) are not
 //! here yet.
 
