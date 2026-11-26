@@ -1,11 +1,12 @@
-//! Projects: the Open Project list, the move menu from the Share tab and
-//! the ⋯ menu with no Project and one (#1312), a move into a Project with
-//! its toast,
+//! Projects: the Open Project list, the Share tab, the ⋯ menu, the move
+//! menu they open and Ask's Unfiled card with no Project, one and a shared
+//! one (#1312), a move into a Project with its toast,
 //! the Project page's three segments and its ⋯ menu,
 //! the Project page with its rename, categories and lists, the Keychain
 //! explainer, and the delete question.
 use super::{Driver, Result};
 use crate::workspace::project_page::{Place, Segment};
+use mdoc_store::settings::AskWith;
 
 /// Moves the fixture document into the fixture Project; returns the
 /// Project's id.
@@ -19,7 +20,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<String> {
             .map(|summary| summary.id)
     })?;
     let id = id.ok_or("fixture Project")?;
-    move_menus(d)?;
+    move_menus(d, &id)?;
     d.change(|w, window, cx| {
         let tab = w.tabs.active();
         w.move_tab(tab, Some(id.clone()), window, cx);
@@ -115,11 +116,12 @@ pub(super) fn scenes(d: &mut Driver) -> Result<String> {
     Ok(id)
 }
 
-/// The Unfiled fixture document's Share tab and ⋯ menu with no Project
-/// (the window's copy only, put back after) and with the fixture Project,
-/// each with the move menu they open (#1312). The Project menu's Move to
-/// Project… opens the same menu under ⋯.
-fn move_menus(d: &mut Driver) -> Result<()> {
+/// The Unfiled fixture document's Share tab, ⋯ menu, the move menu they
+/// open and Ask's Unfiled card, with no Project (the window's copy only,
+/// put back after), with `project` and with it shared (#1312). The Project
+/// menu's Move to Project… opens the same menu under ⋯. "AI connector
+/// (preview)" is on throughout, for Ask, and off again after.
+fn move_menus(d: &mut Driver, project: &str) -> Result<()> {
     let tab = d.change(|w, _, _| w.tabs.active())?;
     let view = d.change(|w, _, _| w.tab_view(tab))?;
     let view = view.ok_or("the fixture document's tab")?;
@@ -152,6 +154,13 @@ fn move_menus(d: &mut Driver) -> Result<()> {
         d.capture(name)?;
         d.change(|w, window, cx| w.close_document_menu(window, cx))
     };
+    // Ask, as its button asks: the card, for an Unfiled document.
+    let ask = |d: &mut Driver, name: &str| -> Result<()> {
+        d.change(|w, window, cx| w.ask_from_tab(tab, AskWith::Claude, false, None, window, cx))?;
+        d.capture(name)?;
+        d.change(|_, window, cx| view.update(cx, |view, cx| view.close_ask(window, cx)))
+    };
+    preview(d, true)?;
     // No Project.
     let kept = d.change(|w, _, cx| {
         let kept: Vec<_> = (w.projects.summaries().into_iter())
@@ -163,6 +172,7 @@ fn move_menus(d: &mut Driver) -> Result<()> {
     })?;
     share(d, "share-project-none")?;
     menu(d, "more-move-menu-none", true)?;
+    ask(d, "ask-unfiled-none")?;
     d.change(|w, _, cx| {
         w.projects.finish_load(kept);
         cx.notify();
@@ -185,6 +195,14 @@ fn move_menus(d: &mut Driver) -> Result<()> {
         })
     })?;
     menu(d, "more-move-menu", true)?;
+    ask(d, "ask-unfiled-one")?;
+    // The Project shared with AI apps.
+    d.change(|w, _, cx| w.share_with_ai(project, cx))?;
+    share(d, "share-project-shared")?;
+    menu(d, "share-move-menu-shared", false)?;
+    ask(d, "ask-unfiled-shared")?;
+    d.change(|w, _, cx| w.stop_sharing_with_ai(cx))?;
+    preview(d, false)?;
     d.change(|_, window, cx| {
         view.update(cx, |view, cx| {
             view.inspector = was.0;
@@ -193,6 +211,16 @@ fn move_menus(d: &mut Driver) -> Result<()> {
             }
             cx.notify();
         })
+    })?;
+    d.settle()
+}
+
+fn preview(d: &mut Driver, on: bool) -> Result<()> {
+    d.change(|w, window, cx| {
+        if let Some(preferences) = w.preferences.borrow_mut().current.as_mut() {
+            preferences.ai_connector.preview = on;
+        }
+        w.refresh_ai_connector(window, cx);
     })?;
     d.settle()
 }

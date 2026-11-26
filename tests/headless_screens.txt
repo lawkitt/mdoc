@@ -47,6 +47,17 @@ copy-refused-excluded
 copy-refused-checking
 decision-history
 open-project
+share-project-none
+more-move-menu-none
+ask-unfiled-none
+share-project-one
+share-move-menu
+more-menu-move
+more-move-menu
+ask-unfiled-one
+share-project-shared
+share-move-menu-shared
+ask-unfiled-shared
 project-move-toast
 project-page
 project-page-replies
