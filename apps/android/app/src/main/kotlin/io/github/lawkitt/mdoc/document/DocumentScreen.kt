@@ -203,8 +203,10 @@ fun DocumentScreen(
     // Decision 19); a refusal shows its own words and step (#1209).
     val refusal = model.handOffRefusal(state)
     val step = refusal?.let(model::step)
-    // Find names waits while a job holds the one slot, wherever it is offered.
-    val stepWaits = step == HandOffRefusal.Step.FindNames && job != null
+    // Find names waits while a job holds the one slot, wherever it is
+    // offered; its line says whose job that is (#1295).
+    val stepWait = StepWait.of(step, jobRunning = job != null, jobIsMine = model.isMine(job?.documentId))
+    val stepWaits = stepWait != null
     val resources = LocalResources.current
     // Each hand-off, and its tap: "I checked the names myself" goes on with
     // the one tapped, which the model keeps (item 48).
@@ -325,7 +327,14 @@ fun DocumentScreen(
                                     text = {
                                         Column {
                                             Text(it.title(resources))
-                                            if (stepWaits) Text(stringResource(R.string.waiting_for_other), style = MaterialTheme.typography.bodySmall)
+                                            val running = job
+                                            when {
+                                                stepWait == StepWait.OwnJob && running != null -> Text(
+                                                    stageLabel(running.kind, running.stage, running.secondsLeft),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                )
+                                                stepWait != null -> Text(stringResource(R.string.waiting_for_other), style = MaterialTheme.typography.bodySmall)
+                                            }
                                         }
                                     },
                                     enabled = !stepWaits,

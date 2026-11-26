@@ -97,6 +97,28 @@ data class DocumentState(
     val showsReplyBanner: Boolean get() = replyOffer == ReplyOffer.Offered
 }
 
+/** Why a hand-off's Find names step waits while a job holds the one slot. */
+enum class StepWait {
+    /** This document's own job runs: the step says what it is doing. */
+    OwnJob,
+
+    /** Another document's job holds the slot. */
+    OtherJob;
+
+    companion object {
+        /**
+         * The wait for [step], if any: only Find names waits, and only while
+         * a job runs; "Waiting for another document" only when that job is
+         * another document's (#1295).
+         */
+        fun of(step: HandOffRefusal.Step?, jobRunning: Boolean, jobIsMine: Boolean): StepWait? = when {
+            step != HandOffRefusal.Step.FindNames || !jobRunning -> null
+            jobIsMine -> OwnJob
+            else -> OtherJob
+        }
+    }
+}
+
 /** The ways out "I checked the names myself" goes on with: the one tapped (item 48). */
 enum class HandOffKind { Copy, Share, ShareFile, AskAi }
 

@@ -845,10 +845,9 @@ pub enum ImportError {
     /// The OCR runtime or models failed; the shared OCR state needs repair.
     #[error("{0}")]
     OcrFailed(OcrFailure),
-    /// OCR ran on this document but recognized nothing usable.
-    #[error(
-        "Local OCR produced no usable text. Retry with a clearer scan or extract native text only."
-    )]
+    /// OCR ran on this document but recognized nothing usable. Every app
+    /// shows this sentence as it is (#1295).
+    #[error("No text found in this scan. Try a clearer photo.")]
     OcrNoText,
 }
 
@@ -1475,6 +1474,16 @@ fn convert_error(error: anydoc::ConvertError) -> ImportError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A scan OCR finds no text in says so in app words, the same on
+    /// every platform, not the engine's (#1295).
+    #[test]
+    fn a_scan_with_no_text_says_so_plainly() {
+        assert_eq!(
+            ImportError::OcrNoText.to_string(),
+            "No text found in this scan. Try a clearer photo."
+        );
+    }
 
     #[test]
     fn format_hint_names_every_converter_format() {
