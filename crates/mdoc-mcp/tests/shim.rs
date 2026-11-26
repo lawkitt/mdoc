@@ -396,3 +396,28 @@ fn an_unknown_protocol_version_is_refused() {
     assert_eq!(response["error"]["code"], -32022);
     assert_eq!(response["error"]["data"]["supported"][0], "2026-07-28");
 }
+
+/// Done when (#1311): from a profile whose path is too long for the usual
+/// socket, the shim reaches mdoc's listener by the same rule.
+#[test]
+fn a_long_profile_path_is_reached() {
+    let temp = tempfile::tempdir().unwrap();
+    let profile = temp.path().join("p".repeat(110)).join("profile");
+    let folder = temp.path().join("shim");
+    std::fs::create_dir_all(&folder).unwrap();
+    // On macOS and Linux, a socket in a short folder outside the temp one.
+    #[cfg(unix)]
+    let socket = Endpoint::for_profile(Some(&profile)).unwrap().to_string();
+    #[cfg(unix)]
+    assert!(!Path::new(&socket).starts_with(temp.path()), "{socket}");
+    let app = App::start(&profile, temp.path());
+    let mut shim = Shim::start(&folder, &profile, Era::Modern);
+    let listed = shim.call("list_documents", json!({}));
+    assert_eq!(listed["isError"], false, "{listed}");
+    let rows = listed["structuredContent"]["documents"].as_array().unwrap();
+    assert_eq!(rows.len(), 4);
+    drop((shim, app));
+    // The short folder, outside the temp folder: leave nothing there.
+    #[cfg(unix)]
+    let _ = std::fs::remove_dir_all(Path::new(&socket).parent().unwrap());
+}
