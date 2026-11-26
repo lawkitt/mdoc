@@ -33,6 +33,8 @@ use std::{
 };
 
 mod ai_ask_ui;
+mod ai_companion;
+pub(crate) use ai_companion::CompanionContent;
 mod ai_deliveries;
 mod ai_project;
 mod ai_project_ui;

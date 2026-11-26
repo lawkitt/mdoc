@@ -590,7 +590,7 @@ pub(super) fn record_notes(tabs: &Entity<Workspace>, cx: &mut VisualTestContext)
 
 /// The connector on, "Lease" shared, the sidebar open, and the window in
 /// the background, as while the user is in the AI app.
-fn shared_lease<'a>(
+pub(super) fn shared_lease<'a>(
     cx: &'a mut TestAppContext,
     fixture: &Fixture,
 ) -> (Entity<Workspace>, &'a mut VisualTestContext, Notes) {
@@ -606,7 +606,7 @@ fn shared_lease<'a>(
     (tabs, cx, notes)
 }
 
-fn deliver(
+pub(super) fn deliver(
     tabs: &Entity<Workspace>,
     cx: &mut VisualTestContext,
     fixture: &Fixture,
@@ -640,7 +640,7 @@ fn deliver(
     (reply, document)
 }
 
-fn window_active(cx: &mut VisualTestContext) -> bool {
+pub(super) fn window_active(cx: &mut VisualTestContext) -> bool {
     cx.update(|window, _| window.is_window_active())
 }
 
@@ -648,7 +648,10 @@ fn reply_shown(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<S
     cx.update(|_, cx| Some(tabs.read(cx).reply_page.as_ref()?.id().to_string()))
 }
 
-fn document_shown(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<String> {
+pub(super) fn document_shown(
+    tabs: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+) -> Option<String> {
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         if tabs.reply_page.is_some() || tabs.project_ui.page.is_some() {
@@ -662,7 +665,7 @@ fn document_shown(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Optio
 
 /// The document in front shows its Review panel, as Pseudonymize opens
 /// it.
-fn review_open(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
+pub(super) fn review_open(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
     cx.update(|_, cx| {
         let view = tabs.read(cx).active_view();
         view.is_some_and(|view| {

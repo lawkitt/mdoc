@@ -19,7 +19,7 @@ pub(crate) use note::{NOTE_HEIGHT, NOTE_WIDTH};
 pub(crate) use note::{NOTE_TEXT, NOTE_TITLE};
 #[cfg(test)]
 pub(crate) use rows::row_label;
-pub(crate) use rows::{ShelfRows, ShelfRowsEvent, clear_exports};
+pub(crate) use rows::{ShelfRows, ShelfRowsEvent, clear_exports, height as rows_height};
 
 use crate::{
     menu_bar,
@@ -95,12 +95,21 @@ pub(crate) struct Fit {
 }
 
 impl Fit {
+    /// A popup `height` tall now, growing to at most `max`.
+    pub(crate) fn new(height: f32, max: f32) -> Self {
+        Self {
+            max,
+            asked: Cell::new(height),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn asked(&self) -> f32 {
         self.asked.get()
     }
 
-    fn measured(&self, height: f32, window: &mut Window, cx: &mut App) {
+    /// The content measured `height` tall after a layout: resize to fit.
+    pub(crate) fn measured(&self, height: f32, window: &mut Window, cx: &mut App) {
         let wanted = fitted_height(height, self.max);
         if (wanted - self.asked.get()).abs() < 0.5 {
             return;
@@ -344,10 +353,7 @@ impl ShelfView {
     /// The shelf is its own popup, `height` tall with at most `max` under
     /// the item: from now on it follows its content's height.
     pub(crate) fn fit_to_screen(&mut self, height: f32, max: f32) {
-        self.fit = Some(Rc::new(Fit {
-            max,
-            asked: Cell::new(height),
-        }));
+        self.fit = Some(Rc::new(Fit::new(height, max)));
     }
 
     /// The popup's fitting, for tests.

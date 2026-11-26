@@ -49,6 +49,7 @@ mod ai_ask;
 mod ai_connector;
 mod ai_project;
 mod comments;
+mod companion;
 mod comparison;
 mod confirm;
 mod cut_over;
@@ -296,6 +297,10 @@ impl Driver {
             self.cx
                 .update(|cx| stage.read(cx).map(|stage| stage.state(cx)))
                 .map_err(|e| e.to_string())?
+        } else if let Some(stage) = self.window.downcast::<companion::Stage>() {
+            self.cx
+                .update(|cx| stage.read(cx).map(|stage| stage.state(cx)))
+                .map_err(|e| e.to_string())?
         } else {
             json!({"model_comparison": true})
         };
@@ -437,6 +442,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     vault::original_missing(d)?;
     vault::unavailable_home(d)?;
     vault::recovery_key(d)?;
+    companion::scenes(d)?;
     // Last: it leaves the Vault locked.
     shelf::scenes(d)
 }

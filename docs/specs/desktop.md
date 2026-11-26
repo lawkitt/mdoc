@@ -117,8 +117,10 @@ renders and flow tests specify the screens. Terms are in
 
 ## Platform
 
-- The app crate takes no Objective-C dependency; the shelf's native patches
-  live in `vendor/gpui-pre-macos`, each listed in its `MDOC-PATCH.md`.
+- The shelf's native patches live in `vendor/gpui-pre-macos`, each listed
+  in its `MDOC-PATCH.md`. The app crate's only Objective-C calls are the
+  companion window's (`src/companion/`), through `objc2`, because GPUI has
+  no call for a window's sharing type.
 
 ## Focus and theme
 

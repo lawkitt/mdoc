@@ -8,11 +8,16 @@
 //! quit flow. Off, mdoc quits with its last window as before.
 //! The setting is on by default.
 //!
+//! With "AI connector (preview)" on, the item toggles the companion window
+//! ([`crate::companion`], ADR 0128) in place of the shelf popup; it also
+//! opens by itself for a delivery or a review request, never taking focus.
+//!
 //! `MenuBarState` holds the rules, GPUI-free; this module carries out its
 //! effects with GPUI and the vendored macOS calls. Other platforms never
 //! turn it on (no tray yet).
 
 use crate::{
+    companion::{COMPANION_WIDTH, CompanionView},
     shelf_ui::{NOTE_HEIGHT, NOTE_WIDTH, NoteView, ShelfContent, ShelfView},
     workspace::Workspace,
 };
@@ -48,6 +53,11 @@ pub(crate) enum MenuBarEffect {
     Dock(bool),
     /// The first-close note under the item, once ever.
     ShowNote,
+    /// The companion window, in place of the shelf while the preview is on.
+    OpenCompanion,
+    CloseCompanion,
+    /// What it shows changed: it reads the window again.
+    RefreshCompanion,
 }
 
 #[derive(Debug, Default)]
@@ -58,6 +68,9 @@ pub(crate) struct MenuBarState {
     shelf_closed_at: Option<Instant>,
     /// The first-close note has not shown yet.
     note_pending: bool,
+    /// "AI connector (preview)" is on: the item toggles the companion.
+    companion: bool,
+    companion_open: bool,
 }
 
 impl MenuBarState {
@@ -75,10 +88,7 @@ impl MenuBarState {
         if enabled {
             return vec![MenuBarEffect::ShowItem];
         }
-        let mut effects = Vec::new();
-        if self.shelf_open {
-            effects.push(MenuBarEffect::CloseShelf);
-        }
+        let mut effects = self.close_popups();
         effects.push(MenuBarEffect::RemoveItem);
         // Without the item a hidden window could never come back.
         if self.window_hidden {
@@ -117,12 +127,70 @@ impl MenuBarState {
         if !std::mem::take(&mut self.enabled) {
             return Vec::new();
         }
+        let mut effects = self.close_popups();
+        effects.push(MenuBarEffect::RemoveItem);
+        effects
+    }
+
+    /// Close the shelf and the companion, whichever is open.
+    fn close_popups(&self) -> Vec<MenuBarEffect> {
         let mut effects = Vec::new();
         if self.shelf_open {
             effects.push(MenuBarEffect::CloseShelf);
         }
-        effects.push(MenuBarEffect::RemoveItem);
+        if self.companion_open {
+            effects.push(MenuBarEffect::CloseCompanion);
+        }
         effects
+    }
+
+    /// "AI connector (preview)" is `on` now: the item toggles the
+    /// companion while it is, and the shelf popup again once it is off.
+    pub(crate) fn set_companion(&mut self, on: bool) -> Vec<MenuBarEffect> {
+        if on == self.companion {
+            return Vec::new();
+        }
+        self.companion = on;
+        // No click closed what was open: the next one opens.
+        self.shelf_closed_at = None;
+        match on {
+            true if self.shelf_open => vec![MenuBarEffect::CloseShelf],
+            false if self.companion_open => vec![MenuBarEffect::CloseCompanion],
+            _ => Vec::new(),
+        }
+    }
+
+    /// An AI app delivered, or asked for a document that needs review:
+    /// the companion opens if `open` and it is closed, and reads the
+    /// window again if it is open. Nothing while the preview or the item
+    /// is off.
+    pub(crate) fn ai_arrived(&mut self, open: bool) -> Vec<MenuBarEffect> {
+        if !self.enabled || !self.companion {
+            return Vec::new();
+        }
+        match (self.companion_open, open) {
+            (true, _) => vec![MenuBarEffect::RefreshCompanion],
+            (false, true) => vec![MenuBarEffect::OpenCompanion],
+            (false, false) => Vec::new(),
+        }
+    }
+
+    /// What the companion shows changed: it reads the window again if it
+    /// is open.
+    pub(crate) fn companion_changed(&self) -> Vec<MenuBarEffect> {
+        if self.companion_open {
+            vec![MenuBarEffect::RefreshCompanion]
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub(crate) fn companion_opened(&mut self) {
+        self.companion_open = true;
+    }
+
+    pub(crate) fn companion_closed(&mut self) {
+        self.companion_open = false;
     }
 
     /// Bring the workspace window forward: a shelf row, Open mdoc, a reopen
@@ -150,6 +218,14 @@ impl MenuBarState {
         if !self.enabled {
             return Vec::new();
         }
+        // The companion stays up while other apps are used: the item is
+        // its toggle, with no closing click to guard against.
+        if self.companion {
+            return match self.companion_open {
+                true => vec![MenuBarEffect::CloseCompanion],
+                false => vec![MenuBarEffect::OpenCompanion],
+            };
+        }
         if self.shelf_open {
             return vec![MenuBarEffect::CloseShelf];
         }
@@ -173,12 +249,13 @@ impl MenuBarState {
     }
 }
 
-/// The app's menu bar state, the workspace window, the open shelf and the
-/// first-close note.
+/// The app's menu bar state, the workspace window, the open shelf, the
+/// companion and the first-close note.
 struct MenuBar {
     state: MenuBarState,
     workspace: WindowHandle<Workspace>,
     shelf: Option<WindowHandle<ShelfView>>,
+    companion: Option<WindowHandle<CompanionView>>,
     note: Option<WindowHandle<NoteView>>,
 }
 
@@ -198,9 +275,47 @@ pub(crate) fn install(
         state,
         workspace,
         shelf: None,
+        companion: None,
         note: None,
     });
     set_enabled(enabled, cx);
+}
+
+/// "AI connector (preview)" is `on` now: the item toggles the companion
+/// in place of the shelf while it is (macOS only, as the item is).
+pub(crate) fn set_companion(on: bool, cx: &mut App) {
+    let on = on && cfg!(target_os = "macos");
+    update(cx, |state| state.set_companion(on));
+}
+
+/// An AI app delivered, or asked for a document that needs review: the
+/// companion opens by itself when `open`, without taking focus, or reads
+/// the window again while it shows.
+pub(crate) fn ai_arrived(open: bool, cx: &mut App) {
+    update(cx, |state| state.ai_arrived(open));
+}
+
+/// What the companion shows changed (a share, Stop sharing, a document
+/// opened for review): it reads the window again while it shows.
+pub(crate) fn companion_changed(cx: &mut App) {
+    update(cx, |state| state.companion_changed());
+}
+
+/// The companion closed itself (its Hide).
+pub(crate) fn companion_closed(cx: &mut App) {
+    if let Some(bar) = cx.try_global::<MenuBar>()
+        && bar.companion.is_some()
+    {
+        let bar = cx.global_mut::<MenuBar>();
+        bar.companion = None;
+        bar.state.companion_closed();
+    }
+}
+
+/// The open companion, for tests.
+#[cfg(all(test, target_os = "macos"))]
+pub(crate) fn companion(cx: &App) -> Option<WindowHandle<CompanionView>> {
+    cx.try_global::<MenuBar>().and_then(|bar| bar.companion)
 }
 
 /// The setting is `enabled` now; other platforms never turn it on.
@@ -307,6 +422,13 @@ pub(crate) fn close_shelf(cx: &mut App) {
     carry_out(MenuBarEffect::CloseShelf, cx);
 }
 
+/// Close the companion if it is open.
+pub(crate) fn close_companion(cx: &mut App) {
+    if cx.try_global::<MenuBar>().is_some() {
+        carry_out(MenuBarEffect::CloseCompanion, cx);
+    }
+}
+
 /// Close the first-close note if it shows.
 pub(crate) fn close_note(cx: &mut App) {
     let Some(note) = cx
@@ -382,6 +504,26 @@ fn carry_out(effect: MenuBarEffect, cx: &mut App) {
             gpui_macos::set_dock_visible(visible);
             let _ = visible;
         }
+        // Asked from inside the workspace's own update (a delivery, a
+        // share): it reads the workspace once that is done.
+        MenuBarEffect::OpenCompanion => {
+            close_note(cx);
+            cx.global_mut::<MenuBar>().state.companion_opened();
+            cx.defer(open_companion);
+        }
+        MenuBarEffect::CloseCompanion => {
+            let companion = cx.global_mut::<MenuBar>().companion.take();
+            cx.global_mut::<MenuBar>().state.companion_closed();
+            if let Some(companion) = companion {
+                let _ = companion.update(cx, |_, window, _| window.remove_window());
+            }
+        }
+        MenuBarEffect::RefreshCompanion => cx.defer(|cx| {
+            let companion = cx.try_global::<MenuBar>().and_then(|bar| bar.companion);
+            if let Some(companion) = companion {
+                let _ = companion.update(cx, |view, window, cx| view.refresh(window, cx));
+            }
+        }),
     }
 }
 
@@ -543,6 +685,51 @@ fn try_open_note(workspace: WindowHandle<Workspace>, cx: &mut App) -> bool {
     }
 }
 
+/// The companion under the item, where the shelf would sit, never taking
+/// focus ([`crate::companion::open`]). If it cannot open, the next click
+/// tries again.
+fn open_companion(cx: &mut App) {
+    if cx.try_global::<MenuBar>().is_none() {
+        return;
+    }
+    let opened = try_open_companion(cx);
+    let wanted = cx.global::<MenuBar>().state.companion_open;
+    match opened {
+        // Closed again before it opened (a second click, the preview off).
+        Some(companion) if !wanted => {
+            cx.global_mut::<MenuBar>().companion = None;
+            let _ = companion.update(cx, |_, window, _| window.remove_window());
+        }
+        Some(companion) => cx.global_mut::<MenuBar>().companion = Some(companion),
+        None => cx.global_mut::<MenuBar>().state.companion_closed(),
+    }
+}
+
+fn try_open_companion(cx: &mut App) -> Option<WindowHandle<CompanionView>> {
+    // Already open: a click and a delivery in one turn.
+    if let Some(open) = cx.global::<MenuBar>().companion {
+        return Some(open);
+    }
+    let (display_id, anchor) = item_anchor(cx)?;
+    let display = cx.find_display(display_id)?;
+    let workspace = cx.global::<MenuBar>().workspace;
+    let content = workspace
+        .read(cx)
+        .ok()
+        .map(|workspace| workspace.companion_content(cx))?;
+    let height = crate::companion::height(&content);
+    let bounds = popup_bounds(anchor, display.bounds(), COMPANION_WIDTH, height);
+    let max_height = popup_max_height(anchor, display.bounds());
+    crate::companion::open(bounds, display_id, cx, move |window, cx| {
+        cx.new(|cx| {
+            let mut companion = CompanionView::new(workspace, content, window, cx);
+            companion.fit_to_screen(bounds.size.height.as_f32(), max_height);
+            companion
+        })
+    })
+    .ok()
+}
+
 fn open_shelf(cx: &mut App) {
     let Some((display_id, anchor)) = item_anchor(cx) else {
         return;
@@ -661,6 +848,55 @@ mod tests {
             state.item_clicked(now + Duration::from_secs(1)),
             [OpenShelf]
         );
+    }
+
+    #[test]
+    fn with_the_preview_on_the_item_toggles_the_companion_in_place_of_the_shelf() {
+        let mut state = MenuBarState::default();
+        state.set_enabled(true);
+        let now = Instant::now();
+        assert_eq!(state.item_clicked(now), [OpenShelf]);
+        state.shelf_opened();
+        // Turned on with the shelf open: the shelf goes.
+        assert_eq!(state.set_companion(true), [CloseShelf]);
+        state.shelf_closed(now);
+        assert_eq!(state.set_companion(true), [], "no change");
+        // No guard after a close: the companion never closes by itself.
+        assert_eq!(state.item_clicked(now), [OpenCompanion]);
+        state.companion_opened();
+        assert_eq!(state.item_clicked(now), [CloseCompanion]);
+        state.companion_closed();
+        assert_eq!(state.item_clicked(now), [OpenCompanion]);
+        state.companion_opened();
+        // Turned off with it open: it goes, and the item opens the shelf.
+        assert_eq!(state.set_companion(false), [CloseCompanion]);
+        state.companion_closed();
+        assert_eq!(
+            state.item_clicked(now + Duration::from_secs(1)),
+            [OpenShelf]
+        );
+    }
+
+    #[test]
+    fn the_companion_opens_by_itself_only_for_what_arrived() {
+        let mut state = MenuBarState::default();
+        // The preview off, or the item off: nothing.
+        state.set_enabled(true);
+        assert_eq!(state.ai_arrived(true), []);
+        state.set_companion(true);
+        state.set_enabled(false);
+        assert_eq!(state.ai_arrived(true), []);
+        state.set_enabled(true);
+        // A review request repeated within its quiet time does not.
+        assert_eq!(state.ai_arrived(false), []);
+        assert_eq!(state.companion_changed(), []);
+        assert_eq!(state.ai_arrived(true), [OpenCompanion]);
+        state.companion_opened();
+        assert_eq!(state.ai_arrived(true), [RefreshCompanion]);
+        assert_eq!(state.ai_arrived(false), [RefreshCompanion]);
+        assert_eq!(state.companion_changed(), [RefreshCompanion]);
+        // The item going closes it with the rest.
+        assert_eq!(state.set_enabled(false), [CloseCompanion, RemoveItem]);
     }
 
     #[test]

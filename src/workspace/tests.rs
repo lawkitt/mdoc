@@ -38,6 +38,7 @@ mod ai_ask;
 mod ai_connector_setting;
 mod ai_project;
 mod comment_rail;
+mod companion;
 mod decision_history;
 mod default_categories;
 mod document_notes;
@@ -540,6 +541,27 @@ fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<crate::shelf_ui:
     });
     cx.run_until_parked();
     shelf
+}
+
+/// The companion over the workspace, in a window of its own, as the menu
+/// bar item opens it.
+fn open_companion(
+    cx: &mut VisualTestContext,
+) -> gpui::WindowHandle<crate::companion::CompanionView> {
+    use crate::companion::CompanionView;
+    let workspace = cx.window_handle().downcast::<Workspace>().unwrap();
+    let companion = cx.cx.update(|cx| {
+        let content = workspace
+            .read(cx)
+            .map(|workspace| workspace.companion_content(cx))
+            .unwrap();
+        cx.open_window(gpui::WindowOptions::default(), |window, cx| {
+            cx.new(|cx| CompanionView::new(workspace, content, window, cx))
+        })
+        .unwrap()
+    });
+    cx.run_until_parked();
+    companion
 }
 
 /// A Project to reopen: "Anna Petrova" is PERSON_1, and its one document,

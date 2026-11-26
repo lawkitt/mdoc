@@ -1,8 +1,8 @@
 //! The shelf's rows: pseudonymized documents as small previews to open,
 //! drag out or Copy for AI, with the drag hint under them, or the empty
-//! line. A view of its own: the shelf popup hosts it, and the companion
-//! window ([ADR 0128](../../docs/adr/0128-floating-companion-window.md)) is
-//! to host it next. What follows a row's use is the host's: it hears
+//! line. A view of its own: the shelf popup hosts it, and so does the
+//! companion window ([ADR 0128](../../docs/adr/0128-floating-companion-window.md))
+//! in its place. What follows a row's use is the host's: it hears
 //! [`ShelfRowsEvent`]s, and it owns the keys and the drop target, calling
 //! in here.
 //!
@@ -123,6 +123,8 @@ pub(crate) struct ShelfRows {
     refused: Option<usize>,
     /// The running drag was dropped on the host itself: not a drop.
     dropped_here: bool,
+    /// A drag of a row runs: a drop on the host is that drag coming back.
+    dragging: bool,
     /// Where each row's "N replaced" was painted, so a render can hover it.
     #[cfg(all(
         debug_assertions,
@@ -186,6 +188,7 @@ impl ShelfRows {
             copied: None,
             refused: None,
             dropped_here: false,
+            dragging: false,
             #[cfg(all(
                 debug_assertions,
                 feature = "headless-renders",
@@ -403,6 +406,7 @@ impl ShelfRows {
             return;
         };
         self.dropped_here = false;
+        self.dragging = true;
         #[cfg(all(target_os = "macos", not(test)))]
         {
             let workspace = self.workspace;
@@ -462,11 +466,18 @@ impl ShelfRows {
         self.dropped_here = true;
     }
 
+    /// Whether a drag of a row runs: a host with a drop target of its own
+    /// takes a drop then as the drag coming back.
+    pub(crate) fn dragging(&self) -> bool {
+        self.dragging
+    }
+
     /// A drag ended; a drop somewhere retires "Drag a preview into any app"
     /// for good.
     // Only the macOS drag reports its end; elsewhere there is no shelf.
     #[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
     pub(crate) fn drag_ended(&mut self, dropped: bool, cx: &mut Context<Self>) {
+        self.dragging = false;
         // A drop back on the host took nothing anywhere.
         let elsewhere = dropped && !std::mem::take(&mut self.dropped_here);
         if !elsewhere || !std::mem::take(&mut self.drag_hint) {

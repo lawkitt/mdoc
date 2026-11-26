@@ -149,6 +149,12 @@ ai-delivery-badge
 ai-reply-delivered
 project-page-activity
 ai-project-rail
+companion-nothing-shared
+companion-shared
+companion-reply-hidden
+companion-reply-shown
+companion-review
+companion-empty
 ask-menu
 ask-unfiled
 project-ask-menu
