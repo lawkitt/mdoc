@@ -29,7 +29,11 @@ final class DeviceRestoreUITests: XCTestCase {
         app.launchEnvironment["MDOC_SEED_RESTORE"] = "1"
         app.launch()
         let notes = XCUIApplication(bundleIdentifier: Self.notesBundle)
-        defer { deleteScratchNote(notes) }
+        // A teardown block, not defer: a failure stops the test without
+        // running defer, which left the scratch notes behind.
+        addTeardownBlock { @MainActor [weak self] in
+            self?.deleteScratchNote(XCUIApplication(bundleIdentifier: Self.notesBundle))
+        }
 
         // The Project's document: Copy for AI, then a reply from Notes.
         let projectAlias = try copyForAI(Self.projectDocument, in: app)
@@ -197,7 +201,7 @@ final class DeviceRestoreUITests: XCTestCase {
                 continue
             }
             note.swipeLeft()
-            let delete = Self.first(notes.buttons, labels: ["Delete", "Eliminar", "Trash", "Papelera"], identifiers: [])
+            let delete = Self.first(notes.buttons, labels: ["Delete", "Delete Note", "Eliminar", "Eliminar nota", "Trash", "Papelera"], identifiers: [])
             guard delete.waitForExistence(timeout: MdocUITest.probeTimeout) else { return }
             delete.tap()
         }
