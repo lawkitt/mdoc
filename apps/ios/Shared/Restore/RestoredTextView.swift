@@ -128,9 +128,18 @@ final class RestoredReplyTextView: RenderedTextView {
     ]
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        guard Self.allowedActions.contains(action) else { return false }
-        if action == #selector(UIResponderStandardEditActions.copy(_:)) { return selectedRange.length > 0 }
-        return super.canPerformAction(action, withSender: sender)
+        switch action {
+        case #selector(UIResponderStandardEditActions.copy(_:)):
+            return selectedRange.length > 0
+        case #selector(UIResponderStandardEditActions.selectAll(_:)):
+            // UIKit refuses Select All in a text view that is not editable
+            // (#1257), as the review text's would.
+            return textStorage.length > 0
+        case #selector(UIResponderStandardEditActions.select(_:)):
+            return super.canPerformAction(action, withSender: sender)
+        default:
+            return false
+        }
     }
 
     override func copy(_ sender: Any?) {
