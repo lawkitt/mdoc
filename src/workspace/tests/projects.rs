@@ -248,6 +248,53 @@ fn undo_closes_move_to_new_projects_name_unsaved(cx: &mut TestAppContext) {
     );
 }
 
+/// Review of #1318: the toast's Undo, clicked with a name typed, takes the
+/// document back to Unfiled and the Project with it.
+#[gpui::test]
+fn clicking_undo_with_a_name_typed_takes_the_new_project_away(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, view, id) = share_move_to_new_project(cx, dir.path());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    cx.simulate_input("Typed then undone");
+    draw(cx);
+    let undo = cx.debug_bounds("move-toast-undo").unwrap();
+    cx.simulate_click(undo.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    assert!(name_field(&tabs, cx).is_none());
+    cx.update(|_, cx| assert!(view.read(cx).project.link().is_none()));
+    assert_eq!(stored(&tabs, cx, tab).project, None);
+    assert!(vault(&tabs, cx).project(&id).is_err());
+    assert!(vault(&tabs, cx).projects().is_empty());
+}
+
+/// Review of #1318: Ask's app coming forward right after the move leaves
+/// the name field open; a focus move inside mdoc still saves it.
+#[gpui::test]
+fn another_app_in_front_keeps_move_to_new_projects_name_open(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, view, id) = share_move_to_new_project(cx, dir.path());
+    cx.simulate_input("Lease 2026");
+    cx.deactivate_window();
+    draw(cx);
+    assert!(name_field(&tabs, cx).is_some());
+    cx.update(|window, _| window.activate_window());
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|window, _| assert!(window.is_window_active()));
+    let (_, input) = name_field(&tabs, cx).expect("still open");
+    cx.update(|window, cx| {
+        assert_eq!(input.read(cx).value(), "Lease 2026");
+        assert!(input.read(cx).focus_handle(cx).is_focused(window));
+    });
+    cx.simulate_keystrokes("tab");
+    cx.run_until_parked();
+    draw(cx);
+    assert!(name_field(&tabs, cx).is_none());
+    assert_eq!(breadcrumb(&view, cx), "Lease 2026");
+    assert_eq!(vault(&tabs, cx).project(&id).unwrap().name, "Lease 2026");
+}
+
 /// The sidebar's Move to New Project on a document not in view: the new
 /// Project's page opens with its name ready to edit.
 #[gpui::test]

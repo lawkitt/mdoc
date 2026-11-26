@@ -56,9 +56,9 @@ pub(super) struct ProjectsState {
     pub(super) renaming: Option<(String, Entity<markdown_search::SearchInput>)>,
     /// Saves the rename when focus leaves its field.
     rename_blur: Option<gpui::Subscription>,
-    /// A document Move to New Project moved, and the Project it made: its
-    /// name is ready to edit once the document's tab has loaded again.
-    naming: Option<(VaultId, String)>,
+    /// Each document Move to New Project moved, and the Project it made:
+    /// its name is ready to edit once the document's tab has loaded again.
+    naming: std::collections::HashMap<VaultId, String>,
     pub(super) list_open: bool,
     /// The Keychain explainer is shown.
     pub(super) explainer: bool,
@@ -779,7 +779,7 @@ impl Workspace {
         if (self.project_ui.renaming.as_ref()).is_some_and(|(id, _)| Some(id) == made.as_ref()) {
             self.finish_rename(false, window, cx);
         }
-        self.project_ui.naming = None;
+        self.project_ui.naming.remove(&document);
         self.queue_op(document, Op::Undo { undo, made }, window, cx);
         cx.notify();
     }
@@ -930,9 +930,13 @@ impl Workspace {
                     .map(|(with, made)| (with, made, id.to_string()));
                 // The new Project's name is ready to edit once its tab shows
                 // the moved document (#1313).
-                self.project_ui.naming = match (&moving, &made) {
-                    (Moving::New, Some(made)) => Some((document.clone(), made.clone())),
-                    _ => None,
+                // Another move of the same document since forgets it.
+                match (&moving, &made) {
+                    (Moving::New, Some(made)) => self
+                        .project_ui
+                        .naming
+                        .insert(document.clone(), made.clone()),
+                    _ => self.project_ui.naming.remove(&document),
                 };
                 let tab = self.find_document(&DocumentId::Vault(document.clone()), None, cx);
                 match tab {
@@ -1516,9 +1520,18 @@ impl Workspace {
         });
         let focus = input.read(cx).focus_handle(cx);
         window.focus(&focus, cx);
-        // Leaving the field saves, like Enter (Escape still cancels).
+        // Leaving the field saves, like Enter (Escape still cancels). The
+        // header's field, opened by Move to New Project, stays open while
+        // another app is in front: Ask's app comes forward right after it.
         self.project_ui.rename_blur =
             Some(cx.on_focus_out(&focus, window, |this, _, window, cx| {
+                let header = (this.tabs.iter()).any(|tab| {
+                    tab.view()
+                        .is_some_and(|v| v.read(cx).project_name_field.is_some())
+                });
+                if header && !window.is_window_active() {
+                    return;
+                }
                 this.finish_rename(true, window, cx)
             }));
         self.project_ui.renaming = Some((project_id, input));
@@ -1591,12 +1604,16 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some((_, project)) = self.project_ui.naming.take_if(|(d, _)| d == document) else {
+        let Some(project) = self.project_ui.naming.remove(document) else {
             return;
         };
+        // A dialog or the recency switcher keeps the keyboard: the name
+        // stays the document's, Rename on the Project's page still renames.
         if self.projects.project(&project).is_none()
             || self.quit_flow.quitting()
             || self.project_ui.renaming.is_some()
+            || self.dialog_up(window)
+            || self.switcher.is_some()
         {
             return;
         }
