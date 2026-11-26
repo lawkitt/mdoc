@@ -392,12 +392,38 @@ and desktop tracks can run side by side once the core items they need are
 done. Desktop items 16–23 and 25 landed together from an integration branch
 (#1145).
 
-The Vault ships as 0.4.0 ([#1153](https://github.com/lawkitt/mdoc/issues/1153)). Items 28–32, the
-GUI rows in [#1146](https://github.com/lawkitt/mdoc/issues/1146) and one day
-of real use by the maintainer on the landed build gate its next candidate;
-items 33–35 are polish and do not. Items 36–39 and 44 gate it too; items
-40–43 follow them and gate nothing ([#1209](https://github.com/lawkitt/mdoc/issues/1209)).
+The Vault ships as 0.4.0 ([#1153](https://github.com/lawkitt/mdoc/issues/1153)). Its code gates
+(items 28–32, 36–39 and 44) are merged. **0.4.0's scope is frozen** once
+Milestone 2 items 15–18 land ([#1264](https://github.com/lawkitt/mdoc/issues/1264)): `main` then
+takes fixes, tests, docs and CI work only, until the stable tag. Items 45–49
+are the hardening pass, run from [#1265](https://github.com/lawkitt/mdoc/issues/1265); with them, one
+day of real use by the maintainer ([#1266](https://github.com/lawkitt/mdoc/issues/1266)) gates the
+next candidate.
 
+45. **[Check] Agents run the GUI rows.** *From [#1264](https://github.com/lawkitt/mdoc/issues/1264).*
+    Every row of [#1146](https://github.com/lawkitt/mdoc/issues/1146) and
+    [#1204](https://github.com/lawkitt/mdoc/issues/1204) that needs no Keychain, installer, drag
+    between apps or real AI app is run on a dev profile: macOS and iOS by the
+    Mac hub, Windows and Android by the Windows hub. *Done when:* each such row
+    is ticked or filed as a bug, and the native rows are on #1266.
+46. **[Housekeeping] One issue for the maintainer's rows.** *From
+    [#1264](https://github.com/lawkitt/mdoc/issues/1264).* Eleven "pending (maintainer)" issues are
+    open, the oldest from 30 October. One run drops the rows whose screens
+    are gone and folds the rest into one issue. *Done when:* one such issue is
+    open and the others are closed with a link to it.
+47. **[CI] Quarantine from 16 to 8.** *From [#1264](https://github.com/lawkitt/mdoc/issues/1264).*
+    Each hub fixes or deletes its platform's quarantined tests, and fixes the
+    hosted CI issues #1215, #1226 and #1243. *Done when:*
+    `.config/quarantine.txt` lists 8 tests or fewer and the Nightly is green.
+48. **[Mobile] Check: Ready below the memory floor.** *From
+    [#1264](https://github.com/lawkitt/mdoc/issues/1264).* Does a fresh Unfiled paste count as Ready
+    without review on a phone that cannot find names? If so, such a phone
+    asks once per document for "I checked the names myself" before the first
+    Copy for AI. *Done when:* the answer is on #1265 and, if a fix was needed,
+    a test pins it on iOS and Android.
+49. **[Release] Builds for the day of use.** *From [#1264](https://github.com/lawkitt/mdoc/issues/1264).*
+    One TestFlight build and one desktop build of the frozen `main`, with the
+    real profile backed up first. *Done when:* both are named on #1266.
 
 - **[Mobile] Later: drag a selection out.** It follows the copy menu's three
   states once those have been used for a while. *From
@@ -457,6 +483,12 @@ or ChatGPT apps themselves are the maintainer's.
     passes with tests of both, and a device check shares to an AI app and
     restores its answer.
 
+22. **[Desktop] Ask ChatGPT says what it opens.** *From
+    [#1264](https://github.com/lawkitt/mdoc/issues/1264) (item 2's spike).* ChatGPT's ordinary chats
+    do not call a local connector; Ask ChatGPT opens a local thread. The
+    menu, Settings and `docs/privacy.md` say so. *Done when:* no screen calls
+    it a chat, and a workspace test pins the wording.
+
 - **[Desktop] Later: Word export.** A delivered document and any other export
   as `.docx`. *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
 - **[Desktop] Later: a call that waits for review.** Only once every host
@@ -486,11 +518,13 @@ connector has shipped.
    tests pin the stored value coming back unchanged and the note's wording,
    and item 2 passes.
 2. **[Quality] The form set.** *From [#1165](https://github.com/lawkitt/mdoc/issues/1165).*
-   Ten real blank forms, two made-up people, Claude and ChatGPT. *Done
-   when:* every alias in an answer is from the note and written exactly, no
-   real value is invented or asked for, every blank a card could answer has
-   its alias or a clear instruction, no instruction is wrong on a checked
-   sample, and the results are published.
+   Ten real blank forms, two made-up people, Claude and ChatGPT; the first
+   run failed as written ([#1264](https://github.com/lawkitt/mdoc/issues/1264)). The note takes both
+   wording fixes and the set is rerun three times per prompt. *Done when:*
+   in every answer each alias is from the note and exact, no real value is
+   invented or asked for, and no checked instruction is wrong; the share of
+   blanks that carry their alias is reported; the results are published.
+   *Blocks items 1 and 3–6.*
 3. **[Desktop] The Personal section.** *From [#1165](https://github.com/lawkitt/mdoc/issues/1165).*
    A pinned entry by person and kind; device authentication, masked values
    and a clipboard that forgets; capture from an image or PDF with each
