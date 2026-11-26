@@ -177,6 +177,9 @@ impl Workspace {
             project,
             edited: SystemTime::UNIX_EPOCH + Duration::from_secs(document.updated),
             scanned: document.scanned || document.review.is_some(),
+            moved: document.scanned
+                && document.review.is_none()
+                && document.ready_fingerprint.is_none(),
             outbound: (!unwritten).then(|| checked(vault.text_for_ai(&summary.id))),
         })
     }

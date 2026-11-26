@@ -395,8 +395,9 @@ fn a_document_never_scanned_offers_find_names(cx: &mut TestAppContext) {
 /// Done when: shelf rows that are not Ready carry their step: "Replace 1
 /// and copy" on an open tab ends in copied text, "Review" on a stored
 /// document opens its review, "Find names" on one never scanned opens it
-/// on its scan; "not reviewed" reads "Not reviewed"; and Copy for AI (a
-/// click or ⌘C) on such a row says why and focuses its step.
+/// on its scan; scanned with no review, as a move leaves it, reads "Moved ·
+/// open it to share" (#1292); and Copy for AI (a click or ⌘C) on such a
+/// row says why and focuses its step.
 #[gpui::test]
 fn shelf_rows_that_are_not_ready_carry_their_step(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -416,7 +417,8 @@ fn shelf_rows_that_are_not_ready_carry_their_step(cx: &mut TestAppContext) {
     tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(letter, window, cx));
     cx.run_until_parked();
     let vault = vault(&tabs, cx);
-    // Stored and never saved Ready: never scanned, and scanned.
+    // Stored and never saved Ready: never scanned, and scanned with no
+    // review, as a move leaves a document.
     let new = |title: &str| mdoc_vault::NewDocument {
         project: Some(project.clone()),
         title: title.into(),
@@ -455,7 +457,7 @@ fn shelf_rows_that_are_not_ready_carry_their_step(cx: &mut TestAppContext) {
     assert_eq!(rows[letter_row].step(), Some(Step::Review));
     assert_eq!(rows[unscanned_row].state(), "Names not looked for yet");
     assert_eq!(rows[unscanned_row].step(), Some(Step::FindNames));
-    assert_eq!(rows[scanned_row].state(), "Not reviewed");
+    assert_eq!(rows[scanned_row].state(), "Moved · open it to share");
     assert_eq!(rows[scanned_row].step(), Some(Step::Review));
     let left = rows[note_row].readiness;
     assert!(matches!(left, Readiness::LeftToReview(_)), "{left:?}");

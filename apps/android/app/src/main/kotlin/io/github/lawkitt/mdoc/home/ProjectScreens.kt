@@ -88,7 +88,8 @@ import java.util.Date
 @Composable
 private fun projectCount(state: HomeState, project: ProjectId): String {
     val documents = state.documentsIn(project)
-    val toReview = documents.count { it.phase == io.github.lawkitt.mdoc.core.DocumentPhase.Reviewing }
+    // Names left to decide: a moved row with none (#1292) is not one.
+    val toReview = documents.count { it.phase == io.github.lawkitt.mdoc.core.DocumentPhase.Reviewing && it.pendingCount > 0 }
     val base = pluralStringResource(R.plurals.document_count, documents.size, documents.size)
     return if (toReview > 0) base + " · " + stringResource(R.string.status_to_review, toReview) else base
 }

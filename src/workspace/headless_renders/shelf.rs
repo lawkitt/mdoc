@@ -182,6 +182,7 @@ pub(super) fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
             project: Some(link.clone()),
             edited: at(9),
             scanned: true,
+            moved: false,
             outbound: Some(Err(mdoc_vault::Readiness::ChangedSinceReview)),
         }));
     }
@@ -248,6 +249,7 @@ fn refusals() -> (Vec<ShelfDocument>, ClipboardSource) {
             project: Some(link.clone()),
             edited: at(12 - n as u64),
             scanned,
+            moved: false,
             outbound: Some(Err(readiness)),
         }));
     }

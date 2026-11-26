@@ -138,8 +138,8 @@ data class HomeState(
     /** Every document the lists show, most recently changed first. */
     val listed: List<DocumentSummary> get() = documents.filter { it.id !in hidden }
 
-    /** The documents with names left to review, for the drawer's To review. */
-    val toReview: List<DocumentSummary> get() = listed.filter { it.phase == DocumentPhase.Reviewing }
+    /** The documents with names left to review, for the drawer's To review; a moved row with none left (#1292) is not one. */
+    val toReview: List<DocumentSummary> get() = listed.filter { it.phase == DocumentPhase.Reviewing && it.pendingCount > 0 }
 
     /** The document most worth going back to: the newest with names left to review (Home's Continue). */
     val continueDocument: DocumentSummary? get() = toReview.maxByOrNull { it.updated }
@@ -907,7 +907,10 @@ class HomeViewModel(
             DocumentPhase.Recognizing ->
                 if (document.kind.needsRecognition) StatusLine.NotRecognized else StatusLine.ImportNotFinished
             DocumentPhase.Unscanned -> if (canFindNames) StatusLine.ReadyToFind else StatusLine.ReadyToMark
-            DocumentPhase.Reviewing -> StatusLine.ToReview(document.pendingCount)
+            // Nothing pending: moved since its last save, so not Ready
+            // until saved again (#1292).
+            DocumentPhase.Reviewing ->
+                if (document.pendingCount == 0) StatusLine.MovedToShare else StatusLine.ToReview(document.pendingCount)
             // Find names ran and found nothing.
             DocumentPhase.Ready -> if (document.candidateCount == 0) StatusLine.NothingFound else StatusLine.ReadyToShare
         }
@@ -924,6 +927,9 @@ sealed interface StatusLine {
     data object ReadyToMark : StatusLine
 
     data class ToReview(val count: Int) : StatusLine
+
+    /** Moved since its last save: Copy for AI or Share inside saves it Ready again (#1292). */
+    data object MovedToShare : StatusLine
 
     data object ReadyToShare : StatusLine
 
