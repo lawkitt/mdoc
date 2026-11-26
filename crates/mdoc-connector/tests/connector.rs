@@ -280,6 +280,16 @@ fn a_long_document_is_read_as_an_outline_and_parts() {
     let whole = f.vault.text_for_ai(&long).unwrap();
     let note = whole.strip_suffix(body.as_str()).unwrap();
     assert!(note.starts_with("Note: "), "{note}");
+    // The AI app reads "alias", the word of the tools' descriptions (#1315).
+    assert!(
+        note.contains("replaced with aliases such as PERSON_1."),
+        "{note}"
+    );
+    assert!(
+        note.contains("Keep every alias exactly as written"),
+        "{note}"
+    );
+    assert!(!note.to_lowercase().contains("placeholder"), "{note}");
 
     let Read::Outline {
         label,

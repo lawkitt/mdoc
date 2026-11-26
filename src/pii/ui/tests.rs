@@ -1684,7 +1684,9 @@ fn popup_delete_keeps_but_alias_field_backspace_edits(cx: &mut gpui::TestAppCont
 #[test]
 fn ai_notice_names_aliases_only() {
     let notice = mdoc_pii::handoff::ai_notice(&["PERSON_1", "ORG_2"]);
-    assert!(notice.contains("such as PERSON_1 or ORG_2."));
+    assert!(notice.contains("replaced with aliases such as PERSON_1 or ORG_2."));
+    assert!(notice.contains("Keep every alias exactly as written"));
+    assert!(!notice.to_lowercase().contains("placeholder"), "#1315");
     assert!(notice.ends_with("---\n\n"));
     assert!(mdoc_pii::handoff::ai_notice(&[]).contains("PERSON_1"));
 }

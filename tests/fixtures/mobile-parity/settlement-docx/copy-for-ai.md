@@ -1,4 +1,4 @@
-Note: names and other identifying details in this document were replaced with placeholders such as REDACTED_1 or ORG_1. Keep every placeholder exactly as written, with the same capitals, underscore and number. Do not invent new placeholders or guess the real values; they are restored locally after your reply.
+Note: names and other identifying details in this document were replaced with aliases such as REDACTED_1 or ORG_1. Keep every alias exactly as written, with the same capitals, underscore and number. Do not invent new aliases or guess the real values; they are restored locally after your reply.
 
 ---
 

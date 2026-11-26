@@ -151,7 +151,7 @@ impl DocumentView {
                             None => {}
                         })),
                     )
-                    .child(note("Adds a short note asking the AI to keep every placeholder exactly.".into()))
+                    .child(note("Adds a short note asking the AI to keep every alias exactly as written.".into()))
                     // Only checked exits: Copy Markdown and Export Markdown
                     // hand the text out as it is, so they stay in the
                     // header's ⋯ menu, the File menu, their shortcuts and
