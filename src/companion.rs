@@ -201,7 +201,7 @@ impl CompanionView {
             .unwrap_or_default();
         // Opening a requested document from the sidebar, or a share from
         // the Project page, changes what it shows.
-        let workspace_changes = workspace.root(cx).ok().map(|root| {
+        let workspace_changes = workspace.entity(cx).ok().map(|root| {
             cx.observe_in(&root, window, |this: &mut Self, root, window, cx| {
                 let marks = root.read(cx).companion_marks();
                 if marks != this.marks {
