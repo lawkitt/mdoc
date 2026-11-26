@@ -311,6 +311,37 @@ fn a_vault_copied_to_a_fresh_profile_opens_with_its_recovery_key(cx: &mut TestAp
     assert!(Vault::open(&root, &store.lock().unwrap().key.unwrap()).is_ok());
 }
 
+/// Done when (#1161): the recovery key opening the Vault takes both
+/// wrong-key notices away, the banner and the refused intake's, without a
+/// relaunch.
+#[gpui::test]
+fn the_recovery_key_takes_both_wrong_key_notices_away(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let sealed_with = [3; 32];
+    let (root, session, _) = sealed_vault(dir.path(), &sealed_with);
+    let store = key_store(Some([2; 32]));
+    let (tabs, cx) = boot_home_with(cx, session, launch_with(root, [2; 32], store));
+    tabs.update_in(cx, |tabs, window, cx| {
+        assert!(tabs.intake_refused(window, cx));
+        assert!(tabs.vault_banner().is_some());
+        assert_eq!(
+            tabs.notice_text().as_deref(),
+            Some(super::super::vault_ui::WAITS_FOR_RECOVERY_KEY)
+        );
+    });
+    draw(cx);
+    type_key(&tabs, &recovery::format(&sealed_with), cx);
+    click(cx, "home-recovery-open");
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| {
+        assert!(tabs.vault.vault().is_some());
+        assert!(tabs.vault_banner().is_none());
+        assert_eq!(tabs.notice_text(), None);
+        // Documents can be added again.
+        assert!(!tabs.intake_refused(window, cx));
+    });
+}
+
 #[gpui::test]
 fn a_key_the_os_refuses_to_keep_still_opens_this_run_and_says_so(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();

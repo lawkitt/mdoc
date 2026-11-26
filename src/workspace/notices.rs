@@ -63,6 +63,14 @@ impl Notices {
         self.message = None;
     }
 
+    /// Dismiss `message` if it is still the one shown: it is no longer
+    /// true. A later message stays.
+    pub(super) fn withdraw(&mut self, message: &str) {
+        if self.message.as_deref() == Some(message) {
+            self.message = None;
+        }
+    }
+
     /// The last run's report, read at launch.
     pub(super) fn load_crash(&mut self, report: Option<String>) {
         self.crash = report.map(|report| (report, false));
@@ -136,6 +144,19 @@ mod tests {
             notices.count(false, false),
             (0, Some(NoticesEffect::CloseBell))
         );
+    }
+
+    #[test]
+    fn a_withdrawn_notice_goes_only_while_it_is_the_one_shown() {
+        let mut notices = Notices::default();
+        notices.post("Documents can't be added yet.");
+        notices.withdraw("Something else.");
+        assert_eq!(notices.message(), Some("Documents can't be added yet."));
+        notices.withdraw("Documents can't be added yet.");
+        assert_eq!(notices.message(), None);
+        notices.post("Exported 3 documents.");
+        notices.withdraw("Documents can't be added yet.");
+        assert_eq!(notices.message(), Some("Exported 3 documents."));
     }
 
     #[test]
