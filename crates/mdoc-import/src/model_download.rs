@@ -179,27 +179,53 @@ pub fn fetch(
     if mdoc_store::app_paths::isolated() {
         return Err(DownloadError::NetworkDisabled);
     }
-    fetch_with(&agent(true), url, bytes, sha, path, progress, BACKOFF)
+    fetch_with(
+        &agent(true, LIMITS),
+        url,
+        bytes,
+        sha,
+        path,
+        progress,
+        LIMITS,
+    )
 }
 
-/// A dropped connection is tried again this many times, after
-/// [`BACKOFF`], twice that, then four times, before its error shows. A try
-/// that brought new bytes starts the count again: each makes progress.
-const RETRIES: u32 = 3;
-const BACKOFF: Duration = Duration::from_secs(1);
+/// How long a download waits, and for what (#1288).
+#[derive(Clone, Copy)]
+struct Limits {
+    /// Before the first retry of a dropped connection; each next one waits
+    /// twice as long.
+    backoff: Duration,
+    /// For each read from the network: a stalled connection fails then.
+    read: Duration,
+    /// Without the file growing, across requests and waits: then its
+    /// error shows, whatever retries are left.
+    stall: Duration,
+}
 
 /// No limit on a whole download, which on a slow line takes as long as it
-/// takes (a 600 s cap failed the 556 MB encoder below about 0.9 MB/s, #1288),
-/// but one on each step, so a stalled connection fails within half a minute
-/// and is retried rather than holding setup for minutes.
-fn agent(https_only: bool) -> ureq::Agent {
+/// takes (a 600 s cap failed the 556 MB encoder below about 0.93 MB/s,
+/// #1288), but one on each step, and a stalled connection shows its error
+/// within about a minute rather than holding setup for minutes.
+const LIMITS: Limits = Limits {
+    backoff: Duration::from_secs(1),
+    read: Duration::from_secs(30),
+    stall: Duration::from_secs(60),
+};
+
+/// A dropped connection is tried again this many times, after
+/// `Limits::backoff`, twice that, then four times, before its error shows.
+/// A try that grows the file past its longest yet starts the count again.
+const RETRIES: u32 = 3;
+
+fn agent(https_only: bool, limits: Limits) -> ureq::Agent {
     ureq::Agent::new_with_config(
         ureq::Agent::config_builder()
             .https_only(https_only)
             .timeout_resolve(Some(Duration::from_secs(30)))
             .timeout_connect(Some(Duration::from_secs(30)))
-            .timeout_recv_response(Some(Duration::from_secs(60)))
-            .timeout_per_read(Some(Duration::from_secs(30)))
+            .timeout_recv_response(Some(limits.read * 2))
+            .timeout_per_read(Some(limits.read))
             .build(),
     )
 }
@@ -211,7 +237,7 @@ fn fetch_with(
     sha: &str,
     path: &Path,
     progress: &Progress,
-    backoff: Duration,
+    limits: Limits,
 ) -> Result<(), DownloadError> {
     progress.check()?;
     progress.phase("Verifying");
@@ -220,7 +246,12 @@ fn fetch_with(
     }
     let parent = path.parent().ok_or(DownloadError::InvalidPath)?;
     std::fs::create_dir_all(parent)?;
-    let partial = partial_of(path)?;
+    // Another mdoc of this profile may be setting up the same file.
+    let _held = hold(&beside(path, ".lock")?, progress)?;
+    if verify(path, bytes, sha).is_ok() {
+        return Ok(());
+    }
+    let partial = beside(path, ".partial")?;
     let mut restarted = false;
     loop {
         {
@@ -232,12 +263,12 @@ fn fetch_with(
             state.received = 0;
             state.total = bytes;
         }
-        let resumed = download(agent, url, bytes, &partial, progress, backoff)?;
+        let resumed = download(agent, url, bytes, &partial, progress, limits)?;
         progress.phase("Verifying");
         match verify(&partial, bytes, sha) {
             Ok(()) => break,
-            // Bytes kept from before may be another copy's, or damaged:
-            // once, from zero.
+            // Bytes kept from an earlier response may be another copy's, or
+            // damaged: once, from zero.
             Err(DownloadError::Integrity) if resumed && !restarted => {
                 std::fs::remove_file(&partial)?;
                 restarted = true;
@@ -256,77 +287,93 @@ fn fetch_with(
     Ok(())
 }
 
-/// `<name>.partial`, beside `path`.
-fn partial_of(path: &Path) -> Result<PathBuf, DownloadError> {
+/// `<name><suffix>`, beside `path`.
+fn beside(path: &Path, suffix: &str) -> Result<PathBuf, DownloadError> {
     let mut name = path
         .file_name()
         .ok_or(DownloadError::InvalidPath)?
         .to_owned();
-    name.push(".partial");
+    name.push(suffix);
     Ok(path.with_file_name(name))
 }
 
+/// An exclusive lock on the file `lock`, held while the returned file
+/// lives: another process taking it waits, waking for a cancel. The file
+/// stays, empty.
+pub fn hold(lock: &Path, progress: &Progress) -> Result<File, DownloadError> {
+    let file = owner_only(lock)?;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(std::fs::TryLockError::WouldBlock) => wait(Duration::from_millis(200), progress)?,
+            Err(std::fs::TryLockError::Error(error)) => return Err(error.into()),
+        }
+    }
+}
+
 /// Bring `partial` to `bytes` bytes from `url`, resuming what it holds and
-/// retrying a dropped connection: whether any of it came from an earlier
-/// try or connection.
+/// retrying a dropped connection: whether the whole holds bytes of an
+/// earlier response, from this try or one before.
 fn download(
     agent: &ureq::Agent,
     url: &str,
     bytes: u64,
     partial: &Path,
     progress: &Progress,
-    backoff: Duration,
+    limits: Limits,
 ) -> Result<bool, DownloadError> {
-    let mut resumed = false;
+    let length = || match std::fs::metadata(partial) {
+        Ok(meta) => Ok(meta.len()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(0),
+        Err(error) => Err(error),
+    };
     let mut failures = 0;
+    // The longest the file has been, and when it last grew past that.
+    let (mut longest, mut grew) = (0, std::time::Instant::now());
     loop {
         progress.check()?;
-        let have = match std::fs::metadata(partial) {
-            Ok(meta) => meta.len(),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => 0,
-            Err(error) => return Err(error.into()),
-        };
+        let have = length()?;
         if have > bytes {
             std::fs::remove_file(partial)?;
             continue;
         }
-        resumed |= have > 0;
         if have == bytes {
-            return Ok(resumed);
+            return Ok(true);
         }
-        match attempt(agent, url, bytes, have, partial, progress)? {
-            Attempt::Done => return Ok(resumed),
-            Attempt::Restart => resumed = false,
-            Attempt::Dropped { progressed, error } => {
-                if progressed {
-                    failures = 0;
-                }
-                failures += 1;
-                if failures > RETRIES {
-                    return Err(error);
-                }
-                wait(backoff * 2u32.pow(failures - 1), progress)?;
-            }
+        longest = longest.max(have);
+        let error = match attempt(agent, url, bytes, have, partial, progress)? {
+            Attempt::Done { kept } => return Ok(kept),
+            Attempt::Failed(error) => error,
+        };
+        // Only a file that grows past its longest counts as progress: a
+        // server that restarts it, or refuses the part asked for, can't
+        // keep this going.
+        let now = length()?;
+        if now > longest {
+            (longest, grew) = (now, std::time::Instant::now());
+            failures = 0;
         }
+        failures += 1;
+        if failures > RETRIES || grew.elapsed() >= limits.stall {
+            return Err(error);
+        }
+        wait(limits.backoff * 2u32.pow(failures - 1), progress)?;
     }
 }
 
 /// How one request went.
 enum Attempt {
-    /// The file is whole.
-    Done,
-    /// The server can't serve the part asked for: from zero, at once.
-    Restart,
-    /// The connection failed or ended early; what it brought is kept.
-    Dropped {
-        progressed: bool,
-        error: DownloadError,
-    },
+    /// The file is whole; `kept` when it holds bytes of an earlier response.
+    Done { kept: bool },
+    /// The connection failed or ended early, or the server couldn't send
+    /// the part asked for; what the file holds is kept.
+    Failed(DownloadError),
 }
 
 /// One request for what `partial` lacks: the rest with a `Range` request
 /// when it holds `have` bytes. A server answering with the whole file (200)
-/// starts it again, never appends.
+/// starts it again, never appends; one refusing the part (416), or sending
+/// another, starts it again on the next request.
 fn attempt(
     agent: &ureq::Agent,
     url: &str,
@@ -343,14 +390,11 @@ fn attempt(
         Ok(response) => response,
         Err(ureq::Error::StatusCode(416)) if have > 0 => {
             std::fs::remove_file(partial)?;
-            return Ok(Attempt::Restart);
+            return Ok(Attempt::Failed(unreachable(url)));
         }
         Err(error) => {
             return match download_error(url, error) {
-                error @ DownloadError::Unreachable { .. } => Ok(Attempt::Dropped {
-                    progressed: false,
-                    error,
-                }),
+                error @ DownloadError::Unreachable { .. } => Ok(Attempt::Failed(error)),
                 error => Err(error),
             };
         }
@@ -358,37 +402,25 @@ fn attempt(
     let start = match response.status().as_u16() {
         206 if starts_at(&response, have, bytes) => have,
         // Not the part asked for: nothing of it can be used.
-        206 if have > 0 => {
-            std::fs::remove_file(partial).or_else(ignore_missing)?;
-            return Ok(Attempt::Restart);
-        }
         206 => {
-            return Ok(Attempt::Dropped {
-                progressed: false,
-                error: unreachable(url),
-            });
+            std::fs::remove_file(partial).or_else(ignore_missing)?;
+            return Ok(Attempt::Failed(unreachable(url)));
         }
         _ => 0,
     };
-    let mut file = open_partial(partial)?;
+    let mut file = owner_only(partial)?;
     file.set_len(start)?;
     file.seek(io::SeekFrom::Start(start))?;
     progress.state.lock().unwrap().received = start;
     let mut input = response.body_mut().as_reader();
     let mut buf = [0; 65536];
     let mut total = start;
-    let dropped = |total: u64, file: &File| -> Result<Attempt, DownloadError> {
-        file.sync_all()?;
-        Ok(Attempt::Dropped {
-            progressed: total > have,
-            error: unreachable(url),
-        })
-    };
     loop {
         progress.check()?;
         // A transfer that drops midway is a network failure like any other.
         let Ok(n) = input.read(&mut buf) else {
-            return dropped(total, &file);
+            file.sync_all()?;
+            return Ok(Attempt::Failed(unreachable(url)));
         };
         if n == 0 {
             break;
@@ -402,20 +434,20 @@ fn attempt(
         file.write_all(&buf[..n])?;
         progress.state.lock().unwrap().received = total;
     }
-    if total < bytes {
-        return dropped(total, &file);
-    }
     file.sync_all()?;
-    Ok(Attempt::Done)
+    if total < bytes {
+        return Ok(Attempt::Failed(unreachable(url)));
+    }
+    Ok(Attempt::Done { kept: start > 0 })
 }
-
-/// The partial file, made owner-only like the temporary file it replaces.
-fn open_partial(partial: &Path) -> io::Result<File> {
+/// `path` opened to write, made owner-only like the temporary file the
+/// partial replaces; nothing in it is cut.
+fn owner_only(path: &Path) -> io::Result<File> {
     let mut options = std::fs::OpenOptions::new();
     options.create(true).truncate(false).write(true);
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    options.open(partial)
+    options.open(path)
 }
 
 fn ignore_missing(error: io::Error) -> io::Result<()> {
@@ -491,61 +523,86 @@ fn host(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /// A local server for one file: each request in turn, answered with
-    /// the part a `Range` asks for when `ranges`, else the whole file, and
-    /// cut after the bytes `cuts` names for that request. It records each
-    /// request's range start.
+    /// How a test server answers a `Range` request.
+    #[derive(Clone, Copy, PartialEq)]
+    enum Ranges {
+        /// With the part asked for (206).
+        Serve,
+        /// With the whole file (200).
+        Ignore,
+        /// With 416.
+        Refuse,
+    }
+
+    /// A local server for one file, answering each request in turn as
+    /// `ranges` says, and cutting it after the bytes `cuts` names for it;
+    /// with `hang`, a cut request then waits, its connection open. It
+    /// records each request's range start.
     struct Server {
         url: String,
         asked: Arc<Mutex<Vec<Option<u64>>>>,
     }
 
-    fn serve(body: Vec<u8>, ranges: bool, cuts: Vec<Option<usize>>) -> Server {
+    fn serve(body: Vec<u8>, ranges: Ranges, cuts: Vec<Option<usize>>, hang: bool) -> Server {
         use std::io::{BufRead, BufReader};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/model.onnx", listener.local_addr().unwrap());
         let asked = Arc::new(Mutex::new(Vec::new()));
         let log = asked.clone();
+        let body = Arc::new(body);
         std::thread::spawn(move || {
             for (index, stream) in listener.incoming().enumerate() {
                 let Ok(mut stream) = stream else { return };
-                let mut from = None;
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                loop {
-                    let mut line = String::new();
-                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
-                        break;
+                let (log, body, cuts) = (log.clone(), body.clone(), cuts.clone());
+                // Each on its own thread, so a hanging one holds up no other.
+                std::thread::spawn(move || {
+                    let mut from = None;
+                    let mut reader = BufReader::new(stream.try_clone().unwrap());
+                    loop {
+                        let mut line = String::new();
+                        if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                            break;
+                        }
+                        let lower = line.to_ascii_lowercase();
+                        if let Some(range) = lower.strip_prefix("range: bytes=") {
+                            from = range.trim().trim_end_matches('-').parse::<u64>().ok();
+                        }
                     }
-                    let lower = line.to_ascii_lowercase();
-                    if let Some(range) = lower.strip_prefix("range: bytes=") {
-                        from = range.trim().trim_end_matches('-').parse::<u64>().ok();
+                    log.lock().unwrap().push(from);
+                    if ranges == Ranges::Refuse && from.is_some() {
+                        let _ = write!(
+                            stream,
+                            "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        );
+                        return;
                     }
-                }
-                log.lock().unwrap().push(from);
-                let start = if ranges {
-                    from.unwrap_or(0) as usize
-                } else {
-                    0
-                };
-                let head = if ranges && from.is_some() {
-                    format!(
-                        "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {start}-{}/{}\r\n",
-                        body.len() - 1,
-                        body.len()
-                    )
-                } else {
-                    "HTTP/1.1 200 OK\r\n".into()
-                };
-                let rest = &body[start..];
-                let _ = write!(
-                    stream,
-                    "{head}Content-Length: {}\r\nConnection: close\r\n\r\n",
-                    rest.len()
-                );
-                let cut = cuts.get(index).copied().flatten().unwrap_or(rest.len());
-                let _ = stream.write_all(&rest[..cut.min(rest.len())]);
-                let _ = stream.flush();
-                let _ = stream.shutdown(std::net::Shutdown::Both);
+                    let start = match (ranges, from) {
+                        (Ranges::Serve, Some(from)) => from as usize,
+                        _ => 0,
+                    };
+                    let head = if start > 0 {
+                        format!(
+                            "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {start}-{}/{}\r\n",
+                            body.len() - 1,
+                            body.len()
+                        )
+                    } else {
+                        "HTTP/1.1 200 OK\r\n".into()
+                    };
+                    let rest = &body[start..];
+                    let _ = write!(
+                        stream,
+                        "{head}Content-Length: {}\r\nConnection: close\r\n\r\n",
+                        rest.len()
+                    );
+                    let cut = cuts.get(index).copied().flatten();
+                    let _ = stream.write_all(&rest[..cut.unwrap_or(rest.len()).min(rest.len())]);
+                    let _ = stream.flush();
+                    if hang && cut.is_some() {
+                        std::thread::sleep(Duration::from_secs(5));
+                    }
+                    let _ = stream.shutdown(std::net::Shutdown::Both);
+                });
             }
         });
         Server { url, asked }
@@ -562,18 +619,37 @@ mod tests {
             .collect()
     }
 
-    fn get(server: &Server, body: &[u8], path: &Path) -> Result<(), DownloadError> {
-        let wait = Duration::from_millis(1);
+    /// The real limits, but retries a moment apart.
+    const QUICK: Limits = Limits {
+        backoff: Duration::from_millis(1),
+        ..LIMITS
+    };
+
+    fn get_with(
+        server: &Server,
+        body: &[u8],
+        path: &Path,
+        limits: Limits,
+    ) -> Result<(), DownloadError> {
         let (bytes, sha) = (body.len() as u64, sha_of(body));
+        let agent = agent(false, limits);
         fetch_with(
-            &agent(false),
+            &agent,
             &server.url,
             bytes,
             &sha,
             path,
             &Progress::default(),
-            wait,
+            limits,
         )
+    }
+
+    fn get(server: &Server, body: &[u8], path: &Path) -> Result<(), DownloadError> {
+        get_with(server, body, path, QUICK)
+    }
+
+    fn partial(path: &Path) -> PathBuf {
+        beside(path, ".partial").unwrap()
     }
 
     /// Done when (#1288): a connection dropped halfway is retried, the
@@ -581,13 +657,13 @@ mod tests {
     #[test]
     fn a_dropped_download_resumes_where_it_stopped() {
         let body = body();
-        let server = serve(body.clone(), true, vec![Some(120_000)]);
+        let server = serve(body.clone(), Ranges::Serve, vec![Some(120_000)], false);
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("model.onnx");
         get(&server, &body, &path).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), body);
         assert_eq!(*server.asked.lock().unwrap(), [None, Some(120_000)]);
-        assert!(!partial_of(&path).unwrap().exists());
+        assert!(!partial(&path).exists());
     }
 
     /// #1288: a partial file left by an earlier try is resumed on the next.
@@ -597,11 +673,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("model.onnx");
         // A third of it, then three retries that bring nothing.
-        let failing = serve(
-            body.clone(),
-            true,
-            vec![Some(100_000), Some(0), Some(0), Some(0)],
-        );
+        let cuts = vec![Some(100_000), Some(0), Some(0), Some(0)];
+        let failing = serve(body.clone(), Ranges::Serve, cuts, false);
         let error = get(&failing, &body, &path).unwrap_err();
         assert!(
             matches!(error, DownloadError::Unreachable { .. }),
@@ -612,12 +685,11 @@ mod tests {
             [None, Some(100_000), Some(100_000), Some(100_000)]
         );
         assert!(!path.exists());
-        let kept = std::fs::metadata(partial_of(&path).unwrap()).unwrap().len();
-        assert_eq!(kept, 100_000);
-        let server = serve(body.clone(), true, Vec::new());
+        assert_eq!(std::fs::metadata(partial(&path)).unwrap().len(), 100_000);
+        let server = serve(body.clone(), Ranges::Serve, Vec::new(), false);
         get(&server, &body, &path).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), body);
-        assert_eq!(*server.asked.lock().unwrap(), [Some(kept)]);
+        assert_eq!(*server.asked.lock().unwrap(), [Some(100_000)]);
     }
 
     /// #1288: a server that ignores `Range` and sends the whole file starts
@@ -627,11 +699,31 @@ mod tests {
         let body = body();
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("model.onnx");
-        std::fs::write(partial_of(&path).unwrap(), &body[..150_000]).unwrap();
-        let server = serve(body.clone(), false, vec![Some(50_000)]);
+        std::fs::write(partial(&path), &body[..150_000]).unwrap();
+        let server = serve(body.clone(), Ranges::Ignore, vec![Some(50_000)], false);
         get(&server, &body, &path).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), body);
         assert_eq!(*server.asked.lock().unwrap(), [Some(150_000), Some(50_000)]);
+    }
+
+    /// Review of #1324: a server that cuts each whole file at the same
+    /// place, and ignores or refuses the rest, can't keep setup retrying:
+    /// the file never grows past its longest.
+    #[test]
+    fn a_server_that_never_gets_further_gives_up() {
+        let body = body();
+        for ranges in [Ranges::Ignore, Ranges::Refuse] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("model.onnx");
+            let server = serve(body.clone(), ranges, vec![Some(120_000); 20], false);
+            let error = get(&server, &body, &path).unwrap_err();
+            assert!(
+                matches!(error, DownloadError::Unreachable { .. }),
+                "{error}"
+            );
+            let asked = server.asked.lock().unwrap().len();
+            assert!(asked <= 6, "{asked} requests");
+        }
     }
 
     /// #1288: a partial whose bytes are wrong (damaged, or another copy's)
@@ -641,20 +733,35 @@ mod tests {
         let body = body();
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("model.onnx");
-        std::fs::write(partial_of(&path).unwrap(), vec![0xAA; 150_000]).unwrap();
-        let server = serve(body.clone(), true, Vec::new());
+        std::fs::write(partial(&path), vec![0xAA; 150_000]).unwrap();
+        let server = serve(body.clone(), Ranges::Serve, Vec::new(), false);
         get(&server, &body, &path).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), body);
         assert_eq!(*server.asked.lock().unwrap(), [Some(150_000), None]);
         // Wrong from zero too: the digest error, the partial gone.
         let other = dir.path().join("other.onnx");
-        std::fs::write(partial_of(&other).unwrap(), vec![0xAA; 150_000]).unwrap();
-        let wrong = serve(vec![0xBB; body.len()], true, Vec::new());
+        std::fs::write(partial(&other), vec![0xAA; 150_000]).unwrap();
+        let wrong = serve(vec![0xBB; body.len()], Ranges::Serve, Vec::new(), false);
         let error = get(&wrong, &body, &other).unwrap_err();
         assert!(matches!(error, DownloadError::Integrity), "{error}");
         assert_eq!(*wrong.asked.lock().unwrap(), [Some(150_000), None]);
-        assert!(!partial_of(&other).unwrap().exists());
+        assert!(!partial(&other).exists());
         assert!(!other.exists());
+    }
+
+    /// Review of #1324: a whole file sent again over a partial (Range
+    /// ignored) holds no bytes of before: a wrong digest fails at once,
+    /// with no second download.
+    #[test]
+    fn a_wrong_file_sent_whole_over_a_partial_is_not_downloaded_twice() {
+        let body = body();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("model.onnx");
+        std::fs::write(partial(&path), &body[..150_000]).unwrap();
+        let wrong = serve(vec![0xBB; body.len()], Ranges::Ignore, Vec::new(), false);
+        let error = get(&wrong, &body, &path).unwrap_err();
+        assert!(matches!(error, DownloadError::Integrity), "{error}");
+        assert_eq!(*wrong.asked.lock().unwrap(), [Some(150_000)]);
     }
 
     /// #1288: a connection that keeps failing without bringing anything is
@@ -664,13 +771,78 @@ mod tests {
         let body = body();
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("model.onnx");
-        let server = serve(body.clone(), true, vec![Some(0); 8]);
+        let server = serve(body.clone(), Ranges::Serve, vec![Some(0); 8], false);
         let error = get(&server, &body, &path).unwrap_err();
         assert!(
             matches!(error, DownloadError::Unreachable { .. }),
             "{error}"
         );
         assert_eq!(server.asked.lock().unwrap().len(), 4);
+    }
+
+    /// #1288 (review of #1324): a connection that stalls, open but sending
+    /// nothing, shows its error once the file hasn't grown for the stall
+    /// limit, whatever retries are left, and keeps what came.
+    #[test]
+    fn a_stalled_connection_gives_up_within_the_stall_limit() {
+        let body = body();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("model.onnx");
+        let server = serve(
+            body.clone(),
+            Ranges::Serve,
+            vec![Some(50_000), Some(0), Some(0), Some(0)],
+            true,
+        );
+        let limits = Limits {
+            backoff: Duration::from_millis(1),
+            read: Duration::from_millis(300),
+            stall: Duration::from_millis(500),
+        };
+        let started = std::time::Instant::now();
+        let error = get_with(&server, &body, &path, limits).unwrap_err();
+        assert!(
+            matches!(error, DownloadError::Unreachable { .. }),
+            "{error}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "{:?}",
+            started.elapsed()
+        );
+        // The first stall, then retries until the limit.
+        let asked = server.asked.lock().unwrap().clone();
+        assert_eq!(asked[..2], [None, Some(50_000)]);
+        assert!(asked.len() <= 3, "{asked:?}");
+        assert_eq!(std::fs::metadata(partial(&path)).unwrap().len(), 50_000);
+    }
+
+    /// Review of #1324: a second process setting up the same file waits
+    /// for the first's lock, and a cancel ends the wait.
+    #[test]
+    fn the_lock_waits_for_its_holder_and_a_cancel() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock = dir.path().join("model.onnx.lock");
+        let first = hold(&lock, &Progress::default()).unwrap();
+        let progress = Progress::default();
+        let waiting = {
+            let (lock, progress) = (lock.clone(), progress.clone());
+            std::thread::spawn(move || hold(&lock, &progress).map(drop))
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(!waiting.is_finished(), "took a held lock");
+        progress.cancel.store(true, Ordering::Relaxed);
+        assert!(matches!(
+            waiting.join().unwrap(),
+            Err(DownloadError::Cancelled)
+        ));
+        let next = {
+            let lock = lock.clone();
+            std::thread::spawn(move || hold(&lock, &Progress::default()).map(drop))
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        drop(first);
+        next.join().unwrap().unwrap();
     }
     #[test]
     fn download_failures_read_as_actions_not_resolver_text() {
@@ -700,13 +872,13 @@ mod tests {
         // retries a moment apart.
         let dir = tempfile::tempdir().unwrap();
         let error = fetch_with(
-            &agent(true),
+            &agent(true, QUICK),
             "https://127.0.0.1:1/model.onnx",
             1,
             "00",
             &dir.path().join("model.onnx"),
             &Progress::default(),
-            Duration::from_millis(1),
+            QUICK,
         )
         .unwrap_err();
         assert_eq!(
