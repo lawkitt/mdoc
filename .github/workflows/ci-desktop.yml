@@ -1,9 +1,11 @@
 name: CI desktop
 
-# The desktop full tier on a hosted runner (ADR 0095, ADR 0100): two jobs in
+# The desktop full tier on a hosted runner (ADR 0095, ADR 0100): jobs in
 # parallel and a summary. The checks job runs lint, and on macOS the script
 # suites under Apple's bash 3.2 (#468) and the mdoc-ffi check; the tests job
-# runs the unit, recognition, app and renders test tiers. The summary,
+# runs the unit, recognition, app and renders test tiers. On Windows the
+# renders tier is a third job: WARP draws every frame in software, and the
+# render test alone can take 20 minutes (#1243). The summary,
 # `ci/macos` or `ci/windows (hosted)`, is the check merge-gate reads. The
 # merge queue calls it on the queue commit, once per OS: macOS always runs
 # here, Windows when the PC falls back. Every step is a `just` recipe or a
@@ -74,8 +76,7 @@ jobs:
   test:
     name: ${{ fromJSON('{"macos":"ci/macos (tests)","windows":"ci/windows (hosted, tests)"}')[inputs.os] }}
     runs-on: ${{ fromJSON('{"macos":"macos-26","windows":"windows-latest"}')[inputs.os] }}
-    # Job limits (ADR 0095); hosted Windows builds take 32 minutes cold, and
-    # its render test alone can take 20 (#1243).
+    # Job limits (ADR 0095); hosted Windows builds take 32 minutes cold.
     timeout-minutes: ${{ inputs.os == 'windows' && 45 || 30 }}
     env:
       SCREENS: ${{ inputs.screens }}
@@ -92,13 +93,15 @@ jobs:
       - run: just test-tier unit
       - run: just test-tier recognition
       - run: just test-tier app
+      # On Windows, the renders job's.
       - id: renders
+        if: inputs.os != 'windows'
         run: just test-tier renders
         env:
           MDOC_HEADLESS_ARTIFACTS: ${{ runner.temp }}/renders
 
       - name: Headless screens and keyboard walks
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.os != 'windows' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: renders-${{ inputs.os }}
@@ -126,11 +129,65 @@ jobs:
           retention-days: 7
           overwrite: true
 
-  # The check merge-gate reads. Green only when both jobs ran and passed, so
-  # a missing, cancelled or skipped part never looks green (as ci/detection).
+  # Windows only: the render test beside the other tiers, so the tests job
+  # no longer waits for it. It builds what the tests job builds, from the
+  # tests job's cache (the `test` key), and only the render test's binaries.
+  renders:
+    name: ci/windows (hosted, renders)
+    if: inputs.os == 'windows'
+    runs-on: windows-latest
+    # Job limits (ADR 0095): a cold build (32 minutes) and the render test.
+    timeout-minutes: 55
+    env:
+      SCREENS: ${{ inputs.screens }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          tools: just cargo-nextest
+          cache-key: test
+
+      - id: renders
+        run: just test-tier renders
+        env:
+          MDOC_HEADLESS_ARTIFACTS: ${{ runner.temp }}/renders
+
+      - name: Headless screens and keyboard walks
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: renders-${{ inputs.os }}
+          path: ${{ runner.temp }}/renders
+          if-no-files-found: warn
+          retention-days: 7
+          overwrite: true
+          compression-level: 0
+
+      - name: Pick the requested screens
+        id: screens
+        if: ${{ !cancelled() && env.SCREENS != '' && steps.renders.outcome != 'skipped' }}
+        shell: bash
+        run: bash scripts/ci/ci-screens.sh "$RUNNER_TEMP/renders" "$RUNNER_TEMP/screens" "$SCREENS"
+      - name: Requested screens
+        if: ${{ !cancelled() && steps.screens.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: renders-${{ inputs.os }}-screens
+          path: ${{ runner.temp }}/screens
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  # The check merge-gate reads. Green only when every job ran and passed, so
+  # a missing, cancelled or skipped part never looks green (as ci/detection);
+  # the renders job is skipped on macOS only, where the tests job renders.
   summary:
     name: ${{ fromJSON('{"macos":"ci/macos","windows":"ci/windows (hosted)"}')[inputs.os] || 'ci/desktop' }}
-    needs: [checks, test]
+    needs: [checks, test, renders]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -138,7 +195,10 @@ jobs:
       - env:
           CHECKS: ${{ needs.checks.result }}
           TESTS: ${{ needs.test.result }}
+          RENDERS: ${{ needs.renders.result }}
+          WANT_RENDERS: ${{ inputs.os == 'windows' && 'success' || 'skipped' }}
         run: |
           [ "$CHECKS" = success ] || echo "::error::checks (lint, script suites, mdoc-ffi): $CHECKS"
           [ "$TESTS" = success ] || echo "::error::test tiers: $TESTS"
-          [ "$CHECKS" = success ] && [ "$TESTS" = success ]
+          [ "$RENDERS" = "$WANT_RENDERS" ] || echo "::error::render test: $RENDERS"
+          [ "$CHECKS" = success ] && [ "$TESTS" = success ] && [ "$RENDERS" = "$WANT_RENDERS" ]

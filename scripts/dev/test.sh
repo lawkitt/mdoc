@@ -54,11 +54,13 @@ rust_filter="all() - $detect_lib_filter"
 
 quarantined=$(bash scripts/ci/quarantine.sh filter) || die "scripts/ci/quarantine.sh: .config/quarantine.txt does not parse"
 
-# Runs nextest over $1, without the quarantined tests.
+# Runs nextest over $1, without the quarantined tests; the rest are cargo's
+# target options, such as --test NAME to build only that test.
 nextest() {
   local filter=$1
+  shift
   [ -z "$quarantined" ] || filter="($filter) - ($quarantined)"
-  cargo nextest run --workspace --features headless-renders --no-tests=pass -E "$filter"
+  cargo nextest run --workspace --features headless-renders --no-tests=pass "$@" -E "$filter"
 }
 
 # mdoc-detect's lib tests in one process, so the rule pack is built once and
@@ -117,7 +119,9 @@ rust() {
 case "$tier" in
   unit) only unit ;;
   app) only nextest "$app_filter" ;;
-  renders) only nextest "$renders_filter" ;;
+  # Only the render test is built: the hosted Windows renders job builds
+  # nothing else (#1243). The workspace's features stay those of every tier.
+  renders) only nextest "$renders_filter" --test headless_renders ;;
   recognition) only nextest "$recognition_filter" ;;
   rust) only rust ;;
   quarantined)
