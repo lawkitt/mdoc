@@ -1,5 +1,6 @@
 //! Ask (Milestone 2 item 10), with "AI connector (preview)" on: the
-//! document header's Ask menu, its Unfiled card, and the Project page's
+//! document header's Ask menu, its Unfiled card, with a Project shared and
+//! without (#1312), and the Project page's
 //! Ask menu. Nothing is chosen, so nothing is shared and no link opens. It
 //! leaves the setting off and the window as it found it.
 use super::{Driver, Result};
@@ -28,15 +29,23 @@ pub(super) fn scenes(d: &mut Driver, project: &str) -> Result<()> {
     })?;
     let view = view.ok_or("the fixture document's tab")?;
     d.settle()?;
-    d.change(|_, window, cx| view.update(cx, |view, cx| view.show_ask(None, window, cx)))?;
+    d.change(|_, window, cx| view.update(cx, |view, cx| view.show_ask(None, None, window, cx)))?;
     d.capture("ask-menu")?;
     // The card Ask shows on an Unfiled document.
     d.change(|_, window, cx| {
         view.update(cx, |view, cx| {
-            view.show_ask(Some(AskWith::Claude), window, cx)
+            view.show_ask(Some(AskWith::Claude), None, window, cx)
         })
     })?;
     d.capture("ask-unfiled")?;
+    // With a Project shared, the card offers it first.
+    d.change(|w, window, cx| {
+        let shared = w.projects.link(project).map(|link| (link.id, link.name));
+        view.update(cx, |view, cx| {
+            view.show_ask(Some(AskWith::Claude), shared, window, cx)
+        })
+    })?;
+    d.capture("ask-unfiled-shared")?;
     d.change(|_, window, cx| view.update(cx, |view, cx| view.close_ask(window, cx)))?;
     // The Project page's menu, under its button.
     d.change(|w, window, cx| {

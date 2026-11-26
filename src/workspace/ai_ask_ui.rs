@@ -46,12 +46,14 @@ impl Workspace {
     }
 
     /// The document header's choice `with` in tab `tab`; `move_to_new`:
-    /// the Unfiled card's "Move to a new Project and share".
+    /// the Unfiled card's "Move to a new Project and share"; `into`: its
+    /// "Move to “X” and ask", X the shared Project (#1312).
     pub(super) fn ask_from_tab(
         &mut self,
         tab: u64,
         with: AskWith,
         move_to_new: bool,
+        into: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -80,11 +82,26 @@ impl Workspace {
             Some(project) => self.ask_app(&project, Some(document.as_str()), with, cx),
             // Unfiled never leaves: it moves, then asks (`ask_after_move`).
             None if move_to_new => self.move_then_ask(tab, document.as_str(), with, window, cx),
+            // Into the shared Project, as the sidebar moves it, then asks.
+            None if into.is_some() => {
+                // Still the shared Project, or nothing moves.
+                let into = into.filter(|into| self.ai_shared().as_ref() == Some(into));
+                if let Some(into) = into
+                    && self.can_move(tab, cx)
+                {
+                    self.ai_ask.after_move(document.as_str(), with);
+                    self.move_tab(tab, Some(into), window, cx);
+                }
+            }
             // The card asks first; Stop sharing or turning the preview off
             // meanwhile cancels what waits (`ai_ask_cancelled`).
             None => {
                 if let Some(view) = self.tab_view(tab) {
-                    view.update(cx, |view, cx| view.offer_move(with, window, cx));
+                    // The shared Project is offered first.
+                    let shared = (self.ai_shared())
+                        .and_then(|id| self.projects.link(&id))
+                        .map(|link| (link.id, link.name));
+                    view.update(cx, |view, cx| view.offer_move(with, shared, window, cx));
                 }
             }
         }
@@ -114,7 +131,8 @@ impl Workspace {
     }
 
     /// Document `document` moved into Project `made`, which the move made
-    /// for an Ask with `with`: share that Project and ask.
+    /// for an Ask with `with`, or the shared one it moved into: share that
+    /// Project, unless it is already, and ask.
     pub(super) fn ask_after_move(
         &mut self,
         document: &str,

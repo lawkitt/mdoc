@@ -93,6 +93,19 @@ pub(crate) const UNFILED_TEXT: &str = "AI apps read only the Project you share, 
 
 pub(crate) const MOVE_AND_SHARE: &str = "Move to a new Project and share";
 
+/// The Unfiled card's text when Project `shared` is shared (#1312).
+pub(crate) fn unfiled_shared_text(shared: &str) -> String {
+    format!(
+        "AI apps read only the Project you share, never Unfiled. Move it to \u{201c}{shared}\u{201d}, \
+         the Project you share, or to a new Project?"
+    )
+}
+
+/// The Unfiled card's first choice when Project `shared` is shared.
+pub(crate) fn move_into_and_ask(shared: &str) -> String {
+    format!("Move to \u{201c}{shared}\u{201d} and ask")
+}
+
 /// Why Ask did nothing for a document excluded from AI.
 pub(crate) const EXCLUDED: &str = "This document is excluded from AI apps.";
 

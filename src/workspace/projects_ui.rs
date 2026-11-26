@@ -925,9 +925,15 @@ impl Workspace {
                 });
                 self.took_move(&moved);
                 self.sync_members(&moved, &document, cx);
+                // The Project an Ask waited for: the one made, or the
+                // shared one it moved into (#1312).
+                let into = match moving {
+                    Moving::Into => moved.project.as_ref().map(|p| p.id.clone()),
+                    _ => made.clone(),
+                };
                 let asked = ask
-                    .zip(made.clone())
-                    .map(|(with, made)| (with, made, id.to_string()));
+                    .zip(into)
+                    .map(|(with, into)| (with, into, id.to_string()));
                 // The new Project's name is ready to edit once its tab shows
                 // the moved document (#1313).
                 // Another move of the same document since forgets it.

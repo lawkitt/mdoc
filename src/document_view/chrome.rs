@@ -509,6 +509,8 @@ impl DocumentView {
         let for_ai = copy && (copy_reason.is_none() || self.copy_step(cx).is_some());
         // Notes live in the Inspector, beside the text.
         let notes = copy && self.notes_available();
+        // Only a document in the Vault can move into a Project.
+        let movable = self.session.document.vault.is_some();
         let spelling_on = !self.spelling_control_off() && !self.spelling.off_here();
         let misspelled = self.editor.read(cx).diagnostics().len();
         // A menu choice hands focus back to the document first, so the action
@@ -697,6 +699,31 @@ impl DocumentView {
                                     }
                                     this.start_pii_scan(cx);
                                     window.refresh();
+                                },
+                            )),
+                        )
+                        .child(ui::menu_divider(theme))
+                        // The move menu, under the ⋯ button (#1312).
+                        .child(
+                            ui::menu_row_because(
+                                "more-move",
+                                "Move to Project…",
+                                None,
+                                None,
+                                theme,
+                                movable,
+                                (!movable).then_some("Only a document in the Vault moves.".into()),
+                            )
+                            .when(cfg!(test), |v| v.debug_selector(|| "more-move".into()))
+                            .on_click(cx.listener(
+                                move |this, _, window, cx| {
+                                    if movable {
+                                        this.more_open = false;
+                                        window.focus(&this.more_focus, cx);
+                                        let at = this.more_bounds.get().bottom_left();
+                                        cx.emit(TabEvent::Project(ProjectEvent::MoveMenu(at)));
+                                        cx.notify();
+                                    }
                                 },
                             )),
                         )

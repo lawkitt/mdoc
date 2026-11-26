@@ -53,6 +53,7 @@ mod hand_copies;
 mod home;
 mod import_flow;
 mod menu_bar;
+mod move_into;
 mod navigation;
 mod new_project;
 mod notices;
