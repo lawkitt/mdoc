@@ -40,6 +40,7 @@ mod style;
 mod system_quit;
 #[cfg(test)]
 mod test_support;
+mod tray;
 mod ui;
 mod updater;
 mod workspace;
@@ -120,13 +121,17 @@ fn main() {
     {
         std::process::exit(conversion_worker::run_worker(&args[2..]));
     }
-    // The companion window's native check (src/companion/probe.rs).
-    #[cfg(all(target_os = "macos", debug_assertions, not(test)))]
+    // The companion window's native check (src/companion/probe.rs, and
+    // probe_windows.rs on Windows).
+    #[cfg(all(any(target_os = "macos", windows), debug_assertions, not(test)))]
     if args
         .get(1)
         .is_some_and(|arg| arg == "--mdoc-companion-probe")
     {
+        #[cfg(target_os = "macos")]
         companion::probe::run();
+        #[cfg(windows)]
+        companion::probe_windows::run();
     }
     if args.get(1).is_some_and(|arg| arg == "--mdoc-self-test") {
         let (Some(pdf), Some(expected)) = (args.get(2), args.get(3)) else {
@@ -294,7 +299,8 @@ fn main() {
                         .await;
                     while let Ok(paths) = launches.try_recv() {
                         let _ = handle.update(cx, |workspace, window, cx| {
-                            window.activate_window();
+                            // Shown first if hidden in the tray.
+                            menu_bar::reveal_window(window, cx);
                             workspace.open_paths(paths, window, cx)
                         });
                     }

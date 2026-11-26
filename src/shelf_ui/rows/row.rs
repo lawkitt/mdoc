@@ -484,7 +484,7 @@ impl ShelfRows {
                 .line_clamp(2)
                 .text_ellipsis()
                 // A preview is what a drag picks up.
-                .cursor(CursorStyle::OpenHand)
+                .when(super::ROWS_DRAG, |v| v.cursor(CursorStyle::OpenHand))
                 .child(
                     StyledText::new(preview.text.clone())
                         .with_highlights(preview_runs(preview, theme)),

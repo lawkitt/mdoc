@@ -34,6 +34,9 @@ const HINT: f32 = 22.;
 const EMPTY: f32 = 44.;
 /// A drag starts after the pointer moves this far with the button down.
 const DRAG_DISTANCE: f32 = 4.;
+/// Rows drag into other apps: macOS only. GPUI has no drag out of a window
+/// on Windows, so there a row copies and opens, with no hint (item 17).
+const ROWS_DRAG: bool = cfg!(any(target_os = "macos", test));
 
 /// Each row's "N replaced" as last painted, for renders to hover.
 #[cfg(all(
@@ -65,7 +68,8 @@ fn export(document: &ShelfDocument, cx: &mut App) -> Option<std::path::PathBuf> 
 
 /// Whether the drag hint shows: before the first drop, over a preview.
 fn shows_hint(documents: &[ShelfDocument], drag_hint: bool) -> bool {
-    drag_hint
+    ROWS_DRAG
+        && drag_hint
         && documents
             .iter()
             .any(|d| d.readiness.is_ready() && d.preview.is_some())
@@ -359,7 +363,7 @@ impl ShelfRows {
         self.press = self
             .documents
             .get(index)
-            .filter(|d| d.readiness.is_ready())
+            .filter(|d| ROWS_DRAG && d.readiness.is_ready())
             .map(|_| (index, event.position));
     }
 

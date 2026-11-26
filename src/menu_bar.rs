@@ -13,8 +13,9 @@
 //! opens by itself for a delivery or a review request, never taking focus.
 //!
 //! `MenuBarState` holds the rules, GPUI-free; this module carries out its
-//! effects with GPUI and the vendored macOS calls. Other platforms never
-//! turn it on (no tray yet).
+//! effects with GPUI and the vendored macOS calls. On Windows the tray
+//! icon ([`crate::tray`]) is the item, only while the preview is on;
+//! other platforms never turn it on.
 
 use crate::{
     companion::{COMPANION_WIDTH, CompanionView},
@@ -282,10 +283,12 @@ pub(crate) fn install(
 }
 
 /// "AI connector (preview)" is `on` now: the item toggles the companion
-/// in place of the shelf while it is (macOS only, as the item is).
+/// in place of the shelf while it is (macOS, and Windows, where the tray
+/// shows only then).
 pub(crate) fn set_companion(on: bool, cx: &mut App) {
-    let on = on && cfg!(target_os = "macos");
+    let on = on && cfg!(any(target_os = "macos", windows));
     update(cx, |state| state.set_companion(on));
+    crate::tray::preview_changed(on, cx);
 }
 
 /// An AI app delivered, or asked for a document that needs review: the
@@ -313,21 +316,24 @@ pub(crate) fn companion_closed(cx: &mut App) {
 }
 
 /// The open companion, for tests.
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(all(test, any(target_os = "macos", windows)))]
 pub(crate) fn companion(cx: &App) -> Option<WindowHandle<CompanionView>> {
     cx.try_global::<MenuBar>().and_then(|bar| bar.companion)
 }
 
-/// The setting is `enabled` now; other platforms never turn it on.
+/// The setting is `enabled` now; Windows needs the preview on too, and
+/// other platforms never turn it on.
 pub(crate) fn set_enabled(enabled: bool, cx: &mut App) {
-    let enabled = enabled && cfg!(target_os = "macos");
+    let enabled = crate::tray::item_enabled(enabled, cx);
     update(cx, |state| state.set_enabled(enabled));
 }
 
 /// Whether closing the workspace window hides it instead of quitting.
 pub(crate) fn keeps_running(cx: &App) -> bool {
-    cx.try_global::<MenuBar>()
-        .is_some_and(|bar| bar.state.keeps_running())
+    crate::tray::CLOSE_TO_TRAY
+        && cx
+            .try_global::<MenuBar>()
+            .is_some_and(|bar| bar.state.keeps_running())
 }
 
 /// Whether the workspace window is hidden.
@@ -361,6 +367,8 @@ pub(crate) fn reveal_window(window: &mut Window, cx: &mut App) {
         match effect {
             MenuBarEffect::ShowWindow => {
                 close_note(cx);
+                #[cfg(all(windows, not(test)))]
+                crate::tray::show_window(window);
                 cx.activate(true);
                 window.activate_window();
             }
@@ -472,6 +480,8 @@ fn carry_out(effect: MenuBarEffect, cx: &mut App) {
             close_note(cx);
             #[cfg(all(target_os = "macos", not(test)))]
             gpui_macos::set_status_item(None);
+            #[cfg(all(windows, not(test)))]
+            crate::tray::remove();
         }
         MenuBarEffect::OpenShelf => {
             close_note(cx);
@@ -497,7 +507,11 @@ fn carry_out(effect: MenuBarEffect, cx: &mut App) {
             close_note(cx);
             let workspace = cx.global::<MenuBar>().workspace;
             cx.activate(true);
-            let _ = workspace.update(cx, |_, window, _| window.activate_window());
+            let _ = workspace.update(cx, |_, window, _| {
+                #[cfg(all(windows, not(test)))]
+                crate::tray::show_window(window);
+                window.activate_window()
+            });
         }
         MenuBarEffect::Dock(visible) => {
             #[cfg(all(target_os = "macos", not(test)))]
@@ -530,6 +544,8 @@ fn carry_out(effect: MenuBarEffect, cx: &mut App) {
 fn hide(window: &mut Window) {
     #[cfg(all(target_os = "macos", not(test)))]
     gpui_macos::hide_window(window);
+    #[cfg(all(windows, not(test)))]
+    crate::tray::hide_window(window);
     let _ = window;
 }
 
@@ -549,6 +565,8 @@ fn show_item(cx: &mut App) {
             on_click: Box::new(move || on_item_click(&async_cx)),
         }));
     }
+    #[cfg(all(windows, not(test)))]
+    crate::tray::show(cx);
     let _ = cx;
 }
 
@@ -573,7 +591,20 @@ fn popup_top(anchor: Bounds<Pixels>) -> f32 {
 /// The most a popup under the item may grow: down to the display's edge;
 /// a taller shelf scrolls.
 fn popup_max_height(anchor: Bounds<Pixels>, display: Bounds<Pixels>) -> f32 {
+    if cfg!(all(windows, not(test))) {
+        return crate::tray::popup_max_height(display);
+    }
     (display.size.height.as_f32() - popup_top(anchor) - MARGIN).max(120.)
+}
+
+/// Where popups may sit on `display`: under the macOS menu bar, all of
+/// it; by the Windows tray, its work area (without the taskbar).
+fn popup_area(display: &dyn gpui::PlatformDisplay) -> Bounds<Pixels> {
+    if cfg!(windows) {
+        display.visible_bounds()
+    } else {
+        display.bounds()
+    }
 }
 
 /// A popup's bounds under the item, kept on its display.
@@ -583,6 +614,9 @@ fn popup_bounds(
     width: f32,
     height: f32,
 ) -> Bounds<Pixels> {
+    if cfg!(all(windows, not(test))) {
+        return crate::tray::popup_bounds(anchor, display, width, height);
+    }
     let max_x = (display.size.width.as_f32() - width - MARGIN).max(MARGIN);
     let x = anchor.origin.x.as_f32().clamp(MARGIN, max_x);
     Bounds {
@@ -618,7 +652,9 @@ fn item_anchor(cx: &App) -> Option<(DisplayId, Bounds<Pixels>)> {
             };
             (display.id(), item)
         });
-    #[cfg(all(not(target_os = "macos"), not(test)))]
+    #[cfg(all(windows, not(test)))]
+    let anchor = crate::tray::anchor(cx);
+    #[cfg(all(not(target_os = "macos"), not(windows), not(test)))]
     let anchor = {
         let _ = cx;
         None
@@ -672,7 +708,7 @@ fn try_open_note(workspace: WindowHandle<Workspace>, cx: &mut App) -> bool {
         return false;
     };
     close_note(cx);
-    let bounds = popup_bounds(anchor, display.bounds(), NOTE_WIDTH, NOTE_HEIGHT);
+    let bounds = popup_bounds(anchor, popup_area(&*display), NOTE_WIDTH, NOTE_HEIGHT);
     let note = cx.open_window(popup_options(bounds, display_id), |window, cx| {
         cx.new(|cx| NoteView::new(workspace, theme, window, cx))
     });
@@ -718,8 +754,8 @@ fn try_open_companion(cx: &mut App) -> Option<WindowHandle<CompanionView>> {
         .ok()
         .map(|workspace| workspace.companion_content(cx))?;
     let height = crate::companion::height(&content);
-    let bounds = popup_bounds(anchor, display.bounds(), COMPANION_WIDTH, height);
-    let max_height = popup_max_height(anchor, display.bounds());
+    let bounds = popup_bounds(anchor, popup_area(&*display), COMPANION_WIDTH, height);
+    let max_height = popup_max_height(anchor, popup_area(&*display));
     crate::companion::open(bounds, display_id, cx, move |window, cx| {
         cx.new(|cx| {
             let mut companion = CompanionView::new(workspace, content, window, cx);
@@ -745,8 +781,8 @@ fn open_shelf(cx: &mut App) {
     else {
         return;
     };
-    let bounds = popup_bounds(anchor, display.bounds(), SHELF_WIDTH, content.height());
-    let max_height = popup_max_height(anchor, display.bounds());
+    let bounds = popup_bounds(anchor, popup_area(&*display), SHELF_WIDTH, content.height());
+    let max_height = popup_max_height(anchor, popup_area(&*display));
     let shelf = cx.open_window(popup_options(bounds, display_id), |window, cx| {
         cx.new(|cx| {
             let mut shelf = ShelfView::new(workspace, content, window, cx);

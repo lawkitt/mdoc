@@ -12,7 +12,7 @@ use std::{cell::Cell, rc::Rc};
 
 pub(crate) const NOTE_WIDTH: f32 = 300.;
 pub(crate) const NOTE_HEIGHT: f32 = 108.;
-pub(crate) const NOTE_TITLE: &str = "mdoc is still in the menu bar.";
+pub(crate) const NOTE_TITLE: &str = crate::tray::NOTE_TITLE;
 pub(crate) const NOTE_TEXT: &str = "Your documents are here.";
 
 pub(crate) struct NoteView {
