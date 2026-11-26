@@ -46,7 +46,7 @@ mkdir -p "$tmp/bin"
 # `exit <n>` alone, as a failed build does; `hang`, which stages a session
 # log in an .xcresult and never ends, as a runner stuck before its first
 # test; `nobundle-hang`, the same before any .xcresult; or `slow`, which
-# stages a started test case and passes 2 seconds later.
+# stages a started test case and passes 5 seconds later.
 cat >"$tmp/bin/just" <<'EOF'
 #!/usr/bin/env bash
 echo "${MDOC_IOS_TEST_ACTION:-}|$*" >>"$JUST_LOG"
@@ -71,7 +71,7 @@ case "$step" in
   slow)
     mkdir -p "$diagnostics/mdocUITests-1-Iteration-1/mdocUITests-2"
     echo "Test Case '-[mdocUITests.AUITests testA]' started." >"$diagnostics/mdocUITests-1-Iteration-1/mdocUITests-2/StandardOutputAndStandardError.txt"
-    sleep 2
+    sleep 5
     ;;
   *) echo "fake just: no step $n" >&2 && exit 99 ;;
 esac
@@ -118,9 +118,10 @@ export IOS_SIM_RUNTIME IOS_SIM_BUILDS_RUNTIME
 if [ -z "$IOS_SIM_RUNTIME" ] || [ -z "$IOS_SIM_BUILDS_RUNTIME" ]; then fail "no runtimes in scripts/tools.env"; fi
 
 # The app the core job built, which the warm-up launches; and a first test
-# that must start within a second, so a `hang` step is caught at once.
+# that must start within 3 seconds (the script counts whole seconds, so
+# less could catch a quick pass), so a `hang` step is caught soon.
 app=target/ios/DerivedData/Build/Products/Debug-iphonesimulator/mdoc.app
-export MDOC_IOS_FIRST_TEST_LIMIT=1
+export MDOC_IOS_FIRST_TEST_LIMIT=3
 pin_udid=4AD2086B-7B8F-4608-A742-AA422A0B8D74
 
 # run <case> <part> <plan step>...: runs the script in a fresh folder that
@@ -175,7 +176,7 @@ run hung 'ui 2' hang pass
 [ "$rc" = 0 ] || fail "a pass after a hang failed the part: $(cat "$out")"
 [ "$(sort -u "$JUST_LOG")" = "$first" ] || fail "the retry ran something else: $(cat "$JUST_LOG")"
 [ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 2 ] || fail "not one retry: $(cat "$JUST_LOG")"
-has "$out" 'No UI test started within 1s: stopping xcodebuild. The end of its session log:'
+has "$out" 'No UI test started within 3s: stopping xcodebuild. The end of its session log:'
 has "$out" 'Beginning test session 1'
 has "$XCRUN_LOG" "simctl erase $pin_udid"
 [ "$(grep -c 'simctl launch' "$XCRUN_LOG")" = 2 ] || fail "not warmed up again: $(cat "$XCRUN_LOG")"
@@ -187,6 +188,7 @@ pgrep -f 'sleep 4321' >/dev/null && fail "the hung run is still running"
 # A hang before xcodebuild made its result bundle retries too.
 run nobundle 'ui 1' nobundle-hang pass
 [ "$rc" = 0 ] || fail "a hang with no bundle did not retry: $(cat "$out")"
+has "$out" '(none yet: xcodebuild had made no result bundle)'
 
 # Two hangs: the part fails, naming them, without a third run.
 run hungtwice 'ui 3' hang hang

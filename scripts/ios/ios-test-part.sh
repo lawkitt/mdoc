@@ -103,7 +103,8 @@ watch() {
   while ! started; do
     if [ $((SECONDS - start)) -ge "$first_test_limit" ]; then
       echo "No UI test started within ${first_test_limit}s: stopping xcodebuild. The end of its session log:"
-      tail -n 15 "$logs"/Test/*.xcresult/Staging/*/Diagnostics/*/Session-*.log 2>/dev/null
+      tail -n 15 "$logs"/Test/*.xcresult/Staging/*/Diagnostics/*/Session-*.log 2>/dev/null ||
+        echo "(none yet: xcodebuild had made no result bundle)"
       : >"$hung"
       kill -TERM -- "-$1" 2>/dev/null || kill -TERM "$1" 2>/dev/null
       return
@@ -133,10 +134,11 @@ tests() {
     kill "$watcher" 2>/dev/null
     wait "$watcher" 2>/dev/null
   fi
-  if [ -f "$hung" ]; then
-    rm -f "$hung"
-    return 124
+  # A run that passed as the limit came was no hang.
+  if [ -f "$hung" ] && [ "$rc" -ne 0 ]; then
+    rc=124
   fi
+  rm -f "$hung"
   return "$rc"
 }
 
