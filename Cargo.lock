@@ -300,7 +300,7 @@ dependencies = [
 [[package]]
 name = "anydoc"
 version = "0.2.4"
-source = "git+https://github.com/lawkitt/anydoc.git?rev=a0ee8dbf1c894ef8ede0b64e9cd5a3eb1d204119#a0ee8dbf1c894ef8ede0b64e9cd5a3eb1d204119"
+source = "git+https://github.com/lawkitt/anydoc.git?rev=5ee03685119e830df57d3a4fdcff647660b1c35c#5ee03685119e830df57d3a4fdcff647660b1c35c"
 dependencies = [
  "cfb",
  "chardetng",
