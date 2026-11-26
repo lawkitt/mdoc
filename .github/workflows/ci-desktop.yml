@@ -133,8 +133,10 @@ jobs:
   # no longer waits for it. It builds what the tests job builds, from the
   # tests job's cache (the `test` key), and only the render test's binaries.
   renders:
-    # Named for the OS even where it is skipped, so macOS lists no Windows job.
-    name: ${{ fromJSON('{"macos":"ci/macos (renders)","windows":"ci/windows (hosted, renders)"}')[inputs.os] }}
+    # A static name: GitHub doesn't evaluate a skipped job's name, so on
+    # macOS it shows skipped under this one. It starts with ci/windows so
+    # merge-gate counts it among ci/windows (hosted)'s parts.
+    name: ci/windows (hosted, renders)
     if: inputs.os == 'windows'
     runs-on: windows-latest
     # Job limits (ADR 0095): a cold build (up to 32 minutes) and the render
