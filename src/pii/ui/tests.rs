@@ -2135,7 +2135,10 @@ fn share_counts_a_lone_first_name_left_after_apply(cx: &mut gpui::TestAppContext
     app.read_with(cx, |app, cx| {
         assert!(app.editor.read(cx).text().contains("Марина обратилась"));
         assert_eq!(app.names_not_replaced(cx), 1);
-        assert_eq!(app.share_status(cx), "1 replaced. 1 name not replaced.");
+        assert_eq!(
+            app.share_status(cx),
+            "1 name replaced. 1 name not replaced."
+        );
     });
     // Replacing the leftover by hand makes the line true again.
     app.update(cx, |app, cx| {
@@ -2707,5 +2710,74 @@ fn a_running_scan_shows_skeleton_rows_and_keeps_rescan_off(cx: &mut gpui::TestAp
         let job = app.pii.job.as_ref().expect("the scan keeps running");
         assert_eq!(job.generation, generation);
         assert!(!job.cancel.load(std::sync::atomic::Ordering::Relaxed));
+    });
+}
+
+/// #1314: one unit in the panel. A name that appears twice counts once in
+/// the Review tab, the Share status and button and the header's Apply, and
+/// the status says the places apart; after Apply the status counts the
+/// names replaced. The panel is open, on its Share tab, as a user sees it.
+#[gpui::test]
+fn the_panel_counts_names_and_says_the_places_apart(cx: &mut gpui::TestAppContext) {
+    use mdoc_pii::Category;
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1200.), px(800.)));
+    app.update_in(cx, |app, window, cx| {
+        let source = "Anna Petrova met Bob Stone. Anna Petrova left.";
+        app.editor.update(cx, |e, cx| e.set_text(source, cx));
+        app.pii.reviewing = true;
+        let review = app.pii.review_mut();
+        review.add_manual(source, 0..12, Category::Person).unwrap();
+        review.add_manual(source, 17..26, Category::Person).unwrap();
+        app.review_changed(cx);
+        if !app.replacements_open() {
+            app.toggle_replacements_panel(window, cx);
+        }
+    });
+    cx.run_until_parked();
+    let draw = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| window.draw(cx).clear(cx));
+    let click = |cx: &mut gpui::VisualTestContext, id: &'static str| {
+        draw(cx);
+        let at = cx
+            .debug_bounds(id)
+            .unwrap_or_else(|| panic!("missing {id}"))
+            .center();
+        cx.simulate_click(at, Default::default());
+        cx.run_until_parked();
+        draw(cx);
+    };
+    click(cx, "inspector-share");
+    assert!(cx.debug_bounds("share-status").is_some());
+    assert!(cx.debug_bounds("share-copy-for-ai").is_some());
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.inspector, crate::document_view::Inspector::Share);
+        assert_eq!(
+            app.pii.review.remaining(),
+            3,
+            "Anna Petrova twice, Bob once"
+        );
+        assert_eq!(app.review_tab_label(cx), "Review · 2");
+        assert_eq!(
+            app.share_status(cx),
+            "2 names in 3 places still to replace — apply them first."
+        );
+        assert_eq!(
+            app.share_copy_label(app.copy_step(cx), false, cx),
+            "Replace 2 names and copy"
+        );
+        assert_eq!(app.apply_label(cx).as_deref(), Some("Apply 2"));
+    });
+    click(cx, "primary-apply");
+    app.read_with(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "PERSON_1 met PERSON_2. PERSON_1 left."
+        );
+        assert_eq!(app.review_tab_label(cx), "Review · 2");
+        assert_eq!(
+            app.share_status(cx),
+            "2 names replaced. Names in the text are aliases now."
+        );
+        assert_eq!(app.apply_label(cx), None);
     });
 }

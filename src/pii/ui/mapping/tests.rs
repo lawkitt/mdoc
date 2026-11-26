@@ -3390,16 +3390,17 @@ fn category_rows_show_the_alias_choosing_them_gives(cx: &mut gpui::TestAppContex
 #[test]
 fn the_footer_says_scanning_while_a_scan_runs() {
     use super::panel::replacement_summary;
-    assert_eq!(replacement_summary(true, 0, 0, 0), "Scanning…");
-    assert_eq!(replacement_summary(true, 3, 1, 0), "Scanning…");
+    assert_eq!(replacement_summary(true, 0, 0, 0, 0), "Scanning…");
+    assert_eq!(replacement_summary(true, 2, 3, 1, 0), "Scanning…");
     assert_eq!(
-        replacement_summary(false, 0, 0, 0),
+        replacement_summary(false, 0, 0, 0, 0),
         "Nothing to replace yet"
     );
     assert_eq!(
-        replacement_summary(false, 3, 1, 2),
-        "3 to replace · 1 applied · 2 kept"
+        replacement_summary(false, 2, 3, 1, 2),
+        "2 names in 3 places to replace · 1 applied · 2 kept"
     );
+    assert_eq!(replacement_summary(false, 1, 1, 0, 0), "1 name to replace");
 }
 
 /// The Replacements panel with every identity expanded, as text: each row's
