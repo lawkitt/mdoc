@@ -948,7 +948,11 @@ class Documents(
                 SavedReadiness.NotReviewed -> refused(
                     when {
                         findsNames -> HandOffRefusal.NotScanned
-                        !ffi.namesChecked() -> HandOffRefusal.NamesNotChecked
+                        !ffi.namesChecked() -> {
+                            // The text the question is asked of: its answer checks this one only.
+                            asked = core { ffi.snapshot() }.text
+                            HandOffRefusal.NamesNotChecked
+                        }
                         else -> HandOffRefusal.NotChecked
                     },
                 )
@@ -964,14 +968,21 @@ class Documents(
             HandOff(text, fileName)
         }
 
+        /** The text Copy for AI last asked "I checked the names myself" of. */
+        @Volatile private var asked: String? = null
+
         /**
          * "I checked the names myself" (item 48): the user says so of the
-         * text as it is now, and the document is saved, Ready below the
-         * floor once nothing is left to decide. Any change to the text
-         * takes it back, so the next Copy for AI asks again.
+         * text the question was asked of (the text as it is now, when none
+         * was), and the document is saved, Ready below the floor once
+         * nothing is left to decide. Refused, so it asks again, when a move
+         * or a join changed the text since the question. Any change to the
+         * text takes the check back, so the next Copy for AI asks again.
          */
         fun confirmNamesChecked(): DocumentSnapshot = change(null) {
-            ffi.confirmNamesChecked()
+            val text = asked ?: ffi.snapshot().text
+            if (!ffi.confirmNamesChecked(text)) throw AppError.HandOffRefused(HandOffRefusal.NamesNotChecked)
+            asked = null
             ffi.snapshot()
         }
 

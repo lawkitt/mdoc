@@ -299,6 +299,29 @@ class RefusalsTest {
         compose.noCoreText()
     }
 
+    /**
+     * Done when (item 48's review): the screen made again while the
+     * question shows (a rotation) still goes on with the hand-off tapped
+     * once it is answered.
+     */
+    @Test
+    fun theQuestionOutlivesTheScreenMadeAgain() {
+        val documents = app.core.documents
+        val memo = documents.importDocument(ImportSource.Text("Nothing to hide here."), "Memo ${System.nanoTime()}")
+        memo.recognize(Quiet)
+        compose.recreate()
+        compose.openDocument(memo.snapshot().title)
+        setClipboard("before")
+        tap("Copy")
+        compose.waitForShown(hasTestTag("refusal-step") and hasText("I checked the names myself"))
+        compose.recreate()
+        compose.waitForShown(hasTestTag("refusal-step") and hasText("I checked the names myself"))
+        compose.shown(hasTestTag("refusal-step")).performClick()
+        compose.waitForText("Copied for AI")
+        awaitWindowFocus()
+        assertEquals(app.core.vault.textForAi(memo.vaultId!!), clipboard())
+    }
+
     private fun setClipboard(text: String) {
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             app.getSystemService(ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("test", text))

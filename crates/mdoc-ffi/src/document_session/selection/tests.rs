@@ -122,7 +122,8 @@ fn a_project_name_kept_here_is_not_clean() {
 
 /// Never scanned, a selection is "Copy with names" alone; below the floor,
 /// names decided by hand and checked by the user count as scanned, as
-/// they do for Ready (item 48): until then its copy is marked.
+/// they do for Ready (item 48), once the rule pack ran at the first save:
+/// until then its copy is marked.
 #[test]
 fn never_scanned_unless_decided_by_hand() {
     let scratch = Scratch::new();
@@ -135,7 +136,14 @@ fn never_scanned_unless_decided_by_hand() {
     session.set_no_name_finder(true);
     let check = session.check_selection(vault.clone(), all);
     assert_eq!(check.unwrap(), SelectionCheck::NeverScanned, "not checked");
-    session.confirm_names_checked().unwrap();
+    assert!(
+        session
+            .confirm_names_checked(session.snapshot().unwrap().text)
+            .unwrap()
+    );
+    let check = session.check_selection(vault.clone(), all);
+    assert_eq!(check.unwrap(), SelectionCheck::NeverScanned, "rules owed");
+    session.save_into_vault(vault.clone()).unwrap();
     let check = session.check_selection(vault.clone(), all);
     assert_eq!(check.unwrap(), SelectionCheck::Clean);
 }

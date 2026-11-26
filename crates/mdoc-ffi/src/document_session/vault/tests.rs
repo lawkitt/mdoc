@@ -815,7 +815,11 @@ fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
         crate::vault::Readiness::NotReviewed,
         "nobody said the names were checked"
     );
-    by_hand.confirm_names_checked().unwrap();
+    assert!(
+        by_hand
+            .confirm_names_checked(by_hand.snapshot().unwrap().text)
+            .unwrap()
+    );
     by_hand
         .save_pending_into_vault(vault.clone())
         .unwrap()
@@ -843,7 +847,11 @@ fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
 
     let scanning = marked(false);
     scanning.replace_all().unwrap();
-    scanning.confirm_names_checked().unwrap();
+    assert!(
+        scanning
+            .confirm_names_checked(scanning.snapshot().unwrap().text)
+            .unwrap()
+    );
     let saved = scanning.save_into_vault(vault.clone()).unwrap();
     assert_eq!(
         vault.readiness(saved.id).unwrap(),
@@ -926,7 +934,11 @@ fn a_document_saved_above_the_floor_is_ready_once_the_phone_falls_below_it() {
         crate::vault::Readiness::NotReviewed,
         "below the floor, unchecked: still not Ready"
     );
-    session.confirm_names_checked().unwrap();
+    assert!(
+        session
+            .confirm_names_checked(session.snapshot().unwrap().text)
+            .unwrap()
+    );
     assert!(
         session
             .save_pending_into_vault(vault.clone())
@@ -1096,7 +1108,11 @@ fn below_the_floor_a_document_left_mid_edit_owes_the_rules() {
     let text = session.snapshot().unwrap().text;
     (session.add_selection(at(&text, "Ann Lee", 0), Some(Category::Person))).unwrap();
     session.replace_all().unwrap();
-    session.confirm_names_checked().unwrap();
+    assert!(
+        session
+            .confirm_names_checked(session.snapshot().unwrap().text)
+            .unwrap()
+    );
     let id = session.save_into_vault(vault.clone()).unwrap().id;
     assert_eq!(
         vault.readiness(id.clone()).unwrap(),
@@ -1126,7 +1142,11 @@ fn below_the_floor_a_document_left_mid_edit_owes_the_rules() {
         crate::vault::Readiness::NotReviewed,
         "the text changed since its names were checked"
     );
-    again.confirm_names_checked().unwrap();
+    assert!(
+        again
+            .confirm_names_checked(again.snapshot().unwrap().text)
+            .unwrap()
+    );
     again.save_pending_into_vault(vault.clone()).unwrap();
     assert_eq!(vault.readiness(id).unwrap(), crate::vault::Readiness::Ready);
 }
@@ -1148,7 +1168,11 @@ fn below_the_floor_a_hand_review_left_with_a_proposal_is_ready_once_decided() {
     assert!(opened.edits_unscanned);
     again.set_no_name_finder(true);
     again.replace_all().unwrap();
-    again.confirm_names_checked().unwrap();
+    assert!(
+        again
+            .confirm_names_checked(again.snapshot().unwrap().text)
+            .unwrap()
+    );
     again.save_pending_into_vault(vault.clone()).unwrap();
     assert_eq!(vault.readiness(id).unwrap(), crate::vault::Readiness::Ready);
 }
@@ -1211,7 +1235,11 @@ fn below_the_floor_a_fresh_paste_is_ready_only_once_its_names_are_checked() {
     assert!(!session.names_checked());
     assert!(!record().names_checked_by_hand);
 
-    session.confirm_names_checked().unwrap();
+    assert!(
+        session
+            .confirm_names_checked(session.snapshot().unwrap().text)
+            .unwrap()
+    );
     assert!(session.names_checked());
     assert!(
         (session.save_pending_into_vault(vault.clone()).unwrap()).is_some(),
@@ -1277,7 +1305,11 @@ fn a_document_saved_ready_by_hand_before_the_check_asks_once() {
             .ready_fingerprint
             .is_none()
     );
-    again.confirm_names_checked().unwrap();
+    assert!(
+        again
+            .confirm_names_checked(again.snapshot().unwrap().text)
+            .unwrap()
+    );
     again.save_pending_into_vault(vault.clone()).unwrap();
     assert_eq!(vault.readiness(id).unwrap(), crate::vault::Readiness::Ready);
 }
@@ -1291,11 +1323,51 @@ fn a_move_takes_the_check_back() {
     let project = vault.create_project("Case".into()).unwrap().id;
     let session = session("Ann Lee met Bob Hart.", "Letter");
     session.set_no_name_finder(true);
-    session.confirm_names_checked().unwrap();
+    assert!(
+        session
+            .confirm_names_checked(session.snapshot().unwrap().text)
+            .unwrap()
+    );
     let id = session.save_into_vault(vault.clone()).unwrap().id;
     assert!(vault.store().document(&id).unwrap().names_checked_by_hand);
     vault.move_document(id.clone(), Some(project)).unwrap();
     assert!(!vault.store().document(&id).unwrap().names_checked_by_hand);
     let (again, _) = reopened(&vault, &id);
     assert!(!again.names_checked());
+}
+
+/// Item 48's review: "I checked the names myself" of a text the document
+/// no longer holds (a move or a join changed it meanwhile) checks nothing,
+/// so the question is asked of the text as it is now.
+#[test]
+fn a_check_of_text_changed_since_checks_nothing() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let session = session("Ann Lee met Bob Hart.", "Letter");
+    session.set_no_name_finder(true);
+    session.save_into_vault(vault.clone()).unwrap();
+    let asked = session.snapshot().unwrap().text;
+    type_and_save(&session, &vault, " Later.");
+    assert!(!session.confirm_names_checked(asked).unwrap());
+    assert!(!session.names_checked());
+}
+
+/// Item 48's review: below the floor, a text the rule pack cannot read
+/// (over its limit) keeps the rules owed, so it is never Ready, even with
+/// its names checked.
+#[test]
+fn below_the_floor_a_text_the_rules_cannot_read_is_never_ready() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let session = session(&"Word ".repeat(450_000), "Long");
+    session.set_no_name_finder(true);
+    let id = session.save_into_vault(vault.clone()).unwrap().id;
+    let text = session.snapshot().unwrap().text;
+    assert!(text.len() > 2 << 20, "over the rules' limit");
+    assert!(session.confirm_names_checked(text).unwrap());
+    session.save_pending_into_vault(vault.clone()).unwrap();
+    assert_eq!(
+        vault.readiness(id).unwrap(),
+        crate::vault::Readiness::NotReviewed
+    );
 }

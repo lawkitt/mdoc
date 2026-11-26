@@ -206,13 +206,14 @@ fun DocumentScreen(
     // Find names waits while a job holds the one slot, wherever it is offered.
     val stepWaits = step == HandOffRefusal.Step.FindNames && job != null
     val resources = LocalResources.current
-    // The hand-off last tapped: "I checked the names myself" goes on with it (item 48).
-    var tapped by remember { mutableStateOf<(() -> Unit)?>(null) }
+    // Each hand-off, and its tap: "I checked the names myself" goes on with
+    // the one tapped, which the model keeps (item 48).
+    val shareHandOff: (asFile: Boolean) -> Unit = { asFile ->
+        scope.launch { model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, asFile, context)) } }
+    }
     val share: (asFile: Boolean) -> Unit = { asFile ->
-        tapped = {
-            scope.launch { model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, asFile, context)) } }
-        }
-        tapped?.invoke()
+        model.tapped(if (asFile) HandOffKind.ShareFile else HandOffKind.Share)
+        shareHandOff(asFile)
     }
     val copyHandOff: () -> Unit = {
         scope.launch {
@@ -223,13 +224,16 @@ fun DocumentScreen(
         }
     }
     val copyForAi: () -> Unit = {
-        tapped = copyHandOff
+        model.tapped(HandOffKind.Copy)
         copyHandOff()
+    }
+    val askAiHandOff: () -> Unit = {
+        scope.launch { model.askAi()?.let { context.startActivity(askAiIntent(it, context)) } }
     }
     val askAi: (() -> Unit)? = if (aiConnector) {
         {
-            tapped = { scope.launch { model.askAi()?.let { context.startActivity(askAiIntent(it, context)) } } }
-            tapped?.invoke()
+            model.tapped(HandOffKind.AskAi)
+            askAiHandOff()
         }
     } else {
         null
@@ -238,7 +242,7 @@ fun DocumentScreen(
         when (taken) {
             is HandOffRefusal.Step.ReplaceAndCopy -> scope.launch {
                 // Replacing changes the text: below the floor its question goes on with Copy.
-                tapped = copyHandOff
+                model.tapped(HandOffKind.Copy)
                 model.replaceAndHandOff()?.let {
                     copy(context, it.text)
                     model.notice(R.string.copied_for_ai)
@@ -251,7 +255,13 @@ fun DocumentScreen(
                 model.findNames()
             }
             HandOffRefusal.Step.CheckedNamesMyself -> scope.launch {
-                if (model.confirmNamesChecked()) tapped?.invoke()
+                when (model.confirmNamesChecked()) {
+                    HandOffKind.Copy -> copyHandOff()
+                    HandOffKind.Share -> shareHandOff(false)
+                    HandOffKind.ShareFile -> shareHandOff(true)
+                    HandOffKind.AskAi -> if (aiConnector) askAiHandOff()
+                    null -> Unit
+                }
             }
         }
     }

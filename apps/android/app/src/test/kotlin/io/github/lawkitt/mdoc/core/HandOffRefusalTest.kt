@@ -269,6 +269,25 @@ class HandOffRefusalTest {
         assertFalse(letter.copyForAi().text.contains("Maya Bennett"))
     }
 
+    /**
+     * Done when (item 48's review): the answer checks the text the question
+     * was asked of; when the text changed since (a move, a join), it checks
+     * nothing and asks again.
+     */
+    @Test
+    fun theAnswerChecksOnlyTheTextItWasAskedOf() {
+        val text = "Dear Maya Bennett, your claim is ready."
+        val letter = documents.importDocument(ImportSource.Text(text), "Letter", null)
+        letter.recognize(Quiet)
+        assertEquals(HandOffRefusal.NamesNotChecked, letter.refusal())
+        letter.addReplacement(SourceRange(5, 17), Category.Person)
+        val refused = runCatching { letter.confirmNamesChecked() }.exceptionOrNull() as? AppError.HandOffRefused
+        assertEquals("changed since the question: asked again", HandOffRefusal.NamesNotChecked, refused?.refusal)
+        assertEquals(HandOffRefusal.NamesNotChecked, letter.refusal())
+        letter.confirmNamesChecked()
+        assertFalse(letter.copyForAi().text.contains("Maya Bennett"))
+    }
+
     private companion object {
         const val EMAIL = "ann@example.com"
 

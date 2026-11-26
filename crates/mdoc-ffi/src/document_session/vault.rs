@@ -338,16 +338,21 @@ impl DocumentSession {
     }
 
     /// "I checked the names myself" (item 48): below the floor, the user
-    /// says so of the text as it is now, and the next Vault save records
-    /// it, Ready once no proposals are left. Any change to the text takes
-    /// it back, so the next Copy for AI asks again; unchanged text never
-    /// does, reopened too. Above the floor it changes nothing: a scan
-    /// decides there.
-    pub fn confirm_names_checked(&self) -> Result<(), CoreError> {
+    /// says so of `text`, the text the question was asked of, and the next
+    /// Vault save records it, Ready once no proposals are left. False, with
+    /// nothing checked, when the document's text is no longer `text` (a
+    /// move or a join changed it meanwhile): ask again. Any change to the
+    /// text takes the check back, so the next Copy for AI asks again;
+    /// unchanged text never does, reopened too. Above the floor it changes
+    /// nothing: a scan decides there.
+    pub fn confirm_names_checked(&self, text: String) -> Result<bool, CoreError> {
         let mut guard = self.lock_document();
         let document = guard.as_mut().ok_or_else(no_document)?;
-        document.names_checked = Some(document.review.text.clone());
-        Ok(())
+        if document.review.text != text {
+            return Ok(false);
+        }
+        document.names_checked = Some(text);
+        Ok(true)
     }
 
     /// Whether the user checked the names of the text as it is now
@@ -416,7 +421,7 @@ impl Document {
             kept: self.review.review.kept_pairs(),
             dismissed: self.review.dismissed_pairs(),
             counts: self.review.counts(),
-            owed: owed(&self.review.review),
+            owed: owed(&self.review.review) || self.rules_owed,
             edits_unscanned: self.review.review.edits_unscanned(),
             scanned: self.scanned,
             by_hand: false,
@@ -473,19 +478,21 @@ impl Document {
         if !(by_hand && std::mem::take(&mut self.rules_owed)) {
             return;
         }
-        match self.review.edited_text() {
-            Some(edited) => {
-                if let Ok(mut found) = mdoc_detect::scan_rules(edited.text()) {
-                    found.retain(|d| !self.skip.contains(&d.category));
-                    let _ = self.review.ingest_edited(&edited, found);
-                }
-            }
-            None => {
-                if let Ok(mut found) = mdoc_detect::scan_rules(&self.review.text) {
-                    found.retain(|d| !self.skip.contains(&d.category));
-                    let _ = self.review.ingest(found);
-                }
-            }
+        let skip = &self.skip;
+        let ran = match self.review.edited_text() {
+            Some(edited) => mdoc_detect::scan_rules(edited.text()).map(|mut found| {
+                found.retain(|d| !skip.contains(&d.category));
+                let _ = self.review.ingest_edited(&edited, found);
+            }),
+            None => mdoc_detect::scan_rules(&self.review.text).map(|mut found| {
+                found.retain(|d| !skip.contains(&d.category));
+                let _ = self.review.ingest(found);
+            }),
+        };
+        // Rules that could not run (a text over their limit) stay owed, and
+        // an owed look for names is never Ready.
+        if ran.is_err() {
+            self.rules_owed = true;
         }
     }
 
@@ -499,7 +506,7 @@ impl Document {
             self.scanned,
             by_hand && checked,
             counts.proposed,
-            owed(&self.review.review),
+            owed(&self.review.review) || self.rules_owed,
         );
         self.vault
             .as_ref()

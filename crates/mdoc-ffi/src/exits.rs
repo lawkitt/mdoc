@@ -571,7 +571,12 @@ fn no_exit_sends_a_hand_review_until_its_names_are_checked() {
         let letter = below();
         let sent = (exit.send)(&letter);
         assert!(sent.is_none(), "{}: sent unchecked: {sent:?}", exit.name);
-        letter.session.confirm_names_checked().unwrap();
+        assert!(
+            letter
+                .session
+                .confirm_names_checked(letter.session.snapshot().unwrap().text)
+                .unwrap()
+        );
         letter
             .session
             .save_pending_into_vault(letter.vault.clone())

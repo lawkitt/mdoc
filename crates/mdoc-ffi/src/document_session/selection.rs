@@ -87,7 +87,8 @@ impl DocumentSession {
                 let guard = self.lock_document();
                 let document = guard.as_ref().ok_or_else(no_document)?;
                 document.review.in_text(&range)?;
-                if !(document.scanned || (by_hand && document.names_checked())) {
+                let checked = by_hand && document.names_checked() && !document.rules_owed;
+                if !(document.scanned || checked) {
                     return Ok(SelectionCheck::NeverScanned);
                 }
                 at(document)
