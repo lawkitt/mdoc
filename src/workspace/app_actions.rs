@@ -72,6 +72,9 @@ pub(crate) fn bind(cx: &mut App) {
         }
     });
     app_action::<ToggleTheme>(cx, |this, window, cx| this.cycle_theme(window, cx));
+    app_action_with::<crate::menus::ShowLiveView>(cx, |this, show, window, cx| {
+        this.show_live_view(show.0, window, cx)
+    });
     app_action::<ToggleSidebar>(cx, |this, window, cx| {
         let effect = this.sidebar.toggle(std::time::Instant::now());
         this.carry_out_sidebar(Some(effect), window, cx);
@@ -87,11 +90,22 @@ pub(crate) fn bind(cx: &mut App) {
     });
 }
 
-fn app_action<A: gpui::Action>(
+fn app_action<A: gpui::Action + Clone>(
     cx: &mut App,
     handle: fn(&mut Workspace, &mut Window, &mut Context<Workspace>),
 ) {
-    cx.on_action(move |_: &A, cx| {
+    app_action_with::<A>(cx, move |workspace, _, window, cx| {
+        handle(workspace, window, cx)
+    });
+}
+
+/// [`app_action`], for an action that carries what it acts on.
+fn app_action_with<A: gpui::Action + Clone>(
+    cx: &mut App,
+    handle: impl Fn(&mut Workspace, &A, &mut Window, &mut Context<Workspace>) + Copy + 'static,
+) {
+    cx.on_action(move |action: &A, cx| {
+        let action = action.clone();
         // mdoc has one workspace plus optional comparison windows. Always
         // route app commands through that workspace and its normal lifecycle.
         if let Some(workspace) = cx
@@ -105,7 +119,7 @@ fn app_action<A: gpui::Action>(
                     // Confirmations have their own dispatch root. App routing
                     // must not move focus out of that modal surface.
                     if !window.has_active_prompt() {
-                        handle(workspace, window, cx);
+                        handle(workspace, &action, window, cx);
                     }
                 });
             });

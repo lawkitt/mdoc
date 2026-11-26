@@ -2,7 +2,11 @@
 //! it is the app menu (About, Check for Updates…, Settings, Services, Hide,
 //! Quit), followed by File, Edit, View, Window and Help. Edit items use the
 //! editor's actions with their OS actions, so they also reach native
-//! Open/Save panels.
+//! Open/Save panels. The Window menu also lists the live views by title;
+//! choosing one shows it (#1160). The workspace hands over the list as it
+//! changes, and the menu bar is set again. Nothing is ticked: GPUI can
+//! only rebuild the whole bar, and its macOS platform keeps every
+//! rebuild's actions, so switching documents must not rebuild it.
 
 use crate::{
     document_view::{
@@ -19,10 +23,22 @@ use crate::{
         ShowHome, SwitchDocument, SwitchDocumentBack, ToggleSidebar, shortcuts_ui::ShowShortcuts,
     },
 };
-use gpui::{App, Menu, MenuItem, OsAction, SystemMenuType, actions};
+use gpui::{App, Menu, MenuItem, OsAction, SharedString, SystemMenuType, actions};
 
 /// What Help › mdoc Help and the sidebar's ? open.
 pub(crate) const HELP_URL: &str = "https://github.com/lawkitt/mdoc#readme";
+
+/// Window › a live view's title: show live view `.0`.
+#[derive(Clone, Debug, PartialEq, gpui::Action)]
+#[action(namespace = mdoc, no_json)]
+pub(crate) struct ShowLiveView(pub u64);
+
+/// One live view as the Window menu lists it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct LiveViewItem {
+    pub(crate) id: u64,
+    pub(crate) title: SharedString,
+}
 
 actions!(
     mdoc,
@@ -56,12 +72,26 @@ pub(crate) fn install(cx: &mut App) {
     // macOS only: the table has no Windows keys for these.
     let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Menus, cx);
     cx.bind_keys(bindings);
-    cx.set_menus(menus());
+    cx.set_menus(menus(&[]));
+}
+
+/// The live views changed: the menu bar is set again with `views` under
+/// Window.
+pub(crate) fn set_live_views(views: &[LiveViewItem], cx: &mut App) {
+    cx.set_menus(menus(views));
 }
 
 /// Every action item, with its title, in menu order (tests).
 #[cfg(test)]
 pub(crate) fn items() -> Vec<(gpui::SharedString, Box<dyn gpui::Action>)> {
+    items_with(&[])
+}
+
+/// [`items`], with `views` listed under Window (tests).
+#[cfg(test)]
+pub(crate) fn items_with(
+    views: &[LiveViewItem],
+) -> Vec<(gpui::SharedString, Box<dyn gpui::Action>)> {
     fn walk(items: Vec<MenuItem>, out: &mut Vec<(gpui::SharedString, Box<dyn gpui::Action>)>) {
         for item in items {
             match item {
@@ -72,13 +102,31 @@ pub(crate) fn items() -> Vec<(gpui::SharedString, Box<dyn gpui::Action>)> {
         }
     }
     let mut out = Vec::new();
-    for menu in menus() {
+    for menu in menus(views) {
         walk(menu.items, &mut out);
     }
     out
 }
 
-fn menus() -> Vec<Menu> {
+/// Window's own items, then each live view.
+fn window_items(views: &[LiveViewItem]) -> Vec<MenuItem> {
+    let mut items = vec![
+        MenuItem::action("Minimize", MinimizeWindow),
+        MenuItem::action("Zoom", ZoomWindow),
+        MenuItem::separator(),
+        MenuItem::action("Switch Document", SwitchDocument),
+        MenuItem::action("Switch Document Back", SwitchDocumentBack),
+    ];
+    if !views.is_empty() {
+        items.push(MenuItem::separator());
+    }
+    items.extend(
+        (views.iter()).map(|view| MenuItem::action(view.title.clone(), ShowLiveView(view.id))),
+    );
+    items
+}
+
+fn menus(views: &[LiveViewItem]) -> Vec<Menu> {
     let mut app = vec![MenuItem::action("About mdoc", About)];
     if cfg!(target_os = "macos") {
         app.push(MenuItem::action("Check for Updates…", CheckForUpdates));
@@ -173,14 +221,72 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Actual Size", ZoomReset),
         ]),
         // GPUI registers the menu named "Window" as the app's Windows menu,
-        // so macOS lists the open windows there.
-        Menu::new("Window").items([
-            MenuItem::action("Minimize", MinimizeWindow),
-            MenuItem::action("Zoom", ZoomWindow),
-            MenuItem::separator(),
-            MenuItem::action("Switch Document", SwitchDocument),
-            MenuItem::action("Switch Document Back", SwitchDocumentBack),
-        ]),
+        // so macOS lists the open windows there, after the live views.
+        Menu::new("Window").items(window_items(views)),
         Menu::new("Help").items(help),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn view(id: u64, title: &str) -> LiveViewItem {
+        LiveViewItem {
+            id,
+            title: title.to_string().into(),
+        }
+    }
+
+    /// The Window menu's rows: (title, ticked, the live view it shows).
+    fn window_rows(views: &[LiveViewItem]) -> Vec<(String, bool, Option<u64>)> {
+        let window = menus(views)
+            .into_iter()
+            .find(|menu| menu.name == "Window")
+            .expect("a Window menu");
+        (window.items.into_iter())
+            .filter_map(|item| match item {
+                MenuItem::Action {
+                    name,
+                    action,
+                    checked,
+                    ..
+                } => Some((
+                    name.to_string(),
+                    checked,
+                    (action.as_any().downcast_ref::<ShowLiveView>()).map(|show| show.0),
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Done when (#1160): Window lists each live view by title after its
+    /// own items, none ticked, each choosing its own view; with none,
+    /// Window is as before.
+    #[test]
+    fn the_window_menu_lists_the_live_views() {
+        let own = vec![
+            ("Minimize".to_string(), false, None),
+            ("Zoom".to_string(), false, None),
+            ("Switch Document".to_string(), false, None),
+            ("Switch Document Back".to_string(), false, None),
+        ];
+        assert_eq!(window_rows(&[]), own);
+        let views = [view(3, "Lease.md"), view(7, "Letter.md")];
+        let mut expected = own.clone();
+        expected.extend([
+            ("Lease.md".to_string(), false, Some(3)),
+            ("Letter.md".to_string(), false, Some(7)),
+        ]);
+        assert_eq!(window_rows(&views), expected);
+        // Only Window changes.
+        let others = |views: &[LiveViewItem]| {
+            (menus(views).into_iter())
+                .filter(|menu| menu.name != "Window")
+                .map(|menu| (menu.name, menu.items.len()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(others(&views), others(&[]));
+    }
 }

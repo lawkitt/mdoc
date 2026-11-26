@@ -429,6 +429,80 @@ fn the_window_title_names_the_document_and_only_mdoc_on_home(cx: &mut TestAppCon
     cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "mdoc"));
 }
 
+/// Done when (#1160): the Window menu lists each live view by title;
+/// choosing one brings the window forward and shows it; the list follows a
+/// new view and a title that changes, and stays through Home. Nothing
+/// moves under the palette, nor for a view no longer live.
+#[gpui::test]
+fn the_window_menu_lists_the_live_views(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_on_vault(cx, Session::default(), dir.path());
+    let mut ids = Vec::new();
+    for text in ["Lease notes", "Letter"] {
+        cx.dispatch_action(New);
+        cx.run_until_parked();
+        cx.simulate_input(text);
+        wait(cx, 1000);
+        ids.push(cx.update(|_, cx| tabs.read(cx).tabs.active()));
+    }
+    draw(cx);
+    assert_eq!(
+        window_menu_views(cx),
+        [("Lease notes".into(), ids[0]), ("Letter".into(), ids[1])]
+    );
+    // Every live view's row reaches its handler.
+    let views = cx.update(|_, cx| tabs.read(cx).live_view_menu.clone());
+    let rows = (crate::menus::items_with(&views).into_iter())
+        .filter(|(_, action)| action.as_any().is::<crate::menus::ShowLiveView>());
+    for (name, action) in rows {
+        let available = cx.update(|window, cx| {
+            window.is_action_available(action.as_ref(), cx)
+                || cx.is_action_available(action.as_ref())
+        });
+        assert!(available, "menu item {name} has no handler");
+    }
+    // Choosing the first, from behind, brings the window forward to it.
+    cx.deactivate_window();
+    cx.dispatch_action(crate::menus::ShowLiveView(ids[0]));
+    cx.run_until_parked();
+    draw(cx);
+    assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), ids[0]);
+    assert!(cx.update(|window, _| window.is_window_active()));
+    // Switching leaves the list as it was.
+    assert_eq!(
+        cx.update(|_, cx| tabs.read(cx).live_view_menu.clone()),
+        views
+    );
+    // Its title follows its first line.
+    cx.simulate_input(" for May");
+    wait(cx, 1000);
+    draw(cx);
+    assert_eq!(
+        window_menu_views(cx)[0],
+        ("Lease notes for May".into(), ids[0])
+    );
+    // The palette open: nothing moves under it.
+    cx.dispatch_action(OpenPalette);
+    cx.run_until_parked();
+    cx.dispatch_action(crate::menus::ShowLiveView(ids[1]));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.shell.palette.is_some());
+        assert_eq!(tabs.tabs.active(), ids[0]);
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_palette(window, cx));
+    // Home: the views stay live and listed.
+    cx.dispatch_action(shell::ShowHome);
+    cx.run_until_parked();
+    draw(cx);
+    assert_eq!(window_menu_views(cx).len(), 2);
+    // One no longer live does nothing.
+    cx.dispatch_action(crate::menus::ShowLiveView(u64::MAX));
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| tabs.read(cx).showing_overview(cx)));
+}
+
 #[test]
 fn a_dev_profile_window_says_so_in_its_title() {
     assert_eq!(window_title("mdoc".into(), true), "mdoc — dev profile");

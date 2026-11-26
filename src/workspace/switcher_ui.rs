@@ -73,6 +73,40 @@ impl Workspace {
         cx.notify();
     }
 
+    /// The live views as the Window menu lists them: by title, in the
+    /// order they opened (#1160). Which one is shown is left out, so
+    /// switching documents leaves the menu bar as it is.
+    pub(super) fn live_view_items(&self, cx: &App) -> Vec<crate::menus::LiveViewItem> {
+        let mut views: Vec<_> = (self.tabs.iter())
+            .filter(|tab| !self.is_placeholder(tab, cx))
+            .map(|tab| crate::menus::LiveViewItem {
+                id: tab.id(),
+                title: super::tab_label(tab, cx).name.into(),
+            })
+            .collect();
+        views.sort_by_key(|view| view.id);
+        views
+    }
+
+    /// Window › a live view's title: the window comes forward and shows
+    /// it, as Back and the switcher would. Nothing moves under a dialog,
+    /// sheet, Settings, the palette or the Project list, or while
+    /// quitting; one no longer live does nothing.
+    pub(super) fn show_live_view(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        if self.quit_flow.quitting()
+            || self.modal_up(window, cx)
+            || self.shell.palette.is_some()
+            || self.project_ui.list_open
+            || self.switcher.is_some()
+            || !self.tabs.contains(id)
+        {
+            return;
+        }
+        crate::menu_bar::reveal_window(window, cx);
+        self.activate(id, window, cx);
+        cx.notify();
+    }
+
     /// Esc or a click outside: nothing changes.
     pub(super) fn cancel_switcher(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.switcher.take().is_none() {

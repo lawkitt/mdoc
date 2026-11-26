@@ -361,10 +361,31 @@ fn the_ninth_view_evicts_the_least_recent_after_its_autosave(cx: &mut TestAppCon
     open_notes(&tabs, cx, dir.path(), &names);
     assert_eq!(live(&tabs, cx), LIMIT);
     cx.update(|_, cx| assert!(tabs.read(cx).tabs.contains(first), "eight stay"));
+    draw(cx);
+    let listed = |cx: &mut VisualTestContext| -> Vec<u64> {
+        window_menu_views(cx)
+            .into_iter()
+            .map(|(_, id)| id)
+            .collect()
+    };
+    assert_eq!(listed(cx).len(), LIMIT);
+    assert!(
+        listed(cx).contains(&first),
+        "Window lists each of the eight"
+    );
     // The ninth: the first, viewed least recently, goes once written.
     open_notes(&tabs, cx, dir.path(), &["ninth"]);
     assert_eq!(live(&tabs, cx), LIMIT);
     cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(first)));
+    // Window drops it, and its row, chosen from a menu opened before,
+    // does nothing.
+    draw(cx);
+    assert_eq!(listed(cx).len(), LIMIT);
+    assert!(!listed(cx).contains(&first));
+    let shown = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    cx.dispatch_action(crate::menus::ShowLiveView(first));
+    cx.run_until_parked();
+    assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), shown);
     let saved = vault(&tabs, cx).document(&document).unwrap().markdown;
     assert_eq!(saved, "edited first text");
     // Its row, the oldest import, shows with Show all and opens it again
