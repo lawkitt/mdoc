@@ -25,7 +25,7 @@ struct ActivityView: UIViewControllerRepresentable {
 }
 
 /// Text to share that the share sheet previews by a title rather than by its
-/// first words, which are Copy for AI's placeholder note. The title leaves
+/// first words, which are Copy for AI's alias note. The title leaves
 /// with the text, as Mail's subject and the preview's title, so it must
 /// hold no more than the text does: for Copy for AI's text, the file's
 /// neutral name (#1188, #1205); for a restored reply, which holds the real
