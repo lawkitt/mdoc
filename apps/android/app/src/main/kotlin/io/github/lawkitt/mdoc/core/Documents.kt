@@ -28,6 +28,7 @@ import uniffi.mdoc_ffi.discardKeptImages
 import uniffi.mdoc_ffi.discardKeptImport
 import uniffi.mdoc_ffi.markdownStyling
 import uniffi.mdoc_ffi.Category as FfiCategory
+import uniffi.mdoc_ffi.DocumentPhase as FfiDocumentPhase
 import uniffi.mdoc_ffi.MentionState as FfiMentionState
 import uniffi.mdoc_ffi.Scope as FfiScope
 
@@ -118,7 +119,7 @@ class Documents(
             val id = ids[info.id] ?: DocumentId(info.id)
             seen += id
             val updated = info.updated.toLong() * 1000
-            documents += sessions[id]?.loadedSummary(updated) ?: summary(id, info, updated)
+            documents += sessions[id]?.loadedSummary(updated, savedReady(info)) ?: summary(id, info, updated)
         }
         documents += sessions.values.filter { it.id !in seen }.map { it.summary(it.created) }
         return LibrarySnapshot(projects = projects, documents = documents.sortedByDescending { it.updated })
@@ -463,7 +464,7 @@ class Documents(
         val candidates = (info.proposed + info.replaced + info.kept).toInt()
         return DocumentSummary(
             id, info.title, info.projectId?.let(::ProjectId), sourceKind(info.sourceKind),
-            phase(info.scanned, candidates, info.proposed.toInt()), info.proposed.toInt(), updated, candidates,
+            phase(info.scanned, candidates, info.proposed.toInt(), savedReady(info)), info.proposed.toInt(), updated, candidates,
             vaultId = info.id,
         )
     }
@@ -623,12 +624,17 @@ class Documents(
             )
         }
 
-        /** The list row of a document this session holds, from its review without the reply or the styling. */
-        internal fun loadedSummary(updated: Long): DocumentSummary? {
+        /**
+         * The list row of a document this session holds, from its review
+         * without the reply or the styling. `savedReady`: what the Vault's
+         * list says of its record ([savedReady]): moved since its last save,
+         * it is not Ready on the row until this session saves it (#1292).
+         */
+        internal fun loadedSummary(updated: Long, savedReady: Boolean = true): DocumentSummary? {
             val review = synchronized(this) { review } ?: return null
             return DocumentSummary(
                 id, review.title, projectId?.let(::ProjectId), kind,
-                phase(review.scanned, review.mentions.size, review.proposed.toInt()),
+                phase(review.scanned, review.mentions.size, review.proposed.toInt(), savedReady),
                 review.proposed.toInt(), updated, review.mentions.size, vaultId = vaultId,
             )
         }
@@ -663,6 +669,7 @@ class Documents(
                 original = original,
                 opened = opened,
                 promotedFrom = promotedFrom(),
+                scanned = review.scanned,
             )
         }
 
@@ -947,7 +954,9 @@ class Documents(
                 // (item 48), unless they were and it still is not Ready.
                 SavedReadiness.NotReviewed -> refused(
                     when {
-                        findsNames -> HandOffRefusal.NotScanned
+                        findsNames && !current.scanned -> HandOffRefusal.NotScanned
+                        // Scanned, and its save still not Ready: names owed a look.
+                        findsNames -> HandOffRefusal.NotChecked
                         !ffi.namesChecked() -> {
                             // The text the question is asked of: its answer checks this one only.
                             asked = core { ffi.snapshot() }.text
@@ -1156,12 +1165,26 @@ class Documents(
         /** A review action on a snapshot from before a move. */
         const val MOVED_MEANWHILE = "The document moved meanwhile. Try again."
 
-        /** As Home and the document show it: read, names searched for or marked, proposals left. */
-        fun phase(scanned: Boolean, candidates: Int, proposed: Int) = when {
+        /**
+         * As Home and the document show it: read, names searched for or
+         * marked, proposals left. `savedReady`: false for a list's record
+         * scanned with nothing proposed but moved since its last save, which
+         * is not Ready until saved again: Reviewing with nothing pending,
+         * "Moved · open it to share" (#1292).
+         */
+        fun phase(scanned: Boolean, candidates: Int, proposed: Int, savedReady: Boolean = true) = when {
             !scanned && candidates == 0 -> DocumentPhase.Unscanned
             proposed > 0 -> DocumentPhase.Reviewing
+            scanned && !savedReady -> DocumentPhase.Reviewing
             else -> DocumentPhase.Ready
         }
+
+        /**
+         * Whether the Vault's list has `info`'s record saved Ready as far as
+         * a row can tell: the core lists one moved since its last save as
+         * Reviewing with nothing proposed (#1292).
+         */
+        fun savedReady(info: DocumentInfo) = !(info.phase == FfiDocumentPhase.REVIEWING && info.proposed == 0uL)
 
         /** The app's kind of a Vault document's file family. */
         fun sourceKind(kind: DocumentSourceKind) = when (kind) {

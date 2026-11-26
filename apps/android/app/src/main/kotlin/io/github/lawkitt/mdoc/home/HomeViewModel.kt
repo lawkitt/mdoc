@@ -907,7 +907,10 @@ class HomeViewModel(
             DocumentPhase.Recognizing ->
                 if (document.kind.needsRecognition) StatusLine.NotRecognized else StatusLine.ImportNotFinished
             DocumentPhase.Unscanned -> if (canFindNames) StatusLine.ReadyToFind else StatusLine.ReadyToMark
-            DocumentPhase.Reviewing -> StatusLine.ToReview(document.pendingCount)
+            // Nothing pending: moved since its last save, so not Ready
+            // until saved again (#1292).
+            DocumentPhase.Reviewing ->
+                if (document.pendingCount == 0) StatusLine.MovedToShare else StatusLine.ToReview(document.pendingCount)
             // Find names ran and found nothing.
             DocumentPhase.Ready -> if (document.candidateCount == 0) StatusLine.NothingFound else StatusLine.ReadyToShare
         }
@@ -924,6 +927,9 @@ sealed interface StatusLine {
     data object ReadyToMark : StatusLine
 
     data class ToReview(val count: Int) : StatusLine
+
+    /** Moved since its last save: Copy for AI or Share inside saves it Ready again (#1292). */
+    data object MovedToShare : StatusLine
 
     data object ReadyToShare : StatusLine
 
