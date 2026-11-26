@@ -599,6 +599,57 @@ fn a_write_records_whether_the_document_is_ready(cx: &mut TestAppContext) {
     assert!(!vault.readiness(document.as_str()).unwrap().is_ready());
 }
 
+/// Item 48: a write that changes the text takes back a phone's "I checked
+/// the names myself", as the phone does; one that leaves the text as it
+/// was keeps it.
+#[gpui::test]
+fn a_write_of_new_text_takes_back_a_phones_names_check(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let id = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova met Northwind Ltd.",
+        &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
+    );
+    new_project(&tabs, cx, id);
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(id, cx).unwrap());
+    tabs.update_in(cx, |tabs, window, cx| tabs.autosave(id, window, cx));
+    cx.run_until_parked();
+    let vault = vault(&tabs, cx);
+    (vault.update_document(document.as_str(), |d| d.names_checked_by_hand = true)).unwrap();
+    let checked = || vault.document(document.as_str()).unwrap().names_checked_by_hand;
+
+    // A review change alone: the text is as it was.
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        let text = view.editor.read(cx).text().to_owned();
+        let start = text.find("met").unwrap();
+        view.pii
+            .review_mut()
+            .add_manual(&text, start..start + 3, Person)
+            .unwrap();
+    });
+    let before = vault.document(document.as_str()).unwrap().revision;
+    tabs.update_in(cx, |tabs, window, cx| tabs.autosave(id, window, cx));
+    cx.run_until_parked();
+    assert!(vault.document(document.as_str()).unwrap().revision > before, "written");
+    assert!(checked(), "unchanged text keeps the check");
+
+    view.update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            let end = editor.text().len();
+            editor.replace_range(end..end, " Later.", cx);
+        });
+    });
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| tabs.autosave(id, window, cx));
+    cx.run_until_parked();
+    assert!(!checked(), "new text was never checked");
+}
+
 /// #304: the row's "N replaced" is the editor's Share tab count, mentions
 /// rather than names.
 #[gpui::test]

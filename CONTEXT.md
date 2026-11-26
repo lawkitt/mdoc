@@ -176,8 +176,8 @@ each identity's primary wording.
 clipboard actions. Avoid "tray".
 
 **Ready document**: its text matches the fingerprint saved with no proposals
-left after a scan (below the phones' floor, every name decided by hand and
-checked by the user) and holds no name its Project knows.
+left after a scan (below the phones' floor, every name decided and checked by
+hand) and holds no name its Project knows.
 
 **Side by side view**: the read-only, line-paired view of original wording
 beside pseudonymized text. Avoid "diff".
