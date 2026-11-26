@@ -200,12 +200,13 @@ extension MdocUITest {
         // So wait for the whole word, and only then type it again, into
         // the field its clear button emptied.
         let typed = NSPredicate(format: "value == %@", word)
-        field.typeText(word)
-        for _ in 0..<2 where !field.wait(until: typed, timeout: MdocUITest.timeout) {
-            clear(field)
+        var holds = false
+        for attempt in 0..<3 where !holds {
+            if attempt > 0 { clear(field) }
             field.typeText(word)
+            holds = field.wait(until: typed, timeout: MdocUITest.timeout)
         }
-        XCTAssertEqual(field.value as? String, word)
+        XCTAssertTrue(holds, "the field holds \(field.value ?? "")")
         let hide = app.buttons["find-hide-name"]
         XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
         hide.tap()

@@ -88,7 +88,9 @@ extension DocumentViewModel {
         typing.discovery?.cancel()
         typing.discovery = nil
         let previous = doneWork
+        donesLeft += 1
         doneWork = Task {
+            defer { donesLeft -= 1 }
             // The last Done's work first: this edit scan would stop that one.
             await previous?.value
             await discoverNow()
@@ -182,7 +184,9 @@ extension DocumentViewModel {
         }.value
         // The lists show the new title now, not at the save.
         if retitled { onChange() }
-        guard let found, revision == typing.revision, found.textRevision == revision else { return }
+        // Done cancelled the pause's discovery: its snapshot may be older
+        // than one shown since, such as Find names again's (#1255).
+        guard !Task.isCancelled, let found, revision == typing.revision, found.textRevision == revision else { return }
         applyReview(found)
     }
 

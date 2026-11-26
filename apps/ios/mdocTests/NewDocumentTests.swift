@@ -220,6 +220,58 @@ final class NewDocumentTests: XCTestCase {
         XCTAssertEqual(letter.snapshot.candidates, session.snapshot().candidates)
     }
 
+    /// A second Done while Find names again waits for the first (#1255
+    /// review): it waits for that one too, whose edit scan would otherwise
+    /// stop the scan. The first Done is held after its edit scan until the
+    /// second Done; the second's discovery goes on once the core's scan
+    /// has begun, or after half a second.
+    func testFindNamesAgainWaitsForADoneTappedWhileItWaits() async throws {
+        seeded = try Fixture.seeded()
+        let session = SlowJobs(try seeded.session(seeded.letter), seconds: 0)
+        let held = Signal()
+        let firstScanned = Signal()
+        let started = Signal()
+        let editsScanned = Signal()
+        let discoveries = Calls()
+        let editScans = Calls()
+        session.beforeDiscover = { if discoveries.next() == 2 { started.wait(timeout: 0.5) } }
+        session.afterScanEdits = {
+            if editScans.next() == 1 {
+                firstScanned.raise()
+                held.wait(timeout: 10)
+            } else {
+                editsScanned.raise()
+            }
+        }
+        session.coreScanStarted = {
+            started.raise()
+            editsScanned.wait(timeout: 5)
+        }
+        let letter = DocumentViewModel(
+            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()),
+            storage: seeded.storage, findsNames: true)
+        letter.enterEditMode()
+        type("\n\nCopy to new.person@example.com.", in: letter)
+        letter.doneEditing()
+        // Runs at once, up to its wait for Done.
+        let again = Task.immediate { await letter.findNamesAgain() }
+        let scanned = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in firstScanned.isRaised }, object: nil)
+        await fulfillment(of: [scanned], timeout: 10)
+        letter.enterEditMode()
+        XCTAssertTrue(letter.isEditing)
+        type("\n\nAnd other.person@example.com.", in: letter)
+        letter.doneEditing()
+        held.raise()
+        await again.value
+
+        XCTAssertNil(letter.errorMessage, "the second Done's edit scan stopped the scan")
+        XCTAssertTrue(letter.notice?.hasSuffix("to review: tap underlined text") ?? false, letter.notice ?? "no notice")
+        for email in ["new.person@example.com", "other.person@example.com"] {
+            XCTAssertTrue(letter.snapshot.candidates.contains { $0.original == email && $0.state == .proposed }, email)
+        }
+        XCTAssertEqual(letter.donesLeft, 0)
+    }
+
     // MARK: The sample
 
     /// No restore while a job runs for the document: the edit would throw

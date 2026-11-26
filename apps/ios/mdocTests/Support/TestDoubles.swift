@@ -139,6 +139,8 @@ final class Signal: @unchecked Sendable {
     private let condition = NSCondition()
     private var raised = false
 
+    var isRaised: Bool { condition.withLock { raised } }
+
     func raise() {
         condition.withLock {
             raised = true
@@ -152,6 +154,19 @@ final class Signal: @unchecked Sendable {
         return condition.withLock {
             while !raised && condition.wait(until: end) {}
             return raised
+        }
+    }
+}
+
+/// Counts calls from any thread: `next` answers 1 for the first.
+final class Calls: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func next() -> Int {
+        lock.withLock {
+            count += 1
+            return count
         }
     }
 }
