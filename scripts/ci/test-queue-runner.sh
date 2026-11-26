@@ -200,7 +200,7 @@ XML
 
   # status.txt while the queue cannot be read, then once it can.
   # shellcheck disable=SC2034 # read by write_status
-  out=$tmp/status context=ci/windows run_pid='' queued='' waiting='' update_failed='' unsettled=''
+  out=$tmp/status context=ci/windows run_pid='' queued='' waiting='' update_failed='' unsettled='' checkout_failed=''
   # Not checked yet: the tailnet checks are below.
   # shellcheck disable=SC2034
   tailnet="" tailnet_at=$(date +%s) tailnet_s=600
@@ -242,9 +242,25 @@ EOF
 
   # A .git/index.lock over 10 minutes old is removed, logged; a younger one
   # stays (#1245).
+  # A stand-in for the PC's process list: a job's git checkout that started
+  # at the time in $tmp/procs-git, if it has one.
+  cat >"$tmp/procs" <<EOF
+#!/usr/bin/env bash
+[ "\$1" = git ] && [ -s "$tmp/procs-git" ] || exit 0
+echo "77 \$(cat "$tmp/procs-git") C:/Git/mingw64/bin/git.exe checkout --quiet --force --detach abc"
+EOF
+  chmod +x "$tmp/procs"
   # shellcheck disable=SC2034 # read by stale_index_lock
-  checkout=$tmp/locked stale_lock_s=600
+  checkout=$tmp/locked stale_lock_s=600 procs_cmd=$tmp/procs
   mkdir -p "$checkout/.git" "$tmp/lockjob"
+  : >"$checkout/.git/index.lock"
+  touch -t "$(mins_ago 15)" "$checkout/.git/index.lock"
+  echo $(($(date +%s) - 1200)) >"$tmp/procs-git"
+  stale_index_lock "$tmp/lockjob" >"$tmp/lockjob/log.txt"
+  check "an old lock is left while a job's git checkout older than it runs" \
+    eval '[ -e "$checkout/.git/index.lock" ] && [ ! -e "$tmp/lockjob/summary.txt" ] && grep -q "older than it still runs; left" "$tmp/lockjob/log.txt"'
+  # A git checkout that started after the lock is not its owner.
+  echo $(($(date +%s) - 60)) >"$tmp/procs-git"
   : >"$checkout/.git/index.lock"
   touch -t "$(mins_ago 15)" "$checkout/.git/index.lock"
   stale_index_lock "$tmp/lockjob" >"$tmp/lockjob/log.txt"
@@ -262,16 +278,26 @@ EOF
   printf '%s\n' "warning: failed to remove a.lock: Invalid argument" \
     "fatal: Unable to create 'E:/ci/queue-windows/mdoc/.git/index.lock': File exists." >"$tmp/why/.checkout-err"
   check "a failed checkout names git's first error" \
-    [ "$(checkout_reason "$tmp/why")" = ": fatal: Unable to create 'E:/ci/queue-windows/mdoc/.git/index.lock': File exists." ]
+    [ "$(checkout_reason "$tmp/why")" = ": fatal: Unable to create '.git/index.lock': File exists." ]
   echo "upkeep: removed a stale index.lock (age 600 min)" >"$tmp/why/summary.txt"
   check "and says when a stale lock was removed before it" \
-    [ "$(checkout_reason "$tmp/why")" = " (stale lock removed, still failing: fatal: Unable to create 'E:/ci/queue-windows/mdoc/.git/index.lock': File exists.)" ]
+    [ "$(checkout_reason "$tmp/why")" = " (stale lock removed, still failing: fatal: Unable to create '.git/index.lock': File exists.)" ]
   rm -f "$tmp/why/summary.txt"
   echo "warning: failed to remove apps/android/.gradle/9.8.2/fileHashes/fileHashes.lock: Invalid argument" >"$tmp/why/.checkout-err"
   check "or its first line when it has no error" \
     [ "$(checkout_reason "$tmp/why")" = ": warning: failed to remove apps/android/.gradle/9.8.2/fileHashes/fileHashes.lock: Invalid argument" ]
+  echo "fatal: Unable to create '/private/var/folders/x/ci/queue-fresh/mdoc/.git/index.lock': File exists." >"$tmp/why/.checkout-err"
+  check "a path in .git/ reads from the checkout" \
+    [ "$(checkout_reason "$tmp/why")" = ": fatal: Unable to create '.git/index.lock': File exists." ]
   rm -f "$tmp/why/.checkout-err"
   check "and nothing without one" [ -z "$(checkout_reason "$tmp/why")" ]
+  # GitHub takes 140 characters: a longer one keeps its start and its end.
+  long="Runner error: could not check out the commit: warning: failed to remove apps/android/app/build/intermediates/compile_r_class_jar/minified/generateMinifiedRFile/R.jar: Invalid argument"
+  # shellcheck disable=SC2034 # read in the eval
+  fitted=$(fit_description "$long")
+  check "a long status is cut to 140 characters in the middle" \
+    eval '[ "${#fitted}" = 140 ] && [[ $fitted == "Runner error: could not check out the commit: warning: failed to r"*"generateMinifiedRFile/R.jar: Invalid argument" ]]'
+  check "a short one is left" [ "$(fit_description "Passed in 9m00s")" = "Passed in 9m00s" ]
 
   # The Windows job's test step keeps to fewer threads only while the
   # Android runner's fresh status.txt says it runs its Android step (#1163).
@@ -793,21 +819,26 @@ QUEUE_CI_HOME=$fhome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-fresh QUEUE_CI_PREFIX
 check "a fresh index.lock stays" [ -e "$fhome/mdoc/.git/index.lock" ]
 check "the checkout is retried once" grep -q "^checkout: failed once; retried" "$LOCAL_CI_HOME/out/queue-fresh/${fresh:0:7}/summary.txt"
 # The status is cut at 140 characters (the PC's path fits); the summary is not.
-check "then the status is an error quoting git" \
-  has "$fresh" "$W" "error	Runner error: could not check out the commit: fatal: Unable to create '*"
-check "which names the lock" \
-  grep -q "^result: error, Runner error: could not check out the commit: fatal: Unable to create '.*index.lock': File exists.$" \
+check "then the status is an error quoting git, the lock's path in the checkout" \
+  has "$fresh" "$W" "error	Runner error: could not check out the commit: fatal: Unable to create '.git/index.lock': File exists.	*"
+check "as does the summary" \
+  grep -qx "result: error, Runner error: could not check out the commit: fatal: Unable to create '.git/index.lock': File exists." \
   "$LOCAL_CI_HOME/out/queue-fresh/${fresh:0:7}/summary.txt"
+check "and status.txt, after the job" \
+  grep -q "^checkout: failed on ${fresh:0:7} at 20.*: fatal: Unable to create '.git/index.lock': File exists. https://ci.example/ci/queue-windows/${fresh:0:7}/" \
+  "$LOCAL_CI_HOME/out/queue-fresh/status.txt"
 check "with no upkeep line and no build" \
   eval '! grep -q "^upkeep: removed" "$LOCAL_CI_HOME/out/queue-fresh/${fresh:0:7}/summary.txt" && [ -z "$(ran fresh)" ]'
 
 # --- a Gradle daemon a stopped Android job left ---------------------------------------
 
 # Its daemon holds apps/android/.gradle/ files, so git clean fails while it
-# lives (a fake git); fake tasklist and taskkill stand in for Windows'. The
-# job ends that daemon, by its log's last build folder, and no other: one
-# whose last build was a lane's, one that is no longer running, one with no
-# log.
+# lives (a fake git); a stand-in process list (QUEUE_CI_PROCS) and a fake
+# taskkill stand in for Windows'. The job ends that daemon, by its log's
+# last build folder, and no other: one whose last build was a lane's, one no
+# longer running, one with no log, one whose pid an older daemon's log
+# names (a reused pid), and a java that is no Gradle daemon. A daemon
+# taskkill cannot end is logged as such.
 : >"$FAKE/just.log"
 daemon=$(prefix=daemon/main/ at=apps/android/ci-behavior qc 23 daemon apps/android/App.kt)
 echo "23 User false" >>"$FAKE/prs.tsv"
@@ -823,36 +854,57 @@ dlog() { # pid folder...
 dlog 4242 "$lane" "$ours"
 dlog 4343 "$ours" "$lane"
 dlog 4444 "$ours"
-printf '%s\n' 4242 4343 4545 >"$FAKE/java-pids"
-cat >"$tmp/daemonbin/tasklist" <<'EOF'
+dlog 4646 "$ours"
+touch -t "$(mins_ago 10)" "$GRADLE_USER_HOME/daemon/9.8.2/daemon-4646.out.log"
+dlog 4747 "$ours"
+dlog 4848 "$ours"
+# Live java processes: pid, start, kind. All started a minute ago.
+started=$(($(date +%s) - 60))
+{
+  for p in 4242 4343 4545 4646 4747; do echo "$p $started GradleDaemon"; done
+  echo "4848 $started GradleWrapperMain"
+} >"$FAKE/java-procs"
+cat >"$tmp/daemonbin/procs" <<'EOF'
 #!/usr/bin/env bash
-[ -s "$FAKE/java-pids" ] || { echo "INFO: No tasks are running which match the specified criteria."; exit 0; }
-while read -r p; do printf '"java.exe","%s","Console","1","512,000 K"\r\n' "$p"; done <"$FAKE/java-pids"
+[ "$1" = java ] || exit 0
+while read -r p s kind; do
+  case "$kind" in
+    GradleDaemon) echo "$p $s C:/jdk/bin/java.exe -cp gradle-daemon-main-9.8.2.jar org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.8.2" ;;
+    *) echo "$p $s C:/jdk/bin/java.exe -jar gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain assembleDebug" ;;
+  esac
+done <"$FAKE/java-procs"
 EOF
 cat >"$tmp/daemonbin/taskkill" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >>"$FAKE/taskkill.log"
 for p; do :; done
-grep -vx "$p" "$FAKE/java-pids" >"$FAKE/java-pids.new" || true
-mv -f "$FAKE/java-pids.new" "$FAKE/java-pids"
+if [ "$p" = 4747 ]; then
+  echo "ERROR: The process with PID 4747 could not be terminated."
+  exit 1
+fi
+awk -v p="$p" '$1 != p' "$FAKE/java-procs" >"$FAKE/java-procs.new"
+mv -f "$FAKE/java-procs.new" "$FAKE/java-procs"
 EOF
 cat >"$tmp/daemonbin/git" <<GIT
 #!/usr/bin/env bash
-if [ "\${1:-}" = clean ] && grep -qx 4242 "$FAKE/java-pids"; then
+if [ "\${1:-}" = clean ] && grep -q '^4242 ' "$FAKE/java-procs"; then
   echo "warning: failed to remove apps/android/.gradle/9.8.2/fileHashes/fileHashes.lock: Invalid argument" >&2
   exit 1
 fi
 exec "$(command -v git)" "\$@"
 GIT
-chmod +x "$tmp/daemonbin/tasklist" "$tmp/daemonbin/taskkill" "$tmp/daemonbin/git"
+chmod +x "$tmp/daemonbin/procs" "$tmp/daemonbin/taskkill" "$tmp/daemonbin/git"
 PATH="$tmp/daemonbin:$PATH" QUEUE_CI_HOME=$ghome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-daemon QUEUE_CI_PREFIXES=daemon/main/ \
-  QUEUE_CI_CLEAN_WAIT=1 run_once android "$tmp/daemon.log"
+  QUEUE_CI_CLEAN_WAIT=1 QUEUE_CI_PROCS=$tmp/daemonbin/procs run_once android "$tmp/daemon.log"
+dsum=$LOCAL_CI_HOME/out/queue-daemon/${daemon:0:7}/summary.txt
 check "an earlier job's Gradle daemon is ended before the clean, and only it" \
-  [ "$(cat "$FAKE/taskkill.log" 2>/dev/null)" = "//F //T //PID 4242" ]
+  [ "$(sort "$FAKE/taskkill.log" 2>/dev/null | tr '\n' ,)" = "//F //T //PID 4242,//F //T //PID 4747," ]
 check "so the checkout cleans at once and the job runs" eval 'has "$daemon" "$A" "success	Passed in *" &&
-  ! grep -q "^checkout: failed once" "$LOCAL_CI_HOME/out/queue-daemon/${daemon:0:7}/summary.txt"'
-check "saying so in the summary" \
-  grep -qx "upkeep: stopped a Gradle daemon an earlier job left (pid 4242)" "$LOCAL_CI_HOME/out/queue-daemon/${daemon:0:7}/summary.txt"
+  ! grep -q "^checkout: failed once" "$dsum"'
+check "saying so in the summary" grep -qx "upkeep: stopped a Gradle daemon an earlier job left (pid 4242)" "$dsum"
+check "and one taskkill could not end as not stopped" \
+  eval 'grep -qx "upkeep: could not stop a Gradle daemon an earlier job left (pid 4747): ERROR: The process with PID 4747 could not be terminated." "$dsum" &&
+  ! grep -q "^upkeep: stopped .*(pid 4747)" "$dsum"'
 
 # --- the disk floor ----------------------------------------------------------------
 

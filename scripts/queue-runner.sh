@@ -42,9 +42,10 @@
 # last 60 lines), which the local CI web task serves at
 # $LOCAL_CI_URL/queue-<job>/; status.txt there has the runner's heartbeat, job
 # and queue, an "offline:" line while it cannot read GitHub or origin (status
-# then fails), and a "tailnet: /ci not served" line while `tailscale serve`
-# does not list /ci. status checks that at once, and that status.txt answers
-# at its tailnet URL, and fails when either does not.
+# then fails), a "checkout: failed on" line from a failed checkout until a
+# job checks out again, and a "tailnet: /ci not served" line while
+# `tailscale serve` does not list /ci. status checks that at once, and that
+# status.txt answers at its tailnet URL, and fails when either does not.
 #
 #   run     the runner loop (what the scheduled task runs)
 #   once    the loop until nothing is queued or running, then exit
@@ -103,6 +104,7 @@ config() {
   # (android_running), and the threads that step keeps to while it runs.
   android_status=${QUEUE_CI_ANDROID_STATUS:-$LOCAL_CI_HOME/out/queue-android/status.txt}
   share_threads=${QUEUE_CI_SHARE_THREADS:-12}
+  procs_cmd=${QUEUE_CI_PROCS:-}
   # The job's area (scripts/ci/ci-areas.txt), steps and whole-job limit.
   case "$job" in
     windows) area=desktop steps='setup lint test' limit_s=${QUEUE_CI_TIMEOUT:-1800} ;;
@@ -191,7 +193,7 @@ pr_kind() {
 # Sets post_ok to whether GitHub took it.
 post() { # sha state description [target url]
   local args=(api -X POST "repos/$repo/statuses/$1" -f "state=$2" -f "context=$context"
-    -f "description=${3:0:140}")
+    -f "description=$(fit_description "$3")")
   [ -z "${4:-}" ] || args+=(-f "target_url=$4")
   local try
   post_ok=true
@@ -450,19 +452,51 @@ log_excerpt() { # dir
   { tail -n 60 "$1/log.txt" 2>/dev/null || true; } | plain
 }
 
+# Live processes named $1 (git, java) as "<pid> <start epoch> <command
+# line>" rows: Windows' own list on the PC (Git Bash's ps shows neither
+# native git.exe nor java.exe with its arguments), ps elsewhere.
+# QUEUE_CI_PROCS names a stand-in command (scripts/ci/test-queue-runner.sh).
+proc_rows() { # name
+  if [ -n "$procs_cmd" ]; then
+    "$procs_cmd" "$1" || true
+  elif [ "$(platform)" = windows-x64 ]; then
+    powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process -Filter \"Name='$1.exe'\" |
+      ForEach-Object { '{0} {1} {2}' -f \$_.ProcessId, ([DateTimeOffset]\$_.CreationDate).ToUnixTimeSeconds(), \$_.CommandLine }" \
+      2>/dev/null | tr -d '\r' || true
+  else
+    # etime is [[dd-]hh:]mm:ss.
+    ps -A -o pid= -o etime= -o args= 2>/dev/null | awk -v now="${EPOCHSECONDS:-$(date +%s)}" -v name="$1" '{
+      e = $2; d = 0
+      if (index(e, "-")) { split(e, a, "-"); d = a[1]; e = a[2] }
+      n = split(e, t, ":")
+      s = (n == 3 ? t[1] * 3600 + t[2] * 60 + t[3] : t[1] * 60 + t[2]) + d * 86400
+      c = $3; sub(/.*\//, "", c)
+      if (c != name) next
+      $2 = now - s; print
+    }' || true
+  fi
+}
+
 # A git killed mid-command leaves .git/index.lock, and every checkout then
 # fails until it goes: from 04:38Z to 14:30Z on 2026-11-25 (E: was near full),
 # each job a runner error, each commit tested on hosted CI instead (#1245).
 # The runner is this checkout's only user. At the checkout its job runs no
 # other git, and its loop runs none that takes the index (fetch, update-ref,
-# merge-base, show, log, diff between commits), so a lock older than
-# stale_lock_s belongs to no live git. A younger one is left: the checkout's
-# retry finds it again.
+# merge-base, show, log, diff between commits). So a lock older than
+# stale_lock_s is removed, unless a job's `git checkout` that started before
+# the lock still runs: an earlier job's, stalled after its shell was killed.
+# A younger lock is left: the checkout's retry finds it again.
 stale_index_lock() { # dir
-  local f=$checkout/.git/index.lock age
+  local f=$checkout/.git/index.lock at age
   [ -f "$f" ] || return 0
-  age=$((${EPOCHSECONDS:-$(date +%s)} - $(file_epoch "$f")))
+  at=$(file_epoch "$f")
+  age=$((${EPOCHSECONDS:-$(date +%s)} - at))
   [ "$age" -ge "$stale_lock_s" ] || return 0
+  # Its owner created it, so started first (2 s for the clocks' rounding).
+  if proc_rows git | awk -v t=$((at + 2)) '$2 <= t && / checkout --quiet --force --detach /' | grep -q .; then
+    echo "queue-runner: an index.lock $((age / 60)) min old, but a git checkout older than it still runs; left"
+    return 0
+  fi
   rm -f "$f" || return 0
   echo "queue-runner: upkeep: removed a stale index.lock (age $((age / 60)) min)"
   echo "upkeep: removed a stale index.lock (age $((age / 60)) min)" >>"$1/summary.txt"
@@ -480,24 +514,32 @@ stale_index_lock() { # dir
 # `gradlew --stop` would stop every daemon of that Gradle version on the PC,
 # a lane's build too. Excluding apps/android/.gradle/ from the clean would
 # not do: two of the three also held files under app/build/. Windows only
-# (tasklist, taskkill): elsewhere an open file can be deleted.
+# (taskkill): elsewhere an open file can be deleted.
 stop_gradle_daemons() { # dir
-  command -v tasklist >/dev/null 2>&1 && command -v taskkill >/dev/null 2>&1 || return 0
-  local want pid f last stopped=false
+  command -v taskkill >/dev/null 2>&1 || return 0
+  local want pid start f last out stopped=false
   want="currentDir=$(native_path "$checkout/apps/android")"
-  # CSV rows: "java.exe","<pid>",...; none ("INFO: No tasks ...") has no pid.
-  for pid in $(tasklist //FI "IMAGENAME eq java.exe" //FO CSV //NH 2>/dev/null | tr -d '\r' | awk -F'","' 'NF > 1 { print $2 }'); do
+  while read -r pid start _; do
+    [ -n "$pid" ] || continue
     for f in "$gradle_home"/daemon/*/daemon-"$pid".out.log; do
       [ -f "$f" ] || continue
+      # Written by this process, not by a daemon that had its pid before:
+      # a daemon writes its log from its start on.
+      [ "$(file_epoch "$f")" -ge $((start - 2)) ] || continue
       # Gradle writes the folder with backslashes; native_path with slashes.
       last=$(grep -o 'currentDir=[^}]*' "$f" 2>/dev/null | tail -n 1 | tr '\134' /)
       [ "$last" = "$want" ] || continue
-      taskkill //F //T //PID "$pid" >/dev/null 2>&1 || true
-      echo "queue-runner: upkeep: stopped Gradle daemon $pid, which an earlier job left"
-      echo "upkeep: stopped a Gradle daemon an earlier job left (pid $pid)" >>"$1/summary.txt"
-      stopped=true
+      if out=$(taskkill //F //T //PID "$pid" 2>&1); then
+        echo "queue-runner: upkeep: stopped Gradle daemon $pid, which an earlier job left"
+        echo "upkeep: stopped a Gradle daemon an earlier job left (pid $pid)" >>"$1/summary.txt"
+        stopped=true
+      else
+        out=$(head -n 1 <<<"$out" | tr -d '\r')
+        echo "queue-runner: could not stop Gradle daemon $pid, which an earlier job left: $out"
+        echo "upkeep: could not stop a Gradle daemon an earlier job left (pid $pid): $out" >>"$1/summary.txt"
+      fi
     done
-  done
+  done < <(proc_rows java | grep ' org\.gradle\.launcher\.daemon\.bootstrap\.GradleDaemon ' || true)
   # Windows closes a killed process's files a moment after taskkill returns.
   ! $stopped || sleep 2
 }
@@ -517,16 +559,28 @@ checkout_clean() { # sha dir
 }
 
 # Why the checkout failed, for its status: git's first error (else its first
-# line), after a removed stale lock if there was one.
+# line), a path in .git/ relative to the checkout, after a removed stale
+# lock if there was one.
 checkout_reason() { # dir
   local line
   line=$(grep -m 1 -E '^(fatal|error):' "$1/.checkout-err" 2>/dev/null) ||
     line=$(head -n 1 "$1/.checkout-err" 2>/dev/null) || line=''
-  line=$(tr -d '\r' <<<"$line")
+  # 'E:/ci/queue-windows/mdoc/.git/index.lock' reads '.git/index.lock'.
+  line=$(tr -d '\r' <<<"$line" | sed "s#'[^']*/\.git/#'.git/#g")
   if grep -q '^upkeep: removed a stale index.lock' "$1/summary.txt" 2>/dev/null; then
     echo " (stale lock removed, still failing: ${line:-no git error})"
   elif [ -n "$line" ]; then
     echo ": $line"
+  fi
+}
+
+# A status description in GitHub's 140 characters: a longer one keeps its
+# start and its end (the file and git's error), cut in the middle.
+fit_description() {
+  if [ "${#1}" -le 140 ]; then
+    printf '%s' "$1"
+  else
+    printf '%s...%s' "${1:0:68}" "${1:$((${#1} - 69))}"
   fi
 }
 
@@ -695,6 +749,7 @@ check_job() {
       finish failure "Timed out in $(label "$step") after $(duration "$limit_s")"
       return 0
     fi
+    [ "$step" = checkout ] || checkout_failed=''
     if [ "$step" != "$run_step" ] || [ $((now - run_beat)) -ge "$heartbeat_s" ]; then
       run_step=$step
       post "$run_sha" pending "Running $(label "$step") ($(duration "$elapsed"))" "$run_url"
@@ -710,6 +765,8 @@ check_job() {
     finish failure "Timed out in $(label "$step") after $(duration "$limit_s")"
     return 0
   fi
+  # The job got past its checkout.
+  case "$rc" in 0 | 1) checkout_failed='' ;; esac
   case "$rc" in
     0) finish success "Passed in $(duration "$elapsed")" ;;
     1)
@@ -730,7 +787,14 @@ check_job() {
         finish failure "Failed in $(label "$step")"
       fi
       ;;
-    3) finish error "Runner error: could not check out the commit$(checkout_reason "$run_dir")" ;;
+    3)
+      local utc reason
+      utc_now
+      reason=$(checkout_reason "$run_dir")
+      # status.txt shows it until a job checks out again (#1245).
+      checkout_failed="${run_sha:0:7} at $utc${reason} ${run_url:-$run_dir}"
+      finish error "Runner error: could not check out the commit$reason"
+      ;;
     *) finish error "Runner error (exit $rc); see the log" ;;
   esac
 }
@@ -866,6 +930,7 @@ write_status() {
     [ -z "$waiting" ] || echo "waiting: $waiting"
     [ -z "$unsettled" ] || echo "retrying: $unsettled"
     [ -z "${update_failed:-}" ] || echo "outdated: could not update from main@${update_failed:0:7}"
+    [ -z "$checkout_failed" ] || echo "checkout: failed on $checkout_failed"
     [ -z "$tailnet" ] || echo "$tailnet"
   } >"$next" && mv -f "$next" "$out/status.txt"
 }
@@ -928,7 +993,7 @@ cmd_run() { # run|once
   kill_stale_job
   queued='' listed='' polled=false run_pid='' run_sha='' run_branch='' run_step='' run_dir='' run_url=''
   waiting='' disk_noted='' next_poll=0 post_ok=true update_failed='' offline_since='' offline_at='' offline_why='' unsettled=''
-  tailnet='' tailnet_at=0
+  tailnet='' tailnet_at=0 checkout_failed=''
   prune_out
   while :; do
     [ -z "$run_pid" ] || check_job
