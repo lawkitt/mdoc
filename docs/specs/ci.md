@@ -31,8 +31,8 @@ How a PR reaches `main`. The machinery and the PC's runners:
 
 ## Quarantine
 
-- A pass on the hosted iOS UI tests' one retry counts as an unrelated
-  failure. A UI part whose runner failed before any test reruns once, warned,
+- A hosted iOS UI test's pass on retry counts as an unrelated failure. A
+  UI part whose runner failed or hung before any test reruns once, warned,
   as infrastructure.
 - After a test's second unrelated failure, the hub quarantines it in
   `.config/quarantine.txt` by PR, without asking.

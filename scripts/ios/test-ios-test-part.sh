@@ -4,11 +4,14 @@
 # in for the `ios-test` recipe's xcodebuild, failing or passing as each case
 # plans and leaving an .xcresult whose tests a fake xcrun prints, the
 # checked-in sample of a runner that failed to start
-# (scripts/ios/fixtures/ios-runner-failed.json) or a failed test. Every part
-# tests without building (the core job built the app, #1076). A UI part
-# whose runner failed, then passed, retries once on its erased device and is
-# green with a warning; one whose runner fails twice fails; a failed test,
-# the unit part, and a device that cannot be found or erased never retry. The `ios-test` recipe's own line, on a fake
+# (scripts/ios/fixtures/ios-runner-failed.json) or a failed test, or hanging
+# before its first test. Every part tests without building (the core job
+# built the app, #1076). A UI part warms its device up first (#1226). A UI
+# part whose runner failed or hung, then passed, retries once on its erased
+# device and is green with a warning; one whose runner fails twice fails,
+# and one that hangs twice fails naming it; a first test that started is
+# never stopped; a failed test, the unit part, and a device that cannot be
+# found or erased never retry. The `ios-test` recipe's own line, on a fake
 # xcodebuild, runs the action MDOC_IOS_TEST_ACTION names. Skipped on Windows:
 # the script runs only on macOS runners (ci-ios.yml). Bash 3.2 compatible.
 source "$(dirname "$0")/../lib.sh"
@@ -39,20 +42,46 @@ printf '%s' '{"testNodes":[{"nodeType":"Test Plan","name":"mdoc","children":[{"n
 mkdir -p "$tmp/bin"
 # just: logs `<MDOC_IOS_TEST_ACTION>|<args>` and does the next line of
 # $JUST_PLAN: `pass`; `fail <tests.json>`, which leaves an .xcresult
-# holding that JSON and exits 65, as xcodebuild's failed test does; or
-# `exit <n>` alone, as a failed build does.
+# holding that JSON and exits 65, as xcodebuild's failed test does;
+# `exit <n>` alone, as a failed build does; `hang`, which stages a session
+# log in an .xcresult and never ends, as a runner stuck before its first
+# test; `nobundle-hang`, the same before any .xcresult; `late-fail`, a test
+# that starts as the limit stops the run and fails ($TEST_JSON); or `slow`,
+# which stages a started test case and passes 5 seconds later.
 cat >"$tmp/bin/just" <<'EOF'
 #!/usr/bin/env bash
 echo "${MDOC_IOS_TEST_ACTION:-}|$*" >>"$JUST_LOG"
 n=$(wc -l <"$JUST_LOG" | tr -d ' ')
 step=$(sed -n "${n}p" "$JUST_PLAN")
+result="target/ios/DerivedData/Logs/Test/Test-mdoc-$n.xcresult"
+diagnostics="$result/Staging/1_Test/Diagnostics"
 case "$step" in
   pass) exit 0 ;;
   "exit "*) exit "${step#exit }" ;;
   "fail "*)
-    result="target/ios/DerivedData/Logs/Test/Test-mdoc-$n.xcresult"
     mkdir -p "$result" && cp "${step#fail }" "$result/tests.json"
     exit 65
+    ;;
+  hang)
+    mkdir -p "$diagnostics/mdocUITests-1-Iteration-1/mdocUITests-2"
+    echo "Beginning test session $n" >"$diagnostics/mdocUITests-1-Iteration-1/Session-mdocUITests-$n.log"
+    echo "Running tests..." >"$diagnostics/mdocUITests-1-Iteration-1/mdocUITests-2/StandardOutputAndStandardError.txt"
+    sleep 4321
+    ;;
+  nobundle-hang) sleep 4321 ;;
+  late-fail)
+    # A first test that starts as the limit stops the run, and fails.
+    trap '' TERM
+    sleep 3.5
+    mkdir -p "$diagnostics/mdocUITests-1-Iteration-1/mdocUITests-2"
+    echo "Test Case '-[mdocUITests.AUITests testA]' started." >"$diagnostics/mdocUITests-1-Iteration-1/mdocUITests-2/StandardOutputAndStandardError.txt"
+    cp "$TEST_JSON" "$result/tests.json"
+    exit 65
+    ;;
+  slow)
+    mkdir -p "$diagnostics/mdocUITests-1-Iteration-1/mdocUITests-2"
+    echo "Test Case '-[mdocUITests.AUITests testA]' started." >"$diagnostics/mdocUITests-1-Iteration-1/mdocUITests-2/StandardOutputAndStandardError.txt"
+    sleep 5
     ;;
   *) echo "fake just: no step $n" >&2 && exit 99 ;;
 esac
@@ -60,7 +89,8 @@ EOF
 # xcrun: xcresulttool prints the .xcresult's tests.json; simctl lists an
 # iPhone 17 in each pinned runtime (scripts/tools.env) and an iPhone 17 Pro
 # (no iPhone 17 in the nightly's with XCRUN_NO_DEVICE), and logs what else
-# it is asked, failing an erase with XCRUN_ERASE_FAIL.
+# it is asked, failing an erase with XCRUN_ERASE_FAIL and a launch with
+# XCRUN_LAUNCH_FAIL.
 cat >"$tmp/bin/xcrun" <<'EOF'
 #!/usr/bin/env bash
 case "$1 $2" in
@@ -76,6 +106,10 @@ case "$1 $2" in
   "simctl erase")
     echo "$*" >>"$XCRUN_LOG"
     [ -z "${XCRUN_ERASE_FAIL:-}" ] || exit 1
+    ;;
+  "simctl launch")
+    echo "$*" >>"$XCRUN_LOG"
+    [ -z "${XCRUN_LAUNCH_FAIL:-}" ] || exit 1
     ;;
   *) echo "$*" >>"$XCRUN_LOG" ;;
 esac
@@ -93,12 +127,21 @@ IOS_SIM_BUILDS_RUNTIME=$(sed -n 's/^IOS_SIM_BUILDS_RUNTIME=//p' scripts/tools.en
 export IOS_SIM_RUNTIME IOS_SIM_BUILDS_RUNTIME
 if [ -z "$IOS_SIM_RUNTIME" ] || [ -z "$IOS_SIM_BUILDS_RUNTIME" ]; then fail "no runtimes in scripts/tools.env"; fi
 
+# The app the core job built, which the warm-up launches; and a first test
+# that must start within 3 seconds (the script counts whole seconds, so
+# less could catch a quick pass), so a `hang` step is caught soon.
+app=target/ios/DerivedData/Build/Products/Debug-iphonesimulator/mdoc.app
+export MDOC_IOS_FIRST_TEST_LIMIT=3
+pin_udid=4AD2086B-7B8F-4608-A742-AA422A0B8D74
+
 # run <case> <part> <plan step>...: runs the script in a fresh folder that
-# links scripts/, its output in $out and its status in $rc.
+# links scripts/ and holds the built app, its output in $out and its status
+# in $rc.
 run() {
   local name=$1 part=$2
   shift 2
   dir="$tmp/$name" && mkdir -p "$dir" && ln -s "$root/scripts" "$dir/scripts"
+  mkdir -p "$dir/$app"
   printf '%s\n' "$@" >"$dir/plan"
   export JUST_PLAN="$dir/plan" JUST_LOG="$dir/just.log" XCRUN_LOG="$dir/xcrun.log" GITHUB_STEP_SUMMARY="$dir/summary"
   : >"$JUST_LOG" && : >"$XCRUN_LOG"
@@ -112,11 +155,75 @@ grep -qx 'export MDOC_IOS_TEST_ACTION=test-without-building' scripts/ios/ios-tes
 first='test-without-building|--no-deps ios-test iPhone 17 mdocUITests/AUITests mdocUITests/BUITests'
 warning='::warning::ci/ios (ui 1): UI test runner failed to start; retried once'
 
-# A green part: one run, nothing more.
+# A green part: the device of the pin's runtime warmed up (booted, the app
+# installed and launched once with the UI tests' flag), then one run.
 run green 'ui 1' pass
 [ "$rc" = 0 ] || fail "a green part failed: $(cat "$out")"
 [ "$(cat "$JUST_LOG")" = "$first" ] || fail "a green part ran more: $(cat "$JUST_LOG")"
-[ -s "$out" ] && fail "a green part said something: $(cat "$out")"
+[ "$(cat "$XCRUN_LOG")" = "simctl bootstatus $pin_udid -b
+simctl install $pin_udid $app
+simctl launch $pin_udid io.github.lawkitt.mdoc -mdoc-ui-testing" ] || fail "not the warm-up: $(cat "$XCRUN_LOG")"
+[ "$(grep -c '^Simulator warm-up: iPhone 17 booted in [0-9]*s; the app installed and launched in [0-9]*s$' "$out")" = 1 ] ||
+  fail "not one warm-up line: $(cat "$out")"
+[ "$(grep -vc '^Simulator warm-up: ' "$out")" = 0 ] || fail "a green part said more: $(cat "$out")"
+
+# A launch that fails leaves the warm-up, and the tests run.
+XCRUN_LAUNCH_FAIL=1 run nolaunch 'ui 1' pass
+[ "$rc" = 0 ] || fail "a failed warm-up failed the part: $(cat "$out")"
+grep -q '^Simulator warm-up: iPhone 17 booted in [0-9]*s; the app did not install and launch within 2 minutes each$' "$out" ||
+  fail "no failed warm-up line: $(cat "$out")"
+
+# A first test that starts in time is not stopped, however long the tests take.
+run slow 'ui 1' slow
+[ "$rc" = 0 ] || fail "a slow part failed: $(cat "$out")"
+[ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 1 ] || fail "a slow part retried: $(cat "$JUST_LOG")"
+grep -q '^ci/ios (ui 1): the first UI test started [0-9]*s in$' "$out" || fail "no first test line: $(cat "$out")"
+
+# The runner hangs before its first test, then passes: stopped at the limit
+# with its session log shown, then one retry on the erased device, warmed
+# up again; green, with the warning; the hung attempt's .xcresult moved.
+run hung 'ui 2' hang pass
+[ "$rc" = 0 ] || fail "a pass after a hang failed the part: $(cat "$out")"
+[ "$(sort -u "$JUST_LOG")" = "$first" ] || fail "the retry ran something else: $(cat "$JUST_LOG")"
+[ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 2 ] || fail "not one retry: $(cat "$JUST_LOG")"
+has "$out" 'No UI test started within 3s: stopping xcodebuild. The end of its session log:'
+has "$out" 'Beginning test session 1'
+has "$XCRUN_LOG" "simctl erase $pin_udid"
+[ "$(grep -c 'simctl launch' "$XCRUN_LOG")" = 2 ] || fail "not warmed up again: $(cat "$XCRUN_LOG")"
+has "$out" '::warning::ci/ios (ui 2): UI test runner hung before the first test; retried once'
+has "$GITHUB_STEP_SUMMARY" '### ci/ios (ui 2): UI test runner hung before the first test; retried once'
+[ -d "$dir/target/ios/DerivedData/Logs/RunnerFailed/Test-mdoc-1.xcresult" ] || fail "the hung attempt's xcresult did not move"
+pgrep -f 'sleep 4321' >/dev/null && fail "the hung run is still running"
+
+# A hang before xcodebuild made its result bundle retries too.
+run nobundle 'ui 1' nobundle-hang pass
+[ "$rc" = 0 ] || fail "a hang with no bundle did not retry: $(cat "$out")"
+has "$out" '(none yet: xcodebuild had made no result bundle)'
+
+# Two hangs: the part fails, naming them, without a third run.
+run hungtwice 'ui 3' hang hang
+[ "$rc" = 1 ] || fail "two hangs exited $rc: $(cat "$out")"
+[ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 2 ] || fail "not one retry: $(cat "$JUST_LOG")"
+has "$out" '::error::ci/ios (ui 3): UI test runner hung twice before the first test'
+grep -q '^::warning::' "$out" && fail "two hangs warned: $(cat "$out")"
+pgrep -f 'sleep 4321' >/dev/null && fail "a hung run is still running"
+
+# A first test that starts as the limit comes, and fails: its failure
+# stands, with no retry to hide it.
+TEST_JSON="$tmp/test.json" run late 'ui 1' late-fail pass
+[ "$rc" = 65 ] || fail "a test failing at the limit exited $rc: $(cat "$out")"
+has "$out" 'No UI test started within 3s: stopping xcodebuild. The end of its session log:'
+[ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 1 ] || fail "a test failing at the limit retried: $(cat "$JUST_LOG")"
+grep -q '^::warning::' "$out" && fail "a test failing at the limit warned: $(cat "$out")"
+
+# A hang past the retry budget fails at once, naming it, with no retry
+# that could not finish within the job's limit.
+MDOC_IOS_RETRY_BUDGET=0 run late-hang 'ui 1' hang pass
+[ "$rc" = 1 ] || fail "a late hang exited $rc: $(cat "$out")"
+[ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 1 ] || fail "a late hang retried: $(cat "$JUST_LOG")"
+grep -q "^::error::ci/ios (ui 1): UI test runner hung before the first test [0-9]*s in, too late for a retry to finish within the job's limit$" "$out" ||
+  fail "no late-hang error: $(cat "$out")"
+grep -qE 'simctl (shutdown|erase)' "$XCRUN_LOG" && fail "a late hang reset the Simulator: $(cat "$XCRUN_LOG")"
 
 # The runner fails to start, then passes: one retry, without building, of
 # the same tests on the erased iPhone 17 of the pin's runtime (not another
@@ -155,7 +262,7 @@ has "$out" '::warning::ci/ios (ui 2): UI test runner failed to start; retried on
 run test 'ui 1' "fail $tmp/test.json" pass
 [ "$rc" = 65 ] || fail "a failed test exited $rc: $(cat "$out")"
 [ "$(cat "$JUST_LOG")" = "$first" ] || fail "a failed test retried: $(cat "$JUST_LOG")"
-[ -s "$XCRUN_LOG" ] && fail "a failed test reset the Simulator: $(cat "$XCRUN_LOG")"
+grep -qE 'simctl (shutdown|erase)' "$XCRUN_LOG" && fail "a failed test reset the Simulator: $(cat "$XCRUN_LOG")"
 grep -q '^::warning::' "$out" && fail "a failed test warned: $(cat "$out")"
 
 # No such device, or its erase fails: no retry, the failed attempt's
@@ -183,6 +290,11 @@ chmod 755 "$moved"
 run unit unit "fail $runner_json" pass
 [ "$rc" = 65 ] || fail "the unit part exited $rc: $(cat "$out")"
 [ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 1 ] || fail "the unit part retried: $(cat "$JUST_LOG")"
+# Nor is it warmed up or watched for a hang.
+[ -s "$XCRUN_LOG" ] && fail "the unit part used the Simulator: $(cat "$XCRUN_LOG")"
+MDOC_IOS_FIRST_TEST_LIMIT=0 run unitslow unit slow
+[ "$rc" = 0 ] || fail "a slow unit part failed: $(cat "$out")"
+[ -s "$out" ] && fail "the unit part was watched: $(cat "$out")"
 
 # A build failure (no .xcresult): no retry.
 run build 'ui 3' 'exit 65' pass

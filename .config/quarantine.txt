@@ -15,22 +15,18 @@
 # The app UI tests the merge queue dropped PRs on, 2026-11-03.
 android:io.github.lawkitt.mdoc.OriginalTest#aPdfShowsItsOriginalPage  #537  2026-12-03
 
-# Flaked twice on unrelated changes, 2026-11-05/06.
-ios:mdocUITests/ReviewFlowUITests/testOpenReviewShareRestore  #638  2026-12-06
+# Flaked twice on unrelated changes, 2026-11-05/06 (#640), and on hosted
+# ci/ios in the merge queue, 2026-11-07/08 (#700). Their Find waits are
+# fixed (#1283), but in 30 local runs each, one run of each stalled after
+# Find opened from the title menu: XCTest never got the app's "animations
+# complete" (the app's main thread idle), so every later step waited 60 s:
+# #700's run failed once its toast had gone, #640's passed after 13 minutes.
 ios:mdocUITests/ReviewToolsUITests/testHardwareKeysDriveTheBar  #640  2026-12-06
+ios:mdocUITests/ReviewToolsUITests/testFindMarkAndTheBarsTools  #700  2026-12-08
 
 # Flaked twice on unrelated changes, 2026-11-07/08: the job service race
 # crashes the process in the next test (#689).
 android:io.github.lawkitt.mdoc.ReviewFixesTest#aJobOutlivesTheScreenThatStartedIt  #689  2026-12-08
-
-# Flaked twice on hosted ci/ios in the merge queue on unrelated changes,
-# 2026-11-07/08: #699 (Find's hide button never showed) and #726 (Undo not
-# enabled after the K key); both passed locally.
-ios:mdocUITests/ReviewToolsUITests/testFindMarkAndTheBarsTools  #700  2026-12-08
-
-# Flaked twice on hosted ci/ios in the merge queue on unrelated changes,
-# 2026-11-10 (#775, #778): a doubled keystroke in Identities' search.
-ios:mdocUITests/IdentitiesGesturesUITests/testDraggingAHandleOntoAnotherNameMakesThemOne  #781  2026-12-10
 
 # Failed the PC's Android job on unrelated queue commits at least 5 times,
 # 2026-11-11/12 (ADR 0112's sweep, ROADMAP CI speed item 18).
@@ -40,24 +36,10 @@ android:io.github.lawkitt.mdoc.IdentitiesTest#aLongPressKeepsAllOfAnIdentity  #7
 # (ADR 0112: the same failure on another PR's queue commit within 14 days).
 android:io.github.lawkitt.mdoc.ReviewFlowTest#openReviewShareRestore  #827  2026-12-10
 
-# Fail in the shared edit() setup on unrelated changes, 2026-11-09 to 11-13;
-# EditToolbarUITests runs first on a cold Simulator in ci/ios (ui 1) (#836).
-ios:mdocUITests/EditToolbarUITests/testHardwareKeys  #837  2026-12-11
-
-# Flaked on hosted ci/ios in the merge queue on unrelated changes after the
-# move to macos-26 (ADR 0124), 2026-11-21/22: six retried passes (#1073), and
-# a drop plus a retried pass (#1074).
-ios:mdocUITests/TableEditingUITests/testThePencilInALongTableKeepsThePlaceAndTheWord  #1073  2026-12-22
-ios:mdocUITests/IdentitiesGesturesUITests/testRowsSwipeLeftAndASwipeRightClosesIdentities  #1074  2026-12-22
-
 # Dropped #1224 and #1203 from the queue on the PC runner, 2026-11-25.
 android:io.github.lawkitt.mdoc.AskAiTest#noBannerAfterACancelOrAPlainShare  #1233  2026-12-25
 android:io.github.lawkitt.mdoc.AskAiTest#theBannerRestoresAPastedReply  #1233  2026-12-25
 android:io.github.lawkitt.mdoc.AskAiTest#askAiIsHiddenUntilThePreviewIsOn  #1233  2026-12-25
-
-# Dropped #1230 and #1229 from the queue on hosted ci/ios (ui 2), 2026-11-25:
-# the first app launch took 20+ minutes (#1226).
-ios:mdocUITests/AskAIUITests/testAskAIThenPasteTheReplyOnReturn  #1226  2026-12-25
 
 # Dropped #1241 and #1246 from the queue on the PC runner, 2026-11-25; its
 # sibling aPdfShowsItsOriginalPage is quarantined under #537.

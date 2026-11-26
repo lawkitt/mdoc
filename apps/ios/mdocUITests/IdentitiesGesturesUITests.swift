@@ -69,34 +69,43 @@ final class IdentitiesGesturesUITests: XCTestCase {
 
         // A swipe left shows Replace, Same as… and Keep; nothing is decided.
         drag(proposed, in: panel, from: 0.8, by: -120, velocity: 150, app)
-        XCTAssertTrue(keep.waitForExistence(timeout: 3), "a swipe left shows Keep")
+        XCTAssertTrue(keep.waitForExistence(timeout: MdocUITest.timeout), "a swipe left shows Keep")
         XCTAssertTrue(sameAs.exists, "and Same as…")
         XCTAssertTrue(replace.exists, "and Replace")
         XCTAssertFalse(proposed.waitForNonExistence(timeout: 2), "nothing decided")
 
         // Right over the revealed actions puts them away; the drawer stays
-        // and nothing is decided (a full swipe ran Replace here).
+        // and nothing is decided (a full swipe ran Replace here). They are
+        // swiped once they are at rest: mid-slide the swipe went nowhere on
+        // a slow runner (queue run 44977712791).
+        XCTAssertTrue(settles(keep), "the actions at rest")
         drag(proposed, in: panel, from: 0.15, by: 120, app)
-        XCTAssertTrue(keep.waitForNonExistence(timeout: 3), "a swipe right puts the actions away")
+        XCTAssertTrue(keep.waitForNonExistence(timeout: 10), "a swipe right puts the actions away")
         XCTAssertFalse(close.waitForNonExistence(timeout: 2), "the drawer stays open")
         XCTAssertTrue(proposed.exists, "nothing decided")
 
         // A long swipe left only shows the actions; Replace is a tap.
         let name = String(row.label.prefix { $0 != "," })
         drag(proposed, in: panel, from: 0.95, by: -width * 0.85, app)
-        XCTAssertTrue(replace.waitForExistence(timeout: 3), "a long swipe left shows Replace")
+        XCTAssertTrue(replace.waitForExistence(timeout: MdocUITest.timeout), "a long swipe left shows Replace")
         XCTAssertTrue(proposed.exists, "and decides nothing")
         replace.tap()
         let replaced = app.descendants(matching: .any).matching(NSPredicate(
             format: "identifier == 'identity-row' AND label BEGINSWITH %@ AND label ENDSWITH ', replaced'", name + ",")).firstMatch
-        XCTAssertTrue(proposed.waitForNonExistence(timeout: 5), "Replace decides")
+        XCTAssertTrue(proposed.waitForNonExistence(timeout: 10), "Replace decides")
         XCTAssertTrue(replaced.waitForExistence(timeout: MdocUITest.timeout), "and replaces")
         XCTAssertTrue(close.isHittable, "the drawer stays open")
 
         // A swipe right over a row closes Identities and decides nothing.
+        // While a row still shows its actions a swipe is the row's
+        // (DrawerDragTests), so the swipe waits until Replace's have gone
+        // and the row is at rest: on a slow runner they were still going
+        // (queue run 44996163277).
+        XCTAssertTrue(keep.waitForNonExistence(timeout: 10), "Replace puts the actions away")
+        XCTAssertTrue(settles(replaced), "the row at rest")
         let label = replaced.label
         drag(replaced, in: panel, from: 0.3, by: 200, app)
-        XCTAssertTrue(close.waitForNonExistence(timeout: 5), "a swipe right over a row closes Identities")
+        XCTAssertTrue(close.waitForNonExistence(timeout: 10), "a swipe right over a row closes Identities")
         XCTAssertTrue(MdocUITest.showIdentities(app))
         XCTAssertTrue(app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'identity-row' AND label == %@", label)).firstMatch
@@ -326,27 +335,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
     func testDraggingAHandleOntoAnotherNameMakesThemOne() throws {
         // The agreement's email, and its surname marked from Find: two names.
         let app = try openDocument(slowToasts: true, phoneOnly: false)
-        app.buttons["title-menu"].tap()
-        MdocUITest.menuItem("Find in document", app).tap()
-        let field = app.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: MdocUITest.timeout))
-        XCTAssertTrue(field.wait(until: NSPredicate(format: "hasKeyboardFocus == true"), timeout: 10))
-        // The Simulator drops a keystroke now and then while matches load:
-        // type again until the field holds the whole word.
-        let typed = NSPredicate(format: "value == 'Bennett'")
-        for _ in 0..<3 where !field.wait(until: typed, timeout: 0.5) {
-            let current = (field.value as? String) ?? ""
-            let placeholder = field.placeholderValue ?? ""
-            let length = current == placeholder ? 0 : current.count
-            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: length) + "Bennett")
-        }
-        XCTAssertEqual(field.value as? String, "Bennett")
-        let hide = app.buttons["find-hide-name"]
-        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
-        hide.tap()
-        let end = app.buttons["review-end"]
-        XCTAssertTrue(end.waitForExistence(timeout: 10))
-        end.tap()
+        MdocUITest.hideFromFind("Bennett", app)
         XCTAssertTrue(MdocUITest.showIdentities(app))
         app.buttons["identities-select"].firstMatch.tap()
         let rows = app.descendants(matching: .any).matching(identifier: "identity-row")
@@ -381,8 +370,8 @@ final class IdentitiesGesturesUITests: XCTestCase {
                     withVelocity: 200, thenHoldForDuration: 0.3)
         MdocUITest.settledScreen()
         XCTAssertEqual(rows.count, count, "a row dropped on itself stays")
-        // Let go off the list, over the header: nothing.
-        let header = app.staticTexts["Identities"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        // Let go off the list, over Select's header: nothing.
+        let header = app.staticTexts["identities-selected-count"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         handles.element(boundBy: 0).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.1, thenDragTo: header, withVelocity: 300, thenHoldForDuration: 0.3)
         MdocUITest.settledScreen()

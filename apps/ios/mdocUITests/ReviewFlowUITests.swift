@@ -43,7 +43,7 @@ final class ReviewFlowUITests: XCTestCase {
         let toastUndo = app.buttons["toast-action"]
         XCTAssertTrue(toastUndo.waitForExistence(timeout: MdocUITest.timeout))
         toastUndo.tap()
-        XCTAssertTrue(toastUndo.waitForNonExistence(timeout: 5), "no Redo toast")
+        XCTAssertTrue(toastUndo.waitForNonExistence(timeout: 10), "no Redo toast")
         XCTAssertTrue(app.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 10))
         let undo = app.buttons["review-undo"]
         XCTAssertTrue(undo.exists)
@@ -62,21 +62,24 @@ final class ReviewFlowUITests: XCTestCase {
         }
 
         // Share: the share sheet opens with the pseudonymized text.
-        XCTAssertTrue(primary.label.hasPrefix("Share"))
+        XCTAssertTrue(primary.wait(until: NSPredicate(format: "label BEGINSWITH 'Share'"), timeout: MdocUITest.timeout), primary.label)
         primary.tap()
         let sheet = app.otherElements["ActivityListView"].firstMatch
-        XCTAssertTrue(sheet.waitForExistence(timeout: 10))
+        XCTAssertTrue(sheet.waitForExistence(timeout: MdocUITest.timeout))
         MdocUITest.closeShareSheet(app)
 
         // Restore: one Paste restores the AI's reply on the clipboard.
         MdocUITest.pasteReply("Write to EMAIL_1 today. EMAIL_9 is new.", in: app)
 
         let restored = app.textViews["restored-text"]
-        XCTAssertTrue(restored.waitForExistence(timeout: 10))
-        XCTAssertTrue((restored.value as? String)?.contains("Write to \(MdocUITest.email) today.") ?? false)
+        XCTAssertTrue(restored.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(
+            restored.wait(until: NSPredicate(format: "value CONTAINS %@", "Write to \(MdocUITest.email) today."), timeout: MdocUITest.timeout),
+            "the reply, restored")
         let summary = app.staticTexts["restore-summary"]
-        XCTAssertTrue(summary.label.contains("1 value restored"))
-        XCTAssertTrue(summary.label.contains("1 unrecognized"))
+        XCTAssertTrue(summary.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(summary.label.contains("1 value restored"), summary.label)
+        XCTAssertTrue(summary.label.contains("1 unrecognized"), summary.label)
     }
 
     /// Type a reply, beside Paste: a reply written by hand is restored too.
@@ -318,10 +321,16 @@ enum MdocUITest {
     @MainActor
     static func showIdentities(_ app: XCUIApplication) -> Bool {
         let heading = app.staticTexts["Identities"].firstMatch
-        if !heading.exists {
-            let button = app.buttons["identities-button"].firstMatch
-            guard button.waitForExistence(timeout: 2) else { return false }
+        if heading.exists { return true }
+        let button = app.buttons["identities-button"].firstMatch
+        guard button.waitForExistence(timeout: 2) else { return false }
+        // A tap can be lost on a slow runner (the drawer never opened in
+        // queue run 44977712791), so tap again while the button still
+        // takes taps; once the drawer covers it, it is opening.
+        for _ in 0..<3 {
             button.tap()
+            if heading.waitForExistence(timeout: probeTimeout) { return true }
+            guard button.isHittable else { break }
         }
         return heading.waitForExistence(timeout: MdocUITest.timeout)
     }
@@ -330,10 +339,16 @@ enum MdocUITest {
     static func closeShareSheet(_ app: XCUIApplication) {
         let sheet = app.otherElements["ActivityListView"].firstMatch
         let close = app.buttons["Close"].firstMatch
-        if close.waitForExistence(timeout: 2) {
-            close.tap()
-        } else {
-            sheet.swipeDown(velocity: .fast)
+        // A tap on Close while the sheet still slides in can go nowhere on
+        // a slow runner (the sheet stayed open in queue run 42123124586):
+        // close it again until it has gone.
+        for _ in 0..<3 where sheet.exists {
+            if close.waitUntilHittable(timeout: probeTimeout) {
+                close.tap()
+            } else {
+                sheet.swipeDown(velocity: .fast)
+            }
+            _ = sheet.waitForNonExistence(timeout: 10)
         }
         // A tap while the sheet still slides away goes nowhere (#542): wait
         // until it is gone and Paste reply takes taps.
