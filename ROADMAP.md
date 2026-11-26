@@ -363,6 +363,214 @@ sidebar's hover reveal gets quicker and smooth
    are under `docs/evidence/`. If one does, A/B GPUI Fast 0.1.15 as ADR 0117
    describes.
 
+## Desktop code reorganization (#1319)
+
+The desktop app's code is sorted by what the user sees, so an agent finds a
+screen's file from three headers and a change to one screen edits one folder
+(spec and grill record in [#1319](https://github.com/lawkitt/mdoc/issues/1319);
+[ADR 0069](docs/adr/0069-app-architecture-and-code-ownership.md), amended by
+item 1). Nothing a user can see changes. It ships in 0.4.0 as the one named
+exception to the freeze ([#1264](https://github.com/lawkitt/mdoc/issues/1264)).
+
+**The start gate:** no item starts while a desktop fix branch is open
+(#1311–#1315, #1273 and #1288 merged first). Items 1–5 are a serial run of
+pure moves, one pull request at a time, because they all edit the same
+module lists; items 7 and 8 follow in turn. After item 8 each owner is its
+own folder and lanes run side by side. Items 1–5 are all-or-nothing for
+0.4.0; any other item may ship in 0.4.1.
+
+**Every item's pull request** passes `just lint` and the app's tests with
+headless renders identical to `main`, light and dark; one that changes code
+paths, not only file locations, also compares `just perf` before and after.
+The existing flow tests and renders are the proof: no new test seam is
+added, and no test is rewritten to follow a moved function. A pure move
+changes paths and visibility words only. A doc line that names a moved path
+is edited in the same pull request, its word count unchanged.
+
+**An owner item** (12–20) does four things in its folder:
+
+- A file with unrelated jobs splits by job.
+- Views stop calling the Vault and the writer: `view.rs` builds elements and
+  a click calls one owner method, `actions.rs` carries effects out, and
+  `state.rs` is a plain struct whose transitions return the owner's effects.
+  An owner small enough for one file stays one file until it needs a second
+  kind.
+- Every string the user reads moves to the owner's `text.rs`, with plurals
+  and counts worded only there.
+- The owner's loose flags and queues leave `Workspace` for the owner's own
+  struct, one owner per pull request.
+
+It lands as one pull request or a short stack. **The owner checks,** its
+Done when: no view file in the folder calls the Vault or the writer; no
+`state.rs` imports GPUI; the folder is off item 11's exemption list; and
+none of the owner's flags is a field of `Workspace`.
+
+1. **[Desktop] The app moves to `apps/desktop`.** *From
+   [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 9 and 15.* One pull request
+   that changes nothing else: the source, tests, examples and resources
+   folders and the build script move together; the root becomes a
+   workspace-only manifest with the app as its default member; the package
+   stays `mdoc` and `crates/` is untouched. Packaging, the scripts and the CI
+   area routing follow. ADR 0069 is amended in place with the owner folders,
+   the three kinds of file, `text.rs`, the rule that the second screen to
+   need a pattern moves it to `ui/`, and `apps/desktop`. *Done when:* `cargo
+   run` from the root starts the app, a shadow CI run is green on macOS and
+   Windows, and the packaged smoke test passes on both.
+2. **[Desktop] Top-level folders: `app/`, `commands/`, `ui/`, `settings/`,
+   `shelf/` and `ai/`.** *From [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision
+   10.* Pure moves: the process-level modules, the shortcuts table and menu
+   bar, the shared controls with the style and the confirm dialog, Settings,
+   the shelf with the menu bar item and the tray, and the connector, Ask and
+   the companion. *Blocked by:* item 1. *Done when:* the six folders hold
+   those modules.
+3. **[Desktop] Top-level folders: `document/` and `review/`.** *From
+   [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 10.* Pure moves: the document
+   view with the preview, the comment rail, find, spelling and the
+   comparison; and the pseudonymization review with refusals and the
+   restored clipboard, leaving the `pii` name, which is not a project word.
+   `DocumentView` keeps its name. *Blocked by:* item 2. *Done when:* the
+   crate's root declares the nine folders and its test-support modules
+   only.
+4. **[Desktop] The window's owner folders.** *From
+   [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 10.* Pure moves: the window's
+   flat modules go into `sidebar/`, `home/`, `palette/`, `projects/`,
+   `vault/`, `saving/`, `replies/`, `ai/` and `notices/`. `Workspace` keeps
+   its name. What the window gives the shelf stays in the window, as its
+   shelf owner: outside it, `Workspace`'s private fields would have to
+   widen. *Blocked by:* item 3. *Done when:* every module of the window is
+   in an owner folder, except the shell file (item 8), the tests and
+   renders (item 5), the window's app-wide commands and its shelf owner.
+5. **[Desktop] Tests and renders follow the owners.** *From
+   [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 11.* They stay in one tree,
+   because they boot the real window, with one test file or folder and one
+   render file per owner under the owner's name. Suites that pin a rule
+   across owners (exits, ordering, refusals, the quit) keep their rule
+   names. *Blocked by:* item 4. *Done when:* every test and render file is
+   named for an owner or a rule, and the same tests and screens run as
+   before the move.
+6. **[Desktop] `just map` and the header lint.** *From
+   [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 8.* `just map` prints the
+   module tree with each header's first sentence, so no map is kept by hand
+   and `docs/development.md` gains no words; `just lint` fails on a module
+   with no header, and the five without one get theirs. *Blocked by:* item
+   5. *Done when:* the lint's own test fails on a module without a header.
+7. **[Desktop] The window's main file splits by job.** *From
+   [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 7.* The functions of its
+   2,500-line block move to the owners they serve; what stays is the window
+   itself: its struct, its events and its render. *Blocked by:* item 5.
+   *Done when:* the file's header names one job and no function body
+   changed.
+8. **[Desktop] The shell file splits by job.** *From
+   [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 7.* Its six jobs part: Home,
+   the palette and the notices view go to their owners, the sidebar's top
+   and foot to the sidebar, the theme and the update card to the owners
+   that fit. *Blocked by:* item 7. *Done when:* the shell file is gone or
+   its header names one job, and no function body changed.
+9. **[Desktop] The document view's main file splits by job.** *From
+   [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 7.* The same for the document
+   view: each job in its own file under `document/`. *Blocked by:* item 5.
+   *Done when:* the file's header names one job and no function body
+   changed.
+10. **[Desktop] `ui/` is one file per kind.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 5.* The shared controls part
+    into buttons, menus, cards and the title bar, beside the style and the
+    confirm dialog. A kind gets its file when a second screen needs it: the
+    sheet and the popover in items 21 and 22; the one toast stays with
+    Projects until then. *Blocked by:* item 5. *Done when:* each kind has
+    its file and no screen draws differently.
+11. **[Desktop] Shared words and the sentence test.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 6.* `ui/text.rs` holds the
+    words several screens share (Cancel, Close, Copied) and `ui/`'s own
+    strings. One test keeps sentences out of view files and fails on a
+    synonym CONTEXT.md forbids; it starts with every owner folder on an
+    exemption list, so `main` stays green. No localization library is
+    added. *Blocked by:* items 8 and 10. *Done when:* the test fails on a
+    sentence in a view file of a folder that is not exempt, and on
+    "anonymization" in a string the user reads.
+12. **[Desktop] Owner: the sidebar and the window's own files.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6, 7 and 12.* The owner
+    item for the tree, the switcher, navigation and the focus regions, and
+    for what stayed in the window's root after items 7 and 8. *Blocked by:*
+    item 11. *Done when:* the owner checks hold for both.
+13. **[Desktop] Owner: Home, the palette and notices.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6, 7 and 12.* The owner
+    item for the three folders that came out of the shell file, with the
+    shortcuts sheet. *Blocked by:* item 11. *Done when:* the owner checks
+    hold for the three folders.
+14. **[Desktop] Owner: Projects.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6, 7 and 12.* The owner
+    item for the Project page, New Project, export and the folder sheet: the
+    folder with the most Vault calls in its views. *Blocked by:* item 11.
+    *Done when:* the owner checks hold for the folder.
+15. **[Desktop] Owner: the Vault and saving.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6, 7 and 12.* The owner
+    item for the Vault's state, the Keychain explainer and the recovery key,
+    and for autosave, the writers, intake, live views and the quit, which
+    take most of `Workspace`'s loose flags. *Blocked by:* item 11. *Done
+    when:* the owner checks hold for both folders.
+16. **[Desktop] Owner: replies and the window's AI.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6, 7 and 12.* The owner
+    item for saved replies and for the AI project, deliveries and Ask in the
+    window. *Blocked by:* item 11. *Done when:* the owner checks hold for
+    both folders.
+17. **[Desktop] Owner: the document.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6 and 7.* The owner item
+    for `document/`. *Blocked by:* items 9 and 11. *Done when:* the owner
+    checks hold for the folder.
+18. **[Desktop] Owner: the review.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6 and 7.* The owner item
+    for `review/`, where most of the app's sentences are; refusals stay
+    worded once. *Blocked by:* item 11. *Done when:* the owner checks hold
+    for the folder.
+19. **[Desktop] Owner: Settings.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6 and 7.* The owner item
+    for `settings/`. *Blocked by:* item 11. *Done when:* the owner checks
+    hold for the folder.
+20. **[Desktop] Owner: the shelf, the AI apps and the app's own folder.**
+    *From [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6 and 7.* The owner
+    item for `shelf/` with the window's shelf owner, `ai/` and `app/`.
+    *Blocked by:* item 11. *Done when:* the owner checks hold for the three
+    folders.
+21. **[Desktop] One sheet.** *From [#1319](https://github.com/lawkitt/mdoc/issues/1319),
+    decision 5.* The five modal sheets built by hand (the shortcuts sheet,
+    New Project, the Keychain explainer, the folder sheet, the confirm
+    dialog) use one component in `ui/`. *Blocked by:* items 13, 14 and 15.
+    *Done when:* one place draws a sheet's scrim and keeps Tab inside, and
+    the five render as before.
+22. **[Desktop] One popover menu.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 5.* The eleven anchored menus
+    built by hand use one component in `ui/`. *Blocked by:* items 12, 13,
+    14, 16, 17 and 18. *Done when:* one place anchors and dismisses a menu,
+    and the eleven render and take the keyboard as before.
+23. **[Desktop] One "Copied" feedback.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 5.* The four built by hand
+    use one component in `ui/`; each caller keeps its own timing and what
+    follows it. *Blocked by:* items 16, 18 and 20. *Done when:* one place
+    words and draws it, and the four behave as before.
+24. **[Desktop] One command table.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 6.* A command's label, action
+    and shortcut are written once in `commands/`, with the menus' titles;
+    the menu bar, the palette, the document header's ⋯ menu and the
+    shortcuts sheet read that row. The same commands stay offered in the
+    same places: this item moves no command. *Blocked by:* items 13 and 17.
+    *Done when:* no command's label is typed in two files, `commands/` is
+    off the exemption list, and the four lists read as before.
+25. **[Desktop] Headers say what each module owns.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 2, 7, 8 and 12.* Every
+    module's first sentence says what it owns in the user's words. *Blocked
+    by:* items 12–24. *Done when:* each header's first sentence names one
+    job; no header cites a decision, item or issue number; item 11's
+    exemption list is empty; and `Workspace` holds only owner structs and
+    view handles.
+26. **[Release] The release candidate.** *From
+    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 1 and 14.* A candidate cut
+    after the last pull request of this section that ships in 0.4.0, from a
+    `main` that holds items 1–5 whole. An item merged after it either waits
+    for 0.4.1 or needs a new candidate. *Blocked by:* items 1–5. *Done
+    when:* the packaged builds pass their smoke test on macOS and Windows,
+    the installer, updater and signing checks pass on it, and the build is
+    named on [#1266](https://github.com/lawkitt/mdoc/issues/1266) for the day of use.
+
 ## Unlocked files and images (#1024)
 
 A password-protected file shows its Original once unlocked, nothing
