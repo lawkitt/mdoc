@@ -2,9 +2,11 @@
 //! it is the app menu (About, Check for Updates…, Settings, Services, Hide,
 //! Quit), followed by File, Edit, View, Window and Help. Edit items use the
 //! editor's actions with their OS actions, so they also reach native
-//! Open/Save panels. The Window menu also lists the live views by title,
-//! the one shown ticked; choosing one shows it (#1160). The workspace
-//! hands over the list as it changes, and the menu bar is set again.
+//! Open/Save panels. The Window menu also lists the live views by title;
+//! choosing one shows it (#1160). The workspace hands over the list as it
+//! changes, and the menu bar is set again. Nothing is ticked: GPUI can
+//! only rebuild the whole bar, and its macOS platform keeps every
+//! rebuild's actions, so switching documents must not rebuild it.
 
 use crate::{
     document_view::{
@@ -36,8 +38,6 @@ pub(crate) struct ShowLiveView(pub u64);
 pub(crate) struct LiveViewItem {
     pub(crate) id: u64,
     pub(crate) title: SharedString,
-    /// The one the window shows: ticked.
-    pub(crate) shown: bool,
 }
 
 actions!(
@@ -108,7 +108,7 @@ pub(crate) fn items_with(
     out
 }
 
-/// Window's own items, then each live view, the one shown ticked.
+/// Window's own items, then each live view.
 fn window_items(views: &[LiveViewItem]) -> Vec<MenuItem> {
     let mut items = vec![
         MenuItem::action("Minimize", MinimizeWindow),
@@ -120,9 +120,9 @@ fn window_items(views: &[LiveViewItem]) -> Vec<MenuItem> {
     if !views.is_empty() {
         items.push(MenuItem::separator());
     }
-    items.extend(views.iter().map(|view| {
-        MenuItem::action(view.title.clone(), ShowLiveView(view.id)).checked(view.shown)
-    }));
+    items.extend(
+        (views.iter()).map(|view| MenuItem::action(view.title.clone(), ShowLiveView(view.id))),
+    );
     items
 }
 
@@ -231,11 +231,10 @@ fn menus(views: &[LiveViewItem]) -> Vec<Menu> {
 mod tests {
     use super::*;
 
-    fn view(id: u64, title: &str, shown: bool) -> LiveViewItem {
+    fn view(id: u64, title: &str) -> LiveViewItem {
         LiveViewItem {
             id,
             title: title.to_string().into(),
-            shown,
         }
     }
 
@@ -263,8 +262,8 @@ mod tests {
     }
 
     /// Done when (#1160): Window lists each live view by title after its
-    /// own items, the one shown ticked, each choosing its own view; with
-    /// none, Window is as before.
+    /// own items, none ticked, each choosing its own view; with none,
+    /// Window is as before.
     #[test]
     fn the_window_menu_lists_the_live_views() {
         let own = vec![
@@ -274,11 +273,11 @@ mod tests {
             ("Switch Document Back".to_string(), false, None),
         ];
         assert_eq!(window_rows(&[]), own);
-        let views = [view(3, "Lease.md", false), view(7, "Letter.md", true)];
+        let views = [view(3, "Lease.md"), view(7, "Letter.md")];
         let mut expected = own.clone();
         expected.extend([
             ("Lease.md".to_string(), false, Some(3)),
-            ("Letter.md".to_string(), true, Some(7)),
+            ("Letter.md".to_string(), false, Some(7)),
         ]);
         assert_eq!(window_rows(&views), expected);
         // Only Window changes.

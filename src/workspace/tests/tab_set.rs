@@ -429,31 +429,10 @@ fn the_window_title_names_the_document_and_only_mdoc_on_home(cx: &mut TestAppCon
     cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "mdoc"));
 }
 
-/// The Window menu's live views as set on the menu bar: (title, ticked).
-fn window_menu_views(cx: &mut VisualTestContext) -> Vec<(String, bool)> {
-    cx.update(|_, cx| {
-        let menus = cx.get_menus().unwrap_or_default();
-        let window = menus.into_iter().find(|menu| menu.name == "Window");
-        (window
-            .map(|menu| menu.items)
-            .unwrap_or_default()
-            .into_iter())
-        .filter_map(|item| match item {
-            gpui::OwnedMenuItem::Action {
-                name,
-                action,
-                checked,
-                ..
-            } if action.as_any().is::<crate::menus::ShowLiveView>() => Some((name, checked)),
-            _ => None,
-        })
-        .collect()
-    })
-}
-
-/// Done when (#1160): the Window menu lists each live view by title, the
-/// one shown ticked; choosing one shows it; the list follows a new view,
-/// a title that changes, and Home, which ticks none.
+/// Done when (#1160): the Window menu lists each live view by title;
+/// choosing one brings the window forward and shows it; the list follows a
+/// new view and a title that changes, and stays through Home. Nothing
+/// moves under the palette, nor for a view no longer live.
 #[gpui::test]
 fn the_window_menu_lists_the_live_views(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -469,7 +448,7 @@ fn the_window_menu_lists_the_live_views(cx: &mut TestAppContext) {
     draw(cx);
     assert_eq!(
         window_menu_views(cx),
-        [("Lease notes".into(), false), ("Letter".into(), true)]
+        [("Lease notes".into(), ids[0]), ("Letter".into(), ids[1])]
     );
     // Every live view's row reaches its handler.
     let views = cx.update(|_, cx| tabs.read(cx).live_view_menu.clone());
@@ -482,14 +461,17 @@ fn the_window_menu_lists_the_live_views(cx: &mut TestAppContext) {
         });
         assert!(available, "menu item {name} has no handler");
     }
-    // Choosing the first shows it.
+    // Choosing the first, from behind, brings the window forward to it.
+    cx.deactivate_window();
     cx.dispatch_action(crate::menus::ShowLiveView(ids[0]));
     cx.run_until_parked();
     draw(cx);
     assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), ids[0]);
+    assert!(cx.update(|window, _| window.is_window_active()));
+    // Switching leaves the list as it was.
     assert_eq!(
-        window_menu_views(cx),
-        [("Lease notes".into(), true), ("Letter".into(), false)]
+        cx.update(|_, cx| tabs.read(cx).live_view_menu.clone()),
+        views
     );
     // Its title follows its first line.
     cx.simulate_input(" for May");
@@ -497,19 +479,24 @@ fn the_window_menu_lists_the_live_views(cx: &mut TestAppContext) {
     draw(cx);
     assert_eq!(
         window_menu_views(cx)[0],
-        ("Lease notes for May".into(), true)
+        ("Lease notes for May".into(), ids[0])
     );
-    // Home ticks none; the views stay live and listed.
+    // The palette open: nothing moves under it.
+    cx.dispatch_action(OpenPalette);
+    cx.run_until_parked();
+    cx.dispatch_action(crate::menus::ShowLiveView(ids[1]));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.shell.palette.is_some());
+        assert_eq!(tabs.tabs.active(), ids[0]);
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_palette(window, cx));
+    // Home: the views stay live and listed.
     cx.dispatch_action(shell::ShowHome);
     cx.run_until_parked();
     draw(cx);
-    assert_eq!(
-        window_menu_views(cx),
-        [
-            ("Lease notes for May".into(), false),
-            ("Letter".into(), false)
-        ]
-    );
+    assert_eq!(window_menu_views(cx).len(), 2);
     // One no longer live does nothing.
     cx.dispatch_action(crate::menus::ShowLiveView(u64::MAX));
     cx.run_until_parked();
