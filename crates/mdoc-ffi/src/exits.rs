@@ -540,3 +540,47 @@ fn taking_a_gates_check_out_fails_the_suite() {
         "hand_off refused with its check taken out"
     );
 }
+
+/// Done when (item 48): below the floor, no app exit sends a document
+/// whose names were decided by hand until the user says "I checked the
+/// names myself"; then each sends its checked text.
+#[test]
+fn no_exit_sends_a_hand_review_until_its_names_are_checked() {
+    let below = || {
+        let (scratch, vault) = vault();
+        let project = vault.create_project("Case".into()).unwrap().id;
+        let session = DocumentSession::new();
+        session.import_text(TEXT.into(), "Lease".into()).unwrap();
+        session.set_no_name_finder(true);
+        session
+            .join_project(vault.clone(), project.clone())
+            .unwrap();
+        let marked = crate::document_session::Category::Person;
+        (session.add_selection(at(TEXT, "Anna Petrova"), Some(marked))).unwrap();
+        session.replace_all().unwrap();
+        let id = session.save_into_vault(vault.clone()).unwrap().id;
+        Letter {
+            _scratch: scratch,
+            vault,
+            session,
+            id,
+            project,
+        }
+    };
+    for exit in EXITS {
+        let letter = below();
+        let sent = (exit.send)(&letter);
+        assert!(sent.is_none(), "{}: sent unchecked: {sent:?}", exit.name);
+        letter.session.confirm_names_checked().unwrap();
+        letter
+            .session
+            .save_pending_into_vault(letter.vault.clone())
+            .unwrap();
+        let sent = (exit.send)(&letter).unwrap_or_default();
+        assert!(
+            sent.first().is_some_and(|text| text.contains("PERSON_1")),
+            "{}: sent nothing checked: {sent:?}",
+            exit.name
+        );
+    }
+}

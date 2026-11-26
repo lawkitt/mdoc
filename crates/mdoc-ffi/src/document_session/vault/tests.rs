@@ -781,9 +781,9 @@ fn a_document_awaiting_discovery_is_not_saved_ready() {
 
 /// Below the name finder's floor, a document reviewed by hand (a name
 /// marked and replaced, never scanned) saves Ready once no proposals are
-/// left, and leaves as Copy for AI's text, still unscanned; with proposals
-/// left, or above the floor, it is not reviewed (#1091 Q4: the
-/// maintainer's (b)).
+/// left and the user checked its names, and leaves as Copy for AI's text,
+/// still unscanned; with proposals left, unchecked, or above the floor, it
+/// is not reviewed (#1091 Q4: the maintainer's (b); item 48).
 #[test]
 fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
     let scratch = Scratch::new();
@@ -812,6 +812,16 @@ fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
         .unwrap();
     assert_eq!(
         vault.readiness(saved.id.clone()).unwrap(),
+        crate::vault::Readiness::NotReviewed,
+        "nobody said the names were checked"
+    );
+    by_hand.confirm_names_checked().unwrap();
+    by_hand
+        .save_pending_into_vault(vault.clone())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        vault.readiness(saved.id.clone()).unwrap(),
         crate::vault::Readiness::Ready
     );
     assert_eq!(
@@ -833,6 +843,7 @@ fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
 
     let scanning = marked(false);
     scanning.replace_all().unwrap();
+    scanning.confirm_names_checked().unwrap();
     let saved = scanning.save_into_vault(vault.clone()).unwrap();
     assert_eq!(
         vault.readiness(saved.id).unwrap(),
@@ -889,7 +900,8 @@ fn the_rules_alone_mark_an_email_address_and_leave_the_document_unscanned() {
 
 /// A document saved above the floor, unscanned, is saved Ready by its next
 /// save once the phone falls below it (timing the detector can put it
-/// there), with no change of its own; opened again, the same (review 3).
+/// there) and the user checked its names, with no change of its own;
+/// opened again, the same (review 3, item 48).
 #[test]
 fn a_document_saved_above_the_floor_is_ready_once_the_phone_falls_below_it() {
     let scratch = Scratch::new();
@@ -907,6 +919,14 @@ fn a_document_saved_above_the_floor_is_ready_once_the_phone_falls_below_it() {
     );
 
     session.set_no_name_finder(true);
+    // The rule pack runs, and finds nothing.
+    session.save_pending_into_vault(vault.clone()).unwrap();
+    assert_eq!(
+        readiness(),
+        crate::vault::Readiness::NotReviewed,
+        "below the floor, unchecked: still not Ready"
+    );
+    session.confirm_names_checked().unwrap();
     assert!(
         session
             .save_pending_into_vault(vault.clone())
@@ -1076,6 +1096,7 @@ fn below_the_floor_a_document_left_mid_edit_owes_the_rules() {
     let text = session.snapshot().unwrap().text;
     (session.add_selection(at(&text, "Ann Lee", 0), Some(Category::Person))).unwrap();
     session.replace_all().unwrap();
+    session.confirm_names_checked().unwrap();
     let id = session.save_into_vault(vault.clone()).unwrap().id;
     assert_eq!(
         vault.readiness(id.clone()).unwrap(),
@@ -1100,12 +1121,19 @@ fn below_the_floor_a_document_left_mid_edit_owes_the_rules() {
     );
     again.replace_all().unwrap();
     again.save_pending_into_vault(vault.clone()).unwrap();
+    assert_eq!(
+        vault.readiness(id.clone()).unwrap(),
+        crate::vault::Readiness::NotReviewed,
+        "the text changed since its names were checked"
+    );
+    again.confirm_names_checked().unwrap();
+    again.save_pending_into_vault(vault.clone()).unwrap();
     assert_eq!(vault.readiness(id).unwrap(), crate::vault::Readiness::Ready);
 }
 
 /// Below the floor, a hand review saved with a proposal left (never
 /// edited) reopens owing the rules too, and is Ready once its proposal is
-/// decided: it never stays owed.
+/// decided and its names checked: it never stays owed.
 #[test]
 fn below_the_floor_a_hand_review_left_with_a_proposal_is_ready_once_decided() {
     let scratch = Scratch::new();
@@ -1120,6 +1148,7 @@ fn below_the_floor_a_hand_review_left_with_a_proposal_is_ready_once_decided() {
     assert!(opened.edits_unscanned);
     again.set_no_name_finder(true);
     again.replace_all().unwrap();
+    again.confirm_names_checked().unwrap();
     again.save_pending_into_vault(vault.clone()).unwrap();
     assert_eq!(vault.readiness(id).unwrap(), crate::vault::Readiness::Ready);
 }
@@ -1142,4 +1171,131 @@ fn the_scan_at_done_restores_scanned() {
         vault.readiness(saved.id).unwrap(),
         crate::vault::Readiness::Ready
     );
+}
+
+/// Item 48: below the floor, a fresh Unfiled paste is not Ready when
+/// saved. The rule pack proposes its email at the first save; with that
+/// decided it is still not Ready until the user says "I checked the names
+/// myself", then Ready, still unscanned. It stays Ready reopened, with
+/// nothing to save, and an edit that changes the text takes the check
+/// back.
+#[test]
+fn below_the_floor_a_fresh_paste_is_ready_only_once_its_names_are_checked() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let text = "Dear Maya Bennett,\n\nWrite to maya.bennett@example.com with questions.";
+    let session = session(text, "Letter");
+    session.set_no_name_finder(true);
+    let saved = session.save_into_vault(vault.clone()).unwrap();
+    let readiness = || vault.readiness(saved.id.clone()).unwrap();
+    let record = || vault.store().document(&saved.id).unwrap();
+    let proposed: Vec<_> = (saved.review.mentions.iter())
+        .filter(|m| m.state == MentionState::Proposed)
+        .map(|m| (m.category, m.original.as_str()))
+        .collect();
+    assert_eq!(
+        proposed,
+        [(Category::Email, "maya.bennett@example.com")],
+        "the rule pack ran at the first save"
+    );
+    assert_eq!(readiness(), crate::vault::Readiness::NotReviewed);
+    assert!(vault.text_for_ai(saved.id.clone()).is_err());
+
+    session.replace_all().unwrap();
+    session.save_pending_into_vault(vault.clone()).unwrap();
+    assert_eq!(
+        readiness(),
+        crate::vault::Readiness::NotReviewed,
+        "nothing left to decide, and nobody checked"
+    );
+    assert!(!session.names_checked());
+    assert!(!record().names_checked_by_hand);
+
+    session.confirm_names_checked().unwrap();
+    assert!(session.names_checked());
+    assert!(
+        (session.save_pending_into_vault(vault.clone()).unwrap()).is_some(),
+        "the check makes a save owed"
+    );
+    assert_eq!(readiness(), crate::vault::Readiness::Ready);
+    assert!(record().names_checked_by_hand && !record().scanned);
+    let sent = vault.text_for_ai(saved.id.clone()).unwrap();
+    assert!(
+        sent.contains("EMAIL_1") && !sent.contains("maya.bennett@"),
+        "{sent}"
+    );
+    assert!(
+        (session.save_pending_into_vault(vault.clone()).unwrap()).is_none(),
+        "saved once"
+    );
+    drop(session);
+
+    let (again, opened) = reopened(&vault, &saved.id);
+    again.set_no_name_finder(true);
+    assert!(again.names_checked());
+    assert_eq!(opened.phase, DocumentPhase::Unscanned);
+    assert!(
+        (again.save_pending_into_vault(vault.clone()).unwrap()).is_none(),
+        "unchanged text never asks again"
+    );
+    assert_eq!(readiness(), crate::vault::Readiness::Ready);
+
+    type_and_save(&again, &vault, " Thanks.");
+    assert!(!again.names_checked(), "an edit takes the check back");
+    assert!(!record().names_checked_by_hand);
+    assert_eq!(readiness(), crate::vault::Readiness::NotReviewed);
+}
+
+/// Item 48, decision 3: a document saved Ready by hand below the floor
+/// before the check existed (a fingerprint, unscanned, no check) is not
+/// Ready, in the Vault and in a reopened session, until the user checks
+/// its names once.
+#[test]
+fn a_document_saved_ready_by_hand_before_the_check_asks_once() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let session = session("Ann Lee met Bob Hart.", "Letter");
+    let id = session.save_into_vault(vault.clone()).unwrap().id;
+    drop(session);
+    // As an older build saved it below the floor.
+    (vault.store().update_document(&id, |d| d.set_ready(true))).unwrap();
+    assert_eq!(
+        vault.readiness(id.clone()).unwrap(),
+        crate::vault::Readiness::NotReviewed
+    );
+    assert!(vault.text_for_ai(id.clone()).is_err());
+
+    let (again, _) = reopened(&vault, &id);
+    again.set_no_name_finder(true);
+    assert!(!again.names_checked());
+    again.save_pending_into_vault(vault.clone()).unwrap();
+    assert!(
+        vault
+            .store()
+            .document(&id)
+            .unwrap()
+            .ready_fingerprint
+            .is_none()
+    );
+    again.confirm_names_checked().unwrap();
+    again.save_pending_into_vault(vault.clone()).unwrap();
+    assert_eq!(vault.readiness(id).unwrap(), crate::vault::Readiness::Ready);
+}
+
+/// A move clears the check with the Ready fingerprint: its text and names
+/// change, so it asks again.
+#[test]
+fn a_move_takes_the_check_back() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let project = vault.create_project("Case".into()).unwrap().id;
+    let session = session("Ann Lee met Bob Hart.", "Letter");
+    session.set_no_name_finder(true);
+    session.confirm_names_checked().unwrap();
+    let id = session.save_into_vault(vault.clone()).unwrap().id;
+    assert!(vault.store().document(&id).unwrap().names_checked_by_hand);
+    vault.move_document(id.clone(), Some(project)).unwrap();
+    assert!(!vault.store().document(&id).unwrap().names_checked_by_hand);
+    let (again, _) = reopened(&vault, &id);
+    assert!(!again.names_checked());
 }

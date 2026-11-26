@@ -606,7 +606,11 @@ mod tests {
             markdown: "Signed.".into(),
         };
         let letter = vault.create_document(new).unwrap().id;
-        (vault.update_document(&letter, |d| d.set_ready(true))).unwrap();
+        (vault.update_document(&letter, |d| {
+            d.scanned = true;
+            d.set_ready(true);
+        }))
+        .unwrap();
         let connector = Connector::start(
             vault,
             &AiConnectorConfig {

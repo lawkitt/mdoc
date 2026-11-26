@@ -164,9 +164,14 @@ struct Document {
     notes_edits: u64,
     /// The AI Reply it was promoted from, as its record says.
     from_reply: Option<String>,
-    /// Opened owing a scan of all its text (`vault`): below the floor its
-    /// next save runs the rules over it first.
+    /// Opened owing a scan of all its text (`vault`), or just imported,
+    /// pasted or begun: below the floor its next save runs the rules over
+    /// it first (item 48).
     rules_owed: bool,
+    /// The text the user said "I checked the names myself" of
+    /// (`confirm_names_checked`, item 48): checked while the text is still
+    /// this; any change to it, Replace included, takes it back.
+    names_checked: Option<String>,
 }
 
 /// What a save compares: the review's change key, whether it was scanned,
@@ -652,12 +657,20 @@ impl Document {
         )
     }
 
+    /// The user said "I checked the names myself" of its text as it is
+    /// now (`confirm_names_checked`).
+    fn names_checked(&self) -> bool {
+        self.names_checked.as_deref() == Some(self.review.text.as_str())
+    }
+
     /// Scan results, minus the categories the Project skips
     /// (`complete_pii_scan`). The document counts as scanned after.
     fn ingest(&mut self, mut detections: Vec<mdoc_pii::Detection>) -> Result<(), CoreError> {
         detections.retain(|d| !self.skip.contains(&d.category));
         self.review.ingest(detections)?;
         self.scanned = true;
+        // A scan runs the rules too.
+        self.rules_owed = false;
         Ok(())
     }
 }
@@ -699,7 +712,10 @@ impl DocumentSession {
             notes: String::new(),
             notes_edits: 0,
             from_reply: None,
-            rules_owed: false,
+            // Below the floor the rule pack runs on every import and
+            // paste, at its first save (item 48).
+            rules_owed: true,
+            names_checked: None,
         };
         if let Some(opened) = opened {
             document.origin = opened.origin;

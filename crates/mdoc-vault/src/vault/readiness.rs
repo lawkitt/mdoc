@@ -2,7 +2,8 @@
 //! "scanned, and no proposals left", decided by the caller at each save
 //! and kept as the fingerprint of the text last saved while Ready: on a
 //! phone below the name finder's floor, "names decided by hand, none left"
-//! (#1091 Q4), with `scanned` left false; the AI text is computed from the Document's
+//! (#1091 Q4), with `scanned` left false and the user's "I checked the
+//! names myself" kept beside it (item 48); the AI text is computed from the Document's
 //! Markdown on every outbound read and checked against the names its
 //! Project knows then. The Vault stores no AI text, so a name another
 //! Document adds to the Project makes this one not Ready without touching
@@ -18,7 +19,7 @@ use sha2::Digest;
 pub enum Readiness {
     Ready,
     /// Never saved while Ready: not scanned (nor decided by hand below the
-    /// floor), or proposals were left.
+    /// floor and checked by the user), or proposals were left.
     NotReviewed,
     /// Its text is not the text it saved while Ready.
     ChangedSinceReview,
@@ -83,10 +84,16 @@ impl Document {
     }
 
     /// Its readiness against `mapping`, the names its Project knows now.
+    /// Saved Ready unscanned, it counts only once the user checked its
+    /// names (item 48): one saved by hand below the floor before that
+    /// check existed is not Ready.
     fn readiness(&self, mapping: &Mapping) -> Readiness {
         let Some(saved) = self.ready_fingerprint.as_deref() else {
             return Readiness::NotReviewed;
         };
+        if !self.scanned && !self.names_checked_by_hand {
+            return Readiness::NotReviewed;
+        }
         match known_names(self, mapping).known_names(&self.markdown) {
             0 if saved == fingerprint(&self.markdown) => Readiness::Ready,
             0 => Readiness::ChangedSinceReview,
@@ -346,7 +353,11 @@ mod tests {
         }))
         .unwrap()
         .id;
-        (vault.update_document(&letter, |d| d.set_ready(true))).unwrap();
+        (vault.update_document(&letter, |d| {
+            d.scanned = true;
+            d.set_ready(true);
+        }))
+        .unwrap();
         (vault.update_project(&project, |p| {
             p.mapping.merge(&[person("PERSON_2", "Boris Ivanov")])
         }))

@@ -42,6 +42,10 @@ pub(super) struct Place {
     /// otherwise, even with no change of its own (the phone fell below the
     /// floor since, review 3).
     pub ready: bool,
+    /// Its record says the user checked its names (`names_checked_by_hand`),
+    /// as this session last read or wrote it: a save is owed when that
+    /// changed.
+    pub checked: bool,
 }
 
 /// A Vault document and its Project as `open_from_vault` read them.
@@ -146,6 +150,7 @@ impl DocumentSession {
                     revision: 0,
                     synced: Some(project.mapping.identities.clone()),
                     ready: false,
+                    checked: false,
                 });
                 Ok(())
             }
@@ -321,11 +326,34 @@ impl DocumentSession {
     /// This phone is below the name finder's floor: no name finder fits
     /// it (#1091 Q4: the maintainer's (b)). Then a Vault save with no
     /// proposals left records the document Ready, its names decided by
-    /// hand, so Copy for AI and Share (`Vault::text_for_ai`) take it. It
+    /// hand, once the user checked them (`confirm_names_checked`, item
+    /// 48), so Copy for AI and Share (`Vault::text_for_ai`) take it. It
     /// stays unscanned, so lists keep their labels and a scan is still
-    /// offered where one becomes possible.
+    /// offered where one becomes possible. Its first save, and the first
+    /// after an open owing a scan, run the rule pack first, so emails,
+    /// phone numbers and document numbers are proposed before the
+    /// question.
     pub fn set_no_name_finder(&self, no_name_finder: bool) {
         self.by_hand.store(no_name_finder, Ordering::Relaxed);
+    }
+
+    /// "I checked the names myself" (item 48): below the floor, the user
+    /// says so of the text as it is now, and the next Vault save records
+    /// it, Ready once no proposals are left. Any change to the text takes
+    /// it back, so the next Copy for AI asks again; unchanged text never
+    /// does, reopened too. Above the floor it changes nothing: a scan
+    /// decides there.
+    pub fn confirm_names_checked(&self) -> Result<(), CoreError> {
+        let mut guard = self.lock_document();
+        let document = guard.as_mut().ok_or_else(no_document)?;
+        document.names_checked = Some(document.review.text.clone());
+        Ok(())
+    }
+
+    /// Whether the user checked the names of the text as it is now
+    /// (`confirm_names_checked`); false with no document.
+    pub fn names_checked(&self) -> bool {
+        (self.lock_document().as_ref()).is_some_and(Document::names_checked)
     }
 }
 
@@ -356,6 +384,8 @@ struct Pending {
     scanned: bool,
     /// The phone is below the name finder's floor (`set_no_name_finder`).
     by_hand: bool,
+    /// The user checked the names of this text (`confirm_names_checked`).
+    checked: bool,
     review: SavedReview,
     /// What a first save keeps as the Source Original, with what the
     /// import said it left out; `None` once the record is made.
@@ -390,6 +420,7 @@ impl Document {
             edits_unscanned: self.review.review.edits_unscanned(),
             scanned: self.scanned,
             by_hand: false,
+            checked: self.names_checked(),
             review: self.review.saved_review(),
             source: (self.vault.as_ref())
                 .is_none_or(|place| place.id.is_none())
@@ -428,6 +459,7 @@ impl Document {
             project: written.project.map(|p| p.id),
             revision: written.revision,
             ready: pending.ready(),
+            checked: pending.checked,
         });
         self.saved = Some(pending.key);
     }
@@ -435,33 +467,43 @@ impl Document {
     /// Below the floor (`by_hand`), a document opened owing a scan of all
     /// its text gets the rules over it, as a scan at Done would run them:
     /// there is no name finder to wait for, and a document saved with
-    /// proposals left, never edited, must not stay owed for good.
+    /// proposals left, never edited, must not stay owed for good. One just
+    /// imported, pasted or begun gets them over all of it (item 48).
     fn run_owed_rules(&mut self, by_hand: bool) {
         if !(by_hand && std::mem::take(&mut self.rules_owed)) {
             return;
         }
-        let Some(edited) = self.review.edited_text() else {
-            return;
-        };
-        if let Ok(mut found) = mdoc_detect::scan_rules(edited.text()) {
-            found.retain(|d| !self.skip.contains(&d.category));
-            let _ = self.review.ingest_edited(&edited, found);
+        match self.review.edited_text() {
+            Some(edited) => {
+                if let Ok(mut found) = mdoc_detect::scan_rules(edited.text()) {
+                    found.retain(|d| !self.skip.contains(&d.category));
+                    let _ = self.review.ingest_edited(&edited, found);
+                }
+            }
+            None => {
+                if let Ok(mut found) = mdoc_detect::scan_rules(&self.review.text) {
+                    found.retain(|d| !self.skip.contains(&d.category));
+                    let _ = self.review.ingest(found);
+                }
+            }
         }
     }
 
     /// Saved, it would be Ready now (`by_hand`: below the floor) where its
-    /// record is not, or the other way round.
+    /// record is not, or the other way round; or the user's check of its
+    /// names is not what its record says.
     fn ready_owed(&self, by_hand: bool) -> bool {
         let counts = self.review.counts();
+        let checked = self.names_checked();
         let ready = is_ready(
             self.scanned,
-            by_hand,
+            by_hand && checked,
             counts.proposed,
             owed(&self.review.review),
         );
         self.vault
             .as_ref()
-            .is_some_and(|place| place.ready != ready)
+            .is_some_and(|place| place.ready != ready || place.checked != checked)
     }
 
     /// Join its Project as stored now: only when another document changed
@@ -539,10 +581,13 @@ impl Document {
         self.scanned = stored.scanned;
         // Saved unscanned and not Ready: it may have been left mid-edit, so
         // none of its text counts as scanned.
-        if !stored.scanned && stored.ready_fingerprint.is_none() {
+        self.rules_owed = !stored.scanned && stored.ready_fingerprint.is_none();
+        if self.rules_owed {
             self.review.review.owe_whole_text();
-            self.rules_owed = true;
         }
+        // Checked of the text as saved: when lining its names up with its
+        // Project's changed it since, it asks again.
+        self.names_checked = (stored.names_checked_by_hand).then(|| stored.markdown.clone());
         self.notes.clone_from(&stored.notes);
         self.from_reply.clone_from(&stored.from_reply);
         if let Some(project) = &project {
@@ -564,6 +609,7 @@ impl Document {
             project: project.map(|p| p.id),
             revision: stored.revision,
             ready: stored.ready_fingerprint.is_some(),
+            checked: stored.names_checked_by_hand,
         });
     }
 }
@@ -596,9 +642,9 @@ fn open_review(
 }
 
 /// Whether a save records the document Ready: scanned, no proposals left
-/// and no discovery or scan of edited text owed (`owed`); below the floor
-/// (`by_hand`), names decided by hand count as scanned (#1091 Q4: the
-/// maintainer's (b)). The one rule.
+/// and no discovery or scan of edited text owed (`owed`); below the floor,
+/// names decided by hand and checked by the user (`by_hand`: both) count
+/// as scanned (#1091 Q4: the maintainer's (b); item 48). The one rule.
 fn is_ready(scanned: bool, by_hand: bool, proposed: u64, owed: bool) -> bool {
     (scanned || by_hand) && proposed == 0 && !owed
 }
@@ -626,10 +672,12 @@ impl Pending {
     /// Whether the record is Ready: scanned, no proposals left and no look
     /// for names owed. On a phone below the name finder's floor
     /// (`set_no_name_finder`), names decided by hand with none left count
-    /// too (#1091 Q4: the maintainer's (b)); the record stays unscanned.
-    /// This is the one place that decides.
+    /// too (#1091 Q4: the maintainer's (b)), once the user checked them
+    /// (item 48); the record stays unscanned. This is the one place that
+    /// decides.
     fn ready(&self) -> bool {
-        is_ready(self.scanned, self.by_hand, self.counts.proposed, self.owed)
+        let by_hand = self.by_hand && self.checked;
+        is_ready(self.scanned, by_hand, self.counts.proposed, self.owed)
     }
 
     /// Store the names and then the record, under the Vault handle's write
@@ -718,6 +766,7 @@ impl Pending {
             record.scanned = self.scanned && !self.edits_unscanned;
             record.review = Some(self.review.clone());
             record.counts = Some(self.counts.into());
+            record.names_checked_by_hand = self.checked;
             if record.project.is_none() {
                 // Unfiled: no other document shares its names.
                 record.mapping.merge_from(&self.identities, Some(&id));

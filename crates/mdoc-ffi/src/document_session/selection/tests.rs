@@ -121,7 +121,8 @@ fn a_project_name_kept_here_is_not_clean() {
 }
 
 /// Never scanned, a selection is "Copy with names" alone; below the floor,
-/// names decided by hand count as scanned, as they do for Ready.
+/// names decided by hand and checked by the user count as scanned, as
+/// they do for Ready (item 48): until then its copy is marked.
 #[test]
 fn never_scanned_unless_decided_by_hand() {
     let scratch = Scratch::new();
@@ -132,6 +133,9 @@ fn never_scanned_unless_decided_by_hand() {
     let check = session.check_selection(vault.clone(), all);
     assert_eq!(check.unwrap(), SelectionCheck::NeverScanned);
     session.set_no_name_finder(true);
+    let check = session.check_selection(vault.clone(), all);
+    assert_eq!(check.unwrap(), SelectionCheck::NeverScanned, "not checked");
+    session.confirm_names_checked().unwrap();
     let check = session.check_selection(vault.clone(), all);
     assert_eq!(check.unwrap(), SelectionCheck::Clean);
 }

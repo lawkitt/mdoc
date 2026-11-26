@@ -109,6 +109,13 @@ pub struct Document {
     /// Scanned for names, so a scan that found nothing reopens as scanned.
     #[serde(default)]
     pub scanned: bool,
+    /// Below the phones' floor, the user said "I checked the names myself"
+    /// of its text as last saved (Vault & Projects item 48): with no scan,
+    /// its Ready fingerprint counts only with this. Written by every save
+    /// of its text; a move clears it. An older build ignores it, and drops
+    /// it when it saves the record: the text then asks again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub names_checked_by_hand: bool,
     /// The SHA-256, in hex, of the text last saved while Ready
     /// ([`Document::set_ready`]); readiness itself is checked when text
     /// leaves ([`crate::Vault::readiness`]).

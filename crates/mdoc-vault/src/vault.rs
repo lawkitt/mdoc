@@ -952,6 +952,7 @@ fn new_document(id: String, new: NewDocument, original: Option<Original>) -> Doc
         markdown: new.markdown,
         unconverted,
         scanned: false,
+        names_checked_by_hand: false,
         ready_fingerprint: None,
         mapping: Mapping::default(),
         review: None,
