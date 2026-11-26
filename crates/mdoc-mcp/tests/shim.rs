@@ -405,6 +405,8 @@ fn a_long_profile_path_is_reached() {
     let profile = temp.path().join("p".repeat(110)).join("profile");
     let folder = temp.path().join("shim");
     std::fs::create_dir_all(&folder).unwrap();
+    // On macOS and Linux, a socket in a short folder outside the temp one.
+    #[cfg(unix)]
     let socket = Endpoint::for_profile(Some(&profile)).unwrap().to_string();
     #[cfg(unix)]
     assert!(!Path::new(&socket).starts_with(temp.path()), "{socket}");
