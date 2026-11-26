@@ -73,6 +73,33 @@ impl Workspace {
         cx.notify();
     }
 
+    /// The live views as the Window menu lists them: by title, in the
+    /// order they opened, the one shown ticked (#1160).
+    pub(super) fn live_view_items(&self, cx: &App) -> Vec<crate::menus::LiveViewItem> {
+        let shown = (!self.showing_overview(cx)).then(|| self.tabs.active());
+        let mut views: Vec<_> = (self.tabs.iter())
+            .filter(|tab| !self.is_placeholder(tab, cx))
+            .map(|tab| crate::menus::LiveViewItem {
+                id: tab.id(),
+                title: super::tab_label(tab, cx).name.into(),
+                shown: shown == Some(tab.id()),
+            })
+            .collect();
+        views.sort_by_key(|view| view.id);
+        views
+    }
+
+    /// Window › a live view's title: show it, unless a dialog or sheet
+    /// is up or the window is quitting. One closed since does nothing.
+    pub(super) fn show_live_view(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        if self.quit_flow.quitting() || self.modal_up(window, cx) || !self.tabs.contains(id) {
+            return;
+        }
+        self.switcher = None;
+        self.activate(id, window, cx);
+        cx.notify();
+    }
+
     /// Esc or a click outside: nothing changes.
     pub(super) fn cancel_switcher(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.switcher.take().is_none() {

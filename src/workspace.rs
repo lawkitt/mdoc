@@ -417,6 +417,8 @@ pub(super) struct Workspace {
     /// The title last given to the window: "mdoc" on Home, else the active
     /// document's.
     window_title: String,
+    /// The live views the Window menu lists, as last handed to it (#1160).
+    live_view_menu: Vec<crate::menus::LiveViewItem>,
     /// Shared with document headers: title-bar inset and drag state.
     title: style::TitleBar,
     shell: shell::ShellState,
@@ -663,6 +665,7 @@ impl Workspace {
             theme_choice: ThemeChoice::default(),
             theme_tip: Rc::default(),
             window_title: String::new(),
+            live_view_menu: Vec::new(),
             title: style::TitleBar::default(),
             shell: shell::ShellState::new(),
             settings_focus: cx.focus_handle().tab_stop(true),
@@ -3262,6 +3265,13 @@ impl Render for Workspace {
         if title != self.window_title {
             window.set_window_title(&title);
             self.window_title = title;
+        }
+        // Window lists the live views: the menu bar is set again only when
+        // they change, and not while this window is borrowed.
+        let views = self.live_view_items(cx);
+        if views != self.live_view_menu {
+            self.live_view_menu = views.clone();
+            cx.defer(move |cx| crate::menus::set_live_views(&views, cx));
         }
         if !cx.has_active_drag() && self.shell.drop.is_some() {
             self.shell.drop = None;
