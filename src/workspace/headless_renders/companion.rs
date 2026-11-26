@@ -1,6 +1,8 @@
-//! The companion window (Milestone 2 item 14): nothing shared; a Project
-//! shared with documents in each state; the latest reply hidden, then
-//! shown with the pointer over it; a review request; and empty. Each is
+//! The companion window (Milestone 2 items 14 and 16): nothing shared; a
+//! Project shared with documents in each state; the latest reply hidden,
+//! then shown with the pointer over it; a review request with its
+//! proposals hidden, then shown with the pointer over them, Ready after
+//! Replace all, and one only mdoc can finish; and empty. Each is
 //! drawn on a stage of the usual size at the top right, as it sits under
 //! the menu bar item, from content as the window reads it, with public,
 //! synthetic names; no status item, panel or blur is involved.
@@ -10,7 +12,10 @@ use crate::{
     style::Theme,
     workspace::{
         CompanionContent, Workspace,
-        ai_companion::{CompanionDocument, CompanionProject, CompanionReply, CompanionReview},
+        ai_companion::{
+            CompanionDocument, CompanionProject, CompanionProposal, CompanionReply,
+            CompanionReview, ReviewStep,
+        },
     },
 };
 use gpui::{App, Entity, Render, Window, div, prelude::*, px, size};
@@ -37,6 +42,13 @@ impl Stage {
             "reply": content.reply.is_some(),
             "reply_shown": view.reply_shown(),
             "review": content.review.as_ref().map(|review| review.label.clone()),
+            "review_step": content.review.as_ref().map(|review| match &review.step {
+                ReviewStep::Proposals(_) => "proposals",
+                ReviewStep::Replacing(_) => "replacing",
+                ReviewStep::Ready => "ready",
+                ReviewStep::InMdoc(_) => "in-mdoc",
+            }),
+            "proposals_shown": view.proposals_shown(),
             "rows": content.rows.len(),
         })
     }
@@ -128,9 +140,17 @@ fn content(shared: bool, rows: bool) -> CompanionContent {
     }
 }
 
-/// Capture `name` with the companion showing `content` on the stage; with
-/// `hover`, the pointer rests on the reply.
-fn stage(d: &mut Driver, name: &str, content: CompanionContent, hover: bool) -> Result<()> {
+/// Where the pointer rests while a scene is captured.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Hover {
+    Nothing,
+    Reply,
+    Proposals,
+}
+
+/// Capture `name` with the companion showing `content` on the stage, the
+/// pointer resting on `hover`.
+fn stage(d: &mut Driver, name: &str, content: CompanionContent, hover: Hover) -> Result<()> {
     let workspace = d
         .window
         .downcast::<Workspace>()
@@ -153,23 +173,27 @@ fn stage(d: &mut Driver, name: &str, content: CompanionContent, hover: bool) -> 
         .map_err(|e| e.to_string())?;
     let workspace_window = d.window;
     d.window = window.into();
-    let result = hover_reply(d, window, hover).and_then(|()| d.capture(name));
+    let result = rest_on(d, window, hover).and_then(|()| d.capture(name));
     d.cx.update_window(d.window, |_, window, _| window.remove_window())
         .map_err(|e| e.to_string())?;
     d.window = workspace_window;
     result
 }
 
-/// Rest the pointer on the reply until its restored text shows.
-fn hover_reply(d: &mut Driver, window: gpui::WindowHandle<Stage>, hover: bool) -> Result<()> {
-    if !hover {
+/// Rest the pointer on `hover` until what it hides shows.
+fn rest_on(d: &mut Driver, window: gpui::WindowHandle<Stage>, hover: Hover) -> Result<()> {
+    if hover == Hover::Nothing {
         return Ok(());
     }
-    // Paint once, so the reply's place is known.
+    // Paint once, so its place is known.
     d.settle()?;
     window
         .update(&mut d.cx, |stage, window, cx| {
-            let center = (stage.companion.read(cx).reply_center()).ok_or("the reply")?;
+            let view = stage.companion.read(cx);
+            let center = match hover {
+                Hover::Reply => view.reply_center().ok_or("the reply")?,
+                _ => view.proposals_center().ok_or("the proposals")?,
+            };
             window.simulate_mouse_move(center, cx);
             Ok::<_, String>(())
         })
@@ -177,30 +201,70 @@ fn hover_reply(d: &mut Driver, window: gpui::WindowHandle<Stage>, hover: bool) -
     d.cx.advance_clock(Duration::from_millis(100));
     let shown = window
         .update(&mut d.cx, |stage, _, cx| {
-            stage.companion.read(cx).reply_shown()
+            let view = stage.companion.read(cx);
+            match hover {
+                Hover::Reply => view.reply_shown(),
+                _ => view.proposals_shown(),
+            }
         })
         .map_err(|e| e.to_string())?;
     if !shown {
-        return Err("the reply did not show on hover".into());
+        return Err("what the pointer rests on did not show".into());
     }
     Ok(())
+}
+
+/// "Document 3" asked for by Claude, at `step`.
+fn review(step: ReviewStep) -> CompanionContent {
+    let mut content = content(true, false);
+    content.review = Some(CompanionReview {
+        document: format!("{:032x}", 0xd2),
+        from: "Claude".into(),
+        label: "Document 3".into(),
+        step,
+    });
+    content
+}
+
+/// What Document 3's review proposes, with public, synthetic names.
+fn proposals() -> Vec<CompanionProposal> {
+    [
+        ("Anna Petrova", "PERSON_1", 3),
+        ("Northwind Traders Ltd", "ORG_1", 2),
+        ("boris.ivanov@example.com", "EMAIL_1", 1),
+    ]
+    .into_iter()
+    .map(|(original, alias, mentions)| CompanionProposal {
+        original: original.into(),
+        alias: alias.into(),
+        mentions,
+    })
+    .collect()
 }
 
 pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     let mut nothing = content(false, true);
     nothing.reply = Some(reply());
-    stage(d, "companion-nothing-shared", nothing, false)?;
-    stage(d, "companion-shared", content(true, true), false)?;
+    stage(d, "companion-nothing-shared", nothing, Hover::Nothing)?;
+    stage(d, "companion-shared", content(true, true), Hover::Nothing)?;
     let mut replied = content(true, false);
     replied.reply = Some(reply());
-    stage(d, "companion-reply-hidden", replied.clone(), false)?;
-    stage(d, "companion-reply-shown", replied, true)?;
-    let mut review = content(true, false);
-    review.review = Some(CompanionReview {
-        document: format!("{:032x}", 0xd2),
-        from: "Claude".into(),
-        label: "Document 3".into(),
-    });
-    stage(d, "companion-review", review, false)?;
-    stage(d, "companion-empty", content(false, false), false)
+    stage(d, "companion-reply-hidden", replied.clone(), Hover::Nothing)?;
+    stage(d, "companion-reply-shown", replied, Hover::Reply)?;
+    let proposed = review(ReviewStep::Proposals(proposals()));
+    stage(d, "companion-review", proposed.clone(), Hover::Nothing)?;
+    stage(
+        d,
+        "companion-review-proposals-shown",
+        proposed,
+        Hover::Proposals,
+    )?;
+    let mut ready = review(ReviewStep::Ready);
+    if let Ok(documents) = ready.documents.as_mut() {
+        documents[2] = document(2, "Document 3", "Ready");
+    }
+    stage(d, "companion-review-ready", ready, Hover::Nothing)?;
+    let left = ReviewStep::InMdoc("Needs review · 2 names not replaced".into());
+    stage(d, "companion-review-in-mdoc", review(left), Hover::Nothing)?;
+    stage(d, "companion-empty", content(false, false), Hover::Nothing)
 }
