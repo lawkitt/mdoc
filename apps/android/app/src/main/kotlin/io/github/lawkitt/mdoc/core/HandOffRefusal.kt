@@ -39,6 +39,13 @@ sealed interface HandOffRefusal {
     /** The Vault has not seen this text Ready while its review is done. */
     data object NotChecked : HandOffRefusal
 
+    /**
+     * Below the floor, nobody said the names of this text were checked
+     * (Vault & Projects item 48): I checked the names myself, asked at the
+     * tap, and again once the text changed.
+     */
+    data object NamesNotChecked : HandOffRefusal
+
     /** The text changed after its review: Find names again. */
     data object ChangedSinceReview : HandOffRefusal
 
@@ -61,6 +68,9 @@ sealed interface HandOffRefusal {
 
         /** Find names, or Find names again. */
         data object FindNames : Step
+
+        /** "I checked the names myself" of the text as it is now, then the hand-off tapped. */
+        data object CheckedNamesMyself : Step
     }
 
     /**
@@ -72,6 +82,7 @@ sealed interface HandOffRefusal {
     fun step(findsNames: Boolean): Step? = when (this) {
         is NamesToDecide -> if (proposals > 0) Step.ReplaceAndCopy(proposals) else Step.Review
         NotScanned, NotChecked, ChangedSinceReview -> if (findsNames) Step.FindNames else null
+        NamesNotChecked -> Step.CheckedNamesMyself
         is NamesWrittenOut -> Step.Review
         NotRead, ExcludedFromAi, Failed -> null
     }
@@ -94,8 +105,9 @@ sealed interface HandOffRefusal {
          * "not reviewed" while the review is done is, at the detector
          * tier, names marked by hand in a document never scanned: Find
          * names. Below the floor it is no refusal here: the tap saves again
-         * first (a phone fallen below the floor since), and says why where
-         * that does not help.
+         * first (a phone fallen below the floor since), and asks "I checked
+         * the names myself" where the names were not checked (item 48), or
+         * says why where that does not help.
          */
         fun before(snapshot: DocumentSnapshot, findsNames: Boolean, saved: SavedReadiness?): HandOffRefusal? {
             when (snapshot.phase) {

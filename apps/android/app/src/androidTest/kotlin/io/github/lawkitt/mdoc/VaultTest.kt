@@ -6,6 +6,7 @@ import io.github.lawkitt.mdoc.core.AppError
 import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.DocumentPhase
+import io.github.lawkitt.mdoc.core.HandOffRefusal
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.JobObserver
 import io.github.lawkitt.mdoc.core.OriginalData
@@ -90,13 +91,20 @@ class VaultTest {
         assertEquals(listOf("Maya Bennett"), reopened.identities.map { it.primaryWording })
     }
 
-    /** Below the name finder's floor, names marked by hand with none left are Ready (#1091 Q4 (b)). */
+    /**
+     * Below the name finder's floor, names marked by hand with none left
+     * are Ready once the user said "I checked the names myself" (#1091 Q4
+     * (b), Vault & Projects item 48); until then Copy for AI asks.
+     */
     @Test
     fun belowTheFloorADocumentReviewedByHandIsReadyToShare() {
         val session = app.core.documents.importDocument(ImportSource.Text(letter), "Letter")
         session.recognize(Quiet)
         val start = letter.indexOf("Maya Bennett")
         session.addReplacement(SourceRange(start, start + 12), Category.Person)
+        val asked = runCatching { session.copyForAi() }.exceptionOrNull() as? AppError.HandOffRefused
+        assertEquals(HandOffRefusal.NamesNotChecked, asked?.refusal)
+        session.confirmNamesChecked()
         assertTrue(session.copyForAi().text.contains("Dear PERSON_1, your claim is ready."))
         // It stays unscanned: Home still reads what a scan would add.
         assertEquals(DocumentPhase.Ready, session.snapshot().phase)

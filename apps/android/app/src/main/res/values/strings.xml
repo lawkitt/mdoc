@@ -232,6 +232,7 @@
     <string name="refusal_not_scanned">Names not looked for yet</string>
     <string name="refusal_not_read">The document isn\'t ready yet</string>
     <string name="refusal_not_checked">The new text isn\'t checked yet</string>
+    <string name="refusal_names_not_checked">Check the names yourself</string>
     <string name="refusal_changed_since_review">Changed since its review</string>
     <string name="refusal_excluded_from_ai">Excluded from AI</string>
     <string name="refusal_failed">The text couldn\'t be prepared</string>
@@ -239,12 +240,14 @@
     <string name="refusal_not_scanned_detail">mdoc looks for names before the text leaves.</string>
     <string name="refusal_not_read_detail">Its text is read first.</string>
     <string name="refusal_not_checked_detail">Names in the edited text are looked for first.</string>
+    <string name="refusal_names_not_checked_detail">This phone can\'t find names. Read the text and mark any name still in it before it goes to an AI.</string>
     <string name="refusal_changed_since_review_detail">The text changed after its review, so names are looked for again first.</string>
     <string name="refusal_names_written_out_detail">A name this document\'s Project knows is still written out. Replace it first.</string>
     <string name="refusal_excluded_from_ai_detail">This document is set to stay out of AI apps. Only mdoc on a computer changes that.</string>
     <string name="refusal_failed_detail">Try again.</string>
     <string name="step_replace_and_copy">Replace %1$d and copy</string>
     <string name="step_review">Review</string>
+    <string name="step_checked_names_myself">I checked the names myself</string>
 
     <!-- Notes and Promote to Document (#1091 Decision 3), in iOS's words -->
     <string name="notes">Notes</string>

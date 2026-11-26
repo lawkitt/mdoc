@@ -482,7 +482,8 @@ class Documents(
     /**
      * Below the name finder's floor no name is found (ADR 0088): a save
      * with no proposals left then records the document Ready, its names
-     * decided by hand (#1091 Q4, the maintainer's (b)). A phone at the
+     * decided by hand (#1091 Q4, the maintainer's (b)), once the user said
+     * "I checked the names myself" of its text (item 48). A phone at the
      * detector tier is offered Find names, even before its model is in.
      */
     private fun findsNoNames(): Boolean = models?.snapshot()?.tier != DeviceTier.Detector
@@ -942,7 +943,15 @@ class Documents(
             if (savedReadiness() == SavedReadiness.NotReviewed) runCatching { save() }.onFailure { refused(HandOffRefusal.Failed) }
             when (val saved = savedReadiness()) {
                 // At the detector tier: names marked by hand, never scanned.
-                SavedReadiness.NotReviewed -> refused(if (findsNames) HandOffRefusal.NotScanned else HandOffRefusal.NotChecked)
+                // Below the floor: asked whether the names were checked
+                // (item 48), unless they were and it still is not Ready.
+                SavedReadiness.NotReviewed -> refused(
+                    when {
+                        findsNames -> HandOffRefusal.NotScanned
+                        !ffi.namesChecked() -> HandOffRefusal.NamesNotChecked
+                        else -> HandOffRefusal.NotChecked
+                    },
+                )
                 null -> Unit
                 else -> HandOffRefusal.of(saved)?.let(::refused)
             }
@@ -953,6 +962,17 @@ class Documents(
                 .getOrElse { refused(savedReadiness()?.let(HandOffRefusal::of) ?: HandOffRefusal.Failed) }
             lastShared.set(projectId?.let { Place.Project(ProjectId(it)) } ?: Place.Unfiled(vaultId))
             HandOff(text, fileName)
+        }
+
+        /**
+         * "I checked the names myself" (item 48): the user says so of the
+         * text as it is now, and the document is saved, Ready below the
+         * floor once nothing is left to decide. Any change to the text
+         * takes it back, so the next Copy for AI asks again.
+         */
+        fun confirmNamesChecked(): DocumentSnapshot = change(null) {
+            ffi.confirmNamesChecked()
+            ffi.snapshot()
         }
 
         /**

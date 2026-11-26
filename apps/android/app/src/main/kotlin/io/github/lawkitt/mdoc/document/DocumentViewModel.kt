@@ -339,6 +339,19 @@ class DocumentViewModel(
     }
 
     /**
+     * "I checked the names myself" (item 48): said of the text as it is
+     * now and saved; true when it was, and the hand-off tapped goes on.
+     * A save that fails is a refusal in plain words.
+     */
+    suspend fun confirmNamesChecked(): Boolean {
+        mutable.update { it.copy(refusal = null) }
+        val checked = withContext(Dispatchers.IO) { runCatching { session.confirmNamesChecked() } }
+            .onFailure { refused(AppError.HandOffRefused(HandOffRefusal.Failed)) }.getOrNull() ?: return false
+        mutable.update { it.copy(snapshot = checked) }
+        return true
+    }
+
+    /**
      * Review: the next proposal's sheet; else a kept mention's, a known
      * name written out, which Replace resolves; else the document opened
      * again from the Vault, so a name another document of its Project

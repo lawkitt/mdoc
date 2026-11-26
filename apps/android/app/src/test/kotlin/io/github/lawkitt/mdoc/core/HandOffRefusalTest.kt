@@ -124,6 +124,8 @@ class HandOffRefusalTest {
         val project = documents.createProject("Harbour").id
         val call = documents.importDocument(ImportSource.Text("Ann Lee called back."), "Call", project)
         call.recognize(Quiet)
+        assertEquals("below the floor: asked first", HandOffRefusal.NamesNotChecked, call.refusal())
+        call.confirmNamesChecked()
         assertNull("nothing known yet: it goes", call.refusal())
 
         val memo = documents.importDocument(ImportSource.Text("Ann Lee signed."), "Memo", project)
@@ -136,6 +138,8 @@ class HandOffRefusalTest {
         assertEquals("the name is proposed", 1, lined.pendingCount)
         assertEquals(HandOffRefusal.NamesToDecide(names = 1, proposals = 1), call.refusal())
         call.replaceAllPending()
+        assertEquals("the text changed: asked again", HandOffRefusal.NamesNotChecked, call.refusal())
+        call.confirmNamesChecked()
         assertFalse(call.copyForAi().text.contains("Ann Lee"))
     }
 
@@ -158,7 +162,9 @@ class HandOffRefusalTest {
     fun theComputersStatesRefuseInTheirOwnWords() {
         val note = documents.importDocument(ImportSource.Text("Nothing to hide here."), "Memo", null)
         note.recognize(Quiet)
-        assertNull("below the floor, nothing marked: Ready", note.refusal())
+        assertEquals("below the floor, nothing marked: asked first", HandOffRefusal.NamesNotChecked, note.refusal())
+        note.confirmNamesChecked()
+        assertNull("checked: Ready", note.refusal())
 
         documents.readiness = { SavedReadiness.ChangedSinceReview }
         assertEquals(HandOffRefusal.ChangedSinceReview, note.refusal())
@@ -188,6 +194,8 @@ class HandOffRefusalTest {
 
         documents.readiness = { SavedReadiness.NotReviewed }
         assertNull("no refusal before the tap below the floor", HandOffRefusal.before(letter.snapshot(), false, letter.savedReadiness()))
+        assertEquals("the tap asks first", HandOffRefusal.NamesNotChecked, letter.refusal())
+        letter.confirmNamesChecked()
         assertEquals(HandOffRefusal.NotChecked, letter.refusal())
         assertNull(HandOffRefusal.NotChecked.step(findsNames = false))
 
@@ -225,6 +233,40 @@ class HandOffRefusalTest {
         assertEquals(DocumentPhase.Ready, marked.phase)
         assertEquals(HandOffRefusal.NotScanned, HandOffRefusal.before(marked, findsNames = true, saved = SavedReadiness.NotReviewed))
         assertNull(HandOffRefusal.before(marked, findsNames = false, saved = note.savedReadiness()))
+    }
+
+    /**
+     * Done when (Vault & Projects item 48): below the floor a fresh paste
+     * has its email proposed by the rule pack; with it decided, the tap
+     * asks "I checked the names myself", with no refusal before it, and
+     * copies once answered. Unchanged text never asks again; a change to
+     * the text does.
+     */
+    @Test
+    fun belowTheFloorAPasteAsksWhetherItsNamesWereChecked() {
+        val text = "Dear Maya Bennett, write to maya.bennett@example.com with questions."
+        val letter = documents.importDocument(ImportSource.Text(text), "Letter", null)
+        letter.recognize(Quiet)
+        val proposed = letter.snapshot().candidates.filter { it.state == MentionState.Proposed }.map { it.original }
+        assertEquals("the rule pack ran", listOf("maya.bennett@example.com"), proposed)
+        letter.replaceAllPending()
+
+        assertNull("no refusal before the tap", HandOffRefusal.before(letter.snapshot(), false, letter.savedReadiness()))
+        val asked = letter.refusal()
+        assertEquals(HandOffRefusal.NamesNotChecked, asked)
+        assertEquals(HandOffRefusal.Step.CheckedNamesMyself, asked!!.step(findsNames = false))
+        assertEquals(SavedReadiness.NotReviewed, letter.savedReadiness())
+
+        letter.confirmNamesChecked()
+        val copied = letter.copyForAi().text
+        assertEquals(vault.textForAi(letter.vaultId!!), copied)
+        assertFalse(copied.contains("maya.bennett@"))
+        assertNull("unchanged text: no question", letter.refusal())
+
+        letter.addReplacement(SourceRange(text.indexOf("Maya Bennett"), text.indexOf("Maya Bennett") + 12), Category.Person)
+        assertEquals("the text changed: asked again", HandOffRefusal.NamesNotChecked, letter.refusal())
+        letter.confirmNamesChecked()
+        assertFalse(letter.copyForAi().text.contains("Maya Bennett"))
     }
 
     private companion object {

@@ -206,10 +206,15 @@ fun DocumentScreen(
     // Find names waits while a job holds the one slot, wherever it is offered.
     val stepWaits = step == HandOffRefusal.Step.FindNames && job != null
     val resources = LocalResources.current
+    // The hand-off last tapped: "I checked the names myself" goes on with it (item 48).
+    var tapped by remember { mutableStateOf<(() -> Unit)?>(null) }
     val share: (asFile: Boolean) -> Unit = { asFile ->
-        scope.launch { model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, asFile, context)) } }
+        tapped = {
+            scope.launch { model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, asFile, context)) } }
+        }
+        tapped?.invoke()
     }
-    val copyForAi: () -> Unit = {
+    val copyHandOff: () -> Unit = {
         scope.launch {
             model.handOff()?.let {
                 copy(context, it.text)
@@ -217,9 +222,23 @@ fun DocumentScreen(
             }
         }
     }
+    val copyForAi: () -> Unit = {
+        tapped = copyHandOff
+        copyHandOff()
+    }
+    val askAi: (() -> Unit)? = if (aiConnector) {
+        {
+            tapped = { scope.launch { model.askAi()?.let { context.startActivity(askAiIntent(it, context)) } } }
+            tapped?.invoke()
+        }
+    } else {
+        null
+    }
     val take: (HandOffRefusal.Step) -> Unit = { taken ->
         when (taken) {
             is HandOffRefusal.Step.ReplaceAndCopy -> scope.launch {
+                // Replacing changes the text: below the floor its question goes on with Copy.
+                tapped = copyHandOff
                 model.replaceAndHandOff()?.let {
                     copy(context, it.text)
                     model.notice(R.string.copied_for_ai)
@@ -230,6 +249,9 @@ fun DocumentScreen(
                 model.dismissRefusal()
                 beforeJob()
                 model.findNames()
+            }
+            HandOffRefusal.Step.CheckedNamesMyself -> scope.launch {
+                if (model.confirmNamesChecked()) tapped?.invoke()
             }
         }
     }
@@ -374,11 +396,7 @@ fun DocumentScreen(
                     step = step,
                     stepWaits = stepWaits,
                     onStep = take,
-                    askAi = if (aiConnector) {
-                        { scope.launch { model.askAi()?.let { context.startActivity(askAiIntent(it, context)) } } }
-                    } else {
-                        null
-                    },
+                    askAi = askAi,
                     hasReply = snapshot.reply != null,
                     showsReply = state.showsReply,
                     onRecognize = {
@@ -608,7 +626,11 @@ fun DocumentScreen(
     state.refusal?.let { refused ->
         // A Find names that would wait for another document's job is not offered here.
         val resolves = model.step(refused)?.takeUnless { it == HandOffRefusal.Step.FindNames && job != null }
-        val ok: @Composable () -> Unit = { TextButton(onClick = model::dismissRefusal) { Text(stringResource(R.string.ok)) } }
+        // The question "I checked the names myself" is answered or cancelled.
+        val dismiss = if (resolves == HandOffRefusal.Step.CheckedNamesMyself) R.string.cancel else R.string.ok
+        val ok: @Composable () -> Unit = {
+            TextButton(onClick = model::dismissRefusal, Modifier.testTag("refusal-dismiss")) { Text(stringResource(dismiss)) }
+        }
         AlertDialog(
             onDismissRequest = model::dismissRefusal,
             confirmButton = {
