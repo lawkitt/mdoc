@@ -438,15 +438,6 @@ or ChatGPT apps themselves are the maintainer's.
    launcher for a binary inside an installed app? The maintainer runs it,
    since the install can restart Claude Desktop. *Done when:* the answer is a
    comment on the issue.
-14. **[macOS] The companion window.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
-    (ADR 0128).* One floating window toggled from the menu bar icon: the AI
-    project and Stop sharing, its documents with their state, the latest
-    reply restored with Copy and Save as document, a drop target, and the
-    shelf's rows. It opens by itself only for a delivery or a review request
-    and never takes focus; it is excluded from screen capture and hides
-    restored text until hover. With the preview on it replaces the shelf
-    popup. *Blocked by:* items 8, 9, 13. *Done when:* headless renders of its
-    states; native checks of focus and capture exclusion.
 15. **[Desktop] The system-wide hotkey.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
     (ADR 0128).* `global-hotkey` toggles the companion from any app, ⌥M by
     default, changeable and off-able in Settings. *Blocked by:* item 14.
