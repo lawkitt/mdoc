@@ -211,6 +211,59 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
     exports.clear();
 }
 
+/// Done when (#1292, the maintainer's (2)): a Ready document moved out of a
+/// deleted Project leaves the shelf's Ready rows, as the Vault refuses its
+/// text, and its row says it moved: "Moved · open it to share", with Review
+/// opening it. Opened, its save makes it Ready again with no rescan.
+#[gpui::test]
+fn a_document_moved_out_of_a_deleted_project_is_ready_once_opened(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let letter = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "letter.md",
+        "Anna Petrova wrote about the lease.",
+        &[("Anna Petrova", Person)],
+    );
+    let project = new_project(&tabs, cx, letter);
+    written(cx);
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(letter, cx).unwrap());
+    close(&tabs, letter, cx);
+    let key = ShelfKey::Document(document.clone());
+    let listed = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            tabs.read(cx)
+                .shelf_documents(cx)
+                .into_iter()
+                .find(|row| row.key == key)
+                .unwrap()
+        })
+    };
+    assert_eq!(listed(cx).readiness, Readiness::Ready);
+    vault(&tabs, cx)
+        .delete_project(&project, mdoc_vault::ProjectDocuments::MoveToUnfiled)
+        .unwrap();
+    let moved = listed(cx);
+    assert_eq!(moved.readiness, Readiness::NotReviewed);
+    assert_eq!(moved.state(), "Moved · open it to share");
+    assert_eq!(moved.step(), Some(crate::refusal::Step::Review));
+    assert_eq!(moved.text_for_ai(), None);
+    let stored = vault(&tabs, cx).document(document.as_str()).unwrap();
+    assert!(stored.scanned && stored.project.is_none(), "review 3");
+
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_vault_document(document.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    written(cx);
+    assert_eq!(
+        vault(&tabs, cx).readiness(document.as_str()).unwrap(),
+        mdoc_vault::Readiness::Ready
+    );
+}
+
 /// Done when: a name another document adds to the Project takes a row off
 /// ready without touching its file, and a shelf opened before hands out
 /// nothing for it.

@@ -53,6 +53,7 @@ fn stored<'a>(n: u8, title: &'a str, text: &'a str, outbound: Outbound) -> Store
         project: None,
         edited: at(n.into()),
         scanned: true,
+        moved: false,
         outbound: Some(outbound),
     }
 }
@@ -226,6 +227,15 @@ fn a_stored_document_is_ready_only_when_the_outbound_check_passes() {
     assert_eq!(unscanned.state(), "Names not looked for yet");
     assert_eq!(never.state(), "Not reviewed");
     assert_eq!(unscanned.step(), Some(Step::FindNames));
+    // Moved since it was saved Ready (#1292): opening it saves it Ready.
+    let moved = ShelfDocument::of_stored(StoredDocument {
+        moved: true,
+        ..stored(8, "b", text, Err(mdoc_vault::Readiness::NotReviewed))
+    })
+    .unwrap();
+    assert_eq!(moved.state(), "Moved · open it to share");
+    assert_eq!(moved.step(), Some(Step::Review));
+    assert_eq!(moved.text_for_ai(), None);
     let missed = refused(mdoc_vault::Readiness::NamesNotReplaced(2));
     assert_eq!(missed.readiness, Readiness::NamesNotReplaced(2));
     assert_eq!(missed.readiness.label(), "2 names not replaced");

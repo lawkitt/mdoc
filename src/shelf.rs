@@ -131,6 +131,8 @@ pub(crate) struct ShelfDocument {
     /// Names were looked for: a document never saved ready has a review to
     /// finish, not names to find.
     pub scanned: bool,
+    /// Moved since it was saved Ready ([`StoredDocument::moved`]).
+    pub moved: bool,
     pub edited: SystemTime,
     pub words: usize,
     /// Only a ready document with prose has one.
@@ -225,6 +227,10 @@ pub(crate) struct StoredDocument<'a> {
     pub edited: SystemTime,
     /// Names were looked for in it: scanned, or saved with a review.
     pub scanned: bool,
+    /// Scanned, but moved since it was saved Ready: no review and no Ready
+    /// fingerprint until its next save, which opening it and Copy for AI
+    /// make (#1292).
+    pub moved: bool,
     /// `None` while a move of it, or a change to its Project's names, is
     /// not written yet.
     pub outbound: Option<Outbound>,
@@ -259,7 +265,7 @@ impl ShelfDocument {
             &names,
             tab.project,
             // An open tab with an applied alias has a review to open.
-            (readiness, true),
+            (readiness, true, false),
             tab.edited,
             for_ai,
         )
@@ -285,7 +291,7 @@ impl ShelfDocument {
             document.text,
             &names,
             document.project,
-            (readiness, document.scanned),
+            (readiness, document.scanned, document.moved),
             document.edited,
             for_ai,
         ))
@@ -298,7 +304,7 @@ impl ShelfDocument {
         text: &str,
         names: &RestoreMap,
         project: Option<ProjectLink>,
-        (readiness, scanned): (Readiness, bool),
+        (readiness, scanned, moved): (Readiness, bool, bool),
         edited: SystemTime,
         for_ai: Option<String>,
     ) -> Self {
@@ -314,6 +320,7 @@ impl ShelfDocument {
             project,
             readiness,
             scanned,
+            moved,
             edited,
             words: text
                 .split_whitespace()
@@ -339,10 +346,12 @@ impl ShelfDocument {
     }
 
     /// The row's state as it and VoiceOver read it: never scanned reads
-    /// apart from a review left unfinished, as its step differs.
+    /// apart from a review left unfinished, as its step differs, and one
+    /// moved since it was saved Ready says so (#1292).
     pub(crate) fn state(&self) -> String {
         match self.readiness {
             Readiness::NotReviewed if !self.scanned => "Names not looked for yet".into(),
+            Readiness::NotReviewed if self.moved => "Moved · open it to share".into(),
             readiness => readiness.label(),
         }
     }
