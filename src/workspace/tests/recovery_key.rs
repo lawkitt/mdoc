@@ -342,11 +342,12 @@ fn the_recovery_key_takes_both_wrong_key_notices_away(cx: &mut TestAppContext) {
     });
 }
 
-/// Done when (#1287): on a profile with no key and no session, launch
-/// shows Home's recovery screen at once, not a blank page. A refused
-/// intake's notice is on the bell and in its popover until the recovery
-/// key opens the Vault: then the bell has nothing to count, the popover
-/// no card, and Home shows the opened Vault.
+/// Done when (#1287): on a profile with no key and no session, once the
+/// launch has restored, Home shows the recovery screen. A refused intake's
+/// notice is on the bell, beside the wrong-key banner, and in its open
+/// popover until the recovery key, entered with Enter, opens the Vault:
+/// then the bell counts nothing, the popover goes with its card, and Home
+/// shows the opened Vault.
 #[gpui::test]
 fn the_recovery_key_clears_the_locked_notice_from_the_bell(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -364,19 +365,24 @@ fn the_recovery_key_clears_the_locked_notice_from_the_bell(cx: &mut TestAppConte
         cx.debug_bounds("home-recovery").is_some(),
         "launch shows it"
     );
+    let count = |cx: &mut VisualTestContext| cx.update(|_, cx| tabs.read(cx).title.notices.get());
+    assert_eq!(count(cx), 1, "the wrong-key banner");
     tabs.update_in(cx, |tabs, window, cx| {
         assert!(tabs.intake_refused(window, cx));
     });
     draw(cx);
     draw(cx);
-    cx.update(|_, cx| assert!(tabs.read(cx).title.notices.get() >= 1));
-    if cx.debug_bounds("notices-popover").is_none() {
-        click(cx, "header-notices");
-    }
+    assert_eq!(count(cx), 2, "the banner and the refused intake");
+    // The new notice opened the popover, with its card.
+    assert!(cx.debug_bounds("notices-popover").is_some());
     assert!(cx.debug_bounds("dismiss-session-notice").is_some());
-    // The recovery key opens the Vault, the popover still open.
+    // The recovery key, entered with Enter from its field, opens the
+    // Vault while the popover is still open.
     type_key(&tabs, &recovery::format(&sealed_with), cx);
-    click(cx, "home-recovery-open");
+    draw(cx);
+    assert!(cx.debug_bounds("dismiss-session-notice").is_some());
+    cx.update(|_, cx| shell::bind_keys(cx));
+    cx.simulate_keystrokes("enter");
     cx.run_until_parked();
     draw(cx);
     draw(cx);
