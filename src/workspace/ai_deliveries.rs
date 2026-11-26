@@ -176,8 +176,8 @@ impl Workspace {
             self.notify_os(&Note::of(&item, app, ""), cx);
         }
         crate::menu_bar::ai_arrived(true, cx);
-        // A dialog or sheet up keeps it on the badge: nothing moves under
-        // it. The switch must be on as saved and as Settings shows it, so
+        // A dialog, sheet or file picker up keeps it on the badge: nothing
+        // moves under it. The switch must be on as saved and as Settings shows it, so
         // it is off at once and on only once saved.
         let open = self.ai_setting().open_deliveries && self.settings.read(cx).opens_deliveries();
         if open && !self.modal_up(window, cx) {
@@ -303,10 +303,12 @@ impl Workspace {
         view.update(cx, |view, cx| view.open_review(window, cx));
     }
 
-    /// A dialog, sheet or Settings is up: nothing navigates under it.
+    /// A dialog, sheet, system file picker or Settings is up: nothing
+    /// navigates under it.
     pub(super) fn modal_up(&self, window: &Window, cx: &App) -> bool {
         self.settings.read(cx).open
             || window.has_active_prompt()
+            || crate::native_picker::up(cx)
             || self.new_project.is_some()
             || self.folder_sheets.open()
             || self.project_ui.explainer

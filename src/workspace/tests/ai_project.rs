@@ -988,6 +988,48 @@ fn the_settings_switch_opens_deliveries_only_while_on(cx: &mut TestAppContext) {
     assert_eq!(reply_shown(&tabs, cx).as_deref(), Some(reply.as_str()));
 }
 
+/// Done when (#1251): with "Open deliveries when they arrive" on, a
+/// delivery that arrives while a system file picker is up waits on the
+/// badge with its notification, and nothing moves under the picker; once
+/// the picker is answered, the next delivery opens in front.
+#[gpui::test]
+fn a_file_picker_up_keeps_a_delivery_on_the_badge(cx: &mut TestAppContext) {
+    let fixture = fixture();
+    let (tabs, cx, notes) = shared_lease(cx, &fixture);
+    tabs.update(cx, |tabs, cx| {
+        (tabs.preferences.borrow_mut().current.as_mut().unwrap())
+            .ai_connector
+            .open_deliveries = true;
+        tabs.settings.update(cx, |panel, cx| {
+            panel.ai_connector_changed(|ai| ai.open_deliveries = true, cx)
+        });
+    });
+    // Export Project…'s folder picker is up: GPUI draws no dialog for it.
+    let lease = fixture.lease.clone();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.export_project(lease, window, cx)
+    });
+    assert!(cx.did_prompt_for_paths());
+    assert!(!cx.update(|window, _| window.has_active_prompt()));
+    let (waiting, _) = deliver(&tabs, cx, &fixture, Kind::Reply);
+    assert_eq!(reply_shown(&tabs, cx), None);
+    assert!(!window_active(cx));
+    draw(cx);
+    assert!(cx.debug_bounds("ai-badge").is_some());
+    assert_eq!(notes.borrow().len(), 1);
+    assert_eq!(notes.borrow()[0].tag, format!("ai-reply-{waiting}"));
+    // Cancelled: the next delivery opens in front; the one that waited
+    // is still on the badge.
+    cx.simulate_path_prompt_response(|_| None);
+    cx.run_until_parked();
+    let (reply, _) = deliver(&tabs, cx, &fixture, Kind::Reply);
+    assert_ne!(reply, waiting);
+    assert!(window_active(cx));
+    assert_eq!(reply_shown(&tabs, cx).as_deref(), Some(reply.as_str()));
+    let unseen = cx.update(|_, cx| tabs.read(cx).ai.unseen().len());
+    assert_eq!(unseen, 1);
+}
+
 /// Done when: with the preview off no notification is raised and the
 /// badge is gone; the injected notifier takes no app identity.
 #[gpui::test]

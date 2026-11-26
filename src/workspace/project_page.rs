@@ -485,16 +485,19 @@ impl Workspace {
         let Some(name) = name else {
             return;
         };
-        let paths = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: true,
-            prompt: Some(format!("Add to \u{201c}{name}\u{201d}").into()),
-        });
+        let paths = crate::native_picker::paths(
+            cx,
+            PathPromptOptions {
+                files: true,
+                directories: false,
+                multiple: true,
+                prompt: Some(format!("Add to \u{201c}{name}\u{201d}").into()),
+            },
+        );
         cx.spawn_in(window, async move |this, cx| {
             let paths = match paths.await {
-                Ok(Ok(Some(paths))) => paths,
-                Ok(Err(error)) => {
+                Ok(Some(paths)) => paths,
+                Err(error) => {
                     let _ = this.update(cx, |this, cx| {
                         this.notices
                             .post(format!("Could not show the file chooser: {error}"));
