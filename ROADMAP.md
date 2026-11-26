@@ -456,11 +456,6 @@ or ChatGPT apps themselves are the maintainer's.
     reply?" banner restores what the user pastes. *Done when:* the iOS job
     passes with tests of both, and a device check shares to an AI app and
     restores its answer.
-21. **[Docs] Words, privacy and release notes.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-    `privacy.md` says what a connected AI app can read and that any process
-    running as the user can read the same; the glossary gains the companion
-    and AI activity; the release notes introduce the preview. *Blocked by:*
-    items 12, 14. *Done when:* docs lint passes.
 
 - **[Desktop] Later: Word export.** A delivered document and any other export
   as `.docx`. *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
