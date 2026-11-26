@@ -242,7 +242,10 @@ class AskAiTest {
 
         compose.waitForShown(hasContentDescription("More options"))
         compose.shown(hasContentDescription("More options")).performClick()
-        compose.waitForShown(hasTestTag("menu-share"))
+        // The menu in place before its Share is tapped: under load its
+        // opening animation still moves the items for a while (#1233).
+        compose.waitForShown(hasTestTag("menu-share") and isEnabled())
+        compose.waitForIdle()
         compose.shown(hasTestTag("menu-share")).performClick()
         compose.waitUntil(HOST_STALLS) { choosers.started.size == 2 }
         val share = choosers.started.last()
