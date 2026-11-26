@@ -3133,6 +3133,41 @@ EMC\n";
         }
     }
 
+    /// #373: an RTF's tracked deletions (`\deleted` revisions: a run, a
+    /// whole paragraph, an inline switch, a table cell's text, a link's
+    /// old target and a list label, and a cell deleted with `\cldel`)
+    /// naming a made-up person never reach the Markdown; the insertions are
+    /// accepted, the link's new target among them, and the deleted cell
+    /// keeps its place, empty. AnyDoc drops them (ADR 0092's grill, round 3
+    /// decision 1, as #370 checked for DOCX); the link's target since
+    /// lawkitt/anydoc#13, the cell and the label since #14.
+    #[test]
+    fn tracked_rtf_deletions_never_reach_the_markdown() {
+        let path = fixture("handmade-deleted-revisions.rtf");
+        let imported = convert(&path).unwrap();
+        let expected = std::fs::read_to_string(fixture("handmade-deleted-revisions.rtf.md"))
+            .unwrap()
+            .replace("\r\n", "\n");
+        let markdown = imported.markdown.replace("\r\n", "\n");
+        assert_eq!(markdown.trim_end(), expected.trim_end());
+        for deleted in ["Marisol", "Quenby", "quenby", "555-0173", "deposit"] {
+            assert!(!markdown.contains(deleted), "{deleted} in {markdown}");
+        }
+        for kept in [
+            "the Tenant.",
+            "in advance",
+            "by the Landlord.",
+            "Guarantor",
+            "none",
+            "[the register](https://example.com/register)",
+            "| Witness |  | signed |",
+            "The keys are returned.",
+        ] {
+            assert!(markdown.contains(kept), "{kept} not in {markdown}");
+        }
+        assert_eq!(imported.note(), None);
+    }
+
     #[test]
     fn partial_pdf_keeps_original_page_numbers_outside_markdown() {
         let imported = convert(&fixture("handmade-partly-scanned.pdf")).unwrap();
