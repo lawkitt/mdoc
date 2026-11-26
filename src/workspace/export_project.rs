@@ -45,18 +45,21 @@ impl Workspace {
                 return;
             }
         };
-        let folder = cx.prompt_for_paths(PathPromptOptions {
-            files: false,
-            directories: true,
-            multiple: false,
-            prompt: Some(format!("Export \u{201c}{name}\u{201d} Here").into()),
-        });
+        let folder = crate::native_picker::paths(
+            cx,
+            PathPromptOptions {
+                files: false,
+                directories: true,
+                multiple: false,
+                prompt: Some(format!("Export \u{201c}{name}\u{201d} Here").into()),
+            },
+        );
         cx.spawn_in(window, async move |this, cx| {
             let into = match folder.await {
-                Ok(Ok(Some(mut folders))) => folders.pop(),
+                Ok(Some(mut folders)) => folders.pop(),
                 // Cancelled.
-                Ok(Ok(None)) | Err(_) => None,
-                Ok(Err(error)) => {
+                Ok(None) => None,
+                Err(error) => {
                     let _ = this.update(cx, |this, cx| {
                         this.notices.post(format!(
                             "Could not export \u{201c}{name}\u{201d}: the folder chooser \

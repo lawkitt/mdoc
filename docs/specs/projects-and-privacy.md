@@ -115,7 +115,7 @@ in [CONTEXT.md](../../CONTEXT.md).
 - A system notification for a delivery or a review request names only the
   AI app and the document's AI label; its tag holds ids. mdoc takes focus
   only when the user clicks it, or with "Open deliveries when they arrive"
-  on.
+  on while no dialog, sheet or file picker is up.
 - A Personal alias stands for one stored value. mdoc puts it back exactly as
   stored and computes nothing from it
   ([ADR 0129](../adr/0129-personal-documents-restore-only-aliases.md)).

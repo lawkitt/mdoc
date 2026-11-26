@@ -276,7 +276,8 @@ impl View {
             .and_then(|p| p.parent())
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
-        let prompt = cx.prompt_for_new_path(
+        let prompt = crate::native_picker::new_path(
+            cx,
             &directory,
             Some(if markdown {
                 "ocr-comparison.md"
@@ -287,7 +288,7 @@ impl View {
         let records = self.records.clone();
         let sources = self.sources.clone();
         cx.spawn_in(window, async move |this, cx| {
-            let Ok(Ok(Some(path))) = prompt.await else {
+            let Ok(Some(path)) = prompt.await else {
                 return;
             };
             let task = cx.background_executor().spawn(async move {

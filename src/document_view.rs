@@ -1880,21 +1880,24 @@ impl DocumentView {
         let Some(LifecycleEffect::AskForFiles) = self.lifecycle.open_files() else {
             return;
         };
-        let paths = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: true,
-            prompt: Some("Open one or more files".into()),
-        });
+        let paths = crate::native_picker::paths(
+            cx,
+            PathPromptOptions {
+                files: true,
+                directories: false,
+                multiple: true,
+                prompt: Some("Open one or more files".into()),
+            },
+        );
         cx.spawn_in(window, async move |this, cx| {
             let result = paths.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.lifecycle.end_prompt();
                 match result {
-                    Ok(Ok(Some(paths))) => {
+                    Ok(Some(paths)) => {
                         cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::Open(paths)))
                     }
-                    Ok(Err(error)) => {
+                    Err(error) => {
                         this.error = Some(chooser_unavailable(&error));
                         cx.notify();
                     }
@@ -1917,13 +1920,13 @@ impl DocumentView {
             name.push_str(".md");
         }
         let directory = self.export_directory(cx);
-        let path = cx.prompt_for_new_path(&directory, Some(&name));
+        let path = crate::native_picker::new_path(cx, &directory, Some(&name));
         cx.spawn_in(window, async move |this, cx| {
             let result = path.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.lifecycle.end_prompt();
                 match result {
-                    Ok(Ok(Some(mut path))) => {
+                    Ok(Some(mut path)) => {
                         if path.extension().is_none() {
                             path.set_extension("md");
                         }
@@ -1959,7 +1962,7 @@ impl DocumentView {
                             LastFolder::note(&path, cx);
                         }
                     }
-                    Ok(Err(error)) => this.error = Some(chooser_unavailable(&error)),
+                    Err(error) => this.error = Some(chooser_unavailable(&error)),
                     _ => {}
                 }
                 cx.notify();
