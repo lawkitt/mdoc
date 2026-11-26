@@ -261,8 +261,8 @@ fn ocr_without_text_stays_with_its_document(cx: &mut TestAppContext) {
             .complete(app.session.generation, Err(import::ImportError::OcrNoText));
         app.resume_import(window, cx);
         assert!(matches!(app.ocr_state, OcrState::Ready(_)));
-        assert!(app.import.ocr_error().unwrap().contains("no usable text"));
-        assert!(app.error.as_ref().unwrap().contains("no usable text"));
+        assert!(app.import.ocr_error().unwrap().contains("No text found"));
+        assert!(app.error.as_ref().unwrap().contains("No text found"));
         assert!(app.import.ocr_required().is_some());
         assert!(!app.import.busy());
     });
