@@ -152,3 +152,120 @@ fn turning_the_preview_off_stops_the_connector(cx: &mut TestAppContext) {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
 }
+
+/// Settings › AI connector open, its next save held a minute, and "AI
+/// connector (preview)" clicked, as a person turns it.
+fn click_preview_held(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
+    cx.simulate_resize(size(px(1100.), px(2400.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.settings.update(cx, |panel, cx| {
+            panel.show_category(settings_ui::Category::AiConnector, window, cx);
+            let gate = (cx.background_executor()).timer(std::time::Duration::from_secs(60));
+            panel.hold_next_save(cx.background_executor().spawn(gate));
+        })
+    });
+    draw(cx);
+    let bounds = (cx.debug_bounds("ai-connector-preview")).expect("the switch shows");
+    cx.simulate_click(bounds.center(), gpui::Modifiers::none());
+    cx.run_until_parked();
+}
+
+/// Settings publishes `event`, as a model check finishing (`Checked`) or
+/// another save landing (`Applied`) does.
+fn publish(tabs: &Entity<Workspace>, event: settings_ui::Event, cx: &mut VisualTestContext) {
+    tabs.update(cx, |tabs, cx| {
+        tabs.settings.update(cx, |_, cx| cx.emit(event))
+    });
+    cx.run_until_parked();
+}
+
+/// The held save lands.
+fn save_lands(cx: &mut VisualTestContext) {
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(61));
+    cx.run_until_parked();
+}
+
+fn saved_on(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
+    cx.update(|_, cx| tabs.read(cx).ai_setting().preview)
+}
+
+/// No connector, and nothing at the endpoint for a shim to reach.
+#[track_caller]
+fn assert_stopped(tabs: &Entity<Workspace>, endpoint: &Endpoint, cx: &mut VisualTestContext) {
+    cx.update(|_, cx| assert!(tabs.read(cx).ai_connector.is_none(), "the connector runs"));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while listening(endpoint) {
+        assert!(std::time::Instant::now() < deadline, "still listening");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// Done when (#1273): the preview turned off, a model check finishing
+/// before the save lands leaves the connector stopped, with Settings open
+/// or closed, and so does another save landing meanwhile; off once saved,
+/// it stays stopped.
+#[gpui::test]
+fn a_model_check_mid_save_leaves_off_off(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let dir = tempfile::tempdir().unwrap();
+    let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
+    tabs.update(cx, |tabs, _| tabs.ai_endpoint = Some(endpoint.clone()));
+    set_preview(&tabs, true, cx);
+    assert!(listening(&endpoint));
+    click_preview_held(&tabs, cx);
+    assert!(saved_on(&tabs, cx), "the save is still held");
+    assert_stopped(&tabs, &endpoint, cx);
+    publish(&tabs, settings_ui::Event::Checked, cx);
+    assert_stopped(&tabs, &endpoint, cx);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.settings
+            .update(cx, |panel, cx| panel.close(window, cx))
+    });
+    publish(&tabs, settings_ui::Event::Checked, cx);
+    assert_stopped(&tabs, &endpoint, cx);
+    publish(&tabs, settings_ui::Event::Applied, cx);
+    assert_stopped(&tabs, &endpoint, cx);
+    save_lands(cx);
+    assert!(!saved_on(&tabs, cx));
+    publish(&tabs, settings_ui::Event::Checked, cx);
+    assert_stopped(&tabs, &endpoint, cx);
+}
+
+/// #1273, the reverse: turned on with its save held, the connector starts
+/// once the save lands, not before, and a model check after leaves the
+/// one connector running.
+#[gpui::test]
+fn on_mid_save_starts_once(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let dir = tempfile::tempdir().unwrap();
+    let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
+    tabs.update(cx, |tabs, _| tabs.ai_endpoint = Some(endpoint.clone()));
+    set_preview(&tabs, false, cx);
+    click_preview_held(&tabs, cx);
+    assert!(!saved_on(&tabs, cx), "the save is still held");
+    publish(&tabs, settings_ui::Event::Checked, cx);
+    assert_stopped(&tabs, &endpoint, cx);
+    save_lands(cx);
+    assert!(saved_on(&tabs, cx));
+    assert!(listening(&endpoint));
+    let first = cx.update(|_, cx| {
+        tabs.read(cx)
+            .ai_connector
+            .as_ref()
+            .map(|r| r.connector.clone())
+    });
+    let first = first.expect("started once saved");
+    publish(&tabs, settings_ui::Event::Checked, cx);
+    let now = cx.update(|_, cx| {
+        tabs.read(cx)
+            .ai_connector
+            .as_ref()
+            .map(|r| r.connector.clone())
+    });
+    assert!(
+        now.is_some_and(|now| std::sync::Arc::ptr_eq(&now, &first)),
+        "started again"
+    );
+    assert!(listening(&endpoint));
+}

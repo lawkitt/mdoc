@@ -413,6 +413,9 @@ pub(super) struct Workspace {
     /// A test window's own Vault folder, removed with it.
     #[cfg(test)]
     test_vault_dir: Option<tempfile::TempDir>,
+    /// Tests only: where the connector listens; `None` listens nowhere.
+    #[cfg(test)]
+    pub(super) ai_endpoint: Option<mdoc_mcp::ipc::Endpoint>,
     /// The sidebar's theme pick; `theme` holds what it resolves to.
     theme_choice: ThemeChoice,
     /// The theme button's tooltip reads the choice live.
@@ -666,6 +669,8 @@ impl Workspace {
             staged_vault: None,
             #[cfg(test)]
             test_vault_dir: None,
+            #[cfg(test)]
+            ai_endpoint: None,
             theme_choice: ThemeChoice::default(),
             theme_tip: Rc::default(),
             window_title: String::new(),

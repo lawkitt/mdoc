@@ -178,6 +178,14 @@ impl Panel {
         self.draft.ai_connector.open_deliveries
     }
 
+    /// "AI connector (preview)" shown off while Settings is open or its
+    /// save hasn't landed (#1220, #1273): the window treats it as off,
+    /// whatever is saved, so nothing starts the connector or takes the
+    /// hotkey meanwhile. Closed with nothing saving, the saved value rules.
+    pub(crate) fn ai_connector_shown_off(&self) -> bool {
+        !self.draft.ai_connector.preview && (self.open || self.applying || self.save_pending)
+    }
+
     /// Tests: hold the next save until `gate` finishes.
     #[cfg(test)]
     pub(crate) fn hold_next_save(&mut self, gate: gpui::Task<()>) {
