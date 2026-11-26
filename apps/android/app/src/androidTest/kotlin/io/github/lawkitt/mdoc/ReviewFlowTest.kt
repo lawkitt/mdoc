@@ -54,7 +54,7 @@ class ReviewFlowTest {
         session.addReplacement(SourceRange(start, start + "Maya Bennett".length), Category.Person)
     }
 
-    private fun waitFor(text: String) = compose.waitUntil(15_000) {
+    private fun waitFor(text: String) = compose.waitUntil(HOST_STALLS) {
         compose.onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty()
     }
 

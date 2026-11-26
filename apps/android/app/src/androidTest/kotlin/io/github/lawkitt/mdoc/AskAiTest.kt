@@ -133,7 +133,7 @@ class AskAiTest {
     /** Ask AI tapped: the chooser it started. */
     private fun askAi(): Intent {
         tap("Ask AI")
-        compose.waitUntil(10_000) { choosers.started.isNotEmpty() }
+        compose.waitUntil(HOST_STALLS) { choosers.started.isNotEmpty() }
         return choosers.started.single()
     }
 
@@ -149,7 +149,7 @@ class AskAiTest {
         compose.sidebar("Settings")
         compose.waitForShown(hasTestTag("settings-ai-connector-preview"))
         compose.shown(hasTestTag("settings-ai-connector-preview")).performScrollTo().performClick()
-        compose.waitUntil(5_000) { app.preferences.aiConnectorPreview.value }
+        compose.waitUntil(HOST_STALLS) { app.preferences.aiConnectorPreview.value }
         compose.back()
 
         open(letter)
@@ -207,14 +207,23 @@ class AskAiTest {
 
         compose.waitForShown(hasTestTag("reply-banner"))
         assertTrue(shows("Paste reply?", substring = true))
-        awaitWindowFocus()
-        // Paste is on for the answer copied while mdoc was away.
+        // Paste is on for the answer copied while mdoc was away. Android
+        // hands the clipboard only to the window with focus: a tap that
+        // lands while focus is still on its way back reads nothing, and a
+        // person taps again, as this does (#1233).
         val paste = hasText("Paste") and isEnabled() and hasAnyAncestor(hasTestTag("reply-banner-paste"))
-        compose.waitForShown(paste)
-        compose.shown(paste).performClick()
+        val restored = hasText("1 value restored") and onScreen
+        for (attempt in 1..3) {
+            awaitWindowFocus()
+            compose.waitForShown(paste)
+            compose.shown(paste).performClick()
+            // Taken: the banner goes and the Reply pane shows; else tapped again.
+            compose.waitUntil(HOST_STALLS) { compose.exists(restored) || !compose.exists(hasTestTag("reply-banner")) }
+            if (compose.exists(restored) || !compose.exists(hasTestTag("reply-banner"))) break
+        }
         // The Reply pane, restored (its text is a TextView's).
         compose.waitForText("1 value restored")
-        compose.waitUntil(5_000) { !compose.exists(hasTestTag("reply-banner")) }
+        compose.waitUntil(HOST_STALLS) { !compose.exists(hasTestTag("reply-banner")) }
         assertEquals("Dear Maya Bennett, the claim is filed.", letter.snapshot().reply?.restored?.text)
     }
 
@@ -231,10 +240,11 @@ class AskAiTest {
         awayAndBack()
         assertFalse("cancelled: nothing offered", compose.exists(hasTestTag("reply-banner")))
 
+        compose.waitForShown(hasContentDescription("More options"))
         compose.shown(hasContentDescription("More options")).performClick()
         compose.waitForShown(hasTestTag("menu-share"))
         compose.shown(hasTestTag("menu-share")).performClick()
-        compose.waitUntil(10_000) { choosers.started.size == 2 }
+        compose.waitUntil(HOST_STALLS) { choosers.started.size == 2 }
         val share = choosers.started.last()
         assertEquals("Share's chooser reports nothing", null, resultSender(share))
         awayAndBack()

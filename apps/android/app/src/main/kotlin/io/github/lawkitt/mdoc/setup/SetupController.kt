@@ -72,7 +72,8 @@ class SetupController(
     private fun snapshotOrEmpty(): SetupSnapshot = runCatching { models().snapshot() }.getOrDefault(EMPTY)
 
     fun dismissCard() {
-        prefs.edit().putBoolean(DISMISSED, true).apply()
+        // Written off the main thread, as every preference is (Preferences.offMain).
+        io.github.lawkitt.mdoc.settings.Preferences.offMain { prefs.edit().putBoolean(DISMISSED, true).commit() }
         mutable.update { it.copy(dismissed = true) }
     }
 
