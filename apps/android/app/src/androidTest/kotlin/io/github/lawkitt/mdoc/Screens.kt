@@ -34,7 +34,15 @@ fun ComposeTestRule.exists(matcher: SemanticsMatcher): Boolean = try {
     if (error.message?.startsWith("No compose hierarchies found") == true) false else throw error
 }
 
-fun ComposeTestRule.waitForShown(matcher: SemanticsMatcher, timeout: Long = 15_000) = try {
+/**
+ * A wait that absorbs host stalls: the PC's runner, its host busy with
+ * another queue job, stalls an app's main thread for ten seconds and more
+ * (#1163; seen in #1233 and #537). Only for waits on the screen catching
+ * up, never one that guards an order the app must keep.
+ */
+const val HOST_STALLS = 30_000L
+
+fun ComposeTestRule.waitForShown(matcher: SemanticsMatcher, timeout: Long = HOST_STALLS) = try {
     waitUntil(timeout) { exists(matcher and onScreen) }
 } catch (error: Throwable) {
     dump()
@@ -55,7 +63,7 @@ fun ComposeTestRule.dump() {
     }
 }
 
-fun ComposeTestRule.waitForText(text: String, timeout: Long = 15_000, substring: Boolean = false) =
+fun ComposeTestRule.waitForText(text: String, timeout: Long = HOST_STALLS, substring: Boolean = false) =
     waitForShown(hasText(text, substring), timeout)
 
 fun ComposeTestRule.waitUntilGone(text: String, timeout: Long = 15_000) =

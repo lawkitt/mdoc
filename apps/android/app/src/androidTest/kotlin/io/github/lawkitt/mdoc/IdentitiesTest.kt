@@ -75,14 +75,15 @@ class IdentitiesTest {
 
         compose.activityRule.scenario.onActivity { it.recreate() }
         compose.openDocument(title)
-        compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Identities")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(HOST_STALLS) { compose.onAllNodes(hasContentDescription("Identities")).fetchSemanticsNodes().isNotEmpty() }
         compose.onAllNodes(hasContentDescription("Identities")).onFirst().performClick()
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("Proposed", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(HOST_STALLS) { compose.onAllNodes(hasText("Proposed", substring = true)).fetchSemanticsNodes().isNotEmpty() }
         compose.onAllNodes(hasText("Priya Shah")).onFirst().performTouchInput { longClick() }
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Keep all")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(HOST_STALLS) { compose.onAllNodes(hasText("Keep all")).fetchSemanticsNodes().isNotEmpty() }
         compose.onAllNodes(hasText("Keep all")).onFirst().performClick()
-        // Both mentions kept: the identity leaves the list and nothing is left to review.
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("PERSON_1", substring = true), useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
+        // Both mentions kept: nothing is left to review, then the identity leaves the list.
+        compose.waitUntil(HOST_STALLS) { session.snapshot().pendingCount == 0 }
+        compose.waitUntil(HOST_STALLS) { compose.onAllNodes(hasText("PERSON_1", substring = true), useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
         assertEquals(0, session.snapshot().pendingCount)
     }
 }

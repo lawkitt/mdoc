@@ -21,6 +21,9 @@ import io.github.lawkitt.mdoc.R
  * time limit for the type ends the job as interrupted.
  */
 class LongJobService : Service() {
+    /** The job this instance last went into the foreground for; 0: none yet. */
+    private var job = 0L
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -33,16 +36,22 @@ class LongJobService : Service() {
         // Always, once started with startForegroundService: Android ends an app
         // whose service does not, even when the job finished first.
         startForeground(NOTIFICATION, notification(title), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        started = true
-        if (!wanted) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+        val number = intent?.getLongExtra(EXTRA_JOB, 0L) ?: 0L
+        if (wanted == number) {
+            job = number
+            started = number
+        } else {
+            // Its job ended already, or another took its place: this start
+            // stops the service only when no newer start waits, and never
+            // takes the foreground from a newer job (#689).
+            stopSelf(startId)
         }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
-        started = false
+        // Only its own job's mark: a newer service may be in the foreground already.
+        if (started == job) started = 0L
         super.onDestroy()
     }
 
@@ -76,19 +85,30 @@ class LongJobService : Service() {
     }
 
     companion object {
-        /** A job is running and wants the service in the foreground. */
-        @Volatile internal var wanted = false
+        /** The running job that wants the service in the foreground, by its number; 0: none. */
+        @Volatile internal var wanted = 0L
 
-        /** The service has called startForeground and not yet been destroyed. */
-        @Volatile internal var started = false
+        /**
+         * The job whose service has called startForeground and not yet been
+         * destroyed; 0: none. Per job, so one job's service, still being
+         * destroyed, never makes the next job stop its own before it is in
+         * the foreground, which Android ends the app for (#689).
+         */
+        @Volatile internal var started = 0L
+
+        private val jobs = java.util.concurrent.atomic.AtomicLong()
+
+        /** A new job's number, never 0. */
+        internal fun nextJob(): Long = jobs.incrementAndGet()
 
         private const val CHANNEL = "jobs"
         private const val NOTIFICATION = 1
         private const val EXTRA_KIND = "kind"
+        private const val EXTRA_JOB = "job"
         private const val ACTION_CANCEL = "io.github.lawkitt.mdoc.CANCEL_JOB"
 
         fun intent(context: Context) = Intent(context, LongJobService::class.java)
 
-        fun start(context: Context, kind: JobKind) = intent(context).putExtra(EXTRA_KIND, kind.name)
+        fun start(context: Context, kind: JobKind, job: Long) = intent(context).putExtra(EXTRA_KIND, kind.name).putExtra(EXTRA_JOB, job)
     }
 }

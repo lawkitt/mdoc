@@ -135,7 +135,7 @@ class AskAiTest {
     /** Ask AI tapped: the chooser it started. */
     private fun askAi(): Intent {
         tap("Ask AI")
-        compose.waitUntil(10_000) { choosers.started.isNotEmpty() }
+        compose.waitUntil(HOST_STALLS) { choosers.started.isNotEmpty() }
         return choosers.started.single()
     }
 
@@ -151,7 +151,7 @@ class AskAiTest {
         compose.sidebar("Settings")
         compose.waitForShown(hasTestTag("settings-ai-connector-preview"))
         compose.shown(hasTestTag("settings-ai-connector-preview")).performScrollTo().performClick()
-        compose.waitUntil(5_000) { app.preferences.aiConnectorPreview.value }
+        compose.waitUntil(HOST_STALLS) { app.preferences.aiConnectorPreview.value }
         compose.back()
 
         open(letter)
@@ -209,14 +209,16 @@ class AskAiTest {
 
         compose.waitForShown(hasTestTag("reply-banner"))
         assertTrue(shows("Paste reply?", substring = true))
+        // Paste is on for the answer copied while mdoc was away. Android
+        // hands the clipboard only to the window with focus, so it is
+        // tapped once that is back (#1233). One tap: no retry (ADR 0095).
         awaitWindowFocus()
-        // Paste is on for the answer copied while mdoc was away.
         val paste = hasText("Paste") and isEnabled() and hasAnyAncestor(hasTestTag("reply-banner-paste"))
         compose.waitForShown(paste)
         compose.shown(paste).performClick()
         // The Reply pane, restored (its text is a TextView's).
         compose.waitForText("1 value restored")
-        compose.waitUntil(5_000) { !compose.exists(hasTestTag("reply-banner")) }
+        compose.waitUntil(HOST_STALLS) { !compose.exists(hasTestTag("reply-banner")) }
         assertEquals("Dear Maya Bennett, the claim is filed.", letter.snapshot().reply?.restored?.text)
     }
 
@@ -233,10 +235,14 @@ class AskAiTest {
         awayAndBack()
         assertFalse("cancelled: nothing offered", compose.exists(hasTestTag("reply-banner")))
 
+        compose.waitForShown(hasContentDescription("More options"))
         compose.shown(hasContentDescription("More options")).performClick()
-        compose.waitForShown(hasTestTag("menu-share"))
+        // The menu in place before its Share is tapped: under load its
+        // opening animation still moves the items for a while (#1233).
+        compose.waitForShown(hasTestTag("menu-share") and isEnabled())
+        compose.waitForIdle()
         compose.shown(hasTestTag("menu-share")).performClick()
-        compose.waitUntil(10_000) { choosers.started.size == 2 }
+        compose.waitUntil(HOST_STALLS) { choosers.started.size == 2 }
         val share = choosers.started.last()
         assertEquals("Share's chooser reports nothing", null, resultSender(share))
         awayAndBack()

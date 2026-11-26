@@ -104,6 +104,23 @@ class ReviewFixesTest {
         assertTrue(next.toString(), next is JobOutcome.Finished)
     }
 
+    /**
+     * Jobs back to back (#689): each one's service goes into the
+     * foreground before anything stops it, so Android never ends the app
+     * for a service stopped too soon, however fast the jobs come.
+     */
+    @Test
+    fun jobsBackToBackNeverStopTheNextServiceTooSoon() = runBlocking {
+        repeat(30) { round ->
+            val outcome = app.jobs.run(JobKind.Recognize, null) { round }
+            assertTrue(outcome.toString(), outcome is JobOutcome.Finished)
+        }
+        // A crash comes a few seconds after the stop that caused it.
+        Thread.sleep(5_000)
+        val last = app.jobs.run(JobKind.Recognize, null) { 1 }
+        assertTrue(last.toString(), last is JobOutcome.Finished)
+    }
+
     @Test
     fun aDeletedImportNeverSaves() {
         val title = "Deleted ${System.nanoTime()}"

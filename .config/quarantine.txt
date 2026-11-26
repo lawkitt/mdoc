@@ -26,21 +26,16 @@ ios:mdocUITests/ReviewToolsUITests/testFindMarkAndTheBarsTools  #700  2026-12-08
 
 # Flaked twice on unrelated changes, 2026-11-07/08: the job service race
 # crashes the process in the next test (#689).
-android:io.github.lawkitt.mdoc.ReviewFixesTest#aJobOutlivesTheScreenThatStartedIt  #689  2026-12-08
 
 # Failed the PC's Android job on unrelated queue commits at least 5 times,
 # 2026-11-11/12 (ADR 0112's sweep, ROADMAP CI speed item 18).
-android:io.github.lawkitt.mdoc.IdentitiesTest#aLongPressKeepsAllOfAnIdentity  #709  2026-12-10
 
 # Failed the PC's Android job on two unrelated queue commits, 2026-11-11/12
 # (ADR 0112: the same failure on another PR's queue commit within 14 days).
 android:io.github.lawkitt.mdoc.ReviewFlowTest#openReviewShareRestore  #827  2026-12-10
 
 # Dropped #1224 and #1203 from the queue on the PC runner, 2026-11-25.
-android:io.github.lawkitt.mdoc.AskAiTest#noBannerAfterACancelOrAPlainShare  #1233  2026-12-25
 android:io.github.lawkitt.mdoc.AskAiTest#theBannerRestoresAPastedReply  #1233  2026-12-25
-android:io.github.lawkitt.mdoc.AskAiTest#askAiIsHiddenUntilThePreviewIsOn  #1233  2026-12-25
 
 # Dropped #1241 and #1246 from the queue on the PC runner, 2026-11-25; its
 # sibling aPdfShowsItsOriginalPage is quarantined under #537.
-android:io.github.lawkitt.mdoc.OriginalTest#aSavedPdfShowsItsOriginalFromTheVault  #537  2026-12-25
