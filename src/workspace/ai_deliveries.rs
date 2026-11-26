@@ -157,12 +157,14 @@ impl Workspace {
 
     /// AI app `app` delivered `reply`, landed as `document` when it asked
     /// for one: a notification, the badge, and with "Open deliveries when
-    /// they arrive" on, it opens in front.
+    /// they arrive" on, it opens in front, unless `picker_was_up`: a system
+    /// file picker may have been up when it arrived.
     pub(super) fn ai_delivered(
         &mut self,
         app: &str,
         reply: String,
         document: Option<String>,
+        picker_was_up: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -177,10 +179,10 @@ impl Workspace {
         }
         crate::menu_bar::ai_arrived(true, cx);
         // A dialog, sheet or file picker up keeps it on the badge: nothing
-        // moves under it. The switch must be on as saved and as Settings shows it, so
-        // it is off at once and on only once saved.
+        // moves under it. The switch must be on as saved and as Settings
+        // shows it, so it is off at once and on only once saved.
         let open = self.ai_setting().open_deliveries && self.settings.read(cx).opens_deliveries();
-        if open && !self.modal_up(window, cx) {
+        if open && !picker_was_up && !self.modal_up(window, cx) {
             crate::menu_bar::reveal_window(window, cx);
             self.open_arrived(&item, window, cx);
         }
@@ -306,9 +308,14 @@ impl Workspace {
     /// A dialog, sheet, system file picker or Settings is up: nothing
     /// navigates under it.
     pub(super) fn modal_up(&self, window: &Window, cx: &App) -> bool {
+        self.drawn_modal_up(window, cx) || crate::native_picker::up(cx)
+    }
+
+    /// A dialog, sheet or Settings that mdoc draws is up. A system file
+    /// picker is a window of its own, over none of mdoc's layers.
+    pub(super) fn drawn_modal_up(&self, window: &Window, cx: &App) -> bool {
         self.settings.read(cx).open
             || window.has_active_prompt()
-            || crate::native_picker::up(cx)
             || self.new_project.is_some()
             || self.folder_sheets.open()
             || self.project_ui.explainer

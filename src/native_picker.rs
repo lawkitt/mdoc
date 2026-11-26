@@ -12,33 +12,48 @@ use std::{
     rc::Rc,
 };
 
-/// How many pickers are up.
+#[derive(Default)]
+struct Counts {
+    /// Pickers up now.
+    up: Cell<usize>,
+    /// Pickers that have ended since launch.
+    ended: Cell<u64>,
+}
+
 #[derive(Clone, Default)]
-struct Pending(Rc<Cell<usize>>);
+struct Pending(Rc<Counts>);
 
 impl Global for Pending {}
 
 /// One picker up: it stops counting when dropped, however its answer ends.
-struct Up(Rc<Cell<usize>>);
+struct Up(Rc<Counts>);
 
 impl Up {
     fn raise(cx: &mut App) -> Self {
-        let count = cx.default_global::<Pending>().0.clone();
-        count.set(count.get() + 1);
-        Self(count)
+        let counts = cx.default_global::<Pending>().0.clone();
+        counts.up.set(counts.up.get() + 1);
+        Self(counts)
     }
 }
 
 impl Drop for Up {
     fn drop(&mut self) {
-        self.0.set(self.0.get().saturating_sub(1));
+        self.0.up.set(self.0.up.get().saturating_sub(1));
+        self.0.ended.set(self.0.ended.get() + 1);
     }
 }
 
 /// A system picker is up.
 pub(crate) fn up(cx: &App) -> bool {
     cx.try_global::<Pending>()
-        .is_some_and(|pending| pending.0.get() > 0)
+        .is_some_and(|pending| pending.0.up.get() > 0)
+}
+
+/// How many pickers have ended: one that ended between two looks was up
+/// for part of that time.
+pub(crate) fn ended(cx: &App) -> u64 {
+    cx.try_global::<Pending>()
+        .map_or(0, |pending| pending.0.ended.get())
 }
 
 /// `answer`, counted as one picker up until it resolves or is dropped. A
@@ -106,11 +121,12 @@ mod tests {
     }
 
     /// Done when: a picker counts while up and stops when answered,
-    /// cancelled, or dropped unanswered.
+    /// cancelled, or dropped unanswered; each that stops counts as ended.
     #[gpui::test]
     fn a_picker_counts_until_it_ends(cx: &mut TestAppContext) {
         let is_up = |cx: &mut TestAppContext| cx.update(|cx| up(cx));
         assert!(!is_up(cx));
+        assert_eq!(cx.update(|cx| ended(cx)), 0);
         // Answered.
         let (_task, chosen) = wait_for(cx, |cx| Box::new(Box::pin(paths(cx, options()))));
         assert!(is_up(cx));
@@ -134,5 +150,6 @@ mod tests {
         drop(second);
         cx.run_until_parked();
         assert!(!is_up(cx));
+        assert_eq!(cx.update(|cx| ended(cx)), 3);
     }
 }

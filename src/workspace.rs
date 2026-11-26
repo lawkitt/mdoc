@@ -373,6 +373,9 @@ pub(super) struct Workspace {
     ai: ai_project::AiProject,
     /// Hears from the connector while it runs.
     ai_poll: Option<gpui::Task<()>>,
+    /// How many system file pickers had ended at the last poll: one ended
+    /// since may have been up when a delivery in the next batch arrived.
+    pickers_ended: u64,
     /// Where deliveries' and review requests' notifications go: the OS's,
     /// or a recorder in tests and renders.
     notifier: ai_deliveries::Notifier,
@@ -639,6 +642,7 @@ impl Workspace {
             ai_connector: None,
             ai: Default::default(),
             ai_poll: None,
+            pickers_ended: 0,
             notifier: Default::default(),
             ai_ask: Default::default(),
             recovery: Default::default(),

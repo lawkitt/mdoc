@@ -160,6 +160,11 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        // A picker that ended since the last poll may have been up when a
+        // delivery in this batch arrived: that one waits on the badge too.
+        let ended = crate::native_picker::ended(cx);
+        let picker_was_up = ended != self.pickers_ended;
+        self.pickers_ended = ended;
         let Some(running) = &self.ai_connector else {
             return false;
         };
@@ -174,7 +179,7 @@ impl Workspace {
                     document,
                 } => {
                     activity = true;
-                    self.ai_delivered(&app, reply, document, window, cx);
+                    self.ai_delivered(&app, reply, document, picker_was_up, window, cx);
                 }
                 ai_connector::Event::NeedsReview {
                     app,
@@ -489,7 +494,8 @@ impl Workspace {
     /// The share prompt: a card at the window's bottom left, over the
     /// sidebar's foot. It takes no focus. While a dialog or sheet is up it
     /// waits, and shows once that closes: it is drawn above the window's
-    /// own layers.
+    /// own layers. A system file picker is its own window: the card shows
+    /// under it, so nothing need redraw when the picker closes.
     pub(super) fn ai_prompt_view(
         &self,
         window: &Window,
@@ -497,7 +503,7 @@ impl Workspace {
     ) -> Option<AnyElement> {
         self.ai_connector.as_ref()?;
         let prompt = self.ai.prompt()?;
-        if self.modal_up(window, cx) {
+        if self.drawn_modal_up(window, cx) {
             return None;
         }
         let theme = self.theme.get();
