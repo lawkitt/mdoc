@@ -35,12 +35,12 @@ use crate::{
     shelf_ui::{COPIED_FOR, Fit, ShelfRows, ShelfRowsEvent},
     style::{self, Theme},
     ui,
-    workspace::{CompanionContent, CompanionProposal, Quit, ReviewStep, Workspace},
+    workspace::{CompanionContent, CompanionProposal, Quit, ReviewMark, ReviewStep, Workspace},
 };
 use gpui::{
-    AnyElement, App, Bounds, Context, DispatchPhase, DisplayId, Entity, ExternalPaths, FocusHandle,
-    MouseExitEvent, MouseMoveEvent, Pixels, Render, SharedString, Subscription, Task, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, div,
+    AnyElement, App, Bounds, Context, DispatchPhase, DisplayId, Entity, EntityId, ExternalPaths,
+    FocusHandle, MouseExitEvent, MouseMoveEvent, Pixels, Render, SharedString, Subscription, Task,
+    Window, WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, div,
     prelude::*, px,
 };
 use std::{cell::Cell, rc::Rc};
@@ -122,6 +122,17 @@ fn proposals_height(proposals: &[CompanionProposal]) -> f32 {
     2. * PROPOSALS_PADDING + proposals.len().clamp(1, PROPOSAL_ROWS) as f32 * PROPOSAL_ROW
 }
 
+/// The review card's document and the proposals it lists, if any.
+fn proposals(content: &CompanionContent) -> Option<(&str, &[CompanionProposal])> {
+    let review = content.review.as_ref()?;
+    match &review.step {
+        ReviewStep::Proposals(proposals) | ReviewStep::Replacing(proposals) => {
+            Some((review.document.as_str(), proposals))
+        }
+        ReviewStep::Ready | ReviewStep::InMdoc(_) => None,
+    }
+}
+
 /// The companion's height for `content`, before the screen limits it and
 /// before its first layout corrects it.
 pub(crate) fn height(content: &CompanionContent) -> f32 {
@@ -164,10 +175,14 @@ pub(crate) struct CompanionView {
     /// The pointer is over the review's proposals: they show, unless the
     /// pointer has left the window since.
     proposals_hovered: bool,
-    /// What the window last shared and asked to review: when either
-    /// changes, the companion reads the window again.
-    marks: (Option<String>, Option<String>),
+    /// What the window last shared and asked to review, and that
+    /// document's review: when any changes, the companion reads the
+    /// window again.
+    marks: (Option<String>, Option<String>, ReviewMark),
     _workspace_changes: Option<Subscription>,
+    /// The requested document's tab, watched while a tab has it: a scan
+    /// there changes what the card can do.
+    review_watch: Option<(EntityId, Subscription)>,
     /// "Copied" shows on the reply's Copy until this ends.
     copied: Option<Task<()>>,
     /// A row's "Copied" shows until this ends.
@@ -219,20 +234,16 @@ impl CompanionView {
         window.focus(&hide_focus, cx);
         let marks = workspace
             .read(cx)
-            .map(|workspace| workspace.companion_marks())
+            .map(|workspace| workspace.companion_marks(cx))
             .unwrap_or_default();
         // Opening a requested document from the sidebar, or a share from
         // the Project page, changes what it shows.
-        let workspace_changes = workspace.root(cx).ok().map(|root| {
-            cx.observe_in(&root, window, |this: &mut Self, root, window, cx| {
-                let marks = root.read(cx).companion_marks();
-                if marks != this.marks {
-                    this.marks = marks;
-                    this.refresh(window, cx);
-                }
+        let workspace_changes = workspace.entity(cx).ok().map(|root| {
+            cx.observe_in(&root, window, |this: &mut Self, _, window, cx| {
+                this.marks_changed(window, cx)
             })
         });
-        Self {
+        let mut view = Self {
             workspace,
             theme,
             content,
@@ -243,6 +254,7 @@ impl CompanionView {
             proposals_hovered: false,
             marks,
             _workspace_changes: workspace_changes,
+            review_watch: None,
             copied: None,
             row_copied: None,
             hide_focus,
@@ -265,7 +277,37 @@ impl CompanionView {
                 any(target_os = "macos", target_os = "windows")
             ))]
             proposals_bounds: Rc::default(),
+        };
+        view.watch_review(window, cx);
+        view
+    }
+
+    /// The window changed: read it again if what it shares, what it asks
+    /// to review, or that document's review changed.
+    fn marks_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Ok(marks) = self.workspace.read(cx).map(|w| w.companion_marks(cx)) else {
+            return;
+        };
+        if marks != self.marks {
+            self.marks = marks;
+            self.refresh(window, cx);
         }
+        self.watch_review(window, cx);
+    }
+
+    /// Watch the requested document's tab, if one has it.
+    fn watch_review(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let view = (self.workspace.read(cx).ok()).and_then(|w| w.companion_review_view(cx));
+        let id = view.as_ref().map(|view| view.entity_id());
+        if self.review_watch.as_ref().map(|(watched, _)| *watched) == id {
+            return;
+        }
+        self.review_watch = view.map(|view| {
+            let watch = cx.observe_in(&view, window, |this: &mut Self, _, window, cx| {
+                this.marks_changed(window, cx)
+            });
+            (view.entity_id(), watch)
+        });
     }
 
     fn rows(
@@ -315,7 +357,13 @@ impl CompanionView {
         if content.reply.as_ref().map(|r| &r.id) != self.content.reply.as_ref().map(|r| &r.id) {
             self.copied = None;
         }
+        // Another card's proposals show only once the pointer moves onto
+        // them: a hover over the last card is no hover over these.
+        if proposals(&content) != proposals(&self.content) {
+            self.proposals_hovered = false;
+        }
         self.content = content;
+        self.watch_review(window, cx);
         cx.notify();
     }
 

@@ -822,3 +822,221 @@ fn replace_all_replaces_only_what_the_card_listed(cx: &mut TestAppContext) {
     assert_eq!(now.len(), 2);
     crate::document_view::DocumentView::hold_scans(false);
 }
+
+/// A new document in Lease that reads `text`, by title `title`.
+fn lease_document(
+    tabs: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+    fixture: &Fixture,
+    title: &str,
+    text: &str,
+) -> String {
+    vault(tabs, cx)
+        .create_document(mdoc_vault::NewDocument {
+            project: Some(fixture.lease.clone()),
+            title: title.into(),
+            source_kind: mdoc_vault::SourceKind::Markdown,
+            origin: mdoc_vault::DocumentOrigin::Ordinary,
+            markdown: text.into(),
+        })
+        .unwrap()
+        .id
+}
+
+/// Review of #1269: a hover over one card's proposals is no hover over
+/// the next card's: they show only once the pointer moves onto them.
+#[gpui::test]
+fn the_next_cards_proposals_wait_for_the_pointer(cx: &mut TestAppContext) {
+    crate::document_view::DocumentView::hold_scans(true);
+    let fixture = fixture();
+    let (tabs, cx, _notes) = shared_lease(cx, &fixture);
+    install_menu_bar(&tabs, cx);
+    needs_review(
+        &tabs,
+        cx,
+        &fixture,
+        "Anna Petrova rents.",
+        &["Anna Petrova"],
+        &[],
+    );
+    let (open, _) = asked(&tabs, cx, &fixture);
+    let mut window = VisualTestContext::from_window(open.into(), &cx.cx);
+    window.run_until_parked();
+    let bounds = (window.debug_bounds("companion-proposals")).expect("the proposals");
+    window.simulate_mouse_move(bounds.center(), None, gpui::Modifiers::none());
+    window.run_until_parked();
+    assert!(view(open, &mut window, |view, _| view.proposals_shown()));
+    // The card goes; the pointer moves to the header, inside the window,
+    // and another card comes.
+    update(open, cx, |view, _, cx| view.stop_sharing(cx));
+    assert_eq!(step(open, cx), None);
+    window.run_until_parked();
+    let header = (window.debug_bounds("companion-project")).expect("the header");
+    window.simulate_mouse_move(header.center(), None, gpui::Modifiers::none());
+    window.run_until_parked();
+    tabs.update(cx, |tabs, cx| {
+        tabs.share_with_ai(&fixture.lease.clone(), cx)
+    });
+    call(&tabs, cx, read_lease(&fixture));
+    assert!(matches!(
+        step(open, cx),
+        Some(crate::workspace::ReviewStep::Proposals(_))
+    ));
+    window.run_until_parked();
+    assert!(!view(open, &mut window, |view, _| view.proposals_shown()));
+    let bounds = (window.debug_bounds("companion-proposals")).expect("the proposals");
+    window.simulate_mouse_move(bounds.center(), None, gpui::Modifiers::none());
+    window.run_until_parked();
+    assert!(view(open, &mut window, |view, _| view.proposals_shown()));
+    crate::document_view::DocumentView::hold_scans(false);
+}
+
+/// Review of #1269: with mdoc's live views all taken, Replace all on a
+/// closed document still runs, its tab stays live after it, and Undo there
+/// takes the step back; a request for another document meanwhile does not
+/// stop it.
+#[gpui::test]
+fn replace_all_outlasts_eviction_and_a_newer_request(cx: &mut TestAppContext) {
+    use crate::workspace::live_views::LIMIT;
+    crate::document_view::DocumentView::hold_scans(true);
+    let fixture = fixture();
+    let (tabs, cx, _notes) = shared_lease(cx, &fixture);
+    install_menu_bar(&tabs, cx);
+    let text = "Anna Petrova rents.";
+    needs_review(&tabs, cx, &fixture, text, &["Anna Petrova"], &[]);
+    let others: Vec<String> = (0..=LIMIT)
+        .map(|i| lease_document(&tabs, cx, &fixture, &format!("Note {i}"), "A note."))
+        .collect();
+    for other in &others {
+        let id = VaultIdOf::parse(other).unwrap();
+        cx.update(|window, cx| {
+            tabs.update(cx, |tabs, cx| tabs.open_vault_document(id, window, cx))
+        });
+        cx.run_until_parked();
+    }
+    cx.deactivate_window();
+    let (open, _) = asked(&tabs, cx, &fixture);
+    update(open, cx, |view, _, cx| view.replace_all(cx));
+    // Another document needs review and is asked for meanwhile.
+    let later = lease_document(&tabs, cx, &fixture, "Later", "Boris Ivanov pays.");
+    let read_later = Call::GetDocument {
+        doc_id: later.clone(),
+        part: None,
+    };
+    assert!(matches!(
+        call(&tabs, cx, read_later),
+        Answer::Ok(Done::NeedsReview { .. })
+    ));
+    wait(cx, 3000);
+    assert_eq!(
+        vault(&tabs, cx).readiness(&fixture.lease_doc).unwrap(),
+        mdoc_vault::Readiness::Ready
+    );
+    let review = view(open, cx, |view, _| view.content().review.clone()).unwrap();
+    assert_eq!(review.document, later, "the newer request shows");
+    // Still live after another document opens; its Undo takes it back.
+    let tab = cx.update(|_, cx| tabs.read(cx).companion_tab(&fixture.lease_doc, cx));
+    let tab = tab.expect("its tab");
+    let id = VaultIdOf::parse(&others[0]).unwrap();
+    cx.update(|window, cx| tabs.update(cx, |tabs, cx| tabs.open_vault_document(id, window, cx)));
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| tabs.read(cx).tab_view(tab).is_some()));
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(tab, window, cx));
+    cx.run_until_parked();
+    let editor = cx.update(|_, cx| {
+        let view = tabs.read(cx).tab_view(tab).unwrap();
+        view.read(cx).editor.read(cx).focus_handle(cx)
+    });
+    cx.update(|window, cx| window.focus(&editor, cx));
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    let shown = cx.update(|_, cx| {
+        let view = tabs.read(cx).tab_view(tab).unwrap();
+        view.read(cx).editor.read(cx).text().to_owned()
+    });
+    assert_eq!(shown, text);
+    crate::document_view::DocumentView::hold_scans(false);
+}
+
+/// Review of #1269: when the requested document's tab finds proposals,
+/// the card offers them at once, with no other change to the window.
+#[gpui::test]
+fn proposals_found_in_the_tab_reach_the_card(cx: &mut TestAppContext) {
+    crate::document_view::DocumentView::hold_scans(true);
+    let fixture = fixture();
+    let (tabs, cx, _notes) = shared_lease(cx, &fixture);
+    install_menu_bar(&tabs, cx);
+    let text = "Anna Petrova rents.";
+    needs_review(&tabs, cx, &fixture, text, &[], &[]);
+    let id = VaultIdOf::parse(&fixture.lease_doc).unwrap();
+    cx.update(|window, cx| tabs.update(cx, |tabs, cx| tabs.open_vault_document(id, window, cx)));
+    cx.run_until_parked();
+    cx.deactivate_window();
+    // Asked after the tab opened, so the request stays.
+    let (open, _) = asked(&tabs, cx, &fixture);
+    assert!(matches!(
+        step(open, cx),
+        Some(crate::workspace::ReviewStep::InMdoc(_))
+    ));
+    let tab = cx.update(|_, cx| tabs.read(cx).companion_tab(&fixture.lease_doc, cx));
+    let view_of = cx.update(|_, cx| tabs.read(cx).tab_view(tab.unwrap()).unwrap());
+    // A scan there finds Anna.
+    let mut found = mdoc_pii::Review::default();
+    found.add_manual(text, 0..12, Person).unwrap();
+    let found = found.save();
+    view_of.update(cx, |view, cx| {
+        view.restore_review(found, cx);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let Some(crate::workspace::ReviewStep::Proposals(proposals)) = step(open, cx) else {
+        panic!("its proposals now");
+    };
+    assert_eq!(proposals[0].original, "Anna Petrova");
+    crate::document_view::DocumentView::hold_scans(false);
+}
+
+/// Review of #1269: an applied alias corrected since would be rewritten by
+/// Replace all too, though no proposal shows it: the card offers Open in
+/// mdoc alone.
+#[gpui::test]
+fn a_correction_no_proposal_shows_goes_to_mdoc(cx: &mut TestAppContext) {
+    crate::document_view::DocumentView::hold_scans(true);
+    let fixture = fixture();
+    let (tabs, cx, _notes) = shared_lease(cx, &fixture);
+    install_menu_bar(&tabs, cx);
+    needs_review(
+        &tabs,
+        cx,
+        &fixture,
+        "Anna Petrova rents from Clara Smith.",
+        &["Anna Petrova"],
+        &[],
+    );
+    let id = VaultIdOf::parse(&fixture.lease_doc).unwrap();
+    cx.update(|window, cx| tabs.update(cx, |tabs, cx| tabs.open_vault_document(id, window, cx)));
+    cx.run_until_parked();
+    let tab = cx.update(|_, cx| tabs.read(cx).companion_tab(&fixture.lease_doc, cx));
+    let view_of = cx.update(|_, cx| tabs.read(cx).tab_view(tab.unwrap()).unwrap());
+    // In mdoc: Anna replaced, her alias corrected since, and Clara found.
+    cx.update(|window, cx| {
+        view_of.update(cx, |view, cx| {
+            assert!(view.replace_all_from_companion(window, cx));
+            let identity = view.pii.review().applied()[0].step.identity;
+            let text = view.editor.read(cx).text().to_owned();
+            let clara = text.find("Clara Smith").unwrap();
+            let review = view.pii.review_mut();
+            review.rename_identity(identity, "CLIENT").unwrap();
+            review.add_manual(&text, clara..clara + 11, Person).unwrap();
+            view.review_changed(cx);
+            cx.notify();
+        })
+    });
+    cx.run_until_parked();
+    cx.deactivate_window();
+    let (open, _) = asked(&tabs, cx, &fixture);
+    let Some(crate::workspace::ReviewStep::InMdoc(_)) = step(open, cx) else {
+        panic!("only mdoc shows the correction: {:?}", step(open, cx));
+    };
+    crate::document_view::DocumentView::hold_scans(false);
+}

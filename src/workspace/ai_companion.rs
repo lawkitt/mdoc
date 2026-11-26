@@ -21,7 +21,7 @@ use super::{
     autosave::Write,
     document_writer::Target,
 };
-use crate::{ai_connector, shelf::ShelfDocument};
+use crate::{ai_connector, document_view::DocumentView, shelf::ShelfDocument};
 use gpui::{App, Context, Window};
 use mdoc_pii::{Review, restore::RestoreMap};
 use mdoc_store::document_id::{DocumentId, VaultId};
@@ -144,6 +144,22 @@ pub(crate) fn proposals_of(review: &Review) -> Vec<CompanionProposal> {
     proposals
 }
 
+/// What Replace all may replace in `review`: its proposals, or `None`
+/// when it would also rewrite what no proposal shows (an applied alias
+/// corrected since), which only the window can show.
+pub(crate) fn replaceable(review: &Review) -> Option<Vec<CompanionProposal>> {
+    let corrected = review.applied().iter().any(|applied| {
+        (review.identity(applied.step.identity))
+            .is_some_and(|identity| applied.step.after.as_ref() != identity.alias)
+    });
+    (!corrected).then(|| proposals_of(review))
+}
+
+/// What the companion last saw of the requested document's tab: its
+/// proposals left, and whether its review has settled. A change reads the
+/// window again.
+pub(crate) type ReviewMark = Option<(usize, bool)>;
+
 /// Where a look at the tab left the companion's Replace all.
 enum Look {
     Again,
@@ -204,16 +220,17 @@ impl Workspace {
         let review = self.ai.review_ask().and_then(|ask| {
             let listed = (documents.as_ref().ok().into_iter().flatten())
                 .find(|document| document.id == ask.document)?;
-            let step = match (ask.replace, listed.ready) {
-                (Replace::Running, _) => {
-                    ReviewStep::Replacing(self.companion_proposals(&ask.document, cx))
+            let replaceable = || self.companion_proposals(&ask.document, cx);
+            let step = match (self.ai.replace_of(&ask.document), listed.ready) {
+                (Some(Replace::Running(_)), _) => {
+                    ReviewStep::Replacing(replaceable().unwrap_or_default())
                 }
-                (Replace::Ran, true) => ReviewStep::Ready,
-                (Replace::Not, true) => return None,
-                (Replace::Ran, false) => ReviewStep::InMdoc(listed.state.clone()),
-                (Replace::Not, false) => match self.companion_proposals(&ask.document, cx) {
-                    proposals if proposals.is_empty() => ReviewStep::InMdoc(listed.state.clone()),
-                    proposals => ReviewStep::Proposals(proposals),
+                (Some(Replace::Ran), true) => ReviewStep::Ready,
+                (None, true) => return None,
+                (Some(Replace::Ran), false) => ReviewStep::InMdoc(listed.state.clone()),
+                (None, false) => match replaceable() {
+                    Some(proposals) if !proposals.is_empty() => ReviewStep::Proposals(proposals),
+                    _ => ReviewStep::InMdoc(listed.state.clone()),
                 },
             };
             Some(CompanionReview {
@@ -234,24 +251,23 @@ impl Workspace {
         }
     }
 
-    /// Document `document`'s pending proposals: as the tab that has it
-    /// loaded holds them, else as its review was saved.
-    fn companion_proposals(&self, document: &str, cx: &App) -> Vec<CompanionProposal> {
+    /// What Replace all may replace in document `document`
+    /// ([`replaceable`]): as the tab that has it loaded holds its review,
+    /// else as its review was saved.
+    fn companion_proposals(&self, document: &str, cx: &App) -> Option<Vec<CompanionProposal>> {
         let tab = (self.companion_tab(document, cx)).and_then(|tab| self.tab_view(tab));
         if let Some(view) = tab.filter(|view| view.read(cx).lifecycle.ready()) {
-            return proposals_of(view.read(cx).pii.review());
+            return replaceable(view.read(cx).pii.review());
         }
         let stored = (self.vault.vault()).and_then(|vault| vault.document(document).ok());
-        let Some(stored) = stored else {
-            return Vec::new();
-        };
-        let Some(saved) = stored.review else {
-            return Vec::new();
+        let Some(saved) = stored.as_ref().and_then(|stored| stored.review.clone()) else {
+            return Some(Vec::new());
         };
         // A review that no longer fits the text proposes nothing.
-        (Review::restore(saved, &stored.markdown, 0).ok())
-            .map(|review| proposals_of(&review))
-            .unwrap_or_default()
+        match Review::restore(saved, &stored?.markdown, 0) {
+            Ok(review) => replaceable(&review),
+            Err(_) => Some(Vec::new()),
+        }
     }
 
     /// The tab that has Vault document `document`, if one does.
@@ -260,13 +276,26 @@ impl Workspace {
         self.find_document(&id, None, cx)
     }
 
-    /// What the window shares and the document it was last asked to
-    /// review: the companion reads the window again when either changes.
-    pub(crate) fn companion_marks(&self) -> (Option<String>, Option<String>) {
+    /// What the window shares, the document it was last asked to review,
+    /// and that document's review in its tab: the companion reads the
+    /// window again when any changes.
+    pub(crate) fn companion_marks(&self, cx: &App) -> (Option<String>, Option<String>, ReviewMark) {
+        let mark = self.companion_review_view(cx).map(|view| {
+            let view = view.read(cx);
+            (view.pii.review().remaining(), view.review_settled())
+        });
         (
             self.ai_shared(),
             self.ai.review_ask().map(|ask| ask.document.clone()),
+            mark,
         )
+    }
+
+    /// The tab view of the document last asked to review, if a tab has
+    /// it: the companion watches its review.
+    pub(crate) fn companion_review_view(&self, cx: &App) -> Option<gpui::Entity<DocumentView>> {
+        let ask = self.ai.review_ask()?;
+        self.tab_view(self.companion_tab(&ask.document, cx)?)
     }
 
     /// The latest delivered reply, restored now; `None` once deleted.
@@ -349,11 +378,13 @@ impl Workspace {
     }
 
     /// The companion's Replace all on the requested `document`, whose
-    /// card listed `listed`: its tab, opened behind the others if none
-    /// has it, runs its own Replace all once its review has settled, then
-    /// saves, and that save decides Ready. mdoc stays where it is. When
-    /// the review proposes anything but `listed` by then, nothing is
-    /// replaced and the card lists what it proposes now.
+    /// card listed `listed`: its tab, opened behind the one in front if
+    /// none has it, runs its own Replace all once its review has settled,
+    /// then saves, and that save decides Ready. mdoc stays where it is.
+    /// When the review would replace anything but `listed` by then,
+    /// nothing is replaced and the card shows what it would now. Once
+    /// clicked, it runs whatever the AI apps ask meanwhile, until Stop
+    /// sharing or another share.
     pub(crate) fn companion_replace_all(
         &mut self,
         document: &str,
@@ -361,8 +392,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let asked = (self.ai.review_ask())
-            .is_some_and(|ask| ask.document == document && ask.replace == Replace::Not);
+        let asked = (self.ai.review_ask()).is_some_and(|ask| ask.document == document);
         if !self.ai_connector_on() || !asked || listed.is_empty() {
             return;
         }
@@ -382,9 +412,15 @@ impl Workspace {
                 tab
             }
         };
-        // Loaded behind the tab in front, which stays.
+        if !self.ai.replace_started(document, tab) {
+            return;
+        }
+        // Loaded behind the tab in front, which stays; evicted last but
+        // one, so Undo there can take the step back.
+        if tab != self.tabs.active() {
+            self.tabs.behind_active(tab);
+        }
         self.initialize(tab, window, cx);
-        self.ai.review_replace(document, Replace::Running);
         crate::menu_bar::companion_changed(cx);
         cx.notify();
         let document = document.to_string();
@@ -401,7 +437,7 @@ impl Workspace {
             }
             // It never settled: what is left is the window's.
             let _ = this.update(cx, |this, cx| {
-                this.companion_replace_ended(&document, Replace::Ran, cx)
+                this.companion_replace_ended(&document, true, cx)
             });
         })
         .detach();
@@ -417,35 +453,41 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Look {
-        let running = (self.ai.review_ask())
-            .is_some_and(|ask| ask.document == document && ask.replace == Replace::Running);
-        // The request went (read, Stop sharing, another share), or the tab
-        // closed or holds another document now: nothing more runs.
+        // It ended (Stop sharing, another share), the document left the
+        // AI project, or the tab closed or holds another document now:
+        // nothing more runs.
+        let running = self.ai.replace_of(document) == Some(Replace::Running(tab));
+        let shared = self
+            .ai_shared()
+            .is_some_and(|shared| self.project_of(document).as_deref() == Some(shared.as_str()));
         let same = self.companion_tab(document, cx) == Some(tab);
-        let view = (self.tab_view(tab)).filter(|_| running && same);
+        let view = (self.tab_view(tab)).filter(|_| running && shared && same);
         let Some(view) = view else {
-            let ended = if *replaced {
-                Replace::Ran
-            } else {
-                Replace::Not
-            };
-            self.companion_replace_ended(document, ended, cx);
+            self.companion_replace_ended(document, *replaced, cx);
             return Look::Done;
         };
         if !*replaced {
             if view.read(cx).lifecycle.unavailable() {
-                self.companion_replace_ended(document, Replace::Ran, cx);
+                self.companion_replace_ended(document, true, cx);
                 return Look::Done;
             }
             if !view.read(cx).review_settled() {
                 return Look::Again;
             }
-            if proposals_of(view.read(cx).pii.review()) != listed {
-                self.companion_replace_ended(document, Replace::Not, cx);
-                return Look::Done;
+            match replaceable(view.read(cx).pii.review()) {
+                Some(now) if now == listed => {}
+                // A correction no proposal shows: the window's to decide.
+                None => {
+                    self.companion_replace_ended(document, true, cx);
+                    return Look::Done;
+                }
+                Some(_) => {
+                    self.companion_replace_ended(document, false, cx);
+                    return Look::Done;
+                }
             }
             if !view.update(cx, |view, cx| view.replace_all_from_companion(window, cx)) {
-                self.companion_replace_ended(document, Replace::Ran, cx);
+                self.companion_replace_ended(document, true, cx);
                 return Look::Done;
             }
             *replaced = true;
@@ -455,17 +497,12 @@ impl Workspace {
         if self.write_pending_for(tab, cx) || super::autosave::ready_unwritten(view.read(cx), cx) {
             return Look::Again;
         }
-        self.companion_replace_ended(document, Replace::Ran, cx);
+        self.companion_replace_ended(document, true, cx);
         Look::Done
     }
 
-    fn companion_replace_ended(
-        &mut self,
-        document: &str,
-        replace: Replace,
-        cx: &mut Context<Self>,
-    ) {
-        self.ai.review_replace(document, replace);
+    fn companion_replace_ended(&mut self, document: &str, ran: bool, cx: &mut Context<Self>) {
+        self.ai.replace_ended(document, ran);
         crate::menu_bar::companion_changed(cx);
         cx.notify();
     }
