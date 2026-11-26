@@ -1,6 +1,8 @@
 //! Ask (#1164 Decisions 2, 3 and 22; Milestone 2 item 10): the document
-//! header's and the Project page's Ask Claude, Ask ChatGPT and Copy for
-//! AI, the prompt each opens the AI app with, and what waits for a move.
+//! header's and the Project page's Ask Claude, Ask in a ChatGPT thread and
+//! Copy for AI, the prompt each opens the AI app with, and what waits for
+//! a move. ChatGPT is named for what it opens: a local Work thread, never
+//! one of its chats, which can't call mdoc (#1264 Decision 4).
 //! GPUI-free; the window carries it out (`workspace/ai_ask_ui.rs`).
 //!
 //! - Ask shares the document's Project, in place of any other, as part of
@@ -22,7 +24,7 @@ pub(crate) const CHOICES: [AskWith; 3] = [AskWith::Claude, AskWith::ChatGpt, Ask
 pub(crate) fn label(with: AskWith) -> &'static str {
     match with {
         AskWith::Claude => "Ask Claude",
-        AskWith::ChatGpt => "Ask ChatGPT",
+        AskWith::ChatGpt => "Ask in a ChatGPT thread",
         AskWith::CopyForAi => "Copy for AI",
     }
 }
@@ -69,8 +71,8 @@ pub(crate) fn opened(with: AskWith, project: &str) -> String {
     let shared = format!("\u{201c}{project}\u{201d} is shared with AI apps.");
     match with {
         AskWith::ChatGpt => format!(
-            "{shared} ChatGPT opened a new thread with the prompt: add your question and send \
-             it. Only Work threads can read mdoc."
+            "{shared} ChatGPT opened a new local Work thread with the prompt: add your question \
+             and send it. Its ordinary chats can't read mdoc."
         ),
         _ => format!(
             "{shared} Claude opened a new chat with the prompt: add your question and send it."
@@ -148,7 +150,7 @@ mod tests {
         assert_eq!(on_project_page(AskWith::ChatGpt), AskWith::ChatGpt);
         assert_eq!(
             CHOICES.map(label),
-            ["Ask Claude", "Ask ChatGPT", "Copy for AI"]
+            ["Ask Claude", "Ask in a ChatGPT thread", "Copy for AI"]
         );
     }
 
@@ -159,7 +161,11 @@ mod tests {
             "“Lease” is shared with AI apps. Claude opened a new chat with the prompt: add your \
              question and send it."
         );
-        assert!(opened(AskWith::ChatGpt, "Lease").ends_with("Only Work threads can read mdoc."));
+        assert_eq!(
+            opened(AskWith::ChatGpt, "Lease"),
+            "“Lease” is shared with AI apps. ChatGPT opened a new local Work thread with the \
+             prompt: add your question and send it. Its ordinary chats can't read mdoc."
+        );
         assert_eq!(
             unfiled_title(AskWith::ChatGpt),
             "Ask ChatGPT about an Unfiled document?"

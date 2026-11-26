@@ -1,5 +1,5 @@
 //! Ask (Milestone 2 item 10): the document header's and the Project
-//! page's Ask Claude, Ask ChatGPT and Copy for AI, only with "AI
+//! page's Ask Claude, Ask in a ChatGPT thread and Copy for AI, only with "AI
 //! connector (preview)" on. Ask shares the Project as part of the click
 //! and opens the app with a prompt naming the document by its AI label;
 //! Unfiled moves to a new Project first. No app launches: GPUI's test
@@ -132,7 +132,8 @@ fn ask_claude_shares_the_documents_project_and_names_it_by_label(cx: &mut TestAp
     assert!(written["ai_connector"].get("ask").is_none(), "{written}");
 }
 
-/// Done when: the menu's Ask ChatGPT opens ChatGPT with the same prompt,
+/// Done when: the menu's Ask in a ChatGPT thread opens ChatGPT with the
+/// same prompt,
 /// and the button and the Project page repeat it from then on.
 #[gpui::test]
 fn the_last_choice_is_remembered(cx: &mut TestAppContext) {
@@ -146,11 +147,10 @@ fn the_last_choice_is_remembered(cx: &mut TestAppContext) {
     assert!(!shown(cx, "ask-menu"));
     assert_eq!(last(&tabs, cx), AskWith::ChatGpt);
     asked_about(cx, AskWith::ChatGpt, &fixture.lease_doc);
-    assert!(
-        notice(&tabs, cx)
-            .unwrap()
-            .ends_with("Only Work threads can read mdoc.")
-    );
+    assert!(notice(&tabs, cx).unwrap().ends_with(
+        "a new local Work thread with the prompt: add your question and send it. \
+                        Its ordinary chats can't read mdoc."
+    ));
     // The Settings draft keeps it, so applying Settings doesn't undo it.
     let draft = cx.update(|_, cx| tabs.read(cx).settings.read(cx).draft.ai_connector.ask);
     assert_eq!(draft, AskWith::ChatGpt);
