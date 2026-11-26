@@ -48,8 +48,16 @@ final class EditToolbarUITests: XCTestCase {
         // A key sent while edit mode is still settling can be lost: check
         // the caret reached the end with a letter typed there.
         var there = false
+        let focused = NSPredicate(format: "hasKeyboardFocus == true")
         for _ in 0..<3 where !there {
             MdocUITest.caretToTheEnd(app)
+            // On a slow runner the text once lost its focus as ⌘↓ hid the
+            // software keyboard, and typing then had nowhere to go (queue
+            // run 45732536364): a tap in the text gives it back.
+            if !text.wait(until: focused, timeout: MdocUITest.probeTimeout) {
+                MdocUITest.tapIntoText(app)
+                MdocUITest.caretToTheEnd(app)
+            }
             app.typeText("\nQ")
             there = text.wait(until: NSPredicate(format: "value ENDSWITH %@", "\nQ"), timeout: 3)
         }
