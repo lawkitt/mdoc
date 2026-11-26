@@ -240,7 +240,7 @@ fn the_move_menu_lists_every_project(cx: &mut TestAppContext) {
     });
     tabs.update(cx, |tabs, cx| {
         tabs.document_menu = Some((document, gpui::point(px(40.), px(200.))));
-        tabs.move_menu = false;
+        tabs.move_menu = None;
         cx.notify();
     });
     assert!(shown(cx, "context-delete-document"));
@@ -292,4 +292,91 @@ fn ask_on_unfiled_offers_the_shared_project_first(cx: &mut TestAppContext) {
         assert_eq!(toast.as_deref(), Some("“contract” moved to “Lease”."));
         assert_eq!(cx.update(|_, cx| tabs.read(cx).ask_last()), AskWith::Claude);
     }
+}
+
+/// Review of #1325: the move menu goes with the document it was opened
+/// for: Home, another tab or a page closes it, so no row moves a
+/// document no longer shown.
+#[gpui::test]
+fn the_move_menu_closes_when_its_document_leaves(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = document_with(cx, dir.path(), Projects::One);
+    more(cx, "more-move");
+    assert!(shown(cx, "document-context-menu"));
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_home(window, cx));
+    assert!(!shown(cx, "document-context-menu"));
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.document_menu.is_none() && tabs.move_menu.is_none());
+    });
+}
+
+/// Review of #1325: Tab through a long move menu reveals each row it
+/// reaches, so Enter never moves to a Project out of sight.
+#[gpui::test]
+fn tab_reveals_the_move_menus_rows(cx: &mut TestAppContext) {
+    cx.update(crate::bind_all_keys);
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = document_with(cx, dir.path(), Projects::None);
+    cx.update(|window, _| window.activate_window());
+    for i in 0..12 {
+        add_project(&tabs, cx, &format!("Matter {i}"));
+    }
+    open_share(&tabs, cx);
+    click_toolbar(cx, "share-move-to-project");
+    let list = cx.debug_bounds("context-move-projects").unwrap();
+    let mut seen = 0;
+    for _ in 0..16 {
+        cx.simulate_keystrokes("tab");
+        cx.run_until_parked();
+        draw(cx);
+        draw(cx);
+        let focused = cx.update(|window, cx| {
+            let tabs = tabs.read(cx);
+            (tabs.move_row_focus.borrow().iter())
+                .find(|(_, focus)| focus.is_focused(window))
+                .map(|(id, _)| id.clone())
+        });
+        let Some(id) = focused else {
+            continue;
+        };
+        seen += 1;
+        let row: &'static str = Box::leak(format!("context-move-{id}").into_boxed_str());
+        let row = cx.debug_bounds(row).unwrap();
+        assert!(
+            row.top() >= list.top() - px(1.) && row.bottom() <= list.bottom() + px(1.),
+            "{id}: {row:?} outside {list:?}"
+        );
+    }
+    assert!(seen > 8, "Tab reached rows past the eighth ({seen})");
+}
+
+/// Review of #1325: an Ask that moves into the shared Project asks only
+/// while it still is shared; a share made meanwhile stays.
+#[gpui::test]
+fn a_move_into_the_shared_project_never_undoes_a_newer_share(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, project) = document_with(cx, dir.path(), Projects::Shared);
+    let project = project.unwrap();
+    let other = add_project(&tabs, cx, "Estate");
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.ask_from_tab(
+            tab,
+            AskWith::Claude,
+            false,
+            Some(project.clone()),
+            window,
+            cx,
+        );
+        // Shared from elsewhere before the move lands.
+        assert!(tabs.share_with_ai(&other, cx));
+    });
+    wait(cx, 300);
+    assert_eq!(
+        project_of_tab(&tabs, cx, tab).as_deref(),
+        Some(project.as_str())
+    );
+    assert_eq!(shared(&tabs, cx), Some(other));
+    assert!(cx.opened_url().is_none(), "nothing is asked");
 }

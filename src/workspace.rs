@@ -332,8 +332,13 @@ pub(super) struct Workspace {
     /// A document row's menu: its document, and where it opened.
     document_menu: Option<(mdoc_store::document_id::VaultId, gpui::Point<gpui::Pixels>)>,
     /// The document menu opened from Share, the ⋯ menu or the menu bar:
-    /// moves only, no Delete (#1312).
-    move_menu: bool,
+    /// moves only, no Delete, for the tab it was opened from; it closes
+    /// once that tab no longer shows (#1312).
+    move_menu: Option<u64>,
+    /// Its Project rows' focus, and its list's scroll, so Tab reveals the
+    /// row it reaches.
+    move_row_focus: std::cell::RefCell<std::collections::HashMap<String, gpui::FocusHandle>>,
+    move_menu_scroll: gpui::ScrollHandle,
     import_busy: Arc<AtomicBool>,
     docx_queue: docx_queue::DocxQueue,
     quit_flow: quit_flow::QuitFlow,
@@ -628,7 +633,9 @@ impl Workspace {
             awaiting_prompt: false,
             notices: Default::default(),
             document_menu: None,
-            move_menu: false,
+            move_menu: None,
+            move_row_focus: Default::default(),
+            move_menu_scroll: Default::default(),
             import_busy: Arc::new(AtomicBool::new(false)),
             docx_queue: docx_queue::DocxQueue::default(),
             quit_flow: quit_flow::QuitFlow::default(),
@@ -3276,6 +3283,13 @@ impl Render for Workspace {
             window.focus(&self.rail_toggle_focus, cx);
             self.sidebar.escape_to(self.rail_toggle_focus.clone());
         }
+        // The move menu goes with the document it was opened for.
+        if let Some(tab) = self.move_menu
+            && (tab != self.tabs.active() || self.showing_overview(cx))
+        {
+            self.document_menu = None;
+            self.move_menu = None;
+        }
         // A finished edge drag saves the width it left.
         if !cx.has_active_drag() && self.sidebar.resizing() {
             self.end_sidebar_resize(cx);
@@ -3542,7 +3556,7 @@ impl Render for Workspace {
                                 .on_mouse_down_out(cx.listener(
                                     |this, _: &gpui::MouseDownEvent, _, cx| {
                                         this.document_menu = None;
-                                        this.move_menu = false;
+                                        this.move_menu = None;
                                         cx.notify();
                                     },
                                 ))

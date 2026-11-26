@@ -629,7 +629,7 @@ impl Workspace {
                     RowKey::Document(id) => {
                         if let Some(id) = VaultId::parse(id) {
                             this.document_menu = Some((id, at));
-                            this.move_menu = false;
+                            this.move_menu = None;
                         }
                     }
                     RowKey::Project(id) => this.project_ui.header_menu = Some((id.clone(), at)),
@@ -914,7 +914,7 @@ impl Workspace {
                     window.prevent_default();
                     window.focus(&this.menu_focus, cx);
                     this.document_menu = Some((id.clone(), event.position));
-                    this.move_menu = false;
+                    this.move_menu = None;
                     cx.notify();
                 }
             }),
@@ -1077,18 +1077,17 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.quit_flow.quitting() || self.vault.vault().is_none() {
+        // As the move itself checks: a loaded, converted Vault document
+        // not already moving.
+        if self.quit_flow.quitting() || !self.can_move(tab, cx) {
             return;
         }
         let Some(document) = self.tab_document(tab, cx) else {
             return;
         };
-        if self.moving.contains(&document) {
-            return;
-        }
         self.menu_return = window.focused(cx);
         self.document_menu = Some((document, at));
-        self.move_menu = true;
+        self.move_menu = Some(tab);
         window.focus(&self.menu_focus, cx);
         cx.notify();
     }
@@ -1155,11 +1154,23 @@ impl Workspace {
                 (self.projects.summaries().into_iter()).filter(|p| project.as_ref() != Some(&p.id))
             {
                 let (to, document) = (p.id.clone(), document.clone());
+                // Tab reveals a row scrolled out of the list.
+                let focus = (self.move_row_focus.borrow_mut())
+                    .entry(p.id.clone())
+                    .or_insert_with(|| cx.focus_handle().tab_stop(true))
+                    .clone();
                 others.push(
                     row(
                         format!("context-move-{}", p.id),
                         format!("Move to “{}”", p.name),
                     )
+                    .map(|v| {
+                        ui::reveal_focus(
+                            v.track_focus(&focus),
+                            focus,
+                            self.move_menu_scroll.clone(),
+                        )
+                    })
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.close_document_menu(window, cx);
                         this.drop_document(document.clone(), Some(to.clone()), window, cx);
@@ -1172,6 +1183,7 @@ impl Workspace {
                 items.push(
                     div()
                         .id("context-move-projects")
+                        .track_scroll(&self.move_menu_scroll)
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "context-move-projects".into())
                         })
@@ -1204,7 +1216,7 @@ impl Workspace {
                 );
             }
         }
-        if project.is_none() && !self.moving.contains(document) && !self.move_menu {
+        if project.is_none() && !self.moving.contains(document) && self.move_menu.is_none() {
             let chosen = self.tree.to_delete(document.as_str());
             let label = if chosen.len() > 1 {
                 format!("Delete {} Documents…", chosen.len())
@@ -1229,7 +1241,7 @@ impl Workspace {
 
     pub(super) fn close_document_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.document_menu = None;
-        self.move_menu = false;
+        self.move_menu = None;
         if let Some(focus) = self.menu_return.take() {
             window.focus(&focus, cx);
         }

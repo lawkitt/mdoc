@@ -509,8 +509,18 @@ impl DocumentView {
         let for_ai = copy && (copy_reason.is_none() || self.copy_step(cx).is_some());
         // Notes live in the Inspector, beside the text.
         let notes = copy && self.notes_available();
-        // Only a document in the Vault can move into a Project.
-        let movable = self.session.document.vault.is_some();
+        // Only a loaded, converted Vault document moves, as the window's
+        // own check has it.
+        let move_reason = if self.session.document.vault.is_none() {
+            Some("Only a document in the Vault moves.")
+        } else if self.lifecycle.source_only() {
+            Some("Convert the document to Markdown first.")
+        } else if !self.lifecycle.ready() || self.lifecycle.loading() {
+            Some("Available once the document has loaded.")
+        } else {
+            None
+        };
+        let movable = move_reason.is_none();
         let spelling_on = !self.spelling_control_off() && !self.spelling.off_here();
         let misspelled = self.editor.read(cx).diagnostics().len();
         // A menu choice hands focus back to the document first, so the action
@@ -712,7 +722,7 @@ impl DocumentView {
                                 None,
                                 theme,
                                 movable,
-                                (!movable).then_some("Only a document in the Vault moves.".into()),
+                                move_reason.map(Into::into),
                             )
                             .when(cfg!(test), |v| v.debug_selector(|| "more-move".into()))
                             .on_click(cx.listener(
