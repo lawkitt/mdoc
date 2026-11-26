@@ -474,3 +474,113 @@ fn a_failed_open_deliveries_save_restores_it(cx: &mut TestAppContext) {
     assert!(shown(cx, "settings-error"));
     assert!(shown(cx, "ai-open-deliveries"));
 }
+
+/// Done when (item 15): "Companion shortcut" shows with the preview on, at
+/// ⌥M and on; its recorder saves the next shortcut pressed, before any
+/// binding takes it, and Esc stops it without a change.
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn the_shortcut_is_option_m_and_records_another(cx: &mut TestAppContext) {
+    use mdoc_store::settings::Hotkey;
+    let apps = apps(None, None);
+    let (panel, shared, cx) = page(&apps, false, cx);
+    assert!(!shown(cx, "ai-hotkey-record"), "shown with the preview off");
+    click(cx, "ai-connector-preview");
+    assert!(shown(cx, "ai-hotkey-record") && shown(cx, "ai-hotkey"));
+    let saved = |shared: &Shared| shared.borrow().snapshot().unwrap().ai_connector;
+    assert_eq!(saved(&shared).hotkey, Hotkey::COMPANION);
+    assert!(!saved(&shared).hotkey_off);
+    click(cx, "ai-hotkey-record");
+    assert!(shown(cx, "ai-hotkey-hint"), "it says what to press");
+    // A key without ⌘, ⌃ or ⌥ isn't one: it says why and keeps waiting.
+    cx.simulate_keystrokes("shift-a");
+    draw(cx);
+    panel.update(cx, |p, _| {
+        assert!(p.ai.recording.is_some());
+        assert!(
+            (p.ai.hotkey_hint.as_deref().unwrap()).starts_with("Hold ⌘, ⌃ or ⌥"),
+            "{:?}",
+            p.ai.hotkey_hint
+        );
+    });
+    cx.simulate_keystrokes("ctrl-shift-space");
+    draw(cx);
+    let changed = Hotkey::new(true, false, true, false, "Space").unwrap();
+    assert_eq!(saved(&shared).hotkey, changed);
+    assert!(!shown(cx, "ai-hotkey-hint"));
+    panel.update(cx, |p, _| assert!(p.ai.recording.is_none()));
+    // Esc stops recording and changes nothing; Settings' own Esc binding
+    // never sees it.
+    click(cx, "ai-hotkey-record");
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    panel.update(cx, |p, _| {
+        assert!(p.ai.recording.is_none());
+        assert!(p.open, "Esc didn't close Settings");
+    });
+    assert_eq!(saved(&shared).hotkey, changed);
+    // Leaving the page stops it too.
+    click(cx, "ai-hotkey-record");
+    panel.update_in(cx, |p, window, cx| {
+        p.change_category(Category::General, window, cx)
+    });
+    panel.update(cx, |p, _| assert!(p.ai.recording.is_none()));
+}
+
+/// Done when (item 15): the switch turns the shortcut off and on again,
+/// keeping the recorded one, and off the recorder records nothing.
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn the_switch_turns_the_shortcut_off_and_keeps_it(cx: &mut TestAppContext) {
+    use mdoc_store::settings::Hotkey;
+    let apps = apps(None, None);
+    let (panel, shared, cx) = page(&apps, true, cx);
+    let saved = |shared: &Shared| shared.borrow().snapshot().unwrap().ai_connector;
+    click(cx, "ai-hotkey");
+    assert!(saved(&shared).hotkey_off);
+    click(cx, "ai-hotkey-record");
+    panel.update(cx, |p, _| {
+        assert!(p.ai.recording.is_none(), "off: no recorder")
+    });
+    click(cx, "ai-hotkey");
+    assert!(!saved(&shared).hotkey_off);
+    assert_eq!(saved(&shared).hotkey, Hotkey::COMPANION);
+}
+
+/// Done when (item 15): a shortcut that couldn't be registered shows
+/// under the row, and not while the shortcut is off.
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn a_failed_registration_shows_under_the_row(cx: &mut TestAppContext) {
+    use mdoc_store::settings::Hotkey;
+    let apps = apps(None, None);
+    let (panel, _, cx) = page(&apps, true, cx);
+    assert!(!shown(cx, "ai-hotkey-failed"));
+    let why = crate::companion::hotkey::Refused::Taken.message(Hotkey::COMPANION);
+    panel.update(cx, |p, cx| p.hotkey_failed(Some(why), cx));
+    draw(cx);
+    assert!(shown(cx, "ai-hotkey-failed"));
+    assert!(shown(cx, "ai-hotkey-record"), "the row stays");
+    click(cx, "ai-hotkey");
+    assert!(!shown(cx, "ai-hotkey-failed"));
+}
+
+/// While the recorder waits, the registered shortcut lets go, so pressing
+/// it again records it; it comes back when recording stops.
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn recording_pauses_the_registered_shortcut(cx: &mut TestAppContext) {
+    use crate::companion::hotkey::{self, Recorded};
+    use mdoc_store::settings::Hotkey;
+    let apps = apps(None, None);
+    let (_, _, cx) = page(&apps, true, cx);
+    let recorded = cx.update(|_, cx| {
+        let recorded = Recorded::install(cx);
+        hotkey::set(Some(Hotkey::COMPANION), cx);
+        recorded
+    });
+    click(cx, "ai-hotkey-record");
+    assert_eq!(recorded.state().registered, None);
+    cx.simulate_keystrokes("escape");
+    assert_eq!(recorded.state().registered, Some(Hotkey::COMPANION));
+}

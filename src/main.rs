@@ -128,6 +128,11 @@ fn main() {
     {
         companion::probe::run();
     }
+    // The companion hotkey's native check (src/companion/hotkey_probe.rs).
+    #[cfg(all(target_os = "macos", debug_assertions, not(test)))]
+    if args.get(1).is_some_and(|arg| arg == "--mdoc-hotkey-probe") {
+        companion::hotkey_probe::run();
+    }
     if args.get(1).is_some_and(|arg| arg == "--mdoc-self-test") {
         let (Some(pdf), Some(expected)) = (args.get(2), args.get(3)) else {
             eprintln!("usage: mdoc --mdoc-self-test <pdf> <expected.txt>");
@@ -284,6 +289,7 @@ fn main() {
             .unwrap_or_default();
         menu_bar::install(handle, menu_bar, note_shown, cx);
         menu_bar::set_companion(companion, cx);
+        let _ = handle.update(cx, |workspace, _, cx| workspace.refresh_hotkey(cx));
         *open_context.borrow_mut() = Some((handle, cx.to_async()));
         if let Some(launches) = later_launches {
             // Polled: the listener is a plain thread, and a launch is rare.

@@ -416,7 +416,7 @@ impl Panel {
         self.category = Category::General;
         self.dictionary = None;
         self.recovery.forget();
-        self.ai.forget();
+        self.ai.forget(cx);
         self.number_errors = [None, None];
         self.scroll.set_offset(gpui::point(px(0.), px(0.)));
         self.error = self
@@ -644,7 +644,7 @@ impl Panel {
         self.open = false;
         self.dictionary = None;
         self.recovery.forget();
-        self.ai.forget();
+        self.ai.forget(cx);
         self.commit_visible_number(cx);
         if let Some(focus) = self.previous.take() {
             window.focus(&focus, cx);

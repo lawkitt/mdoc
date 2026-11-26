@@ -18,9 +18,12 @@
 //! of screen capture (`NSWindowSharingNone`, which not every capture path
 //! honours), and the restored reply shows only while the pointer is over
 //! it: until then the window holds a placeholder, not the text.
-//! `native.rs` makes the window; Personal and search (ADR 0128) are not
-//! here yet.
+//! `native.rs` makes the window and `hotkey.rs` registers its system-wide
+//! hotkey; Personal and search (ADR 0128) are not here yet.
 
+pub(crate) mod hotkey;
+#[cfg(all(target_os = "macos", debug_assertions, not(test)))]
+pub(crate) mod hotkey_probe;
 #[cfg(all(target_os = "macos", not(test)))]
 mod native;
 #[cfg(all(target_os = "macos", debug_assertions, not(test)))]
@@ -184,7 +187,7 @@ impl CompanionView {
             .unwrap_or_default();
         // Opening a requested document from the sidebar, or a share from
         // the Project page, changes what it shows.
-        let workspace_changes = workspace.root(cx).ok().map(|root| {
+        let workspace_changes = workspace.entity(cx).ok().map(|root| {
             cx.observe_in(&root, window, |this: &mut Self, root, window, cx| {
                 let marks = root.read(cx).companion_marks();
                 if marks != this.marks {

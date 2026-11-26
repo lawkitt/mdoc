@@ -111,6 +111,9 @@ gpui_macos = { package = "gpui-pre-macos", version = "=0.3.12" }
 # lockfile already, through gpui-pre-macos.
 objc2 = "0.6"
 raw-window-handle = "0.6"
+# The companion's system-wide hotkey (src/companion/hotkey.rs, ADR 0128).
+# macOS only: the Windows companion is not built yet.
+global-hotkey = "0.10.0"
 
 [target.'cfg(windows)'.dependencies]
 # The headless renderer.

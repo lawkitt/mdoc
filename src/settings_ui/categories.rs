@@ -79,7 +79,7 @@ impl Panel {
         self.category = category;
         self.dictionary = None;
         self.recovery.forget();
-        self.ai.forget();
+        self.ai.forget(cx);
         if category == Category::AiConnector {
             self.refresh_ai(cx);
         }
