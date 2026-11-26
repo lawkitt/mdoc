@@ -4,6 +4,7 @@ import android.content.ClipboardManager
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -69,7 +70,10 @@ class ReviewFlowTest {
         // Only the app with window focus reads the clipboard (#545).
         awaitWindowFocus()
         compose.onNodeWithText("Copy").performClick()
-        compose.waitForIdle()
+        // Below the floor the first Copy asks (Vault & Projects item 48).
+        waitFor("I checked the names myself")
+        compose.onNodeWithTag("refusal-step").performClick()
+        waitFor("Copied for AI")
         awaitWindowFocus()
         val clipboard = app.getSystemService(ClipboardManager::class.java)
         var copied = ""

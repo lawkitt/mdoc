@@ -58,7 +58,11 @@ fn a_write_between_the_connectors_two_reads_waits_for_the_check() {
         markdown: "PERSON_1 met Boris Ivanov.".into(),
     };
     let letter = vault.create_document(new).unwrap().id;
-    (vault.update_document(&letter, |d| d.set_ready(true))).unwrap();
+    (vault.update_document(&letter, |d| {
+        d.scanned = true;
+        d.set_ready(true);
+    }))
+    .unwrap();
     let boris = [person("PERSON_2", "Boris Ivanov")];
     (vault.update_project(&project, |p| p.mapping.merge(&boris))).unwrap();
     assert_eq!(

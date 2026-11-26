@@ -277,6 +277,56 @@ final class SelectionCopyUITests: XCTestCase {
         expectMarked(true)
     }
 
+    /// Below the floor, a typed document whose names nobody said were
+    /// checked: a selection copies with names, marked, and never asks
+    /// (item 48). Once Copy for AI's question is answered, it copies
+    /// plainly.
+    @MainActor
+    func testBelowTheFloorAnUncheckedDocumentCopiesMarkedWithoutAsking() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mdoc-ui-testing"]
+        app.launchEnvironment["MDOC_MARKED_LIFETIME"] = String(Self.lifetime)
+        app.launch()
+        MdocUITest.revealSidebar(app)
+        app.buttons["new-menu"].firstMatch.tap()
+        let new = app.collectionViews.buttons["New document"].firstMatch
+        XCTAssertTrue(new.waitForExistence(timeout: MdocUITest.timeout))
+        new.tap()
+        let done = app.buttons["done-editing"]
+        XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: MdocUITest.timeout))
+        text.typeText("Lunch notes\nThe park is lovely today.")
+        done.tap()
+        XCTAssertTrue(
+            app.buttons["primary-action"].wait(until: NSPredicate(format: "label BEGINSWITH 'Share'"), timeout: MdocUITest.timeout))
+
+        selectFirstWord(app)
+        let marked = item("copy-with-names", app)
+        XCTAssertFalse(menuElement("copy-selection", app).exists)
+        clearClipboard()
+        marked.tap()
+        expectCopied()
+        XCTAssertFalse(app.alerts.firstMatch.exists, "a selection's Copy asked")
+        expectMarked(true)
+
+        app.buttons["copy-for-ai"].firstMatch.tap()
+        let asked = app.alerts["Check the names yourself"]
+        XCTAssertTrue(asked.waitForExistence(timeout: MdocUITest.timeout), "no question")
+        asked.buttons["I checked the names myself"].tap()
+        XCTAssertTrue(asked.waitForNonExistence(timeout: MdocUITest.timeout))
+
+        // A new selection is checked afresh.
+        text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        selectFirstWord(app)
+        let plain = item("copy-selection", app)
+        XCTAssertFalse(menuElement("copy-with-names", app).exists)
+        clearClipboard()
+        plain.tap()
+        expectCopied()
+        expectMarked(false)
+    }
+
     /// Replace N on the bar: every name replaced, so the document is Ready
     /// and its bar has Paste.
     @MainActor

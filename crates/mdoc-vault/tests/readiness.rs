@@ -358,8 +358,10 @@ fn a_project_that_does_not_open_fails_the_check() {
 }
 
 /// Below the name finder's floor a document is never scanned: its names are
-/// decided by hand, and the save records it Ready with the fingerprint alone
-/// (#1091 Q4). It reads Ready, still unscanned, until its text changes.
+/// decided by hand, and the save records it Ready with the fingerprint and
+/// the user's "I checked the names myself" (#1091 Q4, item 48). Without the
+/// check it is not Ready, as one saved before the check existed; with it,
+/// it reads Ready, still unscanned, until its text changes.
 #[test]
 fn a_fingerprint_saved_without_a_scan_reads_ready_until_the_text_changes() {
     let folder = Folder::new();
@@ -371,6 +373,12 @@ fn a_fingerprint_saved_without_a_scan_reads_ready_until_the_text_changes() {
         .update_document(&letter, |d| d.set_ready(true))
         .unwrap();
     assert!(!saved.scanned, "scanned stays false");
+    assert_eq!(vault.readiness(&letter).unwrap(), Readiness::NotReviewed);
+    assert!(vault.text_for_ai(&letter).is_err());
+
+    vault
+        .update_document(&letter, |d| d.names_checked_by_hand = true)
+        .unwrap();
     assert_eq!(vault.readiness(&letter).unwrap(), Readiness::Ready);
     assert!(vault.text_for_ai(&letter).is_ok());
 
@@ -540,4 +548,28 @@ fn a_share_number_is_the_documents_place_in_the_vault() {
         .map(|n| n - 1)
         .collect();
     assert_eq!(after, expected);
+}
+
+/// Item 48's stored format: `names_checked_by_hand` is written only when
+/// set, so a record without it, an older build's, reads unchecked.
+#[test]
+fn the_names_check_is_stored_only_when_given() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let letter = document(&vault, None, "PERSON_1 signed.");
+    let field = |document: &mdoc_vault::Document| {
+        serde_json::to_value(document).unwrap()["names_checked_by_hand"].clone()
+    };
+    assert!(field(&vault.document(&letter).unwrap()).is_null());
+    let checked = vault
+        .update_document(&letter, |d| d.names_checked_by_hand = true)
+        .unwrap();
+    assert_eq!(field(&checked), serde_json::Value::Bool(true));
+    let mut older = serde_json::to_value(&checked).unwrap();
+    older
+        .as_object_mut()
+        .unwrap()
+        .remove("names_checked_by_hand");
+    let read: mdoc_vault::Document = serde_json::from_value(older).unwrap();
+    assert!(!read.names_checked_by_hand);
 }

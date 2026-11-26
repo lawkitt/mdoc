@@ -412,6 +412,8 @@ private fun SelectionRule.ready(documents: Documents): Documents.Session {
     session.recognize(QuietJobs)
     val start = text.indexOf("Maya Bennett")
     session.addReplacement(SourceRange(start, start + 12), Category.Person)
+    // Below the floor: "I checked the names myself" (item 48).
+    session.confirmNamesChecked()
     recreate()
     return session
 }
