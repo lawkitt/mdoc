@@ -33,6 +33,12 @@ as inline bold, not a heading; the table's cell text is kept.
   inference.
 - `handmade-checkboxes.docx`: a minimal OOXML package made locally, no
   application involved; its source XML is inside the ZIP.
+- `handmade-deleted-revisions.rtf`: RTF written by hand for #373, no
+  application involved. Tracked deletions (a `\deleted` run, a deleted
+  paragraph, an inline `\deleted`…`\deleted0` switch and a table cell's
+  deleted text) name a made-up person; one `\revised` insertion is
+  accepted. The pinned AnyDoc drops deleted revisions, so its expected
+  Markdown holds no name.
 - `handmade-revisions.doc`: built with `document` and `run` from upstream
   PR 174's `tests/doc_revisions.rs` at
   `96d59988d6e9f0b946d7849c1d64d80b61680502`. Recipe: deleted `Old clause`
