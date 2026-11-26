@@ -153,14 +153,14 @@ fn turning_the_preview_off_stops_the_connector(cx: &mut TestAppContext) {
     }
 }
 
-/// Settings › AI connector open, its next save held a minute, and "AI
-/// connector (preview)" clicked, as a person turns it.
-fn click_preview_held(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
+/// Settings › AI connector open, its next save held held seconds, and
+/// "AI connector (preview)" clicked, as a person turns it.
+fn click_preview_held(tabs: &Entity<Workspace>, held: u64, cx: &mut VisualTestContext) {
     cx.simulate_resize(size(px(1100.), px(2400.)));
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.settings.update(cx, |panel, cx| {
             panel.show_category(settings_ui::Category::AiConnector, window, cx);
-            let gate = (cx.background_executor()).timer(std::time::Duration::from_secs(60));
+            let gate = (cx.background_executor()).timer(std::time::Duration::from_secs(held));
             panel.hold_next_save(cx.background_executor().spawn(gate));
         })
     });
@@ -179,7 +179,7 @@ fn publish(tabs: &Entity<Workspace>, event: settings_ui::Event, cx: &mut VisualT
     cx.run_until_parked();
 }
 
-/// The held save lands.
+/// A minute passes: a save held that long lands.
 fn save_lands(cx: &mut VisualTestContext) {
     cx.executor()
         .advance_clock(std::time::Duration::from_secs(61));
@@ -213,7 +213,7 @@ fn a_model_check_mid_save_leaves_off_off(cx: &mut TestAppContext) {
     tabs.update(cx, |tabs, _| tabs.ai_endpoint = Some(endpoint.clone()));
     set_preview(&tabs, true, cx);
     assert!(listening(&endpoint));
-    click_preview_held(&tabs, cx);
+    click_preview_held(&tabs, 60, cx);
     assert!(saved_on(&tabs, cx), "the save is still held");
     assert_stopped(&tabs, &endpoint, cx);
     publish(&tabs, settings_ui::Event::Checked, cx);
@@ -242,7 +242,7 @@ fn on_mid_save_starts_once(cx: &mut TestAppContext) {
     let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
     tabs.update(cx, |tabs, _| tabs.ai_endpoint = Some(endpoint.clone()));
     set_preview(&tabs, false, cx);
-    click_preview_held(&tabs, cx);
+    click_preview_held(&tabs, 60, cx);
     assert!(!saved_on(&tabs, cx), "the save is still held");
     publish(&tabs, settings_ui::Event::Checked, cx);
     assert_stopped(&tabs, &endpoint, cx);
@@ -267,5 +267,30 @@ fn on_mid_save_starts_once(cx: &mut TestAppContext) {
         now.is_some_and(|now| std::sync::Arc::ptr_eq(&now, &first)),
         "started again"
     );
+    assert!(listening(&endpoint));
+}
+
+/// Review of #1322: off, then on again while the off is still saving: a
+/// model check meanwhile starts nothing, the off landing leaves it
+/// stopped, and the on starts it once its own save lands.
+#[gpui::test]
+fn off_then_on_mid_save_starts_once_the_on_lands(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let dir = tempfile::tempdir().unwrap();
+    let endpoint = Endpoint::for_profile(Some(&dir.path().join("profile"))).unwrap();
+    tabs.update(cx, |tabs, _| tabs.ai_endpoint = Some(endpoint.clone()));
+    set_preview(&tabs, true, cx);
+    assert!(listening(&endpoint));
+    click_preview_held(&tabs, 60, cx);
+    // On again, its own save queued behind the off's and held longer.
+    click_preview_held(&tabs, 120, cx);
+    assert!(saved_on(&tabs, cx), "the off is still saving");
+    publish(&tabs, settings_ui::Event::Checked, cx);
+    assert_stopped(&tabs, &endpoint, cx);
+    save_lands(cx);
+    assert!(!saved_on(&tabs, cx), "the off landed");
+    assert_stopped(&tabs, &endpoint, cx);
+    save_lands(cx);
+    assert!(saved_on(&tabs, cx), "the on landed");
     assert!(listening(&endpoint));
 }

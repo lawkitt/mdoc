@@ -179,11 +179,15 @@ impl Panel {
     }
 
     /// "AI connector (preview)" shown off while Settings is open or its
-    /// save hasn't landed (#1220, #1273): the window treats it as off,
-    /// whatever is saved, so nothing starts the connector or takes the
-    /// hotkey meanwhile. Closed with nothing saving, the saved value rules.
+    /// save hasn't landed (#1220, #1273), or an off still being saved under
+    /// an on shown since: the window treats it as off, whatever is saved,
+    /// so nothing starts the connector or takes the hotkey meanwhile, and
+    /// an on after an off starts once its own save lands. Closed with
+    /// nothing saving, the saved value rules.
     pub(crate) fn ai_connector_shown_off(&self) -> bool {
-        !self.draft.ai_connector.preview && (self.open || self.applying || self.save_pending)
+        let shown_off =
+            !self.draft.ai_connector.preview && (self.open || self.applying || self.save_pending);
+        shown_off || self.saving_preview == Some(false)
     }
 
     /// Tests: hold the next save until `gate` finishes.

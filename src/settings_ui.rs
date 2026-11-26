@@ -153,6 +153,8 @@ pub struct Panel {
     number_errors: [Option<String>; 2],
     number_subscriptions: Vec<gpui::Subscription>,
     save_pending: bool,
+    /// "AI connector (preview)" as the save in flight writes it (#1273).
+    saving_preview: Option<bool>,
     reset_theme: Option<u64>,
     theme_revision: u64,
     #[cfg(test)]
@@ -349,6 +351,7 @@ impl Panel {
             number_errors: [None, None],
             number_subscriptions: Vec::new(),
             save_pending: false,
+            saving_preview: None,
             reset_theme: None,
             theme_revision: 0,
             #[cfg(test)]
@@ -913,6 +916,7 @@ impl Panel {
         // finishes last.
         let write = next_write();
         self.applying = true;
+        self.saving_preview = Some(prefs.ai_connector.preview);
         #[cfg(test)]
         let save_gate = self.save_gate.take();
         let task = cx.background_executor().spawn({
@@ -936,6 +940,7 @@ impl Panel {
             let result = task.await.map(|saved| saved && is_latest_write(write));
             let _ = this.update(cx, |this, cx| {
                 this.applying = false;
+                this.saving_preview = None;
                 match result {
                     // Overtaken: publish nothing; the draft, which holds the
                     // later change too, saves next, carrying a General
