@@ -887,15 +887,19 @@ fn install_runtime_with(
         &crate::model_download::Progress,
     ) -> Result<(), crate::model_download::DownloadError>,
 ) -> Result<(), SetupError> {
-    let temporary = tempfile::tempdir_in(root)?;
-    let path = temporary.path().join("runtime.archive");
     let mut sources = runtime.sources.iter().peekable();
     while let Some(source) = sources.next() {
+        // Named by its digest and kept between tries, so a download that
+        // failed partway resumes (#1288); removed once installed.
+        let sha = source.archive_sha.get(..16).unwrap_or(source.archive_sha);
+        let path = root.join(format!("{}-{sha}.archive", runtime.name));
         match fetch(source.url, source.size, source.archive_sha, &path, progress) {
             Ok(()) => {
                 let file = File::open(&path)?;
                 progress.check()?;
                 extract_runtime(root, runtime, source, &file)?;
+                drop(file);
+                let _ = fs::remove_file(&path);
                 return verify(&root.join(runtime.library), source.library_sha(runtime));
             }
             Err(error) if source_unavailable(&error) => {
