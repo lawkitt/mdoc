@@ -164,9 +164,28 @@ impl DiscoveryInput {
                     .get(before)
                     .is_some_and(|shield| shield.start == range.start && shield.end > range.end)
         };
+        // A kept mention holds what is inside it, as a longer hit does
+        // below: Keep on "Maya Ellison" never lets its own "Ellison" be
+        // proposed inside it (#1277).
+        let mut held: Vec<(usize, usize)> = self.excluded.iter().copied().collect();
+        held.sort_by_key(|&(start, end)| (start, std::cmp::Reverse(end)));
+        let held_reach: Vec<usize> = held
+            .iter()
+            .scan(0, |furthest, &(_, end)| {
+                *furthest = end.max(*furthest);
+                Some(*furthest)
+            })
+            .collect();
+        let inside_kept = |range: &Range<usize>| {
+            let before = held.partition_point(|&(start, _)| start <= range.start);
+            before
+                .checked_sub(1)
+                .is_some_and(|i| held_reach[i] >= range.end)
+        };
         hits.retain(|(index, range)| {
             self.enabled[*index]
                 && !self.excluded.contains(&(range.start, range.end))
+                && !inside_kept(range)
                 && exact_boundary(source, range, &self.originals[*index])
                 && (source[range.clone()] == *self.originals[*index] || !glued(source, range))
                 && (!self.url[*index] || manual(*index) || crate::web::whole(source, range))

@@ -1371,3 +1371,75 @@ fn below_the_floor_a_text_the_rules_cannot_read_is_never_ready() {
         crate::vault::Readiness::NotReviewed
     );
 }
+
+/// iOS's seeded letter below the floor (#1277's review): Keep on a name
+/// proposed after the document's first save keeps every mention, and the
+/// rule pack's finds never split a kept name into new proposals.
+#[test]
+fn below_the_floor_keep_on_a_later_proposed_name_keeps_its_mentions() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let project = vault.create_project("Ellison".into()).unwrap().id;
+    let names = |session: &DocumentSession| {
+        let names = [
+            ("Maya Ellison", Category::Person),
+            ("Ms Ellison", Category::Person),
+            ("maya.ellison@example.com", Category::Email),
+        ];
+        let action = ReviewAction::ProposeNames {
+            names: (names.iter())
+                .map(
+                    |(wording, category)| crate::document_session::actions::ProposedName {
+                        wording: (*wording).into(),
+                        category: *category,
+                    },
+                )
+                .collect(),
+        };
+        session.review(action).unwrap();
+        session.save_pending_into_vault(vault.clone()).unwrap();
+    };
+    let start = |text: &str| {
+        let session = session(text, "Doc");
+        session.set_no_name_finder(true);
+        session
+            .join_project(vault.clone(), project.clone())
+            .unwrap();
+        session.save_into_vault(vault.clone()).unwrap();
+        session
+    };
+    let quotation = start("Customer: Maya Ellison.");
+    names(&quotation);
+    quotation.replace_all().unwrap();
+    quotation.save_pending_into_vault(vault.clone()).unwrap();
+
+    let text = "We act for Maya Ellison. Ms Ellison wrote. Reply to maya.ellison@example.com, Maya Ellison.";
+    let letter = start(text);
+    names(&letter);
+    let before = letter.snapshot().unwrap();
+    let maya = (before.mentions.iter())
+        .find(|m| m.original == "Maya Ellison")
+        .unwrap()
+        .clone();
+    let identity = maya.identity;
+    let count = (before.mentions.iter())
+        .filter(|m| m.identity == identity)
+        .count();
+    letter.keep(maya.range, Scope::All).unwrap();
+    letter.save_pending_into_vault(vault.clone()).unwrap();
+    let after = letter.snapshot().unwrap();
+    let hers: Vec<_> = (after.mentions.iter())
+        .filter(|m| m.identity == identity)
+        .map(|m| (m.original.as_str(), m.state))
+        .collect();
+    assert_eq!(hers.len(), count, "{hers:?}");
+    assert!(
+        hers.iter().all(|(_, s)| *s == MentionState::Kept),
+        "{hers:?}"
+    );
+    let proposed: Vec<_> = (after.mentions.iter())
+        .filter(|m| m.state == MentionState::Proposed)
+        .map(|m| m.original.as_str())
+        .collect();
+    assert!(!proposed.contains(&"Ellison"), "{proposed:?}");
+}
