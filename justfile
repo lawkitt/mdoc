@@ -38,7 +38,8 @@ deny-advisories:
 # Cargo.lock must match Cargo.toml (ADR 0053); no `#[path]` under src/ (ADR 0069);
 # no GPUI under the GUI-free crates (ADR 0069); no unexplained fixed delay in the
 # mobile apps' code (ADR 0104); the docs' ceilings, folders and ADR numbers
-# (scripts/dev/docs-lint.sh); then clippy with warnings as errors
+# (scripts/dev/docs-lint.sh); then clippy with warnings as errors, and the plain
+# binary (check-bin)
 lint:
     cargo metadata --locked --format-version 1 > /dev/null
     scripts/dev/docs-lint.sh
@@ -46,6 +47,13 @@ lint:
     scripts/dev/gui-free.sh
     scripts/dev/fixed-delays.sh
     cargo clippy --workspace --all-targets --features headless-renders -- -D warnings
+    just check-bin
+
+# The shipped binary alone, as `just package` builds it (#1275): clippy's
+# --all-targets turns on the dev-dependency gpui/test-support for the bin too,
+# so an API GPUI has only for tests compiles there and fails the release
+check-bin:
+    cargo check --locked -p mdoc --bin mdoc
 
 # shellcheck and shfmt over scripts/; shfmt's style is in .editorconfig (ADR 0070)
 lint-scripts:
