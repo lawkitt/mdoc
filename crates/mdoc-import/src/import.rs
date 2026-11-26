@@ -3135,8 +3135,9 @@ EMC\n";
 
     /// #395: a DOCX table's cells deleted as a tracked change (`w:cellDel`)
     /// naming a made-up person and a phone number never reach the
-    /// Markdown; the cells after them move left, as accepting the deletion
-    /// does, and an inserted cell (`w:cellIns`) stays.
+    /// Markdown, nor does the footnote only a deleted cell references;
+    /// each deleted cell keeps its place, empty, so the columns after it
+    /// stay, and an inserted cell (`w:cellIns`) stays.
     #[test]
     fn a_deleted_table_cell_never_reaches_the_markdown() {
         let path = fixture("handmade-deleted-cell.docx");
@@ -3146,10 +3147,20 @@ EMC\n";
             .replace("\r\n", "\n");
         let markdown = imported.markdown.replace("\r\n", "\n");
         assert_eq!(markdown.trim_end(), expected.trim_end());
-        for deleted in ["Marisol", "Quenby", "555-0173", "Guarantor"] {
+        for deleted in [
+            "Marisol",
+            "Quenby",
+            "555-0173",
+            "Guarantor",
+            "guarantees",
+            "[^1]",
+        ] {
             assert!(!markdown.contains(deleted), "{deleted} in {markdown}");
         }
-        for kept in ["| Landlord Ltd | Owner |", "| The Tenant | Occupier |"] {
+        for kept in [
+            "| Landlord Ltd |  | Owner |",
+            "| The Tenant |  | Occupier |",
+        ] {
             assert!(markdown.contains(kept), "{kept} not in {markdown}");
         }
         assert_eq!(imported.note(), None);

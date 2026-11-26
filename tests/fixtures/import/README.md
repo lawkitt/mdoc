@@ -89,6 +89,6 @@ current shared code gives byte-identical fixtures.
 `handmade-hidden-content.docx.md` holds no name because the pinned AnyDoc
 reads no comment or property parts and skips `w:del` and `w:moveFrom`,
 with no option to keep them. `handmade-deleted-cell.docx.md` holds none
-either: since lawkitt/anydoc#13 the pinned AnyDoc leaves out a table cell
-deleted as a tracked change (`w:cellDel`), and the cells after it move
-left (#395).
+either: since lawkitt/anydoc#13 and #14 the pinned AnyDoc leaves a table
+cell deleted as a tracked change (`w:cellDel`) empty in its place, and
+drops a note only deleted content references (#395).
