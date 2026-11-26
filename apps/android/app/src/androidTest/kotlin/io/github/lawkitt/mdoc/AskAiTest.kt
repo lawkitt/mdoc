@@ -220,8 +220,9 @@ class AskAiTest {
             compose.waitForShown(paste)
             compose.shown(paste).performClick()
             // Taken: the banner goes and the Reply pane shows; else tapped again.
-            compose.waitUntil(HOST_STALLS) { compose.exists(restored) || !compose.exists(hasTestTag("reply-banner")) }
-            if (compose.exists(restored) || !compose.exists(hasTestTag("reply-banner"))) break
+            val taken = { compose.exists(restored) || !compose.exists(hasTestTag("reply-banner")) }
+            runCatching { compose.waitUntil(HOST_STALLS, taken) }
+            if (taken()) break
         }
         // The Reply pane, restored (its text is a TextView's).
         compose.waitForText("1 value restored")
