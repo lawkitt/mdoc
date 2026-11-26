@@ -8,4 +8,6 @@ Signed by the Landlord.
 | --- | --- |
 | Guarantor | none |
 
+See [the register](https://example.com/register).
+
 End.
