@@ -137,8 +137,9 @@ jobs:
     name: ${{ fromJSON('{"macos":"ci/macos (renders)","windows":"ci/windows (hosted, renders)"}')[inputs.os] }}
     if: inputs.os == 'windows'
     runs-on: windows-latest
-    # Job limits (ADR 0095): a cold build (32 minutes) and the render test.
-    timeout-minutes: 55
+    # Job limits (ADR 0095): a cold build (up to 32 minutes) and the render
+    # test up to its 25-minute watchdog.
+    timeout-minutes: 60
     env:
       SCREENS: ${{ inputs.screens }}
     steps:
@@ -147,10 +148,13 @@ jobs:
           ref: ${{ inputs.ref }}
           persist-credentials: false
 
+      # Restores the tests job's cache and never saves it: on main (the
+      # nightly) this job's narrower build must not take the `test` key.
       - uses: ./.github/actions/setup
         with:
           tools: just cargo-nextest
           cache-key: test
+          cache-save: "false"
 
       - id: renders
         run: just test-tier renders
