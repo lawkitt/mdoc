@@ -95,12 +95,13 @@ class Jobs(private val context: Context) {
         )
         this.token.set(token)
         if (stopped.value?.documentId == documentId) clearInterrupted()
+        val number = LongJobService.nextJob()
         return scope.async {
             try {
                 // A foreground service starts only while mdoc is on screen;
                 // refused, the job does not run.
-                LongJobService.wanted = true
-                ContextCompat.startForegroundService(context, LongJobService.start(context, kind))
+                LongJobService.wanted = number
+                ContextCompat.startForegroundService(context, LongJobService.start(context, kind, number))
                 // Written first: a process Android ends mid-job leaves it behind.
                 saveInterrupted(InterruptedJob(kind, documentId))
                 val result = withContext(Dispatchers.IO) { runCatching { work(token) } }
@@ -128,8 +129,9 @@ class Jobs(private val context: Context) {
             } finally {
                 // A service not yet in the foreground must not be stopped: Android
                 // ends the app for that. It stops itself once it gets there.
-                LongJobService.wanted = false
-                if (LongJobService.started) context.stopService(LongJobService.intent(context))
+                // Its own service only: the one before may not be destroyed yet (#689).
+                LongJobService.wanted = 0L
+                if (LongJobService.started == number) context.stopService(LongJobService.intent(context))
                 this@Jobs.token.set(null)
                 running.value = null
             }
