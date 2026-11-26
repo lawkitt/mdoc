@@ -192,11 +192,19 @@ final class SelectionCopyUITests: XCTestCase {
         // copy fills the first.
         let withNames = menuElement("copy-with-names", app)
         let forward = nextPage(app)
-        if !withNames.exists, forward.exists { forward.tap() }
+        let paged = !withNames.exists && forward.exists
+        if paged { forward.tap() }
         XCTAssertTrue(withNames.waitForExistence(timeout: MdocUITest.timeout), "no Copy with names: \(shownItems(app))")
-        XCTAssertTrue(
-            withNames.frame.minY > replace.frame.minY || withNames.frame.minX > replace.frame.minX,
-            "Copy with names comes after Replace 1 and copy")
+        expectNothingSendsOn(app)
+        // On the next page it comes after Replace 1 and copy already.
+        if !paged {
+            XCTAssertTrue(
+                withNames.frame.minY > replace.frame.minY || withNames.frame.minX > replace.frame.minX,
+                "Copy with names comes after Replace 1 and copy")
+        }
+        // Back to Replace 1 and copy where the menu pages sideways (iOS 27).
+        let previous = app.buttons["Previous Page"].firstMatch
+        if !replace.isHittable, previous.exists { previous.tap() }
 
         clearClipboard()
         replace.tap()
