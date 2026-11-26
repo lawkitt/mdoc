@@ -5,6 +5,7 @@ use super::Selection;
 use crate::{
     document_view::{DocumentView, Inspector},
     pii::ui::{APPLIED_ID, CopyForAi, KEPT_ID},
+    refusal::Step,
     style, ui,
 };
 use gpui::{AnyElement, App, Context, Focusable, Window, div, prelude::*, px};
@@ -135,11 +136,7 @@ impl DocumentView {
                     .child(
                         ui::filled_button(
                             "share-copy-for-ai",
-                            match step {
-                                Some(step) => step.label(),
-                                None if copied && self.copied_for_ai => "Copied".into(),
-                                None => "Copy for AI".into(),
-                            },
+                            self.share_copy_label(step, copied, cx),
                             theme,
                             copy_enabled,
                         )
@@ -204,6 +201,28 @@ impl DocumentView {
     #[cfg(test)]
     pub(in crate::pii::ui) fn review_tab_label(&self, cx: &App) -> String {
         review_tab_label(self.replacement_entity_count(cx))
+    }
+
+    /// The Share tab's copy button: Copy for AI, or the step it needs
+    /// first. "Replace N names and copy" counts names, as the status above
+    /// it and the header's Apply do (#1314); the step keeps the places, so
+    /// a button drawn for another count still replaces nothing.
+    pub(in crate::pii::ui) fn share_copy_label(
+        &self,
+        step: Option<Step>,
+        copied: bool,
+        cx: &App,
+    ) -> String {
+        match step {
+            Some(Step::ReplaceAndCopy(_)) => {
+                let names = self.pending_name_count(cx);
+                let unit = if names == 1 { "name" } else { "names" };
+                format!("Replace {names} {unit} and copy")
+            }
+            Some(step) => step.label(),
+            None if copied && self.copied_for_ai => "Copied".into(),
+            None => "Copy for AI".into(),
+        }
     }
 
     /// The Share tab's status line. It says the names are aliases only

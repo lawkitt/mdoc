@@ -2712,14 +2712,15 @@ fn a_running_scan_shows_skeleton_rows_and_keeps_rescan_off(cx: &mut gpui::TestAp
 }
 
 /// #1314: one unit in the panel. A name that appears twice counts once in
-/// the Review tab, the Share status and the header's Apply, and the status
-/// says the places apart; after Apply the status counts the names replaced.
+/// the Review tab, the Share status and button and the header's Apply, and
+/// the status says the places apart; after Apply the status counts the
+/// names replaced. The panel is open, on its Share tab, as a user sees it.
 #[gpui::test]
 fn the_panel_counts_names_and_says_the_places_apart(cx: &mut gpui::TestAppContext) {
     use mdoc_pii::Category;
     let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(1200.), px(800.)));
-    app.update(cx, |app, cx| {
+    app.update_in(cx, |app, window, cx| {
         let source = "Anna Petrova met Bob Stone. Anna Petrova left.";
         app.editor.update(cx, |e, cx| e.set_text(source, cx));
         app.pii.reviewing = true;
@@ -2727,9 +2728,27 @@ fn the_panel_counts_names_and_says_the_places_apart(cx: &mut gpui::TestAppContex
         review.add_manual(source, 0..12, Category::Person).unwrap();
         review.add_manual(source, 17..26, Category::Person).unwrap();
         app.review_changed(cx);
+        if !app.replacements_open() {
+            app.toggle_replacements_panel(window, cx);
+        }
     });
     cx.run_until_parked();
+    let draw = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| window.draw(cx).clear(cx));
+    let click = |cx: &mut gpui::VisualTestContext, id: &'static str| {
+        draw(cx);
+        let at = cx
+            .debug_bounds(id)
+            .unwrap_or_else(|| panic!("missing {id}"))
+            .center();
+        cx.simulate_click(at, Default::default());
+        cx.run_until_parked();
+        draw(cx);
+    };
+    click(cx, "inspector-share");
+    assert!(cx.debug_bounds("share-status").is_some());
+    assert!(cx.debug_bounds("share-copy-for-ai").is_some());
     app.read_with(cx, |app, cx| {
+        assert_eq!(app.inspector, crate::document_view::Inspector::Share);
         assert_eq!(
             app.pii.review.remaining(),
             3,
@@ -2740,12 +2759,13 @@ fn the_panel_counts_names_and_says_the_places_apart(cx: &mut gpui::TestAppContex
             app.share_status(cx),
             "2 names in 3 places still to replace — apply them first."
         );
+        assert_eq!(
+            app.share_copy_label(app.copy_step(cx), false, cx),
+            "Replace 2 names and copy"
+        );
         assert_eq!(app.apply_label(cx).as_deref(), Some("Apply 2"));
     });
-    cx.update(|window, cx| window.draw(cx).clear(cx));
-    let apply = cx.debug_bounds("primary-apply").unwrap();
-    cx.simulate_click(apply.center(), gpui::Modifiers::none());
-    cx.run_until_parked();
+    click(cx, "primary-apply");
     app.read_with(cx, |app, cx| {
         assert_eq!(
             app.editor.read(cx).text(),
