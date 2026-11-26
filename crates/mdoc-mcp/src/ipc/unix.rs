@@ -28,8 +28,16 @@ use std::{
     sync::Arc,
 };
 
-/// The socket's path.
-pub type Address = PathBuf;
+/// The socket's path, and the folder of the profile's listener lock.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Address {
+    socket: PathBuf,
+    /// `<data>/mdoc/connector`, the socket's own folder unless the socket
+    /// moved to a short folder (#1311). The lock stays with the profile, so
+    /// two spellings of one data folder (a short link to it, say), which
+    /// may pick different sockets, still take one lock.
+    locks: PathBuf,
+}
 
 /// `<data>/mdoc/connector/mcp.sock`, under the folder the Vault lives in:
 /// the dev profile's `data`, or the system's local data folder. When that
@@ -47,13 +55,14 @@ pub fn address(dev_profile: Option<&Path>) -> Option<Address> {
 /// The address of the profile whose data folder is `data`, the short
 /// folder going under `base` when it is needed.
 fn address_in(data: &Path, base: impl FnOnce() -> PathBuf) -> Address {
-    let usual = data.join("mdoc").join("connector").join("mcp.sock");
-    if fits(&usual) {
-        return usual;
-    }
-    base()
-        .join(format!("mdoc-{}", short_name(data)))
-        .join("mcp.sock")
+    let locks = data.join("mdoc").join("connector");
+    let usual = locks.join("mcp.sock");
+    let socket = if fits(&usual) {
+        usual
+    } else {
+        (base().join(format!("mdoc-{}", short_name(data)))).join("mcp.sock")
+    };
+    Address { socket, locks }
 }
 
 /// The short folder's name for `data`: the first 16 hex digits of the
@@ -106,7 +115,7 @@ fn darwin_user_cache_dir() -> Option<PathBuf> {
 }
 
 pub fn show(address: &Address, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", address.display())
+    write!(f, "{}", address.socket.display())
 }
 
 /// This process's effective user.
@@ -222,7 +231,21 @@ fn fits(socket: &Path) -> bool {
     socket.as_os_str().len() < room
 }
 
-pub fn listen(socket: &Address, answer: Handler) -> io::Result<Listener> {
+/// `folder`, made 0700 if it isn't there, and checked to be this user's
+/// alone.
+fn made(folder: &Path) -> io::Result<()> {
+    if let Some(parent) = folder.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    match fs::DirBuilder::new().mode(0o700).create(folder) {
+        Err(error) if error.kind() != ErrorKind::AlreadyExists => return Err(error),
+        _ => {}
+    }
+    check_folder(folder)
+}
+
+pub fn listen(address: &Address, answer: Handler) -> io::Result<Listener> {
+    let socket = &address.socket;
     if !fits(socket) {
         // Told apart, so Settings can say so plainly (#1311).
         return Err(io::Error::new(
@@ -231,15 +254,11 @@ pub fn listen(socket: &Address, answer: Handler) -> io::Result<Listener> {
         ));
     }
     let folder = folder(socket)?;
-    if let Some(parent) = folder.parent() {
-        fs::create_dir_all(parent)?;
+    made(&address.locks)?;
+    if folder != address.locks {
+        made(folder)?;
     }
-    match fs::DirBuilder::new().mode(0o700).create(folder) {
-        Err(error) if error.kind() != ErrorKind::AlreadyExists => return Err(error),
-        _ => {}
-    }
-    check_folder(folder)?;
-    let Some(held) = lock(folder)? else {
+    let Some(held) = lock(&address.locks)? else {
         return Err(io::Error::new(
             ErrorKind::AddrInUse,
             "another mdoc listens there",
@@ -285,7 +304,8 @@ pub fn stop(listener: Listener) {
     let _ = fs::remove_file(&listener.socket);
 }
 
-pub fn connect(socket: &Address) -> Result<UnixStream, CallError> {
+pub fn connect(address: &Address) -> Result<UnixStream, CallError> {
+    let socket = &address.socket;
     match check_folder(folder(socket)?) {
         Err(error) if error.kind() == ErrorKind::NotFound => return Err(CallError::NotListening),
         Err(_) => return Err(CallError::NotOurs),
@@ -309,15 +329,19 @@ mod tests {
         Arc::new(|request: &[u8]| request.to_vec())
     }
 
+    fn call(at: &Address, request: &[u8]) -> Result<Vec<u8>, CallError> {
+        super::super::call(&super::super::Endpoint(at.clone()), request)
+    }
+
     /// Done when: mdoc makes the socket's folder 0700 and the socket 0600.
     #[test]
     fn the_folder_is_the_users_alone() {
         let profile = tempfile::tempdir().unwrap();
-        let socket = address(Some(profile.path())).unwrap();
-        let _listening = listen(&socket, handler()).unwrap();
-        let folder = fs::metadata(socket.parent().unwrap()).unwrap();
+        let at = address(Some(profile.path())).unwrap();
+        let _listening = listen(&at, handler()).unwrap();
+        let folder = fs::metadata(at.socket.parent().unwrap()).unwrap();
         assert_eq!(folder.mode() & 0o777, 0o700);
-        assert_eq!(fs::metadata(&socket).unwrap().mode() & 0o777, 0o600);
+        assert_eq!(fs::metadata(&at.socket).unwrap().mode() & 0o777, 0o600);
     }
 
     /// Done when: a folder others can enter, or a symlink, is refused by
@@ -325,20 +349,20 @@ mod tests {
     #[test]
     fn a_folder_others_can_reach_is_refused() {
         let profile = tempfile::tempdir().unwrap();
-        let socket = address(Some(profile.path())).unwrap();
-        let folder = socket.parent().unwrap();
-        let listening = listen(&socket, handler()).unwrap();
+        let at = address(Some(profile.path())).unwrap();
+        let folder = at.socket.parent().unwrap();
+        let listening = listen(&at, handler()).unwrap();
         fs::set_permissions(folder, fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(matches!(connect(&socket), Err(CallError::NotOurs)));
+        assert!(matches!(connect(&at), Err(CallError::NotOurs)));
         drop(listening);
-        assert!(listen(&socket, handler()).is_err());
+        assert!(listen(&at, handler()).is_err());
 
         let elsewhere = tempfile::tempdir().unwrap();
         fs::set_permissions(elsewhere.path(), fs::Permissions::from_mode(0o700)).unwrap();
         fs::remove_dir_all(folder).unwrap();
         std::os::unix::fs::symlink(elsewhere.path(), folder).unwrap();
-        assert!(listen(&socket, handler()).is_err());
-        assert!(matches!(connect(&socket), Err(CallError::NotOurs)));
+        assert!(listen(&at, handler()).is_err());
+        assert!(matches!(connect(&at), Err(CallError::NotOurs)));
     }
 
     /// Done when: the peer check takes this user and no other, and reads
@@ -356,14 +380,12 @@ mod tests {
     #[test]
     fn a_held_lock_keeps_the_socket() {
         let profile = tempfile::tempdir().unwrap();
-        let socket = address(Some(profile.path())).unwrap();
-        let folder = socket.parent().unwrap();
-        fs::create_dir_all(folder).unwrap();
-        fs::set_permissions(folder, fs::Permissions::from_mode(0o700)).unwrap();
-        let _other = (lock(folder).unwrap()).expect("the lock is free");
-        let _theirs = UnixListener::bind(&socket).unwrap();
-        assert!(listen(&socket, handler()).is_err());
-        assert!(socket.exists(), "the other mdoc's socket was removed");
+        let at = address(Some(profile.path())).unwrap();
+        made(&at.locks).unwrap();
+        let _other = (lock(&at.locks).unwrap()).expect("the lock is free");
+        let _theirs = UnixListener::bind(&at.socket).unwrap();
+        assert!(listen(&at, handler()).is_err());
+        assert!(at.socket.exists(), "the other mdoc's socket was removed");
     }
 
     /// A data folder whose usual socket path is too long: over 110 bytes.
@@ -374,22 +396,46 @@ mod tests {
     }
 
     /// Done when (#1311): a data folder too deep for the usual socket
-    /// path listens in its short folder, and a call is answered there.
+    /// path listens in its short folder, and a call is answered there;
+    /// the lock stays in the profile.
     #[test]
     fn a_long_data_folder_listens_in_its_short_folder() {
         let profile = tempfile::tempdir().unwrap();
         let data = long_data(profile.path());
-        let socket = address_in(&data, short_base);
-        assert!(socket.starts_with(short_base()), "{}", socket.display());
-        assert!(fits(&socket), "{}", socket.display());
-        let folder = socket.parent().unwrap().to_path_buf();
-        let listening = listen(&socket, handler()).unwrap();
+        let at = address_in(&data, short_base);
+        assert!(at.socket.starts_with(short_base()), "{at:?}");
+        assert!(fits(&at.socket), "{at:?}");
+        assert_eq!(at.locks, data.join("mdoc").join("connector"));
+        let folder = at.socket.parent().unwrap().to_path_buf();
+        let listening = listen(&at, handler()).unwrap();
         assert_eq!(fs::metadata(&folder).unwrap().mode() & 0o777, 0o700);
-        assert_eq!(fs::metadata(&socket).unwrap().mode() & 0o777, 0o600);
-        let endpoint = super::super::Endpoint(socket);
-        assert_eq!(super::super::call(&endpoint, b"hi").unwrap(), b"hi");
+        assert_eq!(fs::metadata(&at.locks).unwrap().mode() & 0o777, 0o700);
+        assert_eq!(fs::metadata(&at.socket).unwrap().mode() & 0o777, 0o600);
+        assert!(at.locks.join("mcp.lock").exists());
+        assert_eq!(call(&at, b"hi").unwrap(), b"hi");
         drop(listening);
         let _ = fs::remove_dir_all(folder);
+    }
+
+    /// #1311 review: one data folder by two spellings, a short link and
+    /// its long target, picks two sockets but one lock: a second listener
+    /// is refused, and the first keeps its socket.
+    #[test]
+    fn two_spellings_of_one_profile_take_one_lock() {
+        let profile = tempfile::tempdir().unwrap();
+        let base = tempfile::tempdir().unwrap();
+        let long = long_data(profile.path());
+        fs::create_dir_all(&long).unwrap();
+        let link = profile.path().join("s");
+        std::os::unix::fs::symlink(long.parent().unwrap(), &link).unwrap();
+        let short = address_in(&link.join("data"), || base.path().to_path_buf());
+        let deep = address_in(&long, || base.path().to_path_buf());
+        assert!(short.socket.starts_with(&link), "{short:?}");
+        assert!(deep.socket.starts_with(base.path()), "{deep:?}");
+        let _first = listen(&short, handler()).unwrap();
+        let refused = listen(&deep, handler()).err().unwrap();
+        assert_eq!(refused.kind(), ErrorKind::AddrInUse, "{refused}");
+        assert_eq!(call(&short, b"still").unwrap(), b"still");
     }
 
     /// #1311: a data folder that fits keeps the usual path, and the short
@@ -397,11 +443,10 @@ mod tests {
     #[test]
     fn a_short_data_folder_keeps_the_usual_path() {
         let profile = tempfile::tempdir().unwrap();
-        let data = profile.path().join("data");
-        assert_eq!(
-            address(Some(profile.path())).unwrap(),
-            data.join("mdoc").join("connector").join("mcp.sock")
-        );
+        let folder = profile.path().join("data").join("mdoc").join("connector");
+        let at = address(Some(profile.path())).unwrap();
+        assert_eq!(at.socket, folder.join("mcp.sock"));
+        assert_eq!(at.locks, folder);
         // printf %s abc | shasum -a 256
         assert_eq!(short_name(Path::new("abc")), "ba7816bf8f01cfea");
         let (one, two) = (
@@ -409,7 +454,7 @@ mod tests {
             profile.path().join("q".repeat(120)),
         );
         let base = || PathBuf::from("/b");
-        assert_ne!(address_in(&one, base), address_in(&two, base));
+        assert_ne!(address_in(&one, base).socket, address_in(&two, base).socket);
     }
 
     /// #1311: when even the short folder's path is too long, the listener
@@ -419,12 +464,14 @@ mod tests {
     fn a_base_too_long_is_refused_plainly() {
         let profile = tempfile::tempdir().unwrap();
         let base = profile.path().join("b".repeat(120));
-        let socket = address_in(&long_data(profile.path()), || base.clone());
-        assert!(socket.starts_with(&base));
-        let refused = listen(&socket, handler()).err().unwrap();
+        let data = long_data(profile.path());
+        let at = address_in(&data, || base.clone());
+        assert!(at.socket.starts_with(&base));
+        let refused = listen(&at, handler()).err().unwrap();
         assert_eq!(refused.kind(), ErrorKind::InvalidFilename, "{refused}");
         assert!(!refused.to_string().contains("SUN_LEN"), "{refused}");
         assert!(!base.exists(), "made a folder it can't use");
+        assert!(!data.exists(), "made a folder it can't use");
     }
 
     /// #1311: a short folder made beforehand that others can enter, or a
@@ -433,35 +480,30 @@ mod tests {
     fn a_short_folder_others_can_reach_is_refused() {
         let profile = tempfile::tempdir().unwrap();
         let base = tempfile::tempdir().unwrap();
-        let socket = address_in(&long_data(profile.path()), || base.path().to_path_buf());
-        let folder = socket.parent().unwrap();
+        let at = address_in(&long_data(profile.path()), || base.path().to_path_buf());
+        let folder = at.socket.parent().unwrap();
         fs::DirBuilder::new().mode(0o755).create(folder).unwrap();
         fs::set_permissions(folder, fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(listen(&socket, handler()).is_err());
-        assert!(matches!(connect(&socket), Err(CallError::NotOurs)));
+        assert!(listen(&at, handler()).is_err());
+        assert!(matches!(connect(&at), Err(CallError::NotOurs)));
 
         let elsewhere = tempfile::tempdir().unwrap();
         fs::set_permissions(elsewhere.path(), fs::Permissions::from_mode(0o700)).unwrap();
         fs::remove_dir(folder).unwrap();
         std::os::unix::fs::symlink(elsewhere.path(), folder).unwrap();
-        assert!(listen(&socket, handler()).is_err());
-        assert!(matches!(connect(&socket), Err(CallError::NotOurs)));
+        assert!(listen(&at, handler()).is_err());
+        assert!(matches!(connect(&at), Err(CallError::NotOurs)));
     }
 
     /// Done when: a socket left by a crash is replaced.
     #[test]
     fn a_dead_socket_is_replaced() {
         let profile = tempfile::tempdir().unwrap();
-        let socket = address(Some(profile.path())).unwrap();
-        let folder = socket.parent().unwrap();
-        fs::create_dir_all(folder).unwrap();
-        fs::set_permissions(folder, fs::Permissions::from_mode(0o700)).unwrap();
-        drop(UnixListener::bind(&socket).unwrap());
-        assert!(socket.exists());
-        let _listening = listen(&socket, handler()).unwrap();
-        assert_eq!(
-            super::super::call(&super::super::Endpoint(socket), b"hi").unwrap(),
-            b"hi"
-        );
+        let at = address(Some(profile.path())).unwrap();
+        made(&at.locks).unwrap();
+        drop(UnixListener::bind(&at.socket).unwrap());
+        assert!(at.socket.exists());
+        let _listening = listen(&at, handler()).unwrap();
+        assert_eq!(call(&at, b"hi").unwrap(), b"hi");
     }
 }
