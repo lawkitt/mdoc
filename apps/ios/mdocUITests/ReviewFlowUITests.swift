@@ -257,17 +257,44 @@ enum MdocUITest {
     }
 
     /// Puts `text` on the clipboard, as copying it in another app would,
-    /// for the app's Paste to read.
+    /// for the app's Paste to read. Simulator only: on a phone the runner's
+    /// write never reaches the clipboard (its change count stays 0), so
+    /// Paste would restore whatever was copied last.
     static func copy(_ text: String) {
-        UIPasteboard.general.string = text
+        #if targetEnvironment(simulator)
+            UIPasteboard.general.string = text
+        #else
+            XCTFail("a phone's test runner cannot write the clipboard: copy in an app, as pasteReply does")
+        #endif
     }
 
     /// Paste on the document's bar: one tap restores the reply on the
     /// clipboard.
     @MainActor
     static func pasteReply(_ text: String, in app: XCUIApplication) {
-        copy(text)
+        #if targetEnvironment(simulator)
+            copy(text)
+        #else
+            copyInReplySheet(text, in: app)
+        #endif
         tapWhenEnabled(app.descendants(matching: .any)["paste-reply"].firstMatch)
+    }
+
+    /// Copies `text` from Type a reply's box, with ⌘A and ⌘C, and cancels
+    /// the sheet: on a phone only an app in front writes the clipboard.
+    @MainActor
+    static func copyInReplySheet(_ text: String, in app: XCUIApplication) {
+        let typeReply = app.buttons["type-reply"].firstMatch
+        XCTAssertTrue(typeReply.waitUntilHittable(timeout: timeout), "no Type a reply")
+        typeReply.tap()
+        let editor = app.textViews["reply-editor"].firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: timeout))
+        if !editor.wait(until: NSPredicate(format: "hasKeyboardFocus == true"), timeout: 5) { editor.tap() }
+        editor.typeText(text)
+        editor.typeKey("a", modifierFlags: .command)
+        editor.typeKey("c", modifierFlags: .command)
+        app.buttons["Cancel"].firstMatch.tap()
+        XCTAssertTrue(editor.waitForNonExistence(timeout: timeout), "Type a reply stayed open")
     }
 
     /// Taps a Paste control once it is enabled: it dims while the
