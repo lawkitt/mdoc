@@ -6,10 +6,9 @@ import XCTest
 /// extension, which restores with the place of the last Copy for AI and
 /// saves the reply; back in mdoc, the Reply panes list the replies,
 /// restored. mdoc's own Share sends a file, which the text-only extension
-/// does not take, so the text comes from Notes; so does the reply pasted
-/// in mdoc, as a phone's test runner cannot write the clipboard. The
-/// scratch notes it makes carry this run's title and are deleted. Device
-/// only: the Simulator has no Notes.
+/// does not take, so the text comes from Notes. The scratch notes it makes
+/// carry this run's title and are deleted. Device only: the Simulator has
+/// no Notes.
 /// `just ios-device-test <udid>` runs it.
 final class DeviceRestoreUITests: XCTestCase {
     private static let notesBundle = "com.apple.mobilenotes"
@@ -63,12 +62,12 @@ final class DeviceRestoreUITests: XCTestCase {
         openReplyPane(Self.projectDocument, in: app)
         expectRestored("Project reply: write to maya.ellison@example.com today.", in: app)
 
-        // A second reply for the Project, copied in Notes and pasted in
-        // mdoc with one tap, no "Allow Paste": the pane's menu switches
-        // between them, and Remove deletes the one shown.
-        copyFromNotes("Pasted reply for \(projectAlias).", notes: notes)
-        app.activate()
-        MdocUITest.tapWhenEnabled(app.descendants(matching: .any)["paste-reply"].firstMatch)
+        // A second reply for the Project, pasted in mdoc: the pane's menu
+        // switches between them, and Remove deletes the one shown. Copied
+        // in mdoc: after a copy in Notes, a test's tap on Paste brought up
+        // iOS's "Allow Paste", which the system's Paste control exists to
+        // spare a person's tap.
+        MdocUITest.pasteReply("Pasted reply for \(projectAlias).", in: app)
         expectRestored("Pasted reply for maya.ellison@example.com.", in: app)
         let picker = app.buttons["reply-picker"].firstMatch
         XCTAssertTrue(picker.waitForExistence(timeout: MdocUITest.timeout), "no menu of saved replies")
@@ -204,15 +203,6 @@ final class DeviceRestoreUITests: XCTestCase {
         notes.typeText("\(scratchTitle)\n\(body)")
     }
 
-    /// A scratch note with `reply`, all of it copied, as a person copies an
-    /// AI's answer in another app.
-    @MainActor
-    private func copyFromNotes(_ reply: String, notes: XCUIApplication) {
-        newNote(reply, notes: notes)
-        notes.typeKey("a", modifierFlags: .command)
-        notes.typeKey("c", modifierFlags: .command)
-    }
-
     /// This run's scratch notes go, whatever the test left open in Notes;
     /// one that stays fails the run.
     @MainActor
@@ -227,12 +217,20 @@ final class DeviceRestoreUITests: XCTestCase {
             _ = sheet.waitForNonExistence(timeout: MdocUITest.probeTimeout)
         }
         let note = notes.cells.matching(NSPredicate(format: "label BEGINSWITH %@", scratchTitle)).firstMatch
-        // The note editor's own back button leads to the list.
+        // From a note, back leads to its list or to the folders, where the
+        // first folder named Notes holds new notes.
         let editorBack = notes.navigationBars["ICTK2NoteEditorView"].buttons["BackButton"]
-        for _ in 0..<6 {
+        let folder = notes.cells.matching(NSPredicate(format: "label BEGINSWITH 'Notas' OR label BEGINSWITH 'Notes'"))
+            .firstMatch
+        for _ in 0..<8 {
             if !note.waitForExistence(timeout: MdocUITest.probeTimeout) {
-                guard editorBack.exists else { break }
-                editorBack.tap()
+                if editorBack.exists {
+                    editorBack.tap()
+                } else if folder.exists {
+                    folder.tap()
+                } else {
+                    break
+                }
                 continue
             }
             note.swipeLeft()
