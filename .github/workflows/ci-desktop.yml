@@ -133,7 +133,8 @@ jobs:
   # no longer waits for it. It builds what the tests job builds, from the
   # tests job's cache (the `test` key), and only the render test's binaries.
   renders:
-    name: ci/windows (hosted, renders)
+    # Named for the OS even where it is skipped, so macOS lists no Windows job.
+    name: ${{ fromJSON('{"macos":"ci/macos (renders)","windows":"ci/windows (hosted, renders)"}')[inputs.os] }}
     if: inputs.os == 'windows'
     runs-on: windows-latest
     # Job limits (ADR 0095): a cold build (32 minutes) and the render test.
