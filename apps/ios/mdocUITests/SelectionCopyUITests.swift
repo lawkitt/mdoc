@@ -54,15 +54,29 @@ final class SelectionCopyUITests: XCTestCase {
     /// shows again.
     @MainActor
     private func selectAll(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        // A long Hide "…" pushes it to the menu's next page, where Forward
-        // opens the menu as a list of buttons.
+        selectAllItem(app, file: file, line: line).tap()
+    }
+
+    /// The open menu's Select All, with nothing that sends the text on
+    /// beside it.
+    @MainActor
+    private func selectAllItem(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        // A long Hide "…" pushes it to the menu's next page.
         let all = app.descendants(matching: .any).matching(NSPredicate(
             format: "(elementType == %d OR elementType == %d) AND (label == 'Select All' OR identifier == 'select-all')",
             XCUIElement.ElementType.menuItem.rawValue, XCUIElement.ElementType.button.rawValue)).firstMatch
-        let forward = app.buttons["Forward"].firstMatch
+        let forward = nextPage(app)
         for _ in 0..<3 where !all.waitForExistence(timeout: 2) && forward.exists { forward.tap() }
         XCTAssertTrue(all.waitForExistence(timeout: MdocUITest.timeout), "no Select All: \(shownItems(app))", file: file, line: line)
-        all.tap()
+        expectNothingSendsOn(app, file: file, line: line)
+        return all
+    }
+
+    /// The open menu's button to its next page: Forward on iOS 26, which
+    /// opens the menu as a list of buttons; Next Page on iOS 27 (#1257).
+    @MainActor
+    private func nextPage(_ app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label IN %@", ["Forward", "Next Page"])).firstMatch
     }
 
     /// The open selection menu's item `identifier`, once it shows.
@@ -175,14 +189,22 @@ final class SelectionCopyUITests: XCTestCase {
         XCTAssertFalse(menuElement("copy-selection", app).exists)
         expectNothingSendsOn(app)
         // Copy with names next: on the menu's next page when Replace 1 and
-        // copy fills the first, where Forward opens the menu as a list.
+        // copy fills the first.
         let withNames = menuElement("copy-with-names", app)
-        let forward = app.buttons["Forward"].firstMatch
-        if !withNames.exists, forward.exists { forward.tap() }
+        let forward = nextPage(app)
+        let paged = !withNames.exists && forward.exists
+        if paged { forward.tap() }
         XCTAssertTrue(withNames.waitForExistence(timeout: MdocUITest.timeout), "no Copy with names: \(shownItems(app))")
-        XCTAssertTrue(
-            withNames.frame.minY > replace.frame.minY || withNames.frame.minX > replace.frame.minX,
-            "Copy with names comes after Replace 1 and copy")
+        expectNothingSendsOn(app)
+        // On the next page it comes after Replace 1 and copy already.
+        if !paged {
+            XCTAssertTrue(
+                withNames.frame.minY > replace.frame.minY || withNames.frame.minX > replace.frame.minX,
+                "Copy with names comes after Replace 1 and copy")
+        }
+        // Back to Replace 1 and copy where the menu pages sideways (iOS 27).
+        let previous = app.buttons["Previous Page"].firstMatch
+        if !replace.isHittable, previous.exists { previous.tap() }
 
         clearClipboard()
         replace.tap()
@@ -322,6 +344,7 @@ final class SelectionCopyUITests: XCTestCase {
         XCTAssertTrue(copy.waitForExistence(timeout: MdocUITest.timeout), "no Copy: \(shownItems(app))")
         expectNothingSendsOn(app)
         XCTAssertEqual(Set(shownItems(app)).subtracting(["Copy", "Select All", "Select"]), [], "\(shownItems(app))")
+        XCTAssertTrue(selectAllItem(app).isHittable, "Select All is not beside Copy")
         clearClipboard()
         copy.tap()
         expectCopied()

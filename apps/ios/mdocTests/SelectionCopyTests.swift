@@ -292,9 +292,13 @@ final class SelectionCopyTests: XCTestCase {
     /// words; Copy is marked.
     func testARestoredReplyKeepsCopyAndSelectAllOnly() {
         let view = RestoredReplyTextView()
+        view.isEditable = false
         view.text = "Maya Bennett owes £4,200."
         view.selectedRange = NSRange(location: 0, length: 12)
         XCTAssertTrue(view.canPerformAction(#selector(UIResponderStandardEditActions.copy(_:)), withSender: nil))
+        // UIKit's own answer for a text view that is not editable is no
+        // (#1257).
+        XCTAssertTrue(view.canPerformAction(#selector(UIResponderStandardEditActions.selectAll(_:)), withSender: nil))
         for action in ["_share:", "_define:", "_translate:", "_searchWeb:"] {
             XCTAssertFalse(view.canPerformAction(NSSelectorFromString(action), withSender: nil), action)
         }
