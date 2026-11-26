@@ -138,8 +138,8 @@ data class HomeState(
     /** Every document the lists show, most recently changed first. */
     val listed: List<DocumentSummary> get() = documents.filter { it.id !in hidden }
 
-    /** The documents with names left to review, for the drawer's To review. */
-    val toReview: List<DocumentSummary> get() = listed.filter { it.phase == DocumentPhase.Reviewing }
+    /** The documents with names left to review, for the drawer's To review; a moved row with none left (#1292) is not one. */
+    val toReview: List<DocumentSummary> get() = listed.filter { it.phase == DocumentPhase.Reviewing && it.pendingCount > 0 }
 
     /** The document most worth going back to: the newest with names left to review (Home's Continue). */
     val continueDocument: DocumentSummary? get() = toReview.maxByOrNull { it.updated }

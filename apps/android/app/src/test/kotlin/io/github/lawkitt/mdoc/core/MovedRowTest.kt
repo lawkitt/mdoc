@@ -1,5 +1,6 @@
 package io.github.lawkitt.mdoc.core
 
+import io.github.lawkitt.mdoc.home.HomeState
 import io.github.lawkitt.mdoc.home.HomeViewModel
 import io.github.lawkitt.mdoc.home.StatusLine
 import io.github.lawkitt.mdoc.storage.MdocStorage
@@ -90,6 +91,11 @@ class MovedRowTest {
         assertEquals(StatusLine.MovedToShare, HomeViewModel.status(moved, canFindNames = true))
         assertEquals(StatusLine.MovedToShare, HomeViewModel.status(moved, canFindNames = false))
         assertEquals(StatusLine.ToReview(2), HomeViewModel.status(moved.copy(pendingCount = 2), canFindNames = true))
+        // Nothing left to decide: not in To review, nor Home's Continue.
+        val toReview = moved.copy(id = DocumentId("b"), pendingCount = 2, updated = -1L)
+        val home = HomeState(documents = listOf(moved, toReview))
+        assertEquals(listOf(toReview), home.toReview)
+        assertEquals(toReview, home.continueDocument)
     }
 
     /**

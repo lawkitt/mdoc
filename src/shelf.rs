@@ -285,13 +285,17 @@ impl ShelfDocument {
             Some(Err(readiness)) => (refused(readiness), None),
             None => (Readiness::Checking, None),
         };
+        // Moved, with a name its new place knows still written out: opening
+        // it leaves that name to review, so it does not say "open it to
+        // share" (#1292).
+        let moved = document.moved && names.known_names(document.text) == 0;
         Some(Self::new(
             ShelfKey::Document(document.id),
             document.title,
             document.text,
             &names,
             document.project,
-            (readiness, document.scanned, document.moved),
+            (readiness, document.scanned, moved),
             document.edited,
             for_ai,
         ))

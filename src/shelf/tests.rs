@@ -236,6 +236,16 @@ fn a_stored_document_is_ready_only_when_the_outbound_check_passes() {
     assert_eq!(moved.state(), "Moved · open it to share");
     assert_eq!(moved.step(), Some(Step::Review));
     assert_eq!(moved.text_for_ai(), None);
+    // Moved where a name it holds as written is known: opening it leaves
+    // that name to review, so it does not say "open it to share".
+    let written = format!("{text} {}", names()[0].originals[0]);
+    let known = ShelfDocument::of_stored(StoredDocument {
+        moved: true,
+        ..stored(9, "b", &written, Err(mdoc_vault::Readiness::NotReviewed))
+    })
+    .unwrap();
+    assert_eq!(known.state(), "Not reviewed");
+    assert_eq!(known.step(), Some(Step::Review));
     let missed = refused(mdoc_vault::Readiness::NamesNotReplaced(2));
     assert_eq!(missed.readiness, Readiness::NamesNotReplaced(2));
     assert_eq!(missed.readiness.label(), "2 names not replaced");
