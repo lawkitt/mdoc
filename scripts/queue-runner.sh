@@ -24,14 +24,19 @@
 #     failure "Failed in <step>" or "Timed out in <step>", or error for a
 #     runner error or a commit the queue dropped while it ran. Each links its
 #     log folder. A failure names the failing tests: nextest's from the log,
-#     Gradle's from its JUnit XML (android:<class>#<method>).
+#     Gradle's from its JUnit XML (android:<class>#<method>); a checkout
+#     error names git's first error.
 # Whole-job limits: 30 minutes (windows), 40 (android); gh calls and fetches
 # end after a minute, so a stalled one cannot hold the limit or the heartbeat
 # up; setup and the checkout retry once, tests never. Upkeep: a job starts
 # only with 40 GB free (a pending status says so once, so the heartbeat goes
 # stale and merge-gate falls back), deletes target/ first when it is over
-# 60 GB or rust-toolchain.toml changed, keeps headless renders only from a
-# failed job, and output older than 7 days or past 20 GB goes, oldest first.
+# 60 GB or rust-toolchain.toml changed, removes a .git/index.lock over 10
+# minutes old and (Android) ends a Gradle daemon an earlier job left in the
+# checkout, keeps headless renders only from a failed job, and output older
+# than 7 days or past 20 GB goes, oldest first. While ci/android runs its
+# Android step on the same machine, ci/windows runs the Rust tests on half
+# its threads (12), as the PC's lanes build (#1163).
 # Results are under $LOCAL_CI_HOME/out/queue-<job>/<sha>/ (log.txt;
 # summary.txt with each step, the failing tests and, on a failure, the log's
 # last 60 lines), which the local CI web task serves at
@@ -89,6 +94,15 @@ config() {
   net_s=${QUEUE_CI_NET_TIMEOUT:-60}
   # How long a failed checkout waits before its one retry.
   clean_wait_s=${QUEUE_CI_CLEAN_WAIT:-30}
+  # A .git/index.lock this old is no live git's (stale_index_lock).
+  stale_lock_s=${QUEUE_CI_STALE_LOCK:-600}
+  # Where Gradle keeps its daemons' logs (stop_gradle_daemons).
+  gradle_home=${GRADLE_USER_HOME:-$HOME/.gradle}
+  [ -z "${GRADLE_USER_HOME:-}" ] || ! command -v cygpath >/dev/null || gradle_home=$(cygpath -u "$gradle_home")
+  # The Android runner's status.txt, which the Windows job's test step reads
+  # (android_running), and the threads that step keeps to while it runs.
+  android_status=${QUEUE_CI_ANDROID_STATUS:-$LOCAL_CI_HOME/out/queue-android/status.txt}
+  share_threads=${QUEUE_CI_SHARE_THREADS:-12}
   # The job's area (scripts/ci/ci-areas.txt), steps and whole-job limit.
   case "$job" in
     windows) area=desktop steps='setup lint test' limit_s=${QUEUE_CI_TIMEOUT:-1800} ;;
@@ -436,12 +450,94 @@ log_excerpt() { # dir
   { tail -n 60 "$1/log.txt" 2>/dev/null || true; } | plain
 }
 
-# The commit checked out with no untracked files but target/.
-checkout_clean() { # sha
-  git checkout --quiet --force --detach "$1" || return 1
+# A git killed mid-command leaves .git/index.lock, and every checkout then
+# fails until it goes: from 04:38Z to 14:30Z on 2026-11-25 (E: was near full),
+# each job a runner error, each commit tested on hosted CI instead (#1245).
+# The runner is this checkout's only user. At the checkout its job runs no
+# other git, and its loop runs none that takes the index (fetch, update-ref,
+# merge-base, show, log, diff between commits), so a lock older than
+# stale_lock_s belongs to no live git. A younger one is left: the checkout's
+# retry finds it again.
+stale_index_lock() { # dir
+  local f=$checkout/.git/index.lock age
+  [ -f "$f" ] || return 0
+  age=$((${EPOCHSECONDS:-$(date +%s)} - $(file_epoch "$f")))
+  [ "$age" -ge "$stale_lock_s" ] || return 0
+  rm -f "$f" || return 0
+  echo "queue-runner: upkeep: removed a stale index.lock (age $((age / 60)) min)"
+  echo "upkeep: removed a stale index.lock (age $((age / 60)) min)" >>"$1/summary.txt"
+}
+
+# A Gradle daemon can outlive a stopped Android job: the single-use daemon
+# that --no-daemon forks for org.gradle.jvmargs, with its Kotlin daemon
+# under it. On Windows it keeps files in apps/android/.gradle/ and build/
+# open, so git clean cannot remove them, after the 30 s retry too: 55ae9d4
+# (18 minutes after a stopped job), 227221a and 8b13c92 (#1245). Before the
+# clean, the Android job ends each live Gradle daemon whose last build, by
+# its log in $gradle_home/daemon/, was in this checkout. The runner is the
+# checkout's only user and its job has not started Gradle yet, so that
+# daemon is a stopped job's. A lane's daemon builds elsewhere and stays;
+# `gradlew --stop` would stop every daemon of that Gradle version on the PC,
+# a lane's build too. Excluding apps/android/.gradle/ from the clean would
+# not do: two of the three also held files under app/build/. Windows only
+# (tasklist, taskkill): elsewhere an open file can be deleted.
+stop_gradle_daemons() { # dir
+  command -v tasklist >/dev/null 2>&1 && command -v taskkill >/dev/null 2>&1 || return 0
+  local want pid f last stopped=false
+  want="currentDir=$(native_path "$checkout/apps/android")"
+  # CSV rows: "java.exe","<pid>",...; none ("INFO: No tasks ...") has no pid.
+  for pid in $(tasklist //FI "IMAGENAME eq java.exe" //FO CSV //NH 2>/dev/null | tr -d '\r' | awk -F'","' 'NF > 1 { print $2 }'); do
+    for f in "$gradle_home"/daemon/*/daemon-"$pid".out.log; do
+      [ -f "$f" ] || continue
+      # Gradle writes the folder with backslashes; native_path with slashes.
+      last=$(grep -o 'currentDir=[^}]*' "$f" 2>/dev/null | tail -n 1 | tr '\134' /)
+      [ "$last" = "$want" ] || continue
+      taskkill //F //T //PID "$pid" >/dev/null 2>&1 || true
+      echo "queue-runner: upkeep: stopped Gradle daemon $pid, which an earlier job left"
+      echo "upkeep: stopped a Gradle daemon an earlier job left (pid $pid)" >>"$1/summary.txt"
+      stopped=true
+    done
+  done
+  # Windows closes a killed process's files a moment after taskkill returns.
+  ! $stopped || sleep 2
+}
+
+# The commit checked out with no untracked files but target/. Git's errors
+# also go to $2/.checkout-err, which a failed job's status quotes.
+checkout_clean() { # sha dir
+  local rc=0
+  stale_index_lock "$2"
+  [ "$job" != android ] || stop_gradle_daemons "$2"
   # Keep the build cache. Git Bash rewrites a native program's argument that
   # starts with / as a Windows path, so /target/ would match nothing.
-  MSYS_NO_PATHCONV=1 git clean -ffdxq -e /target/
+  { git checkout --quiet --force --detach "$1" && MSYS_NO_PATHCONV=1 git clean -ffdxq -e /target/; } \
+    2>"$2/.checkout-err" || rc=$?
+  cat "$2/.checkout-err" >&2
+  return "$rc"
+}
+
+# Why the checkout failed, for its status: git's first error (else its first
+# line), after a removed stale lock if there was one.
+checkout_reason() { # dir
+  local line
+  line=$(grep -m 1 -E '^(fatal|error):' "$1/.checkout-err" 2>/dev/null) ||
+    line=$(head -n 1 "$1/.checkout-err" 2>/dev/null) || line=''
+  line=$(tr -d '\r' <<<"$line")
+  if grep -q '^upkeep: removed a stale index.lock' "$1/summary.txt" 2>/dev/null; then
+    echo " (stale lock removed, still failing: ${line:-no git error})"
+  elif [ -n "$line" ]; then
+    echo ": $line"
+  fi
+}
+
+# True while the Android runner beside this one runs its Android step (the
+# Gradle builds and the emulator): its status.txt, written every few seconds,
+# is fresh and says so. A stopped runner's stale file says nothing.
+android_running() {
+  local age
+  [ -f "$android_status" ] || return 1
+  age=$((${EPOCHSECONDS:-$(date +%s)} - $(file_epoch "$android_status")))
+  [ "$age" -le 120 ] && grep -q '^running: .*, just android for ' "$android_status"
 }
 
 # Runs in the background in its own process group; output goes to log.txt.
@@ -462,7 +558,7 @@ job() { # sha dir clean-reason
     rm -rf "${checkout:?}/target" || exit 3
   fi
   echo "queue-runner: checkout $sha"
-  if ! checkout_clean "$sha"; then
+  if ! checkout_clean "$sha" "$dir"; then
     # A stopped job's processes (Gradle, its test run) can hold files for a
     # while after they are killed; on Windows git then cannot remove them
     # (2026-11-04, the job after a stopped Android job). Infrastructure: one
@@ -470,8 +566,9 @@ job() { # sha dir clean-reason
     echo "queue-runner: checkout failed; retrying once in ${clean_wait_s}s"
     echo "checkout: failed once; retried" >>"$dir/summary.txt"
     sleep "$clean_wait_s"
-    checkout_clean "$sha" || exit 3
+    checkout_clean "$sha" "$dir" || exit 3
   fi
+  rm -f "$dir/.checkout-err"
   for step in $steps; do
     start=${EPOCHSECONDS:-$(date +%s)}
     printf '%s %s\n' "$step" "$start" >"$dir/.step"
@@ -487,7 +584,20 @@ job() { # sha dir clean-reason
           bash scripts/setup.sh </dev/null || rc=$?
         fi
         ;;
-      test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just test-tier rust || rc=$? ;;
+      test)
+        # The PC's ci/android emulator slowed by about half beside this
+        # step at full width, 2026-11-19 to 11-25 (#1163): its run's
+        # median 1.8 min alone, 2.6 beside it. Half the threads then, the
+        # lanes' cap; decided when the step starts.
+        if android_running; then
+          echo "queue-runner: ci/android runs its Android step; the Rust tests keep to $share_threads threads"
+          echo "test: $share_threads threads, beside ci/android's Android step" >>"$dir/summary.txt"
+          CARGO_BUILD_JOBS=$share_threads NEXTEST_TEST_THREADS=$share_threads RUST_TEST_THREADS=$share_threads \
+            MDOC_HEADLESS_ARTIFACTS=$dir/renders just test-tier rust || rc=$?
+        else
+          MDOC_HEADLESS_ARTIFACTS=$dir/renders just test-tier rust || rc=$?
+        fi
+        ;;
       android) MDOC_ANDROID_JOB=always just android || rc=$? ;;
       *) just "$step" || rc=$? ;;
     esac
@@ -563,7 +673,7 @@ finish() { # state description
   echo "result: $1, $2" >>"$run_dir/summary.txt"
   # A failed or timed-out step: where it ended, without opening log.txt.
   [ "$1" != failure ] || log_excerpt "$run_dir" >>"$run_dir/summary.txt"
-  rm -f "$state/job.pid" "$run_dir/.step"
+  rm -f "$state/job.pid" "$run_dir/.step" "$run_dir/.checkout-err"
   # Never run again, even when GitHub did not take the result: the heartbeat
   # stops, so merge-gate runs it hosted.
   mark_done "$run_sha"
@@ -620,7 +730,7 @@ check_job() {
         finish failure "Failed in $(label "$step")"
       fi
       ;;
-    3) finish error "Runner error: could not check out the commit; see the log" ;;
+    3) finish error "Runner error: could not check out the commit$(checkout_reason "$run_dir")" ;;
     *) finish error "Runner error (exit $rc); see the log" ;;
   esac
 }

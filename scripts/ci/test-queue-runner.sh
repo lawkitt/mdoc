@@ -12,6 +12,8 @@
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 # A real runner's job runs this too: start from no runner settings.
 unset "${!QUEUE_CI_@}" "${!LOCAL_CI_@}"
+# The thread caps the Windows job's test step sets itself, and Gradle's home.
+unset CARGO_BUILD_JOBS NEXTEST_TEST_THREADS RUST_TEST_THREADS GRADLE_USER_HOME
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 failures=0 skipped=0
@@ -76,6 +78,8 @@ missed() { # runner what-it-did-not-do log
 
 # A time $1 days ago, as touch -t takes it.
 days_ago() { date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%m%d%H%M; }
+# A time $1 minutes ago, as touch -t takes it.
+mins_ago() { date -v-"$1"M +%Y%m%d%H%M 2>/dev/null || date -d "$1 minutes ago" +%Y%m%d%H%M; }
 
 # --- functions ------------------------------------------------------------------
 
@@ -235,6 +239,56 @@ EOF
   tailscale_cmd=$tmp/no-tailscale tailnet_at=0
   write_status
   check "with no tailscale (macOS and Linux) it says nothing" not grep -q "^tailnet:" "$out/status.txt"
+
+  # A .git/index.lock over 10 minutes old is removed, logged; a younger one
+  # stays (#1245).
+  # shellcheck disable=SC2034 # read by stale_index_lock
+  checkout=$tmp/locked stale_lock_s=600
+  mkdir -p "$checkout/.git" "$tmp/lockjob"
+  : >"$checkout/.git/index.lock"
+  touch -t "$(mins_ago 15)" "$checkout/.git/index.lock"
+  stale_index_lock "$tmp/lockjob" >"$tmp/lockjob/log.txt"
+  check "a stale index.lock is removed" [ ! -e "$checkout/.git/index.lock" ]
+  check "saying so in the summary and the log" eval 'grep -qx "upkeep: removed a stale index.lock (age 1[56] min)" "$tmp/lockjob/summary.txt" &&
+    grep -q "upkeep: removed a stale index.lock (age 1[56] min)" "$tmp/lockjob/log.txt"'
+  rm -f "$tmp/lockjob/summary.txt"
+  : >"$checkout/.git/index.lock"
+  touch -t "$(mins_ago 5)" "$checkout/.git/index.lock"
+  stale_index_lock "$tmp/lockjob" >/dev/null
+  check "a younger one is left, and nothing said" eval '[ -e "$checkout/.git/index.lock" ] && [ ! -e "$tmp/lockjob/summary.txt" ]'
+
+  # A failed checkout's status names git's first error.
+  mkdir -p "$tmp/why"
+  printf '%s\n' "warning: failed to remove a.lock: Invalid argument" \
+    "fatal: Unable to create 'E:/ci/queue-windows/mdoc/.git/index.lock': File exists." >"$tmp/why/.checkout-err"
+  check "a failed checkout names git's first error" \
+    [ "$(checkout_reason "$tmp/why")" = ": fatal: Unable to create 'E:/ci/queue-windows/mdoc/.git/index.lock': File exists." ]
+  echo "upkeep: removed a stale index.lock (age 600 min)" >"$tmp/why/summary.txt"
+  check "and says when a stale lock was removed before it" \
+    [ "$(checkout_reason "$tmp/why")" = " (stale lock removed, still failing: fatal: Unable to create 'E:/ci/queue-windows/mdoc/.git/index.lock': File exists.)" ]
+  rm -f "$tmp/why/summary.txt"
+  echo "warning: failed to remove apps/android/.gradle/9.8.2/fileHashes/fileHashes.lock: Invalid argument" >"$tmp/why/.checkout-err"
+  check "or its first line when it has no error" \
+    [ "$(checkout_reason "$tmp/why")" = ": warning: failed to remove apps/android/.gradle/9.8.2/fileHashes/fileHashes.lock: Invalid argument" ]
+  rm -f "$tmp/why/.checkout-err"
+  check "and nothing without one" [ -z "$(checkout_reason "$tmp/why")" ]
+
+  # The Windows job's test step keeps to fewer threads only while the
+  # Android runner's fresh status.txt says it runs its Android step (#1163).
+  # shellcheck disable=SC2034 # read by android_running
+  android_status=$tmp/astatus/status.txt
+  check "no Android runner: full width" not android_running
+  mkdir -p "$tmp/astatus"
+  printf '%s\n' "ci/android queue runner on pc" "running: abc1234 gh-readonly-queue/main/pr-1-abc, just android for 3m00s https://pc.example/ci/queue-android/abc1234/" \
+    >"$android_status"
+  check "its Android step: fewer threads" android_running
+  sed -i.bak 's/just android/scripts\/setup.sh/' "$android_status"
+  check "its setup: full width" not android_running
+  printf '%s\n' "running: nothing" >"$android_status"
+  check "nothing running: full width" not android_running
+  printf '%s\n' "running: abc1234 gh-readonly-queue/main/pr-1-abc, just android for 3m00s" >"$android_status"
+  touch -t "$(mins_ago 5)" "$android_status"
+  check "a stopped runner's stale status: full width" not android_running
   exit "$failures"
 ) || failures=$((failures + $?))
 
@@ -309,7 +363,8 @@ target=gone
 # One word for the command (test-tier rust reads test-tier-rust).
 cmd="$*"
 cmd=${cmd// /-}
-echo "${behavior:-none} $cmd renders=${MDOC_HEADLESS_ARTIFACTS:-} job=${MDOC_ANDROID_JOB:-} target=$target" >>"$FAKE/just.log"
+echo "${behavior:-none} $cmd renders=${MDOC_HEADLESS_ARTIFACTS:-} job=${MDOC_ANDROID_JOB:-} target=$target" \
+  "threads=${CARGO_BUILD_JOBS:-}/${NEXTEST_TEST_THREADS:-}/${RUST_TEST_THREADS:-}" >>"$FAKE/just.log"
 [ -z "${CARGO_TARGET_DIR:-}" ] || exit 8
 drop_branch() {
   local r
@@ -491,6 +546,8 @@ export CARGO_TARGET_DIR="$tmp/shared-target"
 # As in hosted CI: only the runner's test step may name the renders folder.
 export MDOC_HEADLESS_ARTIFACTS="$tmp/outer-renders"
 export PATH="$tmp/bin:$PATH"
+# No real Gradle daemon is ever looked at (stop_gradle_daemons).
+export GRADLE_USER_HOME="$tmp/gradle-home"
 # By its path too: a developer Mac has a real one (#658).
 export QUEUE_CI_TAILSCALE=$tmp/bin/tailscale
 
@@ -549,6 +606,7 @@ check "it was pending from the start" grep -q "^$pass	$W	pending	Running checkou
 check "setup, lint, then the Rust tests, not the script suites" [ "$(ran pass)" = "setup lint test-tier-rust " ]
 check "lint gets no renders" grep -q "^pass lint renders= job=" "$FAKE/just.log"
 check "test writes its renders in the run folder" grep -q "^pass test-tier-rust renders=$wout/${pass:0:7}/renders job=" "$FAKE/just.log"
+check "at full width with no Android job beside it" grep -q "^pass test-tier-rust .* threads=// *$" "$FAKE/just.log"
 check "which a passing job deletes" [ ! -e "$wout/${pass:0:7}/renders" ]
 check "saying so in the summary" grep -q "^upkeep: deleted renders/ (the job passed)" "$wout/${pass:0:7}/summary.txt"
 check "the log and summary are kept" eval '[ -s "$wout/${pass:0:7}/log.txt" ] && grep -q "^result: success" "$wout/${pass:0:7}/summary.txt"'
@@ -695,6 +753,107 @@ check "a checkout that cannot clean at first is retried once, logged" \
 check "and the job runs" has "$held" "$W" "success	Passed in *"
 check "with the folder gone" [ ! -e "$hhome/mdoc/held" ]
 
+# --- a stale index.lock, beside an Android job -------------------------------------
+
+# A git killed mid-checkout left .git/index.lock 15 minutes ago: the job
+# removes it and runs (#1245). The Android runner's status.txt says it runs
+# its Android step, so the Rust tests keep to 12 threads (#1163).
+: >"$FAKE/just.log"
+stale=$(prefix=stale/main/ qc 21 stale src/lib.rs)
+echo "21 User false" >>"$FAKE/prs.tsv"
+shome=$LOCAL_CI_HOME/queue-stale
+git clone --quiet "$FAKE_ORIGIN" "$shome/mdoc"
+: >"$shome/mdoc/.git/index.lock"
+touch -t "$(mins_ago 15)" "$shome/mdoc/.git/index.lock"
+mkdir -p "$tmp/beside"
+printf '%s\n' "ci/android queue runner on pc" "running: abc1234 gh-readonly-queue/main/pr-1-abc, just android for 3m00s" >"$tmp/beside/status.txt"
+QUEUE_CI_HOME=$shome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-stale QUEUE_CI_PREFIXES=stale/main/ \
+  QUEUE_CI_ANDROID_STATUS=$tmp/beside/status.txt run_once windows "$tmp/stale.log"
+check "a stale index.lock is removed and the job runs" eval 'has "$stale" "$W" "success	Passed in *" && [ ! -e "$shome/mdoc/.git/index.lock" ]'
+check "saying so in the summary and the log, with its age" \
+  eval 'grep -qx "upkeep: removed a stale index.lock (age 1[56] min)" "$LOCAL_CI_HOME/out/queue-stale/${stale:0:7}/summary.txt" &&
+  grep -q "upkeep: removed a stale index.lock (age 1[56] min)" "$LOCAL_CI_HOME/out/queue-stale/${stale:0:7}/log.txt"'
+check "with no retry" not grep -q "^checkout: failed once" "$LOCAL_CI_HOME/out/queue-stale/${stale:0:7}/summary.txt"
+check "beside an Android step the Rust tests keep to 12 threads" grep -q "^stale test-tier-rust .* threads=12/12/12$" "$FAKE/just.log"
+check "and lint is not capped" grep -q "^stale lint .* threads=//$" "$FAKE/just.log"
+check "which the summary says" grep -qx "test: 12 threads, beside ci/android's Android step" "$LOCAL_CI_HOME/out/queue-stale/${stale:0:7}/summary.txt"
+
+# --- a fresh index.lock --------------------------------------------------------------
+
+# A lock under 10 minutes old may be a live git's: it stays, the checkout
+# retries once and fails, and the status quotes git.
+: >"$FAKE/just.log"
+fresh=$(prefix=fresh/main/ qc 22 fresh src/lib.rs)
+echo "22 User false" >>"$FAKE/prs.tsv"
+fhome=$LOCAL_CI_HOME/queue-fresh
+git clone --quiet "$FAKE_ORIGIN" "$fhome/mdoc"
+: >"$fhome/mdoc/.git/index.lock"
+QUEUE_CI_HOME=$fhome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-fresh QUEUE_CI_PREFIXES=fresh/main/ QUEUE_CI_CLEAN_WAIT=1 \
+  run_once windows "$tmp/fresh.log"
+check "a fresh index.lock stays" [ -e "$fhome/mdoc/.git/index.lock" ]
+check "the checkout is retried once" grep -q "^checkout: failed once; retried" "$LOCAL_CI_HOME/out/queue-fresh/${fresh:0:7}/summary.txt"
+# The status is cut at 140 characters (the PC's path fits); the summary is not.
+check "then the status is an error quoting git" \
+  has "$fresh" "$W" "error	Runner error: could not check out the commit: fatal: Unable to create '*"
+check "which names the lock" \
+  grep -q "^result: error, Runner error: could not check out the commit: fatal: Unable to create '.*index.lock': File exists.$" \
+  "$LOCAL_CI_HOME/out/queue-fresh/${fresh:0:7}/summary.txt"
+check "with no upkeep line and no build" \
+  eval '! grep -q "^upkeep: removed" "$LOCAL_CI_HOME/out/queue-fresh/${fresh:0:7}/summary.txt" && [ -z "$(ran fresh)" ]'
+
+# --- a Gradle daemon a stopped Android job left ---------------------------------------
+
+# Its daemon holds apps/android/.gradle/ files, so git clean fails while it
+# lives (a fake git); fake tasklist and taskkill stand in for Windows'. The
+# job ends that daemon, by its log's last build folder, and no other: one
+# whose last build was a lane's, one that is no longer running, one with no
+# log.
+: >"$FAKE/just.log"
+daemon=$(prefix=daemon/main/ at=apps/android/ci-behavior qc 23 daemon apps/android/App.kt)
+echo "23 User false" >>"$FAKE/prs.tsv"
+ghome=$LOCAL_CI_HOME/queue-daemon
+git clone --quiet "$FAKE_ORIGIN" "$ghome/mdoc"
+mkdir -p "$GRADLE_USER_HOME/daemon/9.8.2" "$tmp/daemonbin"
+ours=$(native_path "$ghome/mdoc/apps/android" | tr / '\134')
+lane='E:\t3\worktrees\mdoc\android-lane\apps\android'
+dlog() { # pid folder...
+  local d
+  for d in "${@:2}"; do echo "[INFO] Received command: Build{id=1, currentDir=$d}."; done >"$GRADLE_USER_HOME/daemon/9.8.2/daemon-$1.out.log"
+}
+dlog 4242 "$lane" "$ours"
+dlog 4343 "$ours" "$lane"
+dlog 4444 "$ours"
+printf '%s\n' 4242 4343 4545 >"$FAKE/java-pids"
+cat >"$tmp/daemonbin/tasklist" <<'EOF'
+#!/usr/bin/env bash
+[ -s "$FAKE/java-pids" ] || { echo "INFO: No tasks are running which match the specified criteria."; exit 0; }
+while read -r p; do printf '"java.exe","%s","Console","1","512,000 K"\r\n' "$p"; done <"$FAKE/java-pids"
+EOF
+cat >"$tmp/daemonbin/taskkill" <<'EOF'
+#!/usr/bin/env bash
+echo "$*" >>"$FAKE/taskkill.log"
+for p; do :; done
+grep -vx "$p" "$FAKE/java-pids" >"$FAKE/java-pids.new" || true
+mv -f "$FAKE/java-pids.new" "$FAKE/java-pids"
+EOF
+cat >"$tmp/daemonbin/git" <<GIT
+#!/usr/bin/env bash
+if [ "\${1:-}" = clean ] && grep -qx 4242 "$FAKE/java-pids"; then
+  echo "warning: failed to remove apps/android/.gradle/9.8.2/fileHashes/fileHashes.lock: Invalid argument" >&2
+  exit 1
+fi
+exec "$(command -v git)" "\$@"
+GIT
+chmod +x "$tmp/daemonbin/tasklist" "$tmp/daemonbin/taskkill" "$tmp/daemonbin/git"
+PATH="$tmp/daemonbin:$PATH" QUEUE_CI_HOME=$ghome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-daemon QUEUE_CI_PREFIXES=daemon/main/ \
+  QUEUE_CI_CLEAN_WAIT=1 run_once android "$tmp/daemon.log"
+check "an earlier job's Gradle daemon is ended before the clean, and only it" \
+  [ "$(cat "$FAKE/taskkill.log" 2>/dev/null)" = "//F //T //PID 4242" ]
+check "so the checkout cleans at once and the job runs" eval 'has "$daemon" "$A" "success	Passed in *" &&
+  ! grep -q "^checkout: failed once" "$LOCAL_CI_HOME/out/queue-daemon/${daemon:0:7}/summary.txt"'
+check "saying so in the summary" \
+  grep -qx "upkeep: stopped a Gradle daemon an earlier job left (pid 4242)" "$LOCAL_CI_HOME/out/queue-daemon/${daemon:0:7}/summary.txt"
+
 # --- the disk floor ----------------------------------------------------------------
 
 # Its own prefix and commit, as the lone, held and update blocks have: a
@@ -791,7 +950,7 @@ skip_why=''
 ) || failures=$((failures + $?))
 
 if [ "$failures" -gt 0 ]; then
-  for f in windows android disk lone held update; do
+  for f in windows android disk lone held stale fresh daemon update; do
     echo "--- $f runner log" >&2
     cat "$tmp/$f.log" >&2 2>/dev/null || true
   done
