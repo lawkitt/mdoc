@@ -483,16 +483,25 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     ),
                     "{theme}/{name}"
                 );
-                // The move toast says where the fixture went, with Undo.
+                // The move toast says where the fixture went, with Undo;
+                // Move to New Project's names the Project it made (#1313).
                 assert_eq!(
                     record["state"]["move_toast"],
-                    if *name == "project-move-toast" {
-                        Value::from("“Services Agreement” moved to “Public fixture”.")
-                    } else {
-                        Value::Null
+                    match *name {
+                        "project-move-toast" => {
+                            Value::from("“Services Agreement” moved to “Public fixture”.")
+                        }
+                        "move-to-new-project-name" => {
+                            Value::from("“Lease letter” moved to “Lease letter”.")
+                        }
+                        _ => Value::Null,
                     },
                     "{theme}/{name}"
                 );
+                // Its name is ready to edit in the header.
+                if *name == "move-to-new-project-name" {
+                    assert_eq!(record["state"]["project_rename"], true, "{theme}");
+                }
                 if *name == "project-page" {
                     assert_eq!(record["state"]["project_page_documents"], 2);
                     assert!(record["state"]["project_page_names"].as_u64().unwrap() > 0);

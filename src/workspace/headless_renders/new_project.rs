@@ -99,6 +99,8 @@ fn move_to_new_project(d: &mut Driver, shown: u64) -> Result<()> {
     })?;
     d.settle()?;
     d.change(|w, window, cx| -> Result<()> {
+        // Undo's own toast goes too, so later scenes show none.
+        w.dismiss_toast(cx);
         let tab = w.tabs.active();
         w.close_tab(tab, window, cx);
         w.activate(shown, window, cx);
