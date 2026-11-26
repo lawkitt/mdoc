@@ -60,6 +60,9 @@ grep -qF -- '-E (package(mdoc) - binary_id(mdoc::headless_renders)) - ((test(=fl
 
 FAKE_CARGO_RC=7 tier 7 renders
 grep -qF 'binary_id(mdoc::headless_renders)' "$CARGO_LOG" || fail "renders' filter: $(cat "$CARGO_LOG")"
+# It builds only the render test (#1243), with every tier's features.
+grep -qF -- '--workspace --features headless-renders --no-tests=pass --test headless_renders -E' "$CARGO_LOG" ||
+  fail "renders builds more than the render test: $(cat "$CARGO_LOG")"
 
 tier 0 recognition
 grep -qF 'binary_id(mdoc-detect::recognition)' "$CARGO_LOG" || fail "recognition's filter: $(cat "$CARGO_LOG")"
