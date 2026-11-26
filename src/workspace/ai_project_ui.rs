@@ -128,6 +128,7 @@ impl Workspace {
     pub(super) fn refresh_ai_connector(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // With the preview on, the menu bar item toggles the companion.
         crate::menu_bar::set_companion(self.ai_setting().preview, cx);
+        self.refresh_hotkey(cx);
         if self.ai_setting().preview {
             self.start_ai_connector(window, cx);
         } else {
@@ -135,11 +136,30 @@ impl Workspace {
         }
     }
 
+    /// The companion's hotkey follows the saved setting: registered only
+    /// while the companion can open (the preview and the menu bar item
+    /// on), and Settings shows why it couldn't be. The preview shown off in
+    /// open Settings, its save not landed yet (#1220), counts as off.
+    pub(crate) fn refresh_hotkey(&mut self, cx: &mut Context<Self>) {
+        let setting = self.ai_setting();
+        let panel = self.settings.read(cx);
+        let shown_off = panel.open && !panel.draft.ai_connector.preview;
+        let item = self.menu_bar_setting() && crate::menu_bar::keeps_running(cx);
+        let wanted = (setting.preview && !shown_off && !setting.hotkey_off && item)
+            .then_some(setting.hotkey);
+        let failed = crate::companion::hotkey::set(wanted, cx);
+        self.settings
+            .update(cx, |panel, cx| panel.hotkey_failed(failed, cx));
+    }
+
     /// The switch shows off, saved or not yet (#1220): nothing more
     /// reaches an AI app, and nothing is shared.
     pub(super) fn stop_ai_connector(&mut self, cx: &mut Context<Self>) {
         self.settings
             .update(cx, |panel, cx| panel.ai_connector_failed(None, cx));
+        crate::companion::hotkey::set(None, cx);
+        self.settings
+            .update(cx, |panel, cx| panel.hotkey_failed(None, cx));
         if self.ai_connector.take().is_some() {
             self.ai_poll = None;
             self.ai.stopped();

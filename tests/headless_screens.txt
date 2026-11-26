@@ -134,6 +134,10 @@ settings-vault
 settings-vault-recovery-key
 settings-ai-connector-off
 settings-ai-connector
+settings-ai-hotkey-recording
+settings-ai-hotkey-rejected
+settings-ai-hotkey-failed
+settings-ai-hotkey-off
 settings-ai-connector-failed
 settings-ai-connector-consent
 settings-ai-connector-consent-chatgpt

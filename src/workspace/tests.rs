@@ -39,6 +39,7 @@ mod ai_connector_setting;
 mod ai_project;
 mod comment_rail;
 mod companion;
+mod companion_hotkey;
 mod decision_history;
 mod default_categories;
 mod document_notes;

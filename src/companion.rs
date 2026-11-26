@@ -18,9 +18,12 @@
 //! of screen capture (`NSWindowSharingNone`, which not every capture path
 //! honours), and the restored reply shows only while the pointer is over
 //! it: until then the window holds a placeholder, not the text.
-//! `native.rs` makes the window; Personal and search (ADR 0128) are not
-//! here yet.
+//! `native.rs` makes the window and `hotkey.rs` registers its system-wide
+//! hotkey; Personal and search (ADR 0128) are not here yet.
 
+pub(crate) mod hotkey;
+#[cfg(all(target_os = "macos", debug_assertions, not(test)))]
+pub(crate) mod hotkey_probe;
 #[cfg(all(target_os = "macos", not(test)))]
 mod native;
 #[cfg(all(target_os = "macos", debug_assertions, not(test)))]

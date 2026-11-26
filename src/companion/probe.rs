@@ -31,11 +31,11 @@ use objc2::{
 use std::{cell::Cell, ffi::c_void, ptr, rc::Rc, time::Duration};
 
 /// How long AppKit gets to settle after each step.
-const SETTLE: Duration = Duration::from_millis(500);
+pub(super) const SETTLE: Duration = Duration::from_millis(500);
 
 /// The companion as AppKit and the window server see it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Native {
+pub(super) struct Native {
     key: bool,
     main: bool,
     visible: bool,
@@ -106,7 +106,7 @@ fn server_sharing(number: isize) -> Option<u32> {
 }
 
 /// The frontmost app's process id.
-fn frontmost() -> Option<i32> {
+pub(super) fn frontmost() -> Option<i32> {
     // SAFETY: NSWorkspace is safe to ask on the main thread.
     unsafe {
         let workspace: *mut AnyObject = msg_send![class!(NSWorkspace), sharedWorkspace];
@@ -116,7 +116,7 @@ fn frontmost() -> Option<i32> {
 }
 
 /// Whether mdoc is the active app.
-fn app_active() -> bool {
+pub(super) fn app_active() -> bool {
     // SAFETY: NSApp exists once GPUI runs; main thread.
     unsafe {
         let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
@@ -208,7 +208,7 @@ fn click(native: *mut AnyObject, at: Point) {
 
 /// A stand-in for the companion's content that counts the clicks GPUI
 /// delivers to it.
-struct Probe {
+pub(super) struct Probe {
     clicks: Rc<Cell<u32>>,
 }
 
@@ -230,7 +230,11 @@ impl Render for Probe {
 }
 
 /// One step's checks: each failure in words.
-fn failures(native: Option<Native>, frontmost_before: Option<i32>, own: i32) -> Vec<String> {
+pub(super) fn failures(
+    native: Option<Native>,
+    frontmost_before: Option<i32>,
+    own: i32,
+) -> Vec<String> {
     let Some(native) = native else {
         return vec!["no native window".into()];
     };
@@ -265,7 +269,7 @@ fn failures(native: Option<Native>, frontmost_before: Option<i32>, own: i32) -> 
         .collect()
 }
 
-fn open_probe(cx: &mut App, clicks: Rc<Cell<u32>>) -> Option<WindowHandle<Probe>> {
+pub(super) fn open_probe(cx: &mut App, clicks: Rc<Cell<u32>>) -> Option<WindowHandle<Probe>> {
     let display = cx.primary_display()?;
     let screen = display.bounds();
     let bounds = Bounds {
@@ -278,7 +282,10 @@ fn open_probe(cx: &mut App, clicks: Rc<Cell<u32>>) -> Option<WindowHandle<Probe>
     .ok()
 }
 
-fn inspect_window(window: WindowHandle<Probe>, cx: &mut gpui::AsyncApp) -> Option<Native> {
+pub(super) fn inspect_window(
+    window: WindowHandle<Probe>,
+    cx: &mut gpui::AsyncApp,
+) -> Option<Native> {
     window
         .update(cx, |_, window, _| inspect(window))
         .ok()

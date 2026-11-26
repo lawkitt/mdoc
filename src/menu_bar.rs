@@ -222,10 +222,7 @@ impl MenuBarState {
         // The companion stays up while other apps are used: the item is
         // its toggle, with no closing click to guard against.
         if self.companion {
-            return match self.companion_open {
-                true => vec![MenuBarEffect::CloseCompanion],
-                false => vec![MenuBarEffect::OpenCompanion],
-            };
+            return self.toggle_companion();
         }
         if self.shelf_open {
             return vec![MenuBarEffect::CloseShelf];
@@ -237,6 +234,22 @@ impl MenuBarState {
             return Vec::new();
         }
         vec![MenuBarEffect::OpenShelf]
+    }
+
+    /// The companion's hotkey: it toggles the companion as the item does,
+    /// and nothing while the preview or the item is off.
+    pub(crate) fn hotkey_pressed(&mut self) -> Vec<MenuBarEffect> {
+        if !self.enabled || !self.companion {
+            return Vec::new();
+        }
+        self.toggle_companion()
+    }
+
+    fn toggle_companion(&self) -> Vec<MenuBarEffect> {
+        match self.companion_open {
+            true => vec![MenuBarEffect::CloseCompanion],
+            false => vec![MenuBarEffect::OpenCompanion],
+        }
     }
 
     pub(crate) fn shelf_opened(&mut self) {
@@ -415,6 +428,12 @@ pub(crate) fn item_clicked(cx: &mut App) {
     update(cx, |state| state.item_clicked(Instant::now()));
 }
 
+/// The companion's hotkey was pressed in any app: toggle the companion,
+/// as the item's click does.
+pub(crate) fn hotkey_pressed(cx: &mut App) {
+    update(cx, MenuBarState::hotkey_pressed);
+}
+
 /// The shelf window closed (a click outside, Esc, an action).
 pub(crate) fn shelf_closed(cx: &mut App) {
     if let Some(bar) = cx.try_global::<MenuBar>()
@@ -479,6 +498,9 @@ fn carry_out(effect: MenuBarEffect, cx: &mut App) {
         MenuBarEffect::ShowItem => show_item(cx),
         MenuBarEffect::RemoveItem => {
             close_note(cx);
+            // The companion can't open without the item: its hotkey goes
+            // too, even if mdoc stays open after "Quit when windows close".
+            crate::companion::hotkey::set(None, cx);
             #[cfg(all(target_os = "macos", not(test)))]
             gpui_macos::set_status_item(None);
             #[cfg(all(windows, not(test)))]
@@ -912,6 +934,20 @@ mod tests {
             state.item_clicked(now + Duration::from_secs(1)),
             [OpenShelf]
         );
+    }
+
+    #[test]
+    fn the_hotkey_toggles_the_companion_as_the_item_does_and_never_the_shelf() {
+        let mut state = MenuBarState::default();
+        assert_eq!(state.hotkey_pressed(), [], "the item off");
+        state.set_enabled(true);
+        assert_eq!(state.hotkey_pressed(), [], "the preview off: no shelf");
+        state.set_companion(true);
+        assert_eq!(state.hotkey_pressed(), [OpenCompanion]);
+        state.companion_opened();
+        assert_eq!(state.hotkey_pressed(), [CloseCompanion]);
+        state.companion_closed();
+        assert_eq!(state.hotkey_pressed(), [OpenCompanion]);
     }
 
     #[test]

@@ -1,17 +1,18 @@
 //! Settings › AI connector (Milestone 2 item 11): the "AI connector
 //! (preview)" switch, and with it on, "Open deliveries when they arrive",
-//! adding mdoc to Claude Desktop and to ChatGPT through their config
-//! files, and Test connection. With the switch off the page shows the
-//! switch alone.
+//! the companion's shortcut (macOS; item 15), adding mdoc to Claude
+//! Desktop and to ChatGPT through their config files, and Test
+//! connection. With the switch off the page shows the switch alone.
 //!
 //! Every button that writes shows a consent card first: the file, and the
 //! exact entry added or removed (`crate::ai_connector::setup`). Nothing is
 //! written until its primary button.
 use super::{CloseSettings, Panel};
 use crate::ai_connector::setup::{self, Change, Host, Kind, Places, Status};
+use crate::companion::hotkey::{self, NotAHotkey};
 use crate::style::{self, Theme};
 use crate::ui;
-use gpui::{AnyElement, Context, FocusHandle, Window, div, prelude::*, px};
+use gpui::{AnyElement, App, Context, FocusHandle, Keystroke, Window, div, prelude::*, px};
 
 #[cfg(test)]
 mod tests;
@@ -37,16 +38,32 @@ pub(crate) struct AiConnectorUi {
     /// sets it with each start, and clears it with the switch off.
     failed: Option<String>,
     focus: Option<FocusHandle>,
+    /// Why the companion's shortcut couldn't be registered.
+    hotkey_failed: Option<String>,
+    /// The shortcut recorder takes the next key press, in any window,
+    /// before any binding does.
+    recording: Option<gpui::Subscription>,
+    /// Why the last key pressed into the recorder isn't a shortcut.
+    hotkey_hint: Option<String>,
 }
 
 impl AiConnectorUi {
     /// Leaving the page or closing Settings: an unanswered card goes, and
     /// nothing is written.
-    pub(super) fn forget(&mut self) {
+    pub(super) fn forget(&mut self, cx: &mut App) {
         self.consent = None;
         self.error = None;
         self.done = None;
         self.tested = false;
+        self.stop_recording(cx);
+    }
+
+    /// The recorder stops, and the shortcut it paused comes back.
+    fn stop_recording(&mut self, cx: &mut App) {
+        self.hotkey_hint = None;
+        if self.recording.take().is_some() {
+            self.hotkey_failed = hotkey::pause(false, cx);
+        }
     }
 
     /// `host`'s state, as last read.
@@ -101,6 +118,59 @@ impl Panel {
         }
     }
 
+    /// The window's last registration of the companion's shortcut: why it
+    /// failed, or `None`.
+    pub(crate) fn hotkey_failed(&mut self, failed: Option<String>, cx: &mut Context<Self>) {
+        if self.ai.hotkey_failed != failed {
+            self.ai.hotkey_failed = failed;
+            cx.notify();
+        }
+    }
+
+    /// The recorder: the next shortcut pressed, in any window, is the
+    /// companion's; Esc or a second click stops it. The registered one
+    /// pauses meanwhile, so it can be recorded again.
+    pub(crate) fn record_hotkey(&mut self, cx: &mut Context<Self>) {
+        if self.ai.recording.is_some() {
+            self.ai.stop_recording(cx);
+            cx.notify();
+            return;
+        }
+        if self.draft.ai_connector.hotkey_off {
+            return;
+        }
+        let this = cx.weak_entity();
+        self.ai.recording = Some(cx.intercept_keystrokes(move |event, _, cx| {
+            if this
+                .update(cx, |panel, cx| panel.hotkey_keystroke(&event.keystroke, cx))
+                .is_ok()
+            {
+                cx.stop_propagation();
+            }
+        }));
+        self.ai.hotkey_hint = None;
+        hotkey::pause(true, cx);
+        cx.notify();
+    }
+
+    /// A key press while recording: a shortcut saves, Esc stops, anything
+    /// else says why it isn't one.
+    pub(crate) fn hotkey_keystroke(&mut self, keystroke: &Keystroke, cx: &mut Context<Self>) {
+        match hotkey::recorded(keystroke, hotkey::key_down()) {
+            Ok(shortcut) => {
+                self.ai.stop_recording(cx);
+                if self.draft.ai_connector.hotkey != shortcut {
+                    self.draft.ai_connector.hotkey = shortcut;
+                    self.persist(cx);
+                }
+            }
+            Err(NotAHotkey::Modifier) => return,
+            Err(NotAHotkey::Cancel) => self.ai.stop_recording(cx),
+            Err(NotAHotkey::Rejected(why)) => self.ai.hotkey_hint = Some(why),
+        }
+        cx.notify();
+    }
+
     /// "Open deliveries when they arrive" as the page shows it. The window
     /// opens a delivery only while this and the saved value are both on:
     /// off at once, before its save lands, and on only once saved.
@@ -120,6 +190,13 @@ impl Panel {
         self.ai.failed.as_deref()
     }
 
+    /// Why the companion's shortcut couldn't be registered, as the page
+    /// holds it.
+    #[cfg(all(test, target_os = "macos"))]
+    pub(crate) fn hotkey_failed_shown(&self) -> Option<String> {
+        self.ai.hotkey_failed.clone()
+    }
+
     fn places(&mut self) -> &Places {
         self.ai.places.get_or_insert_with(|| {
             // Tests and renders never read the real apps' folders.
@@ -132,7 +209,11 @@ impl Panel {
     }
 
     /// Read the apps' state again; with the preview off, nothing is read.
+    /// The shortcut recorder stops once the preview or the shortcut is off.
     pub(super) fn refresh_ai(&mut self, cx: &mut Context<Self>) {
+        if !self.draft.ai_connector.preview || self.draft.ai_connector.hotkey_off {
+            self.ai.stop_recording(cx);
+        }
         self.ai.status = if self.draft.ai_connector.preview {
             let places = self.places();
             Some(Host::ALL.map(|host| setup::status(places, host)))
@@ -279,6 +360,10 @@ impl Panel {
                 ),
                 theme,
             ));
+        // The companion, and so its shortcut, is macOS only for now.
+        if cfg!(target_os = "macos") {
+            section = section.child(self.hotkey_row(theme, cx));
+        }
         for host in Host::ALL {
             section = section.child(self.host_rows(host, shim.is_some(), theme, cx));
         }
@@ -316,6 +401,90 @@ impl Panel {
                                 }),
                         )
                     }),
+            )
+            .into_any_element()
+    }
+
+    /// "Companion shortcut": the recorder, showing the shortcut, and its
+    /// switch; under it, what the recorder asks or why the shortcut
+    /// couldn't be registered.
+    fn hotkey_row(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
+        let setting = self.draft.ai_connector;
+        let on = !setting.hotkey_off;
+        let recording = self.ai.recording.is_some();
+        let label = match recording {
+            true => "Type a shortcut…".to_string(),
+            false => setting.hotkey.label(),
+        };
+        let mut description =
+            "Shows or hides the companion from any app, without leaving it.".to_string();
+        if !self.draft.general.menu_bar {
+            description.push_str(" Works while “Show mdoc in the menu bar” is on, in General.");
+        }
+        let caution = style::markdown_style(theme).alert_caution;
+        let line = |id: &'static str, text: String, color| {
+            div()
+                .id(id)
+                .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
+                .pb_3()
+                .text_size(px(12.))
+                .text_color(color)
+                .child(text)
+        };
+        let recorder = self
+            .scrolled_control("ai-hotkey-record", label, theme, on, cx)
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "ai-hotkey-record".into())
+            })
+            .aria_label(format!(
+                "Companion shortcut, {}. Click to record another",
+                setting.hotkey.label()
+            ))
+            .min_w(px(64.))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                if on {
+                    this.record_hotkey(cx)
+                }
+            }));
+        let switch = self.switch(
+            "ai-hotkey",
+            "Companion shortcut",
+            on,
+            true,
+            |p| p.ai_connector.hotkey_off = !p.ai_connector.hotkey_off,
+            theme,
+            cx,
+        );
+        let hint = match (&self.ai.hotkey_hint, recording) {
+            (Some(why), _) => Some((why.clone(), caution)),
+            (None, true) => Some((
+                "Press the new shortcut with ⌘, ⌃ or ⌥. Esc cancels.".to_string(),
+                theme.pdf_style().header_muted,
+            )),
+            (None, false) => None,
+        };
+        div()
+            .flex()
+            .flex_col()
+            .child(
+                self.setting_row(
+                    "Companion shortcut",
+                    description,
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(recorder)
+                        .child(switch),
+                    theme,
+                ),
+            )
+            .when_some(hint, |v, (text, color)| {
+                v.child(line("ai-hotkey-hint", text, color))
+            })
+            .when_some(
+                self.ai.hotkey_failed.clone().filter(|_| on && !recording),
+                |v, why| v.child(line("ai-hotkey-failed", why, caution)),
             )
             .into_any_element()
     }
