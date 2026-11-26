@@ -119,6 +119,28 @@ final class NamesCheckedTests: XCTestCase {
         XCTAssertNil(copied)
     }
 
+    /// The text changed while the question was up: the answer checks
+    /// nothing, nothing leaves, and the exit asks again of the new text;
+    /// answered, it hands out the new text.
+    func testATextChangedWhileAskedAsksAgain() throws {
+        let (model, seeded) = try pasted()
+        var copied: String?
+        model.copyForAI { copied = $0 }
+        XCTAssertEqual(model.refusal, .namesNotChecked)
+
+        let end = model.snapshot.markdown.utf8.count
+        _ = try model.session.type(SourceRange(start: end, end: end), " Indeed.")
+        model.session.endTyping()
+        model.take(.namesChecked)
+        XCTAssertNil(copied, "copied text nobody was asked of")
+        XCTAssertEqual(model.refusal, .namesNotChecked, "no new question")
+        XCTAssertEqual(try readiness(model, seeded), .notReviewed)
+
+        model.take(.namesChecked)
+        XCTAssertNil(model.refusal)
+        XCTAssertEqual(copied, Self.text + " Indeed.")
+    }
+
     /// Checked, saved, then opened again in a later run: unchanged, it does
     /// not ask.
     func testUnchangedTextReopenedDoesNotAsk() throws {
