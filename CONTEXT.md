@@ -14,8 +14,8 @@ is extracted.
 **Converted Markdown**: editable Markdown extracted from a source document,
 from native text, OCR or both.
 
-**Source preview**: the visual reference to the retained original; DOCX
-rendering is approximate. UI label: **Source**.
+**Source preview**: the visual reference to the retained original. UI label:
+**Source**.
 "Original" names the view switcher's pre-pseudonymization view.
 
 **Page tone**: how Original pages are painted: *original* paper or *themed*
@@ -31,7 +31,7 @@ asking the AI to keep placeholders exactly.
 wordings of its mapping. UI label: **Paste AI Reply** (Title Case in menus).
 
 **Reply box**: the Share panel's "AI reply" field: a paste restores at once
-and is saved as an **AI reply** once it settles; an edit replaces it.
+and is saved as an **AI reply** once it settles.
 
 **Reply view**: the view switcher's read-only Reply segment, restoring the
 box's reply live.
@@ -53,8 +53,7 @@ identity of the mapping, such as an invented `PERSON_9`.
 text** (syntax hidden); a match that **crosses formatting** spans several
 source ranges.
 
-**Document header**: the title-bar row above a document: breadcrumb, Source,
-panel toggle, ⋯ and the primary action.
+**Document header**: the title-bar row above a document.
 
 **Project tree**: the sidebar's stable tree of Projects, each expandable to its documents, and Unfiled; desktop's only document navigation.
 
@@ -109,9 +108,15 @@ kept apart from the Markdown handed off.
 **Vault key**: the 256-bit OS-held key encrypting the Vault. The **quiet
 probe** reads it at launch without dialogs; the **dev key** separates
 unsigned/debug macOS builds. The **recovery key** is its text form, behind
-Show Recovery Key; an accepted one gets its own slot, read first.
+Show Recovery Key.
 
 **AI project**: the one Project the desktop MCP connector serves, chosen in mdoc.
+
+**AI activity**: the Project page's Vault record of which AI app read or
+delivered what, and when.
+
+**Companion**: the AI connector preview's floating macOS window, never
+focused, toggled from the menu bar in place of the shelf's popup.
 
 **Keychain explainer**: the dialog shown before the first Vault key access
 and after a denial.
@@ -278,8 +283,8 @@ acceptance runs on.
 **Platform acceptance**: the manual checklist run on an installed release on
 each shipped target; each row is *Pass*, *Fail* or *Unavailable*.
 
-**Smoke run**: a short acceptance check on each shipped target: install,
-launch, open a document, Copy for AI.
+**Smoke run**: a short install-and-use acceptance check on each shipped
+target.
 
 **Ordinary legal document**: the interactive performance target, about 30
 pages or 135 KB of Markdown.
@@ -300,13 +305,12 @@ plain `ios-v<x.y.z>` tag marks the build sent to App Store review.
 **Lawyers group**: the one external TestFlight group, and Play's same-named
 closed testing track.
 
-**Never-client-files line**: the opening sentence of every beta description,
-asking testers for shareable documents, never client files.
+**Never-client-files line**: the opening sentence of every beta description:
+shareable documents, never client files.
 
 ## Mobile apps
 
-**Mobile core**: the GUI-free Rust crates the iOS and Android apps call
-through `crates/mdoc-ffi`'s UniFFI bindings.
+**Mobile core**: the GUI-free Rust crates the iOS and Android apps call.
 
 **Review-first flow**: the mobile journey: scan or import, recognize, review
 replacements, share to an AI app, restore the reply.
