@@ -147,6 +147,8 @@ impl Workspace {
             || document.as_ref().is_some_and(|d| self.moving.contains(d))
             || self.unsaved.contains(&tab.id())
             || self.write_pending_for(tab.id(), cx)
+            // The companion's Replace all runs in it.
+            || self.ai.replacing_in() == Some(tab.id())
         {
             Weight::Busy
         } else {

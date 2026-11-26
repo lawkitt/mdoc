@@ -22,12 +22,24 @@ class Preferences(context: Context) {
     val aiConnectorPreview: StateFlow<Boolean> = preview.asStateFlow()
 
     fun setAiConnectorPreview(on: Boolean) {
-        prefs.edit().putBoolean(AI_CONNECTOR_PREVIEW, on).apply()
         preview.value = on
+        offMain { prefs.edit().putBoolean(AI_CONNECTOR_PREVIEW, on).commit() }
     }
 
-    private companion object {
+    internal companion object {
+        /**
+         * Runs a preferences write on one thread of its own, in order, never
+         * through `apply()`: Android makes a screen that stops wait for every
+         * `apply()` still writing (QueuedWork), and a busy disk turned that
+         * into a minute's freeze on the PC's emulator (#1233).
+         */
+        private val writes = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "mdoc-preferences") }
+
+        internal fun offMain(write: () -> Unit) {
+            writes.execute(write)
+        }
+
         /** iOS's `Preferences.Key.aiConnectorPreview`. */
-        const val AI_CONNECTOR_PREVIEW = "aiConnectorPreview"
+        private const val AI_CONNECTOR_PREVIEW = "aiConnectorPreview"
     }
 }

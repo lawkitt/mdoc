@@ -50,6 +50,8 @@ class RestoreTest {
         session.recognize(Quiet)
         val start = letter.indexOf("Maya Bennett")
         session.addReplacement(SourceRange(start, start + 12), Category.Person)
+        // Below the floor: "I checked the names myself" (item 48).
+        session.confirmNamesChecked()
         // Copy for AI records the place as shared last.
         session.copyForAi()
         return session

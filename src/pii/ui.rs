@@ -963,6 +963,34 @@ impl DocumentView {
             self.close_pii_popup(&PiiClosePopup, window, cx);
         }
     }
+    /// The review is settled for the companion's Replace all (Milestone 2
+    /// item 16): loaded, no scan or name finding running that may still
+    /// add proposals.
+    pub(crate) fn review_settled(&self) -> bool {
+        self.lifecycle.ready() && !self.pii.scanning() && !self.pii.finding_names()
+    }
+
+    /// The companion's Replace all: this review's own Replace all, run as
+    /// its button runs it, when it would replace every pending proposal
+    /// and nothing else. `false`, with nothing changed, when only this
+    /// window can go on: nothing is pending, a scan runs, or an alias the
+    /// popup shows is not confirmed yet.
+    pub(crate) fn replace_all_from_companion(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.pii.reviewing
+            || self.pii.review.remaining() == 0
+            || !self.review_settled()
+            || !self.can_copy_markdown()
+            || self.alias_draft_changed(cx)
+        {
+            return false;
+        }
+        self.apply_all_pii(&PiiApplyAll, window, cx);
+        true
+    }
     /// Record a metadata-only review change as its own undo step. The checkpoint
     /// commits first so Keep exclusions join the new step's journal entry.
     fn checkpoint_review<R>(

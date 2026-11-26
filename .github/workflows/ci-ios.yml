@@ -16,8 +16,9 @@ name: CI iOS
 #   ci/ios (ui 3)   packs them (ADR 0113); the timing tests run only with
 #                   `timing` (the nightly). A failed UI test retries once
 #                   (ADR 0113): a pass on the retry keeps the part green and
-#                   is named. A UI part whose test runner failed to start,
-#                   before any test, runs once more (#1065), warned.
+#                   is named. A UI part warms its Simulator up first, and
+#                   one whose test runner failed to start or hung before
+#                   any test runs once more (#1065, #1226), warned.
 # The merge queue calls it for a queue commit that touches the ios or core
 # area, and the nightly; both run every part. A dispatch of this workflow
 # runs what the branch touched (`parts`, scripts/ios/ios-ci-parts.sh), one
@@ -346,10 +347,12 @@ jobs:
       # `just mobile --ios` for one test target or shard, without its area
       # check (the caller decided), its Simulator shutdown (the runner is
       # thrown away) and its build: `test-without-building` on the core
-      # job's app. A UI part whose test runner failed to start, before any
+      # job's app. A UI part first boots its Simulator and launches the app
+      # once (#1226); one whose test runner failed to start, before any
       # test (the xcode-27 image's crash while preparing, or its AX
-      # time-out), runs once more on a reset Simulator: green with a warning
-      # on a pass (scripts/ios/ios-test-part.sh, #1065).
+      # time-out), or started no test within 5 minutes, runs once more on a
+      # reset Simulator: green with a warning on a pass
+      # (scripts/ios/ios-test-part.sh, #1065, #1226).
       - name: Tests
         run: |
           # shellcheck disable=SC2086 # ONLY: identifiers, split on purpose
@@ -388,9 +391,11 @@ jobs:
           STATUS: ${{ job.status }}
         run: python3 scripts/ios/ios-failed-tests.py part "$PART" "$STATUS" target/ios/DerivedData/Logs/Test
 
-      # On a failure, or a pass on a retry, to see what went wrong.
+      # On a failure, a pass on a retry, or the job's time limit (a bundle
+      # still staging holds the runner's output so far), to see what went
+      # wrong.
       - name: Test results
-        if: failure() || (steps.failed.outputs.retried || '0') != '0'
+        if: failure() || cancelled() || (steps.failed.outputs.retried || '0') != '0'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-xcresult-${{ steps.part.outputs.key }}-${{ github.run_attempt }}

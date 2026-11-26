@@ -27,8 +27,8 @@ pub(crate) enum Event {
     /// AI app `app` asked while nothing was shared: mdoc asks the user to
     /// share a Project (#1164 Decision 2).
     Asked { app: String },
-    /// A read was recorded in the AI project's activity.
-    Activity,
+    /// A read of `document` was recorded in the AI project's activity.
+    Activity { document: String },
     /// AI app `app` delivered: an AI Reply, and the Document it landed as
     /// when it asked for one (item 9). Recorded in the activity too.
     Delivered {
@@ -208,9 +208,11 @@ fn answer_line(connector: &Connector, events: &Sender<Event>, line: &[u8]) -> Ve
 fn event_of(app: String, answer: &Answer) -> Option<Event> {
     match answer {
         Answer::Refused(Refusal::NothingShared) => Some(Event::Asked { app }),
-        Answer::Ok(Done::Text { .. } | Done::Outline { .. } | Done::Part { .. }) => {
-            Some(Event::Activity)
-        }
+        Answer::Ok(
+            Done::Text { doc_id, .. } | Done::Outline { doc_id, .. } | Done::Part { doc_id, .. },
+        ) => Some(Event::Activity {
+            document: doc_id.clone(),
+        }),
         Answer::Ok(Done::Delivered {
             reply, document, ..
         }) => Some(Event::Delivered {

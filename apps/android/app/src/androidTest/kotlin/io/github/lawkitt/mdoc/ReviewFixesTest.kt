@@ -59,6 +59,8 @@ class ReviewFixesTest {
         session.recognize(quiet)
         val start = text.indexOf("Maya Bennett")
         session.addReplacement(SourceRange(start, start + 12), Category.Person)
+        // Below the floor: "I checked the names myself" (item 48).
+        session.confirmNamesChecked()
         val handOff = session.copyForAi()
         for (asFile in listOf(false, true)) {
             val chooser = shareIntent(handOff.text, handOff.fileName, asFile, context)
@@ -100,6 +102,23 @@ class ReviewFixesTest {
         withTimeout(10_000) { app.jobs.current.first { it == null } }
         val next = app.jobs.run(JobKind.Recognize, null) { 1 }
         assertTrue(next.toString(), next is JobOutcome.Finished)
+    }
+
+    /**
+     * Jobs back to back (#689): each one's service goes into the
+     * foreground before anything stops it, so Android never ends the app
+     * for a service stopped too soon, however fast the jobs come.
+     */
+    @Test
+    fun jobsBackToBackNeverStopTheNextServiceTooSoon() = runBlocking {
+        repeat(30) { round ->
+            val outcome = app.jobs.run(JobKind.Recognize, null) { round }
+            assertTrue(outcome.toString(), outcome is JobOutcome.Finished)
+        }
+        // A crash comes a few seconds after the stop that caused it.
+        Thread.sleep(5_000)
+        val last = app.jobs.run(JobKind.Recognize, null) { 1 }
+        assertTrue(last.toString(), last is JobOutcome.Finished)
     }
 
     @Test

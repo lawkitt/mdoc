@@ -19,11 +19,8 @@ final class ReviewToolsUITests: XCTestCase {
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
 
         // Find in document, then Hide name: the bar opens on the proposal.
-        app.buttons["title-menu"].tap()
-        let find = MdocUITest.menuItem("Find in document", app)
-        XCTAssertTrue(find.waitForExistence(timeout: MdocUITest.timeout))
-        find.tap()
-        typeInFindField(app, "Bennett")
+        openFind(app)
+        MdocUITest.typeInFindField("Bennett", app)
         let hide = app.buttons["find-hide-name"]
         XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(hide.isEnabled)
@@ -47,10 +44,13 @@ final class ReviewToolsUITests: XCTestCase {
         // Swipe up on the grabber: the expanded view; down closes it.
         let grabber = app.descendants(matching: .any)["review-grabber"].firstMatch
         grabber.swipeUp()
-        XCTAssertTrue(app.descendants(matching: .any)["review-details"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
+        let details = app.descendants(matching: .any)["review-details"].firstMatch
+        XCTAssertTrue(details.waitForExistence(timeout: MdocUITest.timeout))
         grabber.swipeDown()
+        XCTAssertTrue(details.waitForNonExistence(timeout: MdocUITest.timeout), "down closes the expanded view")
 
         // A hardware key: K keeps, which Undo can take back.
+        awaitHardwareKeys(app)
         app.typeKey("k", modifierFlags: [])
         expectEnabled(app.buttons["review-undo"])
 
@@ -72,9 +72,9 @@ final class ReviewToolsUITests: XCTestCase {
         search.tap()
         search.typeText("zzzz")
         let rows = app.descendants(matching: .any).matching(identifier: "identity-row")
-        XCTAssertEqual(rows.count, 0, "nothing matches zzzz")
+        XCTAssertTrue(MdocUITest.wait(timeout: MdocUITest.timeout) { rows.count == 0 }, "nothing matches zzzz")
         app.buttons["identities-search-clear"].firstMatch.tap()
-        XCTAssertGreaterThan(rows.count, 0)
+        XCTAssertTrue(MdocUITest.wait(timeout: MdocUITest.timeout) { rows.count > 0 }, "the names come back")
         app.buttons["identities-select"].firstMatch.tap()
         rows.firstMatch.tap()
         let selectionBar = app.descendants(matching: .any)["identities-selection-bar"].firstMatch
@@ -152,7 +152,7 @@ final class ReviewToolsUITests: XCTestCase {
     @MainActor
     private func fixTheWordsFromTheCard(_ app: XCUIApplication) {
         openFind(app)
-        typeInFindField(app, "Bennett")
+        MdocUITest.typeInFindField("Bennett", app)
         let mark = app.buttons["find-hide-name"]
         XCTAssertTrue(mark.waitForExistence(timeout: MdocUITest.timeout))
         mark.tap()
@@ -196,7 +196,7 @@ final class ReviewToolsUITests: XCTestCase {
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 30))
         openFind(app)
-        typeInFindField(app, "Депозит")
+        MdocUITest.typeInFindField("Депозит", app)
         let mark = app.buttons["find-hide-name"]
         XCTAssertTrue(mark.waitForExistence(timeout: MdocUITest.timeout))
         mark.tap()
@@ -250,7 +250,7 @@ final class ReviewToolsUITests: XCTestCase {
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
         // Repeats to step through: Find and Hide name on the surname.
         openFind(app)
-        typeInFindField(app, "Bennett")
+        MdocUITest.typeInFindField("Bennett", app)
         let hide = app.buttons["find-hide-name"]
         XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
         hide.tap()
@@ -258,6 +258,7 @@ final class ReviewToolsUITests: XCTestCase {
 
         let progress = app.buttons["review-progress"]
         let first = progress.label
+        awaitHardwareKeys(app)
         app.typeKey(.rightArrow, modifierFlags: [])
         expectChange(of: progress, from: first)
         // The next card slides in; ← waits until it has come to rest.
@@ -296,16 +297,13 @@ final class ReviewToolsUITests: XCTestCase {
         }
     }
 
-    /// Types into the Find sheet's search field once it has focus, which
-    /// the sheet gives it when it is up (#634).
+    /// Waits for Find's software keyboard to go: a hardware key sent while
+    /// it is still up hides it, and on a slow runner the key itself can be
+    /// lost in the switch (`MdocUITest.caretToTheEnd`).
     @MainActor
-    private func typeInFindField(_ app: XCUIApplication, _ text: String) {
-        let field = app.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: MdocUITest.timeout))
-        let focused = NSPredicate(format: "hasKeyboardFocus == true")
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: focused, evaluatedWith: field)], timeout: 10), .completed,
-                       "the Find field never took focus")
-        field.typeText(text)
+    private func awaitHardwareKeys(_ app: XCUIApplication) {
+        XCTAssertTrue(app.keyboards.firstMatch.wait(until: NSPredicate(format: "exists == false"), timeout: MdocUITest.timeout),
+                      "Find's keyboard went away")
     }
 
     private func expectLabel(of element: XCUIElement, _ label: String) {

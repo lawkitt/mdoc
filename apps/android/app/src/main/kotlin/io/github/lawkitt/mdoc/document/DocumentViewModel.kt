@@ -90,10 +90,37 @@ data class DocumentState(
     val saved: SavedReadiness? = null,
     /** Copy for AI or Share refused on a tap: its dialog shows (#1209). */
     val refusal: HandOffRefusal? = null,
+    /** The hand-off last tapped, which "I checked the names myself" goes on with (item 48). */
+    val tapped: HandOffKind? = null,
 ) {
     /** "Paste reply?" shows, back from the AI app Ask AI shared to. */
     val showsReplyBanner: Boolean get() = replyOffer == ReplyOffer.Offered
 }
+
+/** Why a hand-off's Find names step waits while a job holds the one slot. */
+enum class StepWait {
+    /** This document's own job runs: the step says what it is doing. */
+    OwnJob,
+
+    /** Another document's job holds the slot. */
+    OtherJob;
+
+    companion object {
+        /**
+         * The wait for [step], if any: only Find names waits, and only while
+         * a job runs; "Waiting for another document" only when that job is
+         * another document's (#1295).
+         */
+        fun of(step: HandOffRefusal.Step?, jobRunning: Boolean, jobIsMine: Boolean): StepWait? = when {
+            step != HandOffRefusal.Step.FindNames || !jobRunning -> null
+            jobIsMine -> OwnJob
+            else -> OtherJob
+        }
+    }
+}
+
+/** The ways out "I checked the names myself" goes on with: the one tapped (item 48). */
+enum class HandOffKind { Copy, Share, ShareFile, AskAi }
 
 enum class PasswordPrompt {
     Needed,
@@ -336,6 +363,24 @@ class DocumentViewModel(
             .onFailure { refused(AppError.HandOffRefused(HandOffRefusal.Failed)) }.getOrNull() ?: return null
         mutable.update { it.copy(snapshot = replaced) }
         return handOff()
+    }
+
+    /** A hand-off tapped: kept here, so the screen made again still knows it. */
+    fun tapped(kind: HandOffKind) = mutable.update { it.copy(tapped = kind) }
+
+    /**
+     * "I checked the names myself" (item 48): said of the text the
+     * question was asked of, and saved; the hand-off tapped, which then
+     * goes on, or null. Text changed since asks again; a save that fails
+     * is a refusal in plain words.
+     */
+    suspend fun confirmNamesChecked(): HandOffKind? {
+        mutable.update { it.copy(refusal = null) }
+        val checked = withContext(Dispatchers.IO) { runCatching { session.confirmNamesChecked() } }
+            .onFailure { refused(it as? AppError.HandOffRefused ?: AppError.HandOffRefused(HandOffRefusal.Failed)) }
+            .getOrNull() ?: return null
+        mutable.update { it.copy(snapshot = checked) }
+        return mutable.value.tapped
     }
 
     /**

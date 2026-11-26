@@ -242,7 +242,7 @@ impl Workspace {
         )
     }
 
-    /// The page's Ask menu: Ask Claude and Ask ChatGPT, the last ticked.
+    /// The page's Ask menu: Ask Claude and Ask in a ChatGPT thread, the last ticked.
     pub(super) fn project_ask_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let (id, position) = self.project_ui.ask_menu.as_ref()?;
         self.ai_connector.as_ref()?;

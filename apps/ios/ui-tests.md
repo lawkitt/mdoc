@@ -8,7 +8,10 @@ them: [the app's README](README.md).
 The Simulator refuses `BGContinuedProcessingTask`, so only a phone runs a
 long job through the real background task. Run them before every TestFlight
 build, with the phone connected, unlocked, online and with UI Automation on
-(Settings → Developer). Each run downloads text recognition (18 MB); the
+(Settings → Developer). Turn Handoff off (Settings → General → AirPlay &
+Continuity) for the run: the tests' Paste reads the clipboard, and a copy
+on a Mac with the same Apple Account replaces it, which once pasted a Mac's
+copy into a test. Each run downloads text recognition (18 MB); the
 detector tier reuses the phone's own name detector or downloads it once
 (about 630 MB):
 

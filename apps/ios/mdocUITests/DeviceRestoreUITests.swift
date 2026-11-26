@@ -6,14 +6,19 @@ import XCTest
 /// extension, which restores with the place of the last Copy for AI and
 /// saves the reply; back in mdoc, the Reply panes list the replies,
 /// restored. mdoc's own Share sends a file, which the text-only extension
-/// does not take, so the text comes from Notes. One scratch note is made
-/// and deleted. Device only: the Simulator has no Notes.
+/// does not take, so the text comes from Notes. The scratch notes it makes
+/// carry this run's title and are deleted. Device only: the Simulator has
+/// no Notes.
 /// `just ios-device-test <udid>` runs it.
 final class DeviceRestoreUITests: XCTestCase {
     private static let notesBundle = "com.apple.mobilenotes"
     private static let project = "Restore check"
     private static let projectDocument = "Project letter"
     private static let unfiledDocument = "Unfiled note"
+    /// This run's scratch notes start with it, so the cleanup never takes
+    /// a note of the phone's owner.
+    private let scratchTitle = "mdoc restore check \(UUID().uuidString.prefix(8))"
+    private var madeNote = false
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -29,7 +34,11 @@ final class DeviceRestoreUITests: XCTestCase {
         app.launchEnvironment["MDOC_SEED_RESTORE"] = "1"
         app.launch()
         let notes = XCUIApplication(bundleIdentifier: Self.notesBundle)
-        defer { deleteScratchNote(notes) }
+        // A teardown block, not defer: a failure stops the test without
+        // running defer, which left the scratch notes behind.
+        addTeardownBlock { @MainActor [weak self] in
+            self?.deleteScratchNotes(XCUIApplication(bundleIdentifier: Self.notesBundle))
+        }
 
         // The Project's document: Copy for AI, then a reply from Notes.
         let projectAlias = try copyForAI(Self.projectDocument, in: app)
@@ -54,7 +63,10 @@ final class DeviceRestoreUITests: XCTestCase {
         expectRestored("Project reply: write to maya.ellison@example.com today.", in: app)
 
         // A second reply for the Project, pasted in mdoc: the pane's menu
-        // switches between them, and Remove deletes the one shown.
+        // switches between them, and Remove deletes the one shown. Copied
+        // in mdoc: after a copy in Notes, a test's tap on Paste brought up
+        // iOS's "Allow Paste", which the system's Paste control exists to
+        // spare a person's tap.
         MdocUITest.pasteReply("Pasted reply for \(projectAlias).", in: app)
         expectRestored("Pasted reply for maya.ellison@example.com.", in: app)
         let picker = app.buttons["reply-picker"].firstMatch
@@ -150,16 +162,7 @@ final class DeviceRestoreUITests: XCTestCase {
     /// picker shows `place`, then Save and Done.
     @MainActor
     private func shareFromNotes(_ reply: String, notes: XCUIApplication, expecting place: String) {
-        notes.activate()
-        XCTAssertTrue(notes.wait(for: .runningForeground, timeout: MdocUITest.timeout))
-        let compose = Self.first(
-            notes.buttons, labels: ["New Note", "Nueva nota", "Compose", "Redactar"], identifiers: ["newNote", "compose"])
-        XCTAssertTrue(compose.waitForExistence(timeout: MdocUITest.timeout), dump(notes, "notes-start"))
-        compose.tap()
-        let body = notes.textViews.firstMatch
-        XCTAssertTrue(body.waitForExistence(timeout: MdocUITest.timeout), dump(notes, "notes-new"))
-        notes.typeText("mdoc restore check\n\(reply)")
-
+        newNote(reply, notes: notes)
         let share = Self.first(notes.buttons, labels: ["Share", "Compartir"], identifiers: ["share"])
         XCTAssertTrue(share.waitForExistence(timeout: MdocUITest.timeout), dump(notes, "notes-note"))
         share.tap()
@@ -184,23 +187,61 @@ final class DeviceRestoreUITests: XCTestCase {
         XCTAssertTrue(picker.waitForNonExistence(timeout: MdocUITest.timeout))
     }
 
-    /// The scratch notes go: each one titled "mdoc restore check".
+    /// A scratch note with this run's title and `body`, left open with
+    /// its text focused.
     @MainActor
-    private func deleteScratchNote(_ notes: XCUIApplication) {
+    private func newNote(_ body: String, notes: XCUIApplication) {
         notes.activate()
-        guard notes.wait(for: .runningForeground, timeout: MdocUITest.timeout) else { return }
-        for _ in 0..<4 {
-            let back = notes.navigationBars.buttons.firstMatch
-            let note = notes.cells.matching(NSPredicate(format: "label BEGINSWITH 'mdoc restore check'")).firstMatch
+        XCTAssertTrue(notes.wait(for: .runningForeground, timeout: MdocUITest.timeout))
+        let compose = Self.first(
+            notes.buttons, labels: ["New Note", "Nueva nota", "Compose", "Redactar"], identifiers: ["newNote", "compose"])
+        XCTAssertTrue(compose.waitForExistence(timeout: MdocUITest.timeout), dump(notes, "notes-start"))
+        madeNote = true
+        compose.tap()
+        let text = notes.textViews.firstMatch
+        XCTAssertTrue(text.waitForExistence(timeout: MdocUITest.timeout), dump(notes, "notes-new"))
+        notes.typeText("\(scratchTitle)\n\(body)")
+    }
+
+    /// This run's scratch notes go, whatever the test left open in Notes;
+    /// one that stays fails the run.
+    @MainActor
+    private func deleteScratchNotes(_ notes: XCUIApplication) {
+        guard madeNote else { return }
+        notes.activate()
+        XCTAssertTrue(notes.wait(for: .runningForeground, timeout: MdocUITest.timeout), "Notes did not open to clean up")
+        // A share sheet or the extension left open covers the note.
+        let sheet = notes.otherElements["ActivityListView"].firstMatch
+        for _ in 0..<2 where sheet.exists {
+            sheet.swipeDown(velocity: .fast)
+            _ = sheet.waitForNonExistence(timeout: MdocUITest.probeTimeout)
+        }
+        let note = notes.cells.matching(NSPredicate(format: "label BEGINSWITH %@", scratchTitle)).firstMatch
+        // From a note, back leads to its list or to the folders, where the
+        // first folder named Notes holds new notes.
+        let editorBack = notes.navigationBars["ICTK2NoteEditorView"].buttons["BackButton"]
+        let folder = notes.cells.matching(NSPredicate(format: "label BEGINSWITH 'Notas' OR label BEGINSWITH 'Notes'"))
+            .firstMatch
+        for _ in 0..<8 {
             if !note.waitForExistence(timeout: MdocUITest.probeTimeout) {
-                if back.exists { back.tap() } else { return }
+                if editorBack.exists {
+                    editorBack.tap()
+                } else if folder.exists {
+                    folder.tap()
+                } else {
+                    break
+                }
                 continue
             }
             note.swipeLeft()
-            let delete = Self.first(notes.buttons, labels: ["Delete", "Eliminar", "Trash", "Papelera"], identifiers: [])
-            guard delete.waitForExistence(timeout: MdocUITest.probeTimeout) else { return }
+            let delete = Self.first(
+                notes.buttons, labels: ["Delete", "Delete Note", "Eliminar", "Eliminar nota", "Trash", "Papelera"],
+                identifiers: [])
+            guard delete.waitForExistence(timeout: MdocUITest.probeTimeout) else { break }
             delete.tap()
+            _ = note.waitForNonExistence(timeout: MdocUITest.probeTimeout)
         }
+        XCTAssertFalse(note.exists, dump(notes, "scratch-note-left"))
     }
 
     private static func first(_ query: XCUIElementQuery, labels: [String], identifiers: [String]) -> XCUIElement {

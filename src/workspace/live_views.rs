@@ -240,6 +240,17 @@ impl<V> LiveViews<V> {
         true
     }
 
+    /// View `id` becomes the most recent after the active one, which
+    /// stays active: the next eviction takes it last but one.
+    pub(super) fn behind_active(&mut self, id: u64) {
+        let Some(index) = self.position(id) else {
+            return;
+        };
+        let tab = self.tabs.remove(index);
+        let at = (self.position(self.active)).map_or(0, |active| active + 1);
+        self.tabs.insert(at, tab);
+    }
+
     /// The views `weigh` counts, most recent first.
     pub(super) fn recent(&self, weigh: impl Fn(&LiveView<V>) -> Weight) -> Vec<u64> {
         (self.tabs.iter())

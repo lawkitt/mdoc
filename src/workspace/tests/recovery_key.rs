@@ -107,13 +107,19 @@ fn the_first_project_brings_one_nudge_that_stays_closed(cx: &mut TestAppContext)
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     new_project(&tabs, cx, tab);
     draw(cx);
+    // Counted on the bell, which it leaves closed over the new Project's
+    // header (#1286); the bell shows it.
+    draw(cx);
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert!(tabs.recovery_nudge());
-        // It opens the bell by itself.
-        assert!(tabs.title.notices_open.get());
+        assert!(!tabs.title.notices_open.get());
         assert!(tabs.title.notices.get() >= 1);
     });
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    click(cx, "header-notices");
+    draw(cx);
+    assert!(cx.debug_bounds("recovery-nudge").is_some());
     click(cx, "recovery-nudge-later");
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
@@ -131,6 +137,33 @@ fn the_first_project_brings_one_nudge_that_stays_closed(cx: &mut TestAppContext)
     assert!(cx.debug_bounds("recovery-nudge").is_none());
 }
 
+/// Done when (#1286): a launch with the nudge still due, on a Vault that
+/// has a Project, counts it on the bell and leaves the popover closed.
+#[gpui::test]
+fn a_launch_with_the_nudge_due_leaves_the_popover_closed(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("vault");
+    Vault::open(&root, &[3; 32])
+        .unwrap()
+        .create_project(mdoc_vault::NewProject {
+            name: "Lease".into(),
+            ..mdoc_vault::NewProject::default()
+        })
+        .unwrap();
+    let (tabs, cx) = boot_on_vault(cx, Session::default(), &root);
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    draw(cx);
+    draw(cx);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.recovery_nudge(), "the nudge is due");
+        assert!(!tabs.title.notices_open.get());
+        assert!(tabs.title.notices.get() >= 1);
+    });
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    assert!(cx.debug_bounds("header-notices").is_some());
+}
+
 #[gpui::test]
 fn the_nudges_show_opens_settings_with_the_key_and_retires_it(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -138,6 +171,9 @@ fn the_nudges_show_opens_settings_with_the_key_and_retires_it(cx: &mut TestAppCo
     tabs.update(cx, |tabs, _| tabs.use_key_store(key_store(Some(KEY))));
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     new_project(&tabs, cx, tab);
+    draw(cx);
+    // The bell shows the nudge; it doesn't open by itself (#1286).
+    click(cx, "header-notices");
     draw(cx);
     click(cx, "recovery-nudge-show");
     let panel = panel(&tabs, cx);
@@ -340,6 +376,66 @@ fn the_recovery_key_takes_both_wrong_key_notices_away(cx: &mut TestAppContext) {
         // Documents can be added again.
         assert!(!tabs.intake_refused(window, cx));
     });
+}
+
+/// Done when (#1287): on a profile with no key and no session, once the
+/// launch has restored, Home shows the recovery screen. A refused intake's
+/// notice is on the bell, beside the wrong-key banner, and in its open
+/// popover until the recovery key, entered with Enter, opens the Vault:
+/// then the bell counts nothing, the popover goes with its card, and Home
+/// shows the opened Vault.
+#[gpui::test]
+fn the_recovery_key_clears_the_locked_notice_from_the_bell(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let sealed_with = [5; 32];
+    let (root, _, _) = sealed_vault(dir.path(), &sealed_with);
+    let store = key_store(Some([2; 32]));
+    let (tabs, cx) = boot_home_with(
+        cx,
+        Session::default(),
+        launch_with(root, [2; 32], store.clone()),
+    );
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    draw(cx);
+    assert!(
+        cx.debug_bounds("home-recovery").is_some(),
+        "launch shows it"
+    );
+    let count = |cx: &mut VisualTestContext| cx.update(|_, cx| tabs.read(cx).title.notices.get());
+    assert_eq!(count(cx), 1, "the wrong-key banner");
+    tabs.update_in(cx, |tabs, window, cx| {
+        assert!(tabs.intake_refused(window, cx));
+    });
+    draw(cx);
+    draw(cx);
+    assert_eq!(count(cx), 2, "the banner and the refused intake");
+    // The new notice opened the popover, with its card.
+    assert!(cx.debug_bounds("notices-popover").is_some());
+    assert!(cx.debug_bounds("dismiss-session-notice").is_some());
+    // The recovery key, entered with Enter from its field, opens the
+    // Vault while the popover is still open.
+    type_key(&tabs, &recovery::format(&sealed_with), cx);
+    draw(cx);
+    assert!(cx.debug_bounds("dismiss-session-notice").is_some());
+    cx.update(|_, cx| shell::bind_keys(cx));
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    draw(cx);
+    draw(cx);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.vault.vault().is_some());
+        assert_eq!(tabs.notice_text(), None);
+        assert_eq!(tabs.title.notices.get(), 0, "the bell counts nothing");
+    });
+    assert!(cx.debug_bounds("dismiss-session-notice").is_none());
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    assert!(cx.debug_bounds("home-recovery").is_none());
+    assert!(
+        cx.debug_bounds("home-drop").is_some(),
+        "Home shows the Vault"
+    );
+    assert_eq!(store.lock().unwrap().stored, vec![sealed_with]);
 }
 
 #[gpui::test]

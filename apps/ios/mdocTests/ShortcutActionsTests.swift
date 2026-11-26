@@ -139,10 +139,11 @@ final class ShortcutActionsTests: XCTestCase {
     }
 
     /// Done-when: the action's output never holds an original, even where
-    /// the Vault counts the new document Ready: below the name finder's
-    /// floor, an Unfiled paste with no names marked by hand is. Once the
-    /// user reviews it, Copy for AI's text, which the message points to,
-    /// has aliases in place of the names.
+    /// the Vault would count the new document Ready: below the name
+    /// finder's floor its email is proposed (item 48), and an Unfiled paste
+    /// with no names marked by hand is Ready once the user checked them.
+    /// Once the user reviews it, Copy for AI's text, which the message
+    /// points to, has aliases in place of the names.
     func testPseudonymizeTextReturnsNoOriginalEvenWhenTheVaultCountsItReady() async throws {
         let (seeded, _) = try seeded()
         let app = app(seeded)
@@ -150,7 +151,9 @@ final class ShortcutActionsTests: XCTestCase {
         let model = try XCTUnwrap(app.openModel)
         XCTAssertNil(model.snapshot.projectID)
         let session = try seeded.session(model.id)
-        XCTAssertEqual(try session.copyForAI().text, text, "Ready below the floor, as the user has read it in mdoc")
+        XCTAssertThrowsError(try session.copyForAI(), "its email is proposed below the floor") { error in
+            guard case CoreError.handOffRefused(.namesToDecide) = error else { return XCTFail("\(error)") }
+        }
 
         _ = try session.scan(observer: TestObserver())
         _ = try session.propose([SampleDocument.Name(wording: "Maya Ellison", category: .person)])

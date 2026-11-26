@@ -415,12 +415,6 @@ next candidate.
     Each hub fixes or deletes its platform's quarantined tests, and fixes the
     hosted CI issues #1215, #1226 and #1243. *Done when:*
     `.config/quarantine.txt` lists 8 tests or fewer and the Nightly is green.
-48. **[Mobile] Check: Ready below the memory floor.** *From
-    [#1264](https://github.com/lawkitt/mdoc/issues/1264).* Does a fresh Unfiled paste count as Ready
-    without review on a phone that cannot find names? If so, such a phone
-    asks once per document for "I checked the names myself" before the first
-    Copy for AI. *Done when:* the answer is on #1265 and, if a fix was needed,
-    a test pins it on iOS and Android.
 49. **[Release] Builds for the day of use.** *From [#1264](https://github.com/lawkitt/mdoc/issues/1264).*
     One TestFlight build and one desktop build of the frozen `main`, with the
     real profile backed up first. *Done when:* both are named on #1266.
@@ -464,30 +458,11 @@ or ChatGPT apps themselves are the maintainer's.
    launcher for a binary inside an installed app? The maintainer runs it,
    since the install can restart Claude Desktop. *Done when:* the answer is a
    comment on the issue.
-15. **[Desktop] The system-wide hotkey.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164)
-    (ADR 0128).* `global-hotkey` toggles the companion from any app, ⌥M by
-    default, changeable and off-able in Settings. *Blocked by:* item 14.
-    *Done when:* tests of the setting; a native check from another app.
-16. **[Desktop] Review in the companion.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-    A document that needs review lists its proposals with Replace all and
-    becomes Ready there; Open in mdoc covers the rest. *Blocked by:* item 14.
-    *Done when:* workspace tests of the review and headless renders.
-17. **[Windows] The companion and a tray icon.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
-    As items 14–16, if item 4 found a way; otherwise Windows keeps
-    notifications and the Reply page and this item moves to Later. *Blocked
-    by:* items 4, 14. *Done when:* headless renders on Windows and the native
-    checks item 14 names.
 18. **[iOS] Ask AI and the reply banner.** *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*
     Ask AI shares the pseudonymized text into the AI app; on return, a "Paste
     reply?" banner restores what the user pastes. *Done when:* the iOS job
     passes with tests of both, and a device check shares to an AI app and
     restores its answer.
-
-22. **[Desktop] Ask ChatGPT says what it opens.** *From
-    [#1264](https://github.com/lawkitt/mdoc/issues/1264) (item 2's spike).* ChatGPT's ordinary chats
-    do not call a local connector; Ask ChatGPT opens a local thread. The
-    menu, Settings and `docs/privacy.md` say so. *Done when:* no screen calls
-    it a chat, and a workspace test pins the wording.
 
 - **[Desktop] Later: Word export.** A delivered document and any other export
   as `.docx`. *From [#1164](https://github.com/lawkitt/mdoc/issues/1164).*

@@ -103,9 +103,10 @@ final class HandOffRefusalTests: XCTestCase {
         XCTAssertEqual(model.toast?.actionTitle, "Undo", "one undoable step")
     }
 
-    /// Below the floor a document with no names left goes: the title menu
-    /// agrees with the bar's Share instead of saying Find names first. At
-    /// the detector tier the same document waits for Find names.
+    /// Below the floor a document with no names left goes once the user
+    /// says they checked the names (item 48): the title menu agrees with
+    /// the bar's Share instead of saying Find names first. At the detector
+    /// tier the same document waits for Find names.
     func testBelowTheFloorTheMenuAgreesWithTheBar() throws {
         let (core, storage) = try Fixture.core(memory: Fixture.belowFloor)
         let session = try core.library.importDocument(.text("Lunch notes\n\nThe park is lovely today."), title: "Lunch", into: nil)
@@ -119,6 +120,8 @@ final class HandOffRefusalTests: XCTestCase {
         XCTAssertNil(below.handOffBlockedReason)
         var copied: String?
         below.copyForAI { copied = $0 }
+        XCTAssertEqual(below.refusal, .namesNotChecked)
+        below.take(.namesChecked)
         XCTAssertNotNil(copied, "the menu's Copy for AI goes, as the bar's does")
 
         let detector = DocumentViewModel(session: session, jobs: jobs, storage: storage, findsNames: true)
@@ -138,8 +141,11 @@ final class HandOffRefusalTests: XCTestCase {
         let jobs = LongJobRunner(background: NoBackgroundContinuation())
         let model = DocumentViewModel(session: note, jobs: jobs, storage: storage, findsNames: false)
         try note.saveChanges()
+        model.copyForAI { _ in }
+        XCTAssertEqual(model.refusal, .namesNotChecked)
+        XCTAssertTrue(model.confirmNamesChecked())
         await model.checkSaved().value
-        XCTAssertNil(model.handOffRefusal, "nothing to replace, decided by hand")
+        XCTAssertNil(model.handOffRefusal, "nothing to replace, decided by hand and checked")
 
         let other = try core.library.importDocument(.text("Zara Quinn signed."), title: "Other", into: ellison)
         _ = try other.recognize(observer: TestObserver())
@@ -172,7 +178,7 @@ final class HandOffRefusalTests: XCTestCase {
     func testEachRefusalHasItsOwnSentenceAndStep() {
         let refusals: [HandOffRefusal] = [
             .namesToDecide(names: 3, proposals: 5), .notScanned, .notRead, .notChecked, .changedSinceReview, .namesWrittenOut(2),
-            .excludedFromAI, .failed,
+            .excludedFromAI, .failed, .namesNotChecked,
         ]
         XCTAssertEqual(Set(refusals.map(\.reason)).count, refusals.count, "a sentence each")
         for refusal in refusals {
@@ -188,5 +194,12 @@ final class HandOffRefusalTests: XCTestCase {
         XCTAssertEqual(HandOffRefusal.changedSinceReview.step(findsNames: true), .findNames)
         XCTAssertEqual(HandOffRefusal.namesWrittenOut(1).step(findsNames: true), .review)
         XCTAssertNil(HandOffRefusal.excludedFromAI.step(findsNames: true))
+        XCTAssertEqual(HandOffRefusal.namesNotChecked.step(findsNames: false), .namesChecked)
+        XCTAssertEqual(HandOffRefusal.namesNotChecked.reason, "Check the names yourself")
+        XCTAssertEqual(
+            HandOffRefusal.namesNotChecked.detail,
+            "This phone can't find names. Read the text and mark any name still in it before it goes to an AI.")
+        XCTAssertEqual(HandOffRefusal.namesNotChecked.dismissTitle, "Cancel")
+        XCTAssertEqual(HandOffRefusal.namesToDecide(names: 1, proposals: 1).dismissTitle, "OK")
     }
 }

@@ -1,7 +1,7 @@
 //! The document header's Ask (#1164 Decision 22; Milestone 2 item 10),
 //! only while "AI connector (preview)" is on and the document is in the
 //! Vault: a split button whose main part repeats the last choice, a menu
-//! of Ask Claude, Ask ChatGPT and Copy for AI, and, for an Unfiled
+//! of Ask Claude, Ask in a ChatGPT thread and Copy for AI, and, for an Unfiled
 //! document, the card offering "Move to a new Project and share". The
 //! window carries each choice out (`TabEvent::Ask`).
 use super::DocumentView;
@@ -239,7 +239,7 @@ impl DocumentView {
         .into_any_element()
     }
 
-    /// Ask Claude, Ask ChatGPT and Copy for AI, the last choice ticked.
+    /// Ask Claude, Ask in a ChatGPT thread and Copy for AI, the last choice ticked.
     fn ask_menu(&self, last: AskWith, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
         let reason = self.alias_actions_reason();

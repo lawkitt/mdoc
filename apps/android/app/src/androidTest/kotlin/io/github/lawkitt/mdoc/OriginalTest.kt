@@ -41,9 +41,9 @@ class OriginalTest {
 
         compose.activityRule.scenario.onActivity { it.recreate() }
         compose.openDocument(title)
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("Original")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(HOST_STALLS) { compose.onAllNodes(hasText("Original")).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Original").performClick()
-        compose.waitUntil(10_000) {
+        compose.waitUntil(HOST_STALLS) {
             compose.onAllNodes(hasContentDescription("Original page 1 of 1")).fetchSemanticsNodes().isNotEmpty()
         }
         // A double tap zooms in to twice the size.
@@ -76,9 +76,9 @@ class OriginalTest {
 
         compose.activityRule.scenario.onActivity { it.recreate() }
         compose.openDocument(title)
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("Original")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(HOST_STALLS) { compose.onAllNodes(hasText("Original")).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Original").performClick()
-        compose.waitUntil(10_000) {
+        compose.waitUntil(HOST_STALLS) {
             compose.onAllNodes(hasContentDescription("Original page 1 of 4")).fetchSemanticsNodes().isNotEmpty()
         }
         // Nothing of it reached the viewing folder.

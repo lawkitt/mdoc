@@ -137,7 +137,7 @@ struct DocumentScreen: View {
                 if let step = model.step(for: refusal) {
                     Button(step.title) { model.take(step) }
                 }
-                Button("OK", role: .cancel) { model.refusal = nil }
+                Button(refusal.dismissTitle, role: .cancel) { model.refusal = nil }
             } message: { refusal in
                 Text(refusal.detail)
             }

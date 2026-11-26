@@ -57,6 +57,8 @@ class NotesPromoteTest {
         session.recognize(Quiet)
         val start = text.indexOf(name)
         session.addReplacement(SourceRange(start, start + name.length), Category.Person)
+        // Below the floor: "I checked the names myself" (item 48).
+        session.confirmNamesChecked()
         return session
     }
 

@@ -202,8 +202,9 @@ final class HandOffRefusalUITests: XCTestCase {
     }
 
     /// Below the floor a typed document with no names goes: the bar offers
-    /// Share, and the title menu's Copy for AI is on too and copies, where
-    /// it said "Find names first" before (#1209).
+    /// Share, and the title menu's Copy for AI is on too and, once the user
+    /// says they checked the names, copies, where it said "Find names
+    /// first" before (#1209).
     @MainActor
     func testBelowTheFloorTheMenuAgreesWithTheBar() throws {
         let app = typedDocument()
@@ -221,6 +222,10 @@ final class HandOffRefusalUITests: XCTestCase {
         XCTAssertTrue(MdocUITest.menuItem("Share", app).isEnabled)
         clearClipboard()
         copy.tap()
+        // It asks first (item 48; NamesCheckedUITests).
+        let asked = app.alerts["Check the names yourself"]
+        XCTAssertTrue(asked.waitForExistence(timeout: MdocUITest.timeout), "no question")
+        asked.buttons["I checked the names myself"].tap()
         expectCopied(app)
         expectNoCoreText(app)
     }

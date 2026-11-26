@@ -585,7 +585,11 @@ final class AppModel {
             return nil
         }
         model.share(asFile: false)
-        defer { model.share = nil }
+        defer {
+            model.share = nil
+            // Goes on from here (`take(_:on:)`), not as the document's own.
+            model.askingExit = nil
+        }
         if let refusal = model.refusal {
             navigator.present(.refusal(id, refusal))
             model.refusal = nil
@@ -596,15 +600,41 @@ final class AppModel {
         return model.share
     }
 
+    /// "I checked the names myself" for document `id`, open or not; false
+    /// when it could not be saved, which says why.
+    private func confirmNamesChecked(_ id: DocumentID) -> Bool {
+        let wasHeld = documents.ids.contains(id)
+        defer { if !wasHeld { evictClosedDocuments() } }
+        let model: DocumentViewModel
+        do {
+            model = try documents.open(id)
+        } catch {
+            present(error)
+            return false
+        }
+        guard model.confirmNamesChecked() else {
+            navigator.present(.refusal(id, model.refusal ?? .failed))
+            model.refusal = nil
+            return false
+        }
+        return true
+    }
+
     /// The step a refused Share offers for document `id`, as its own menu
     /// would.
     func step(for refusal: HandOffRefusal, of id: DocumentID) -> HandOffRefusal.Step? {
         refusal.step(findsNames: setup.snapshot.tier == .detector)
     }
 
-    /// The step, on the document it refused: it opens, then takes it.
+    /// The step, on the document it refused: it opens, then takes it. I
+    /// checked the names myself saves the check, and the same Share goes
+    /// on, from where it was asked (item 48).
     func take(_ step: HandOffRefusal.Step, on id: DocumentID) {
         navigator.dismiss()
+        if step == .namesChecked {
+            if confirmNamesChecked(id) { share(id) }
+            return
+        }
         open(id)
         documents.model(for: id)?.take(step)
     }

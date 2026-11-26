@@ -62,7 +62,8 @@ pub struct SelectionReplaced {
 impl DocumentSession {
     /// What `range` (UTF-8 offsets in the snapshot's text) holds. Clean
     /// when the document was scanned (below the floor, names decided by
-    /// hand count, as for Ready) and the paragraphs the range touches have
+    /// hand and checked by the user count, as for Ready) and the
+    /// paragraphs the range touches have
     /// not changed since, no proposal is in it or across its edges, and no
     /// name its Project knows is written out in it: the names
     /// `Vault::readiness` checks, read now, with this review's own. A range
@@ -86,7 +87,8 @@ impl DocumentSession {
                 let guard = self.lock_document();
                 let document = guard.as_ref().ok_or_else(no_document)?;
                 document.review.in_text(&range)?;
-                if !(document.scanned || by_hand) {
+                let checked = by_hand && document.names_checked() && !document.rules_owed;
+                if !(document.scanned || checked) {
                     return Ok(SelectionCheck::NeverScanned);
                 }
                 at(document)
