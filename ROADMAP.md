@@ -614,18 +614,6 @@ next candidate.
     between apps or real AI app is run on a dev profile: macOS and iOS by the
     Mac hub, Windows and Android by the Windows hub. *Done when:* each such row
     is ticked or filed as a bug, and the native rows are on #1266.
-46. **[Housekeeping] One issue for the maintainer's rows.** *From
-    [#1264](https://github.com/lawkitt/mdoc/issues/1264).* Eleven "pending (maintainer)" issues are
-    open, the oldest from 30 October. One run drops the rows whose screens
-    are gone and folds the rest into one issue. *Done when:* one such issue is
-    open and the others are closed with a link to it.
-47. **[CI] Quarantine from 16 to 8.** *From [#1264](https://github.com/lawkitt/mdoc/issues/1264).*
-    Each hub fixes or deletes its platform's quarantined tests, and fixes the
-    hosted CI issues #1215, #1226 and #1243. *Done when:*
-    `.config/quarantine.txt` lists 8 tests or fewer and the Nightly is green.
-49. **[Release] Builds for the day of use.** *From [#1264](https://github.com/lawkitt/mdoc/issues/1264).*
-    One TestFlight build and one desktop build of the frozen `main`, with the
-    real profile backed up first. *Done when:* both are named on #1266.
 
 - **[Mobile] Later: drag a selection out.** It follows the copy menu's three
   states once those have been used for a while. *From
