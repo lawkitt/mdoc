@@ -6,7 +6,10 @@ use super::*;
 fn inline_ocr_skip_imports_native_content_and_keeps_page_warning(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/import/handmade-partly-scanned.pdf");
+        .ancestors()
+        .nth(2)
+        .unwrap()
+        .join("tests/fixtures/import/handmade-partly-scanned.pdf");
     app.update_in(cx, |app, window, cx| {
         app.start_import(source.clone(), window, cx)
     });

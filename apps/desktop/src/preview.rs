@@ -1817,7 +1817,10 @@ pub(crate) mod tests {
     #[gpui::test]
     fn an_unread_pdf_keeps_its_own_annotations(cx: &mut gpui::TestAppContext) {
         let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures/pdf-source/comments.pdf");
+            .ancestors()
+            .nth(2)
+            .unwrap()
+            .join("tests/fixtures/pdf-source/comments.pdf");
         let (app, cx) = crate::document_view::tests::boot(cx);
         app.update_in(cx, |app, window, cx| {
             app.preview.unread_annotations = Some((source.clone(), false));
