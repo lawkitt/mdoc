@@ -1,5 +1,6 @@
 //! The window's own words: its notices on restoring tabs and on comparing
-//! models, the comparison window's titles and the clipboard actions' names.
+//! models, the comparison window's titles, the clipboard actions' names, a dev
+//! profile's window title and what a crash report says the window showed.
 use std::fmt::Display;
 
 pub(crate) const OPEN_BEFORE_COMPARING: &str = "Open a document before comparing models.";
@@ -12,6 +13,23 @@ pub(crate) const COMPARE_PSEUDONYMIZATION_TITLE: &str = "Compare pseudonymizatio
 pub(crate) const PASTE_AI_REPLY: &str = "Paste AI reply";
 pub(crate) const PSEUDONYMIZE_CLIPBOARD: &str = "Pseudonymize clipboard";
 pub(crate) const RESTORE_CLIPBOARD: &str = "Restore clipboard";
+
+pub(crate) fn dev_profile_title(title: impl Display) -> String {
+    format!("{title} — dev profile")
+}
+
+/// What a crash report says the window showed (no text, no names): the
+/// view, the tab count, the sidebar, the theme, and whether the palette is
+/// open.
+pub(crate) fn crash_state(
+    view: impl Display,
+    tabs: usize,
+    sidebar: &str,
+    theme: impl std::fmt::Debug,
+    palette: &str,
+) -> String {
+    format!("{view}, {tabs} tabs, sidebar {sidebar}, {theme:?} theme{palette}")
+}
 
 pub(crate) fn could_not_restore_tabs(error: impl Display) -> String {
     format!("Could not restore tabs: {error}")

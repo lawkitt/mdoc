@@ -20,6 +20,32 @@ pub(crate) const SHOW_FEWER: &str = "Show fewer";
 pub(crate) const MOVE_TO_NEW_PROJECT: &str = "Move to New Project";
 pub(crate) const MOVE_TO_UNFILED: &str = "Move to Unfiled";
 
+/// A Back or Forward control's label, with the stop it goes to.
+pub(crate) fn stop_toward(direction: impl Display, destination: impl Display) -> String {
+    format!("{direction} to {destination}")
+}
+
+/// A document row's tooltip: its title, then a line for each state it is in.
+pub(crate) fn document_tooltip(
+    title: &str,
+    recognized: bool,
+    pseudonymized: bool,
+    busy: bool,
+    error: bool,
+) -> String {
+    format!(
+        "{title}{}{}{}{}",
+        if recognized {
+            "\nRecognized with OCR"
+        } else {
+            ""
+        },
+        if pseudonymized { "\nPseudonymized" } else { "" },
+        if busy { "\nProcessing…" } else { "" },
+        if error { "\nNeeds attention" } else { "" }
+    )
+}
+
 /// A Project as a Back or Forward stop.
 pub(crate) fn project_stop(name: impl Display) -> String {
     format!("Project “{name}”")

@@ -813,17 +813,7 @@ impl Workspace {
         let recognized = live.is_some_and(|v| v.recognized());
         let chosen = !member && self.tree.is_chosen(&document.id);
         let title = document.title.clone();
-        let tooltip = format!(
-            "{title}{}{}{}{}",
-            if recognized {
-                "\nRecognized with OCR"
-            } else {
-                ""
-            },
-            if pseudonymized { "\nPseudonymized" } else { "" },
-            if busy { "\nProcessing…" } else { "" },
-            if error { "\nNeeds attention" } else { "" }
-        );
+        let tooltip = super::text::document_tooltip(&title, recognized, pseudonymized, busy, error);
         let menu_open = self.context_menu_open();
         let unfiled = !member;
         self.tree_row(

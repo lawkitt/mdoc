@@ -93,7 +93,7 @@ impl Workspace {
             None => None,
         };
         match destination {
-            Some(destination) => format!("{direction} to {destination}"),
+            Some(destination) => super::text::stop_toward(direction, destination),
             None => direction.into(),
         }
     }
