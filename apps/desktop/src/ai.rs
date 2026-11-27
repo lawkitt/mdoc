@@ -4,3 +4,4 @@ pub(crate) mod ask;
 pub(crate) mod companion;
 pub(crate) mod connector;
 pub(crate) mod links;
+pub(crate) mod text;

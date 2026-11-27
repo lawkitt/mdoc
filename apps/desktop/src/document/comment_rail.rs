@@ -4,6 +4,7 @@
 //! read-only and their text never enters the Markdown. The rail is the page
 //! view's overlay ([`gpui_pdf::PageOverlay`]), so it scrolls with the pages;
 //! the passages' tints are its marks ([`gpui_pdf::PageMark`]).
+use crate::document::text::{self, author, card_label, replies_label, short_date};
 use crate::ui::style::Theme;
 use gpui::{
     AnyElement, App, Context, Entity, FocusHandle, KeyDownEvent, Subscription, WeakEntity, Window,
@@ -137,27 +138,6 @@ pub(crate) fn stack(start: f32, wanted: &[(f32, f32)]) -> Vec<f32> {
         .collect()
 }
 
-/// A comment's date as the card shows it: "Sep 19, 2026".
-pub(crate) fn short_date(date: &str) -> Option<String> {
-    let mut parts = date.get(..10)?.split('-');
-    let (year, month, day) = (parts.next()?, parts.next()?, parts.next()?);
-    let month = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ]
-    .get(month.parse::<usize>().ok()?.checked_sub(1)?)?;
-    let day: u32 = day.parse().ok()?;
-    year.parse::<u32>().ok()?;
-    Some(format!("{month} {day}, {year}"))
-}
-
-fn author(comment: &Comment) -> &str {
-    if comment.author.trim().is_empty() {
-        "Unknown author"
-    } else {
-        comment.author.trim()
-    }
-}
-
 /// Up to two initials of the author's name.
 pub(crate) fn initials(comment: &Comment) -> String {
     let words: Vec<&str> = comment.author.split_whitespace().collect();
@@ -167,39 +147,6 @@ pub(crate) fn initials(comment: &Comment) -> String {
         [first, .., last] => first.chars().take(1).chain(last.chars().take(1)).collect(),
     };
     letters.to_uppercase()
-}
-
-fn replies_label(n: usize) -> Option<String> {
-    match n {
-        0 => None,
-        1 => Some("1 reply".into()),
-        n => Some(format!("{n} replies")),
-    }
-}
-
-/// What a screen reader says for a card: "Comment by <author>, <date>, on
-/// '<passage>': <text>. N replies."
-pub(crate) fn card_label(thread: &Thread) -> String {
-    let c = &thread.comment;
-    let mut label = format!("Comment by {}", author(c));
-    if let Some(date) = short_date(&c.date) {
-        label.push_str(&format!(", {date}"));
-    }
-    let passage: String = c.anchor_text.chars().take(120).collect();
-    if !passage.trim().is_empty() {
-        label.push_str(&format!(", on '{}'", passage.trim()));
-    }
-    label.push_str(&format!(": {}", c.text.trim()));
-    if !label.ends_with('.') {
-        label.push('.');
-    }
-    if thread.comment.resolved {
-        label.push_str(" Resolved.");
-    }
-    if let Some(replies) = replies_label(thread.replies.len()) {
-        label.push_str(&format!(" {replies}."));
-    }
-    label
 }
 
 /// What ⌘C on a focused card copies: the comment and its replies.
@@ -632,7 +579,7 @@ impl CommentRail {
                                 .flex_shrink_0()
                                 .text_size(px(11.))
                                 .text_color(p.header_muted)
-                                .child("✓ resolved"),
+                                .child(text::RESOLVED),
                         )
                     }),
             )
@@ -640,7 +587,7 @@ impl CommentRail {
                 div()
                     .when(!expanded, |v| v.line_clamp(2))
                     .child(if c.text.trim().is_empty() {
-                        "Empty comment".to_owned()
+                        text::EMPTY_COMMENT.to_owned()
                     } else {
                         c.text.clone()
                     }),
@@ -704,7 +651,7 @@ impl CommentRail {
             .text_size(px(11.))
             .text_color(p.header_muted)
             .cursor_pointer()
-            .child("✓ resolved")
+            .child(text::RESOLVED)
             .on_click(cx.listener(move |rail, _, _, cx| rail.toggle(i, cx)))
             .into_any_element()
     }
@@ -719,7 +666,7 @@ impl CommentRail {
                 v.debug_selector(|| "comments-nowhere".into())
             })
             .role(gpui::Role::Button)
-            .aria_label(format!("Not on the page ({count})"))
+            .aria_label(text::not_on_the_page(count))
             .aria_expanded(self.nowhere_open)
             .px(px(8.))
             .py(px(3.))
@@ -728,9 +675,9 @@ impl CommentRail {
             .text_color(p.header_fg)
             .cursor_pointer()
             .hover(move |v| v.bg(p.placeholder_bg))
-            .child(format!(
-                "{} Not on the page ({count})",
-                if self.nowhere_open { "▾" } else { "▸" }
+            .child(text::not_on_the_page_row(
+                if self.nowhere_open { "▾" } else { "▸" },
+                count,
             ))
             .on_click(cx.listener(|rail, _, _, cx| {
                 rail.nowhere_open = !rail.nowhere_open;
@@ -914,11 +861,7 @@ impl CommentRail {
             let first = group[0];
             let open = self.open.is_some_and(|o| group.contains(&o));
             let resolved = group.iter().all(|&i| self.threads[i].comment.resolved);
-            let label = if group.len() == 1 {
-                format!("Comment on this line: {}", card_label(&self.threads[first]))
-            } else {
-                format!("{} comments on this line", group.len())
-            };
+            let label = text::comments_on_line(group.len(), || card_label(&self.threads[first]));
             let marker_top = (top + line_bottom) / 2. - MARKER / 2.;
             let group_for_click = group.clone();
             for &i in group {

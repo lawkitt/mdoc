@@ -1,5 +1,6 @@
 //! The one-line text field every screen uses, for find and Replace, names and passwords:
 //! its editing keys, selection and clipboard, and a masked mode for passwords.
+use crate::document::text;
 use std::ops::Range;
 
 use gpui::{
@@ -101,7 +102,7 @@ impl SearchInput {
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             focus_accent: std::rc::Rc::new(|| crate::ui::style::Theme::default().search_accent()),
-            placeholder: "Search Markdown",
+            placeholder: text::SEARCH_MARKDOWN,
             label: None,
             focus_handle: cx.focus_handle().tab_index(0).tab_stop(true),
             key_context: CONTEXT,
