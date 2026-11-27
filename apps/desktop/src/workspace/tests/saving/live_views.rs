@@ -537,3 +537,172 @@ fn untitled_save_as_starts_in_the_last_used_folder(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(start, Some(session_store::identity(dir.path())));
 }
+
+#[gpui::test]
+#[ignore = "host CPU measurements; run serially on an idle machine"]
+fn tabs_host_performance(cx: &mut TestAppContext) {
+    use std::time::Instant;
+    fn draw(cx: &mut VisualTestContext) {
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+    }
+    fn report(label: &str, values: &mut [f64]) {
+        values.sort_by(f64::total_cmp);
+        eprintln!(
+            "TABS_PERF {label} median_ms={:.3} p95_ms={:.3}",
+            values[values.len() / 2],
+            values[(values.len() * 95).div_ceil(100) - 1]
+        );
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("vault");
+    let vault = mdoc_vault::Vault::open(&root, &[3; 32]).unwrap();
+    let mut session = Session::default();
+    for index in 0..24 {
+        let markdown = if index % 3 == 0 {
+            "# Heading\n\nalpha **beta** words for a long document.\n\n".repeat(2500)
+        } else {
+            "# Short\n\nhello world\n".repeat(30)
+        };
+        let document = vault
+            .create_document(mdoc_vault::NewDocument {
+                project: None,
+                title: format!("note-{index}"),
+                source_kind: mdoc_vault::SourceKind::Markdown,
+                origin: mdoc_vault::DocumentOrigin::Ordinary,
+                markdown,
+            })
+            .unwrap();
+        session.tabs.push(TabRecord {
+            document: mdoc_store::document_id::VaultId::parse(&document.id),
+            ..TabRecord::default()
+        });
+    }
+    drop(vault);
+    let start = Instant::now();
+    let (tabs, cx) = boot_on_vault(cx, session, &root);
+    cx.simulate_resize(size(px(1280.), px(800.)));
+    draw(cx);
+    eprintln!(
+        "TABS_PERF restore_24_tabs_ms={:.3}",
+        start.elapsed().as_secs_f64() * 1000.
+    );
+    let ids = cx.update(|_, cx| {
+        tabs.read(cx)
+            .tabs
+            .iter()
+            .map(|tab| tab.id())
+            .collect::<Vec<_>>()
+    });
+    cx.update(|_, cx| {
+        assert_eq!(
+            tabs.read(cx)
+                .tabs
+                .iter()
+                .filter(|tab| tab.view().is_some())
+                .count(),
+            1
+        )
+    });
+    for id in &ids[..6] {
+        tabs.update_in(cx, |tabs, window, cx| tabs.activate(*id, window, cx));
+        cx.run_until_parked();
+        draw(cx);
+    }
+    let mut switching = Vec::new();
+    let mut handlers = Vec::new();
+    let mut frames = Vec::new();
+    let mut long_frames = Vec::new();
+    let mut short_frames = Vec::new();
+    for round in 0..24 {
+        let id = ids[round % 6];
+        let start = Instant::now();
+        let handler = tabs.update_in(cx, |tabs, window, cx| {
+            let start = Instant::now();
+            tabs.activate(id, window, cx);
+            start.elapsed().as_secs_f64() * 1000.
+        });
+        handlers.push(handler);
+        switching.push(start.elapsed().as_secs_f64() * 1000.);
+        let start = Instant::now();
+        draw(cx);
+        let elapsed = start.elapsed().as_secs_f64() * 1000.;
+        frames.push(elapsed);
+        if round % 3 == 0 {
+            long_frames.push(elapsed);
+        } else {
+            short_frames.push(elapsed);
+        }
+    }
+    report("switch_handler", &mut handlers);
+    report("switch_with_implicit_test_frame", &mut switching);
+    report("switch_frame", &mut frames);
+    report("long_markdown_frame", &mut long_frames);
+    report("short_markdown_frame", &mut short_frames);
+    // Same document, same viewport, no tab change: distinguish inherited editor
+    // layout cost from the sidebar/activation overhead.
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(ids[0], window, cx));
+    let mut unchanged = Vec::new();
+    for _ in 0..8 {
+        let start = Instant::now();
+        draw(cx);
+        unchanged.push(start.elapsed().as_secs_f64() * 1000.);
+    }
+    report("unchanged_long_markdown_frame", &mut unchanged);
+    let view = active(&tabs, cx);
+    eprintln!(
+        "TABS_PERF unchanged_long_editor_width={:?}",
+        view.read_with(cx, |view, cx| view
+            .editor
+            .read(cx)
+            .layout_width()
+            .map(f32::from))
+    );
+    assert!(
+        handlers.iter().all(|ms| *ms < 16.7),
+        "tab activation alone exceeded one CPU frame"
+    );
+    let mut snapshots = Vec::new();
+    for _ in 0..30 {
+        let start = Instant::now();
+        cx.update(|_, cx| {
+            let _ = tabs.read(cx).snapshot(cx);
+        });
+        snapshots.push(start.elapsed().as_secs_f64() * 1000.);
+    }
+    report("metadata_snapshot_24_tabs", &mut snapshots);
+    // Repeated DOCX pairs exercise temporary files and retained viewer release.
+    let docx = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/docx-preview/comments.docx");
+    eprintln!(
+        "TABS_PERF before_close_cycles_rss_kib={:?}",
+        crate::perf_tests::rss_kib()
+    );
+    for cycle in 0..5 {
+        tabs.update_in(cx, |tabs, window, cx| {
+            tabs.open_path(docx.clone(), window, cx)
+        });
+        cx.run_until_parked();
+        let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
+        draw(cx);
+        let (weak, backing) = cx.update(|_, cx| {
+            let view = tabs.read(cx).active_view().unwrap();
+            let view = view.read(cx);
+            (
+                view.preview.pdf().unwrap().downgrade(),
+                view.preview.docx().unwrap().pdf.clone(),
+            )
+        });
+        tabs.update_in(cx, |tabs, window, cx| tabs.remove(id, window, cx));
+        cx.run_until_parked();
+        assert!(weak.upgrade().is_none());
+        assert_eq!(backing.holders(), 1, "the closed tab let go of its PDF");
+        eprintln!(
+            "TABS_PERF close_cycle={cycle} rss_kib={:?}",
+            crate::perf_tests::rss_kib()
+        );
+    }
+    eprintln!("TABS_PERF close_cycles=5 all_viewers_and_docx_pdfs_released=true");
+}
