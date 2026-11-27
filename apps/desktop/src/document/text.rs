@@ -190,10 +190,15 @@ pub(crate) fn cannot_read(
 
 pub(crate) const RECOGNITION_LANGUAGES: &str = "Recognition languages";
 pub(crate) const RECOGNIZE: &str = "Recognize";
+
+/// A language choice on the card, as the tests find it.
+pub(crate) fn recognize_selector(label: impl Display) -> String {
+    format!("recognize {label}")
+}
+
 pub(crate) const FOR_THIS_DOCUMENT_ONLY: &str =
     "For this document only. Default: Settings › Recognition.";
 pub(crate) const RECOGNITION_CANCELLED: &str = "Recognition cancelled.";
-pub(crate) const CHOOSE_MODEL: &str = "Choose model…";
 
 /// The card's note on a model that is installed.
 pub(crate) fn runs_here(name: impl Display) -> String {
