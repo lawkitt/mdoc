@@ -71,7 +71,7 @@ fun checkMain() {
  * `withContext(Dispatchers.IO)` on the IO thread under Compose's test
  * dispatcher, so a screen's state written after it comes back here (#1332).
  */
-suspend fun <T> onMainThread(body: suspend () -> T): T = withContext(Dispatchers.Main.immediate) { body() }
+suspend fun <T> onMainThread(body: suspend () -> T): T = withContext(Dispatchers.Main) { body() }
 
 /** Runs [write] on the main thread: at once when already there, else posted. */
 fun onMain(write: () -> Unit) {

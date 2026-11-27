@@ -573,7 +573,7 @@ class DocumentViewModel(
      * block. What the screen does with the answer (the clipboard, a share)
      * stays the screen's, and goes with it.
      */
-    private suspend fun <T> inModel(body: suspend () -> T): T = viewModelScope.async { body() }.await()
+    private suspend fun <T> inModel(body: suspend () -> T): T = viewModelScope.async(Dispatchers.Main) { body() }.await()
 
     /**
      * A core call off the main thread, then its result written into the
