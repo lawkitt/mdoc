@@ -3,8 +3,8 @@ use super::Workspace;
 use crate::workspace::{
     AddDocumentToProject, ChangeProjectColour, CheckForUpdates, DeleteProject, ExportProject,
     MoveToNewProject, MoveToProject, New, NewProject, Open, OpenProject, ProjectCategories, Quit,
-    RenameProject, Settings, ToggleSidebar, ToggleTheme, palette::shortcuts_ui::ShowShortcuts,
-    shell::PageAction,
+    RenameProject, Settings, ToggleSidebar, ToggleTheme, palette::PageAction,
+    palette::shortcuts_ui::ShowShortcuts,
 };
 use gpui::{App, Context, Window};
 

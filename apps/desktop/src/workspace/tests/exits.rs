@@ -385,7 +385,7 @@ fn ready(cx: &mut TestAppContext, via: Via, scenario: Scenario) -> Fixture<'_> {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
     cx.update(|_, cx| crate::bind_app_keys(cx));
-    cx.update(|_, cx| crate::workspace::shell::bind_keys(cx));
+    cx.update(|_, cx| crate::workspace::bind_keys(cx));
     let letter = open_applied(
         &tabs,
         cx,

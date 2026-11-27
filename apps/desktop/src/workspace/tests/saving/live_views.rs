@@ -426,7 +426,7 @@ fn the_window_title_names_the_document_and_only_mdoc_on_home(cx: &mut TestAppCon
     cx.run_until_parked();
     draw(cx);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "a — mdoc"));
-    cx.dispatch_action(crate::workspace::shell::ShowHome);
+    cx.dispatch_action(crate::workspace::home::ShowHome);
     draw(cx);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "mdoc"));
 }
@@ -495,7 +495,7 @@ fn the_window_menu_lists_the_live_views(cx: &mut TestAppContext) {
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.close_palette(window, cx));
     // Home: the views stay live and listed.
-    cx.dispatch_action(crate::workspace::shell::ShowHome);
+    cx.dispatch_action(crate::workspace::home::ShowHome);
     cx.run_until_parked();
     draw(cx);
     assert_eq!(window_menu_views(cx).len(), 2);

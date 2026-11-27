@@ -3,6 +3,7 @@
 //! banner, which the Vault state owns.
 use crate::ui::{self, style};
 use crate::workspace::{Workspace, notices};
+use gpui::actions;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Window, div, px};
 
@@ -304,6 +305,236 @@ impl Workspace {
                 )
                 .into_any_element()
         })
+    }
+}
+
+actions!(mdoc_shell, [CloseNotices]);
+
+impl Workspace {
+    /// The notices popover under the title row's right end:
+    /// locked Projects, a crash report and session messages, with their actions.
+    pub(super) fn notices_view(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if !self.title.notices_open.get() {
+            return None;
+        }
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let cards: Vec<AnyElement> = [
+            self.project_key_bar(cx),
+            self.recovery_nudge_bar(cx),
+            self.crash_bar(cx),
+            self.notice_bar(cx),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|bar| {
+            div()
+                .rounded_md()
+                .overflow_hidden()
+                .border_1()
+                .border_color(p.border)
+                .child(bar)
+                .into_any_element()
+        })
+        .collect();
+        if cards.is_empty() {
+            return None;
+        }
+        let right = window.viewport_size().width - px(style::CARD_MARGIN + 8.);
+        Some(
+            gpui::deferred(
+                gpui::anchored()
+                    .position(gpui::point(
+                        right,
+                        px(style::CARD_MARGIN + style::HEADER_HEIGHT),
+                    ))
+                    .anchor(gpui::Anchor::TopRight)
+                    .snap_to_window_with_margin(px(8.))
+                    .child(
+                        ui::panel("notices-popover", theme)
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "notices-popover".into())
+                            })
+                            .track_focus(&self.notices_focus)
+                            .key_context("UiPanel UiMenu")
+                            .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+                                this.close_notices(window, cx);
+                                cx.stop_propagation();
+                            }))
+                            .w(px(400.))
+                            .p_2()
+                            .rounded_lg()
+                            .shadow_lg()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .on_mouse_down_out(cx.listener(
+                                |this, event: &gpui::MouseDownEvent, _, cx| {
+                                    // A press on the bell is its toggle's to handle.
+                                    if this.title.notices_bell.get().contains(&event.position) {
+                                        return;
+                                    }
+                                    this.title.notices_open.set(false);
+                                    cx.notify();
+                                },
+                            ))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .px_1()
+                                            .text_size(px(11.))
+                                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                                            .text_color(p.header_muted)
+                                            .child("NOTICES"),
+                                    )
+                                    .child(
+                                        ui::control("close-notices", "×", theme, true)
+                                            .when(cfg!(test), |v| {
+                                                v.debug_selector(|| "close-notices".into())
+                                            })
+                                            .aria_label("Close notices")
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.close_notices(window, cx);
+                                            })),
+                                    ),
+                            )
+                            .children(cards),
+                    ),
+            )
+            .with_priority(2)
+            .into_any_element(),
+        )
+    }
+    /// Close the notices popover; focus returns to the document, or to the
+    /// window on Home.
+    pub(super) fn close_notices(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.title.notices_open.set(false);
+        if self.showing_overview(cx) {
+            window.focus(&self.focus, cx);
+        } else {
+            self.focus_active(window, cx);
+        }
+        cx.notify();
+    }
+    /// A quiet card while an update is on its way.
+    pub(super) fn update_card(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use crate::app::updater::BannerKind;
+        let state = crate::app::updater::state(cx);
+        let banner = state.banner()?;
+        if banner.kind == BannerKind::Updated {
+            return None;
+        }
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let accent = theme.search_accent();
+        let version = banner.version.clone();
+        let (title, detail) = match banner.kind {
+            BannerKind::Available => ("Update available".to_string(), format!("v{version}")),
+            BannerKind::Downloading => (
+                "Downloading update".to_string(),
+                format!("v{version} · {}%", state.percent().unwrap_or(0)),
+            ),
+            BannerKind::Ready => (
+                "Installed, next launch".to_string(),
+                format!("v{version} · relaunch"),
+            ),
+            BannerKind::Failed => ("Update failed".to_string(), format!("v{version} · details")),
+            BannerKind::Updated => unreachable!(),
+        };
+        let ready = banner.kind == BannerKind::Ready;
+        Some(
+            crate::ui::focus_ring("update-banner", theme)
+                .when(cfg!(test), |v| v.debug_selector(|| "update-banner".into()))
+                .role(gpui::Role::Button)
+                .aria_label(format!("{title}. {detail}"))
+                .key_context("UiControl")
+                .tab_index(0)
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_2()
+                .py(px(6.))
+                .mb_1()
+                .rounded_lg()
+                .border_1()
+                .border_color(p.border)
+                .bg(p.bg)
+                .cursor_pointer()
+                .hover(move |s| s.border_color(p.header_muted))
+                .child(
+                    gpui::svg()
+                        .data(ui::Icon::Download.data())
+                        .size(px(14.))
+                        .flex_shrink_0()
+                        .text_color(p.header_fg),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .truncate()
+                                .text_size(px(12.))
+                                .font_weight(gpui::FontWeight::MEDIUM)
+                                .child(title),
+                        )
+                        .child(
+                            div()
+                                .truncate()
+                                .text_size(px(11.))
+                                .text_color(p.header_muted)
+                                .child(detail),
+                        ),
+                )
+                .child(
+                    div()
+                        .size(px(8.))
+                        .flex_shrink_0()
+                        .rounded_full()
+                        .bg(if ready {
+                            accent
+                        } else {
+                            style::markdown_style(theme).alert_warning
+                        }),
+                )
+                .child(
+                    div()
+                        .id("dismiss-update-banner")
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "dismiss-update-banner".into())
+                        })
+                        .aria_label("Dismiss")
+                        .px_1()
+                        .rounded_sm()
+                        .text_color(p.header_muted)
+                        .hover(move |s| s.bg(p.placeholder_bg))
+                        .child("×")
+                        .on_click(|_, _, cx| {
+                            cx.stop_propagation();
+                            crate::app::updater::dismiss_banner(cx);
+                        }),
+                )
+                .on_click(cx.listener(move |this, _, window, cx| match banner.kind {
+                    BannerKind::Ready => this.restart_to_update(window, cx),
+                    _ => {
+                        window.activate_window();
+                        this.settings
+                            .update(cx, |panel, cx| panel.show_updates(window, cx));
+                    }
+                }))
+                .into_any_element(),
+        )
     }
 }
 

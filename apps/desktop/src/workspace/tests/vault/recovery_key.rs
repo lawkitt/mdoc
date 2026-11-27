@@ -311,7 +311,7 @@ fn a_vault_copied_to_a_fresh_profile_opens_with_its_recovery_key(cx: &mut TestAp
     assert!(screen_error(&tabs, cx).unwrap().contains("52 characters"));
     // Another computer's key doesn't open them.
     type_key(&tabs, &recovery::format(&[7; 32]), cx);
-    cx.update(|_, cx| crate::workspace::shell::bind_keys(cx));
+    cx.update(|_, cx| crate::workspace::bind_keys(cx));
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
     assert!(
@@ -417,7 +417,7 @@ fn the_recovery_key_clears_the_locked_notice_from_the_bell(cx: &mut TestAppConte
     type_key(&tabs, &recovery::format(&sealed_with), cx);
     draw(cx);
     assert!(cx.debug_bounds("dismiss-session-notice").is_some());
-    cx.update(|_, cx| crate::workspace::shell::bind_keys(cx));
+    cx.update(|_, cx| crate::workspace::bind_keys(cx));
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
     draw(cx);

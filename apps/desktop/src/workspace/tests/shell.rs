@@ -1428,7 +1428,7 @@ fn chrome_history_targets_the_active_tab_and_leaves_home_and_settings_alone(
 /// a dispatched Paste reached no editor and left an empty Untitled tab.
 #[gpui::test]
 fn paste_text_fills_the_new_tab(cx: &mut TestAppContext) {
-    cx.update(crate::workspace::shell::bind_keys);
+    cx.update(crate::workspace::bind_keys);
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     let texts = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
@@ -1529,7 +1529,7 @@ fn home_clipboard_actions_use_the_active_documents_mapping(cx: &mut TestAppConte
 
 #[gpui::test]
 fn command_palette_filters_and_runs_actions(cx: &mut TestAppContext) {
-    cx.update(crate::workspace::shell::bind_keys);
+    cx.update(crate::workspace::bind_keys);
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     draw(cx);
@@ -1566,7 +1566,7 @@ fn command_palette_filters_and_runs_actions(cx: &mut TestAppContext) {
 /// it moves the name on to the next one.
 #[gpui::test]
 fn command_palette_theme_row_names_its_target(cx: &mut TestAppContext) {
-    cx.update(crate::workspace::shell::bind_keys);
+    cx.update(crate::workspace::bind_keys);
     let (tabs, cx) = boot_home(cx, Session::default());
     for (now, row, next) in [
         (
@@ -1606,7 +1606,7 @@ fn command_palette_theme_row_names_its_target(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn command_palette_routes_every_settings_category(cx: &mut TestAppContext) {
-    cx.update(crate::workspace::shell::bind_keys);
+    cx.update(crate::workspace::bind_keys);
     let (tabs, cx) = boot_home(cx, Session::default());
     let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
     let labels = tabs.read_with(cx, |tabs, cx| tabs.palette_section("Go to", cx));
@@ -1811,7 +1811,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
 /// palette has both commands while the panel is open.
 #[gpui::test]
 fn expand_and_collapse_all_identities(cx: &mut TestAppContext) {
-    cx.update(crate::workspace::shell::bind_keys);
+    cx.update(crate::workspace::bind_keys);
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let view = active(&tabs, cx);
@@ -1876,7 +1876,7 @@ fn expand_and_collapse_all_identities(cx: &mut TestAppContext) {
 /// to its line and scrolls it into view, leaving Undo as it was.
 #[gpui::test]
 fn palette_goes_to_a_heading(cx: &mut TestAppContext) {
-    cx.update(crate::workspace::shell::bind_keys);
+    cx.update(crate::workspace::bind_keys);
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(600.)));
     let view = active(&tabs, cx);
