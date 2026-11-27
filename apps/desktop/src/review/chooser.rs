@@ -1,4 +1,5 @@
 //! Lazy list for multiple hidden fields sharing a containing visual row.
+use super::text;
 use super::{APPLIED_ID, Popup};
 use crate::{
     document::DocumentView,
@@ -97,11 +98,11 @@ impl DocumentView {
                                     .flex_1()
                                     .text_size(px(12.))
                                     .text_color(palette.header_muted)
-                                    .child(format!("Choose a field · {count}")),
+                                    .child(text::choose_a_field(count)),
                             )
                             .child(
                                 ui::close_control("chooser-close", self.theme.get())
-                                    .aria_label("Close field chooser")
+                                    .aria_label(text::CLOSE_FIELD_CHOOSER)
                                     .on_click(|_, window, cx| {
                                         window.dispatch_action(Box::new(PiiClosePopup), cx)
                                     }),
@@ -131,7 +132,7 @@ impl DocumentView {
                                                 format!("{} · {}", g.category.label(), g.original)
                                             })
                                         }
-                                        .unwrap_or_else(|| "Field no longer available".into());
+                                        .unwrap_or_else(|| text::FIELD_NO_LONGER_AVAILABLE.into());
                                         let tooltip = crate::ui::style::tooltip(
                                             label.clone(),
                                             this.theme.get(),

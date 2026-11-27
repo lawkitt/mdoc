@@ -4,6 +4,7 @@
 //! mapping live. A reply in the box is saved to the Vault once it settles
 //! (the workspace saves it); edits while the box holds it replace that
 //! saved reply, and clearing the box keeps it.
+use super::text;
 use super::{compare::CompareMode, restore::UNRESOLVED_ID};
 use crate::document::DocumentView;
 use gpui::{Context, Entity, Focusable, Window, prelude::*};
@@ -240,10 +241,7 @@ impl ReplyBox {
     pub(crate) fn summary(&self) -> String {
         let restored = self.restored.values;
         let unresolved = self.unrecognised();
-        format!(
-            "{restored} {} restored · {unresolved} unrecognized",
-            if restored == 1 { "value" } else { "values" }
-        )
+        text::reply_summary(restored, unresolved)
     }
 
     /// Distinct unresolved tokens in the restored text.
@@ -290,7 +288,7 @@ impl DocumentView {
         let scroll = self.reply_scroll.clone();
         let editor = cx.new(|cx| {
             let mut editor = mdoc_editor::EditorState::new(window, cx)
-                .with_placeholder("Paste the AI's reply here");
+                .with_placeholder(text::PASTE_THE_AIS_REPLY);
             editor.set_plain_text(true);
             editor.set_autoscroll(scroll);
             editor.set_text(text, cx);
