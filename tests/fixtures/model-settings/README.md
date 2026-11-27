@@ -42,9 +42,9 @@ choose one model:
 ```sh
 cargo test -p mdoc --bin mdoc --no-run
 # Verified setup; may download the selected bundle:
-env MDOC_MODEL=pii-fp32 <test-executable> comparison::tests::settings_model_setup_probe --exact --ignored --nocapture
+env MDOC_MODEL=pii-fp32 <test-executable> document::comparison::tests::settings_model_setup_probe --exact --ignored --nocapture
 # Offline inference on installed artifacts; writes only the named report:
-env MDOC_MODEL=pii-fp32 MDOC_REPORT=/absolute/path/report.json /usr/bin/time -l sandbox-exec -p '(version 1)(allow default)(deny network*)' <test-executable> comparison::tests::settings_model_offline_probe --exact --ignored --nocapture
+env MDOC_MODEL=pii-fp32 MDOC_REPORT=/absolute/path/report.json /usr/bin/time -l sandbox-exec -p '(version 1)(allow default)(deny network*)' <test-executable> document::comparison::tests::settings_model_offline_probe --exact --ignored --nocapture
 ```
 
 Setup reuses verified artifacts already installed; no inference path
