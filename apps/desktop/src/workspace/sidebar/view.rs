@@ -364,7 +364,7 @@ impl Workspace {
                         .child(
                             ui::header_icon(
                                 "rail-home",
-                                "Home",
+                                text::HOME,
                                 ui::Icon::Home,
                                 theme,
                                 self.showing_home(cx),
@@ -636,7 +636,7 @@ impl Workspace {
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenPalette), cx)),
             )
             .child(
-                nav_row("sidebar-home", ui::Icon::Home, "Home", theme, home)
+                nav_row("sidebar-home", ui::Icon::Home, text::HOME, theme, home)
                     .track_focus(&self.sidebar_controls.panel_home_focus)
                     .child(
                         div()
@@ -688,7 +688,7 @@ impl Workspace {
                     .items_center()
                     .gap_1()
                     .child(
-                        nav_row("Settings", ui::Icon::Settings, "Settings", theme, false)
+                        nav_row("Settings", ui::Icon::Settings, text::SETTINGS, theme, false)
                             .track_focus(&self.settings_focus)
                             .flex_1()
                             .when(dot, |v| {
@@ -762,7 +762,7 @@ impl Workspace {
                             if update {
                                 text::SETTINGS_UPDATE_AVAILABLE
                             } else {
-                                "Settings"
+                                text::SETTINGS
                             },
                             ui::Icon::Settings,
                             theme,

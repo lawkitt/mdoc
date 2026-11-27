@@ -555,7 +555,7 @@ impl Workspace {
             &title,
             Some(detail),
             &[
-                gpui::PromptButton::new("Delete"),
+                gpui::PromptButton::new(super::text::DELETE),
                 gpui::PromptButton::cancel(crate::ui::text::CANCEL),
             ],
             cx,
@@ -780,9 +780,13 @@ impl Workspace {
             .target(backwards, &self.place(cx), self.live_stops(cx))
     }
     pub(in crate::workspace) fn navigation_label(&self, backwards: bool, cx: &App) -> String {
-        let direction = if backwards { "Back" } else { "Forward" };
+        let direction = if backwards {
+            super::text::BACK
+        } else {
+            super::text::FORWARD
+        };
         let destination = match self.navigation_target(backwards, cx) {
-            Some(Stop::Home) => Some("Home".into()),
+            Some(Stop::Home) => Some(super::text::HOME.into()),
             Some(Stop::Tab(id)) => self
                 .tabs
                 .get(*id)
