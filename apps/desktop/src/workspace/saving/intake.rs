@@ -254,7 +254,7 @@ impl Workspace {
         if failed.is_empty() {
             return;
         }
-        self.notices.post(text::could_not_import(&failed));
+        self.notices.post(text::could_not_import(failed));
     }
 
     /// Import `files` into the Vault, each as `repeats` says when it is a
