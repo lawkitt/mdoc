@@ -99,7 +99,7 @@ impl View {
                     let mut i = markdown_search::SearchInput::new(cx)
                         .with_theme(theme.clone())
                         .with_key_context("SettingsInput")
-                        .with_placeholder("0–1");
+                        .with_placeholder(text::UNIT_INTERVAL);
                     i.set_value(value.to_string(), cx);
                     i
                 })
@@ -595,10 +595,9 @@ impl Render for View {
                     .children(self.records.iter().enumerate().map(|(index, record)| {
                         control(
                             ("qa-result", index),
-                            format!(
-                                "{} · {:.2}s",
+                            text::result_label(
                                 record.configuration.name(),
-                                record.elapsed_ms as f64 / 1000.
+                                record.elapsed_ms as f64 / 1000.,
                             ),
                             theme,
                             true,

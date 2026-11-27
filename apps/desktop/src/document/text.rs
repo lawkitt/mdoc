@@ -175,6 +175,8 @@ pub(crate) fn no_usable_text(count: usize, pages: impl Display) -> String {
 pub(crate) const LOCAL_OCR_UNAVAILABLE: &str = "Local OCR is unavailable on this platform.";
 pub(crate) const USE_NATIVE_TEXT_ONLY: &str = "Use native text only";
 pub(crate) const RUN_OCR: &str = "Run OCR";
+/// The model's name on the card when it has none of its own.
+pub(crate) const OCR: &str = "OCR";
 pub(crate) const DOWNLOAD_AND_RECOGNIZE: &str = "Download & recognize";
 
 /// The recognition hint when the engine cannot read some languages.
@@ -500,6 +502,16 @@ pub(crate) const NO_DECISIONS_YET: &str = "Your pseudonymization decisions appea
 pub(crate) const MORE_WAYS_TO_ASK: &str = "More ways to ask";
 
 // ---- The Model comparison window ----------------------------------------------
+
+/// A run's warnings when it has none.
+pub(crate) const NONE: &str = "none";
+/// The threshold or confidence field, before anything is typed.
+pub(crate) const UNIT_INTERVAL: &str = "0–1";
+
+/// A finished run's button: its model and how long it took.
+pub(crate) fn result_label(name: impl Display, seconds: f64) -> String {
+    format!("{} · {:.2}s", name, seconds)
+}
 
 pub(crate) const PDF_TOO_LARGE: &str = "PDF comparison supports up to 256 MiB.";
 pub(crate) const NEEDS_AN_ORIGINAL_PDF: &str = "OCR comparison requires an original PDF.";

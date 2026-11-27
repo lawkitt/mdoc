@@ -434,7 +434,7 @@ mod tests {
 /// Warnings as people read them: "none", the text, or several joined by "; ".
 fn warning_text(value: &serde_json::Value) -> String {
     match value {
-        serde_json::Value::Array(items) if items.is_empty() => "none".into(),
+        serde_json::Value::Array(items) if items.is_empty() => text::NONE.into(),
         serde_json::Value::Array(items) => items
             .iter()
             .map(|item| {
@@ -444,7 +444,7 @@ fn warning_text(value: &serde_json::Value) -> String {
             .collect::<Vec<_>>()
             .join("; "),
         serde_json::Value::String(text) => text.clone(),
-        serde_json::Value::Null => "none".into(),
+        serde_json::Value::Null => text::NONE.into(),
         other => other.to_string(),
     }
 }
