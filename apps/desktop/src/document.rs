@@ -51,10 +51,12 @@ mod autosave;
 mod copy_markdown;
 mod files;
 #[cfg(test)]
-use files::chooser_unavailable;
+use text::chooser_unavailable;
 mod status;
+mod text;
 pub(crate) use search_session::bind_markdown_search_keys;
-use search_session::{chord, find_counter, search_bar_button, toggled};
+use search_session::{chord, search_bar_button, toggled};
+use text::find_counter;
 #[cfg(test)]
 pub(crate) mod tests;
 actions!(
@@ -294,26 +296,26 @@ impl DocumentView {
             markdown_search::SearchInput::new(cx)
                 .with_theme(dependencies.theme.clone())
                 .with_key_context("MarkdownReplace")
-                .with_placeholder("Replace with")
+                .with_placeholder(text::REPLACE_WITH)
         });
         let password_field = cx.new(|cx| {
             markdown_search::SearchInput::new(cx)
                 .with_theme(dependencies.theme.clone())
                 .with_key_context("DocumentPassword")
-                .with_placeholder("Password")
+                .with_placeholder(text::PASSWORD)
                 .secure()
         });
         let original_password_field = cx.new(|cx| {
             markdown_search::SearchInput::new(cx)
                 .with_theme(dependencies.theme.clone())
                 .with_key_context("DocumentPassword")
-                .with_placeholder("Password")
+                .with_placeholder(text::PASSWORD)
                 .secure()
         });
         let scroll = ScrollHandle::new();
         let editor = cx.new(|cx| {
             // Ghost text at the caret; the empty page centers the rest.
-            let mut editor = EditorState::new(window, cx).with_placeholder("Type here…");
+            let mut editor = EditorState::new(window, cx).with_placeholder(text::TYPE_HERE);
             editor.set_markdown_style(style::markdown_style(dependencies.theme.get()), cx);
             editor.set_block_chip_provider(|src| {
                 gpui_pdf::is_pdf(src).then(|| src.to_owned().into())
@@ -590,7 +592,7 @@ impl Render for DocumentView {
             } else {
                 "›"
             },
-            "Replace",
+            text::REPLACE,
             chord("⌥⌘F", "Ctrl+H"),
             theme,
         )
@@ -600,7 +602,7 @@ impl Render for DocumentView {
         let match_case = search_bar_button(
             "markdown-search-match-case",
             "Aa",
-            "Match case",
+            text::MATCH_CASE,
             chord("⌥⌘C", "Alt+C"),
             theme,
         )
@@ -615,7 +617,7 @@ impl Render for DocumentView {
         let whole_word = search_bar_button(
             "markdown-search-whole-word",
             div().underline().child("ab"),
-            "Whole word",
+            text::WHOLE_WORD,
             chord("⌥⌘W", "Alt+W"),
             theme,
         )
@@ -660,7 +662,7 @@ impl Render for DocumentView {
         let previous = search_bar_button(
             "markdown-search-previous",
             "↑",
-            "Previous match",
+            text::PREVIOUS_MATCH,
             chord("⇧⌘G", "Shift+Ctrl+G"),
             theme,
         )
@@ -676,7 +678,7 @@ impl Render for DocumentView {
             search_bar_button(
                 "markdown-search-next",
                 "↓",
-                "Next match",
+                text::NEXT_MATCH,
                 chord("⌘G", "Ctrl+G"),
                 theme,
             )
@@ -691,7 +693,7 @@ impl Render for DocumentView {
         let close = search_bar_button(
             "markdown-search-close",
             "×",
-            "Close Markdown search",
+            text::CLOSE_MARKDOWN_SEARCH,
             "Esc",
             theme,
         )
@@ -712,14 +714,14 @@ impl Render for DocumentView {
                 .pl(px(24.))
                 .child(
                     field("markdown-replace-input", replace_focused)
-                        .aria_label("Replace with")
+                        .aria_label(text::REPLACE_WITH)
                         .child(self.markdown_replace.clone()),
                 )
                 .child(
                     search_bar_button(
                         "markdown-replace-next",
-                        "Replace",
-                        "Replace",
+                        text::REPLACE,
+                        text::REPLACE,
                         "Enter",
                         theme,
                     )
@@ -733,8 +735,8 @@ impl Render for DocumentView {
                 .child(
                     search_bar_button(
                         "markdown-replace-all",
-                        "Replace All",
-                        "Replace all",
+                        text::REPLACE_ALL_BUTTON,
+                        text::REPLACE_ALL,
                         chord("⌘Enter", "Ctrl+Alt+Enter"),
                         theme,
                     )
@@ -778,7 +780,7 @@ impl Render for DocumentView {
                     .child(replace_toggle)
                     .child(
                         field("markdown-search-input", search_focused)
-                            .aria_label("Search Markdown")
+                            .aria_label(text::SEARCH_MARKDOWN)
                             .child(self.markdown_search.clone()),
                     )
                     .child(match_case)
@@ -796,17 +798,16 @@ impl Render for DocumentView {
             palette.header_muted,
             cx,
         );
-        let import_notice = self
-            .session
-            .warning
-            .clone()
-            .map(|detail| self.notice("import-notice", "Review conversion", detail, false, cx));
+        let import_notice =
+            self.session.warning.clone().map(|detail| {
+                self.notice("import-notice", text::REVIEW_CONVERSION, detail, false, cx)
+            });
         let ocr_notice = (self.import.ocr_required().is_some()
             && !self.import.ocr_notice_dismissed())
         .then(|| {
             self.notice(
                 "ocr-notice",
-                "Text recognition required",
+                text::TEXT_RECOGNITION_REQUIRED,
                 format!("{}.", self.ocr_pages_title()),
                 false,
                 cx,
@@ -815,7 +816,7 @@ impl Render for DocumentView {
         let preview_notice = self.preview.message().cloned().map(|detail| {
             self.notice(
                 "preview-notice",
-                "Preview",
+                text::PREVIEW,
                 detail,
                 self.preview.failed(),
                 cx,
@@ -823,7 +824,7 @@ impl Render for DocumentView {
         });
         let setup_notice = match &self.ocr_state {
             OcrState::Failed(error) if !self.import.setup_error_dismissed() => {
-                Some(self.notice("setup-notice", "OCR setup", error.clone(), true, cx))
+                Some(self.notice("setup-notice", text::OCR_SETUP, error.clone(), true, cx))
             }
             _ => None,
         };
@@ -831,7 +832,7 @@ impl Render for DocumentView {
             .clipboard_notice
             .text()
             .map(str::to_owned)
-            .map(|detail| self.notice("clipboard-notice", "Clipboard", detail, false, cx));
+            .map(|detail| self.notice("clipboard-notice", text::CLIPBOARD, detail, false, cx));
         let width = self.chrome_width(window);
         let content_width = (width - f32::from(self.replacements_panel_width(window))).max(1.);
         let narrow_preview = self.preview.visible() && content_width < 620.;
@@ -862,10 +863,10 @@ impl Render for DocumentView {
             // A cancel is not an error: the card says so, and with the card
             // hidden nothing needs attention (#950 review).
             .filter(|_| !card_shows_error && !setup_says_error && !self.conversion_cancelled())
-            .map(|detail| self.notice("error-notice", "Needs attention", detail, true, cx));
+            .map(|detail| self.notice("error-notice", text::NEEDS_ATTENTION, detail, true, cx));
         let refusal_notice = (self.copy_refusal.as_ref())
             .map(|refusal| refusal.reason.clone())
-            .map(|detail| self.notice("copy-refusal-notice", "Not copied", detail, false, cx));
+            .map(|detail| self.notice("copy-refusal-notice", text::NOT_COPIED, detail, false, cx));
         let minimum = (280. / content_width.max(620.)).min(0.5);
         let split = self
             .preview
@@ -908,9 +909,9 @@ impl Render for DocumentView {
             .when(!detached, |v| v.child(div().track_focus(&self.toolbar_region).key_context("ToolbarRegion").child(self.header(window, cx))))
             .child(div().track_focus(&self.controls_region).key_context("ToolbarRegion").flex().flex_col().flex_shrink_0()
             .when(!self.lifecycle.source_only() && self.import.busy(), |v| v.child(
-                ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) || self.import.setting_up() { "Setting up text recognition…" } else if self.import.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
+                ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) || self.import.setting_up() { text::SETTING_UP_TEXT_RECOGNITION } else if self.import.recognizing() { text::RECOGNIZING_TEXT } else { text::CONVERTING_TO_MARKDOWN }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
-            .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("Text recognized by {} · {} DPI · minimum confidence {}",crate::app::models::short_name(settings::Model::Ocr(config.model)),config.dpi,config.minimum_confidence))))
+            .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(text::recognized_by(crate::app::models::short_name(settings::Model::Ocr(config.model)),config.dpi,config.minimum_confidence))))
             .children(import_notice).children(clipboard_notice).children(ocr_notice.filter(|_| !show_markdown))
             .when(narrow_preview, |v| v.child(self.pane_switch(cx))))
             .child(div().flex().flex_1().min_h_0()
@@ -919,8 +920,8 @@ impl Render for DocumentView {
                     .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| this.switcher_pointer(event.position, cx)))
                     .when(self.search.open(), |column| column.child(search_bar))
                     .child(if self.lifecycle.loading() || self.lifecycle.unavailable() {
-                        div().p_6().child(if self.lifecycle.loading() { ui::activity("markdown-loading", "Loading Markdown…", theme).into_any_element() } else { div().child("Markdown unavailable").into_any_element() })
-                            .when(self.lifecycle.unavailable(), |view| view.child(button("Retry", RetryDocument, theme))).into_any_element()
+                        div().p_6().child(if self.lifecycle.loading() { ui::activity("markdown-loading", text::LOADING_MARKDOWN, theme).into_any_element() } else { div().child(text::MARKDOWN_UNAVAILABLE).into_any_element() })
+                            .when(self.lifecycle.unavailable(), |view| view.child(button(text::RETRY, RetryDocument, theme))).into_any_element()
                     } else if let Some(compare) = self.compare_view(content_width, cx) {
                         compare
                     } else { div().relative().flex_1().min_w_0().min_h_0()
@@ -949,7 +950,7 @@ impl Render for DocumentView {
                     .flex().flex_col().items_center().justify_center().text_color(palette.header_muted)
                     .child(match self.preview.password() { Some(password) => self.original_password_card(password, window, cx), None => self.preview_status(theme) })))
                 .when_some(self.preview.pdf().cloned().filter(|_| show_original), |row, pdf| row.child(div().track_focus(&self.preview_region).on_action(cx.listener(Self::next_comment)).on_action(cx.listener(Self::previous_comment)).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
-                    .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Enter its password to see it here.").into_any_element() } else { pdf.into_any_element() }))
+                    .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child(text::PDF_PASSWORD_PROTECTED).into_any_element() } else { pdf.into_any_element() }))
                     .children(preview_notice)))
 )
             .children(setup_notice.filter(|_| !(show_markdown && self.lifecycle.source_only() && self.import.ocr_required().is_some()))).children(error_notice).children(refusal_notice)

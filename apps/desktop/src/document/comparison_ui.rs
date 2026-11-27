@@ -1,5 +1,6 @@
 //! The Model comparison window, opened from Settings: the chosen models run one after
 //! another on one captured input, and their results are shown and exported.
+use crate::document::text;
 use crate::{
     document::comparison::{self, Config, Input, ResultRecord},
     document::markdown_search,
@@ -98,7 +99,7 @@ impl View {
                     let mut i = markdown_search::SearchInput::new(cx)
                         .with_theme(theme.clone())
                         .with_key_context("SettingsInput")
-                        .with_placeholder("0–1");
+                        .with_placeholder(text::UNIT_INTERVAL);
                     i.set_value(value.to_string(), cx);
                     i
                 })
@@ -119,7 +120,7 @@ impl View {
                 markdown_search::SearchInput::new(cx)
                     .with_theme(theme.clone())
                     .with_key_context("SettingsInput")
-                    .with_placeholder("All pages")
+                    .with_placeholder(text::ALL_PAGES)
             }),
             frozen_pages: None,
             cancel: Arc::new(AtomicBool::new(false)),
@@ -153,11 +154,9 @@ impl View {
                     .read(cx)
                     .value()
                     .parse::<f32>()
-                    .map_err(|_| {
-                        "Threshold/confidence must be a number from 0 to 1.".to_string()
-                    })?;
+                    .map_err(|_| text::THRESHOLD_NOT_A_NUMBER.to_string())?;
                 if !settings::unit_interval(value) {
-                    return Err("Threshold/confidence must be finite and between 0 and 1.".into());
+                    return Err(text::THRESHOLD_OUT_OF_RANGE.into());
                 }
                 let mut config = self.configs[index].clone();
                 match &mut config {
@@ -185,10 +184,7 @@ impl View {
                 self.panel.read(cx).statuses[index],
                 crate::settings::Status::Ready
             ) {
-                self.error = Some(format!(
-                    "{} is not ready. Download/repair it in Settings first.",
-                    model.name()
-                ));
+                self.error = Some(text::model_not_ready(model.name()));
                 cx.notify();
                 return;
             }
@@ -241,7 +237,7 @@ impl View {
         }
         self.running = false;
         if cancelled {
-            self.error = Some("Comparison cancelled; partial results discarded.".into());
+            self.error = Some(text::PARTIAL_RESULTS_DISCARDED.into());
         } else {
             self.records.extend(results);
             self.selected = self.records.len().saturating_sub(1);
@@ -296,9 +292,7 @@ impl View {
             };
             let task = cx.background_executor().spawn(async move {
                 if comparison::export_path_is_source(&path, &sources) {
-                    return Err(
-                        "Choose a different path to preserve the document and its source.".into(),
-                    );
+                    return Err(text::PRESERVE_DOCUMENT_AND_SOURCE.into());
                 }
                 if let Some(text) = text {
                     document::export(&path, &text).map_err(|e| e.to_string())
@@ -368,13 +362,13 @@ impl Render for View {
                     .items_center()
                     .gap_2()
                     .child(div().flex_1().text_size(px(18.)).child(if is_ocr {
-                        "Compare OCR models"
+                        text::COMPARE_OCR_MODELS
                     } else {
-                        "Compare pseudonymization models"
+                        text::COMPARE_PII_MODELS
                     }))
                     .child(
-                        control("new-comparison", "New comparison", theme, !self.running).on_click(
-                            cx.listener(move |this, _, window, cx| {
+                        control("new-comparison", text::NEW_COMPARISON, theme, !self.running)
+                            .on_click(cx.listener(move |this, _, window, cx| {
                                 if this.running {
                                     return;
                                 }
@@ -387,24 +381,24 @@ impl Render for View {
                                 let _ = owner.update(cx, |owner, cx| {
                                     owner.open_comparison(kind, window, cx)
                                 });
+                            })),
+                    )
+                    .child(
+                        control("close-comparison", crate::ui::text::CLOSE, theme, true).on_click(
+                            cx.listener(|this, _, window, _| {
+                                this.cancel.store(true, Ordering::Relaxed);
+                                window.remove_window();
                             }),
                         ),
-                    )
-                    .child(control("close-comparison", crate::ui::text::CLOSE, theme, true).on_click(
-                        cx.listener(|this, _, window, _| {
-                            this.cancel.store(true, Ordering::Relaxed);
-                            window.remove_window();
-                        }),
-                    )),
+                    ),
             )
-            .child(div().text_size(px(11.)).child(format!(
-                "Captured input SHA-256: {} · {}",
-                self.input_hash,
+            .child(div().text_size(px(11.)).child(text::captured_input(
+                &self.input_hash,
                 if is_ocr {
-                    "PDF snapshot"
+                    text::PDF_SNAPSHOT
                 } else {
-                    "Complete Markdown snapshot"
-                }
+                    text::MARKDOWN_SNAPSHOT
+                },
             )))
             .child(
                 div()
@@ -426,7 +420,7 @@ impl Render for View {
                             .flex_wrap()
                             .gap_2()
                             .items_center()
-                            .child(format!("Run {}", index + 1))
+                            .child(text::run_number(index + 1))
                             .children(models.into_iter().map(|model| {
                                 let selected = match (&config, model) {
                                     (Config::Ocr(c), Model::Ocr(m)) => c.model == m,
@@ -463,9 +457,9 @@ impl Render for View {
                                 ))
                             }))
                             .child(div().text_size(px(11.)).child(if is_ocr {
-                                "minimum confidence"
+                                text::MINIMUM_CONFIDENCE
                             } else {
-                                "threshold"
+                                text::THRESHOLD
                             }))
                             .child(
                                 div()
@@ -481,7 +475,7 @@ impl Render for View {
                                         matches!(&self.configs[index],Config::Ocr(c) if c.dpi==dpi);
                                     control(
                                         ("qa-dpi", index * 10 + (dpi / 50) as usize),
-                                        format!("{}{} DPI", if selected { "● " } else { "" }, dpi),
+                                        text::dpi(if selected { "● " } else { "" }, dpi),
                                         theme,
                                         !self.running,
                                     )
@@ -498,15 +492,18 @@ impl Render for View {
                                 }))
                             })
                             .child(
-                                control(("qa-run", index), "Run", theme, !self.running).on_click(
-                                    cx.listener(move |this, _, _, cx| this.run(vec![index], cx)),
-                                ),
+                                control(("qa-run", index), text::RUN, theme, !self.running)
+                                    .on_click(
+                                        cx.listener(move |this, _, _, cx| {
+                                            this.run(vec![index], cx)
+                                        }),
+                                    ),
                             )
                     })),
             )
             .when(is_ocr, |v| {
                 v.child(
-                    div().flex().gap_2().child("Pages").child(
+                    div().flex().gap_2().child(text::PAGES).child(
                         div()
                             .w(px(170.))
                             .border_1()
@@ -522,7 +519,7 @@ impl Render for View {
                                                 .collect::<Vec<_>>()
                                                 .join(", ")
                                         })
-                                        .unwrap_or_else(|| "All pages · frozen".into()),
+                                        .unwrap_or_else(|| text::ALL_PAGES_FROZEN.into()),
                                 )
                             }),
                     ),
@@ -533,23 +530,27 @@ impl Render for View {
                     .flex()
                     .gap_2()
                     .child(
-                        control("run-both", "Run both", theme, !self.running)
+                        control("run-both", text::RUN_BOTH, theme, !self.running)
                             .on_click(cx.listener(|this, _, _, cx| this.run(vec![0, 1], cx))),
                     )
                     .child(
-                        control("cancel-comparison", crate::ui::text::CANCEL, theme, self.running).on_click(
-                            cx.listener(|this, _, _, cx| {
-                                if this.running {
-                                    this.cancel.store(true, Ordering::Relaxed);
-                                    cx.notify();
-                                }
-                            }),
-                        ),
+                        control(
+                            "cancel-comparison",
+                            crate::ui::text::CANCEL,
+                            theme,
+                            self.running,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            if this.running {
+                                this.cancel.store(true, Ordering::Relaxed);
+                                cx.notify();
+                            }
+                        })),
                     )
                     .child(
                         control(
                             "export-comparison",
-                            "Export report",
+                            text::EXPORT_REPORT,
                             theme,
                             !self.records.is_empty(),
                         )
@@ -559,7 +560,7 @@ impl Render for View {
                         v.child(
                             control(
                                 "export-ocr-markdown",
-                                "Save Markdown",
+                                text::SAVE_MARKDOWN,
                                 theme,
                                 !self.records.is_empty(),
                             )
@@ -571,9 +572,9 @@ impl Render for View {
                         v.child(ui::activity(
                             "comparison-activity",
                             if self.cancel.load(Ordering::Relaxed) {
-                                "Cancelling after the current step…"
+                                text::CANCELLING_AFTER_STEP
                             } else {
-                                "Comparing models…"
+                                text::COMPARING_MODELS
                             },
                             theme,
                         ))
@@ -594,10 +595,9 @@ impl Render for View {
                     .children(self.records.iter().enumerate().map(|(index, record)| {
                         control(
                             ("qa-result", index),
-                            format!(
-                                "{} · {:.2}s",
+                            text::result_label(
                                 record.configuration.name(),
-                                record.elapsed_ms as f64 / 1000.
+                                record.elapsed_ms as f64 / 1000.,
                             ),
                             theme,
                             true,
@@ -616,16 +616,15 @@ impl Render for View {
                         .flex()
                         .gap_2()
                         .child(
-                            control("show-raw-ocr", "Recognition output", theme, true).on_click(
-                                cx.listener(|this, _, _, cx| {
+                            control("show-raw-ocr", text::RECOGNITION_OUTPUT, theme, true)
+                                .on_click(cx.listener(|this, _, _, cx| {
                                     this.raw = true;
                                     this.update_display();
                                     cx.notify();
-                                }),
-                            ),
+                                })),
                         )
                         .child(
-                            control("show-prepared-ocr", "Prepared Markdown", theme, true)
+                            control("show-prepared-ocr", text::PREPARED_MARKDOWN, theme, true)
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.raw = false;
                                     this.update_display();
@@ -636,11 +635,11 @@ impl Render for View {
             })
             .when_some(self.records.get(self.selected), |v, record| {
                 v.child(div().text_size(px(11.)).child(format!(
-                        "{} · {} · {}",
-                        record.configuration.summary(),
-                        record.identity["revision"].as_str().unwrap_or_default(),
-                        record.warnings()
-                    )))
+                    "{} · {} · {}",
+                    record.configuration.summary(),
+                    record.identity["revision"].as_str().unwrap_or_default(),
+                    record.warnings()
+                )))
                 .child(
                     div()
                         .id("qa-page-details")
@@ -664,9 +663,7 @@ impl Render for View {
                 )
             })
             .when(self.records.is_empty(), |v| {
-                v.child(div().flex_1().child(
-                    "Results are read-only. Comparing never edits the document or changes defaults.",
-                ))
+                v.child(div().flex_1().child(text::RESULTS_READ_ONLY))
             })
     }
 }
