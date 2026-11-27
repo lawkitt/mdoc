@@ -1,8 +1,8 @@
 use super::model_setup::SetupCompletion;
 use super::*;
 use crate::{app::updater, ui};
-use gpui::size;
 use gpui::{Focusable, TestAppContext};
+use gpui::{px, size};
 use mdoc_store::model_state::Files;
 use mdoc_store::settings::OcrModel;
 use mdoc_store::settings::PiiModel;
