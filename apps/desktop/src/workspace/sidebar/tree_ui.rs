@@ -65,7 +65,7 @@ impl Workspace {
         let palette = theme.pdf_style();
         if !self.tree_has_vault() {
             return vec![
-                self.section_label("Projects"),
+                self.section_label(super::text::PROJECTS),
                 div()
                     .px_2()
                     .py_1()
@@ -233,9 +233,9 @@ impl Workspace {
             })
             .tab_stop(false)
             .aria_label(if expanded {
-                "Collapse Project"
+                super::text::COLLAPSE_PROJECT
             } else {
-                "Expand Project"
+                super::text::EXPAND_PROJECT
             })
             .px_1()
             .py_0()
@@ -484,11 +484,11 @@ impl Workspace {
             .pb_1()
             .text_size(px(11.))
             .text_color(palette.header_muted)
-            .child(div().flex_1().child("Projects"))
+            .child(div().flex_1().child(super::text::PROJECTS))
             .child(
                 ui::header_icon_untipped(
                     "tree-new-project",
-                    "New Project",
+                    super::text::NEW_PROJECT,
                     ui::Icon::Plus,
                     theme,
                     false,
@@ -496,7 +496,7 @@ impl Workspace {
                 .when(!self.context_menu_open(), |v| {
                     v.tooltip(style::tooltip(
                         crate::commands::shortcuts::tip(
-                            "New Project",
+                            super::text::NEW_PROJECT,
                             &crate::workspace::NewProject,
                         ),
                         theme,
@@ -528,7 +528,7 @@ impl Workspace {
             .pb_1()
             .text_size(px(11.))
             .text_color(palette.header_muted)
-            .child(div().flex_1().child("Unfiled"))
+            .child(div().flex_1().child(super::text::UNFILED))
             .when(chosen > 1, |v| {
                 v.child(
                     ui::control(
