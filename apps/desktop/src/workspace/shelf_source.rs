@@ -3,16 +3,19 @@
 //! Vault's outbound check passes; and its Projects' names for the
 //! clipboard rows.
 
-use super::{
-    ProjectLink, Workspace, saving::document_writer::Target, sidebar::navigation::Arrival,
-};
+mod actions;
+mod clipboard;
+
+pub(crate) use clipboard::{ClipboardNames, ClipboardSource};
+
+use super::{ProjectLink, Workspace, saving::document_writer::Target};
 use crate::{
     document::DocumentView,
     review::refusal::{Refusal, Step},
     shelf::{self, OpenTab, Outbound, ShelfDocument, ShelfKey, StoredDocument},
 };
 use gpui::{App, Context, Window};
-use mdoc_pii::restore::{ExportedIdentity, RestoreMap};
+use mdoc_pii::restore::ExportedIdentity;
 use mdoc_store::{
     document_id::{DocumentId, VaultId},
     settings,
@@ -361,228 +364,7 @@ fn open_tab<'a>(
     })
 }
 
-/// Whose names the shelf's clipboard rows use: a Project, or an open tab
-/// outside one through its live mapping. Never mixed.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum ClipboardSource {
-    Project {
-        id: String,
-        name: String,
-    },
-    /// The tab's title, pseudonymized, without `.md`.
-    Tab {
-        id: u64,
-        title: String,
-    },
-}
-
-impl ClipboardSource {
-    /// The name the row and its picker show.
-    pub(crate) fn name(&self) -> &str {
-        match self {
-            Self::Project { name, .. } => name,
-            Self::Tab { title, .. } => title,
-        }
-    }
-}
-
-/// The names a clipboard row may use.
-pub(crate) enum ClipboardNames {
-    Names(Vec<ExportedIdentity>),
-    /// The Vault's key is not open: "Unlock in mdoc…".
-    Locked,
-    /// The Project or tab is gone.
-    Gone,
-}
-
 impl Workspace {
-    /// Every source the picker offers: open tabs outside a Project that
-    /// have a mapping, then every Project.
-    pub(crate) fn clipboard_sources(&self, cx: &App) -> Vec<ClipboardSource> {
-        let mut sources: Vec<_> = self
-            .tabs
-            .iter()
-            .filter_map(|tab| {
-                let view = tab.view()?.read(cx);
-                if view.project.link().is_some() || view.pii.review().applied().is_empty() {
-                    return None;
-                }
-                // Only its title is shown: the Vault is not asked.
-                let (names, title) = (view.known_identities(), view.display_name());
-                let row = ShelfDocument::of_tab(open_tab(tab.id(), view, &title, &names, cx)?)?;
-                Some(ClipboardSource::Tab {
-                    id: tab.id(),
-                    title: row.display_title().to_string(),
-                })
-            })
-            .collect();
-        let mut projects = self.projects.summaries();
-        projects.sort_by_key(|project| project.name.to_lowercase());
-        sources.extend(
-            projects
-                .into_iter()
-                .map(|project| self.project_source(&project.id, &project.name)),
-        );
-        sources
-    }
-
-    /// A Project as a clipboard source, named as the shelf may show it:
-    /// with its own names pseudonymized, as a Project is often named after
-    /// a person.
-    fn project_source(&self, id: &str, name: &str) -> ClipboardSource {
-        let name = match self.projects.project(id) {
-            Some(project) => {
-                RestoreMap::new(project.mapping.exported())
-                    .pseudonymize(name)
-                    .0
-            }
-            None => name.to_string(),
-        };
-        ClipboardSource::Project {
-            id: id.to_string(),
-            name,
-        }
-    }
-
-    /// The document used last: the active tab's Project, or its own
-    /// mapping.
-    pub(crate) fn active_clipboard_source(&self, cx: &App) -> Option<ClipboardSource> {
-        let view = self.active_view()?;
-        let view = view.read(cx);
-        if let Some(link) = view.project.link() {
-            return Some(self.project_source(&link.id, &link.name));
-        }
-        let id = self.tabs.active();
-        self.clipboard_sources(cx)
-            .into_iter()
-            .find(|source| matches!(source, ClipboardSource::Tab { id: tab, .. } if *tab == id))
-    }
-
-    /// The names `source` restores or pseudonymizes with. Never reads the
-    /// key: while the Vault is locked its Projects are.
-    pub(crate) fn clipboard_names(&self, source: &ClipboardSource, cx: &App) -> ClipboardNames {
-        match source {
-            ClipboardSource::Project { id, .. } => match self.projects.project(id) {
-                Some(project) => ClipboardNames::Names(project.mapping.exported()),
-                None if self.vault.needs_key() => ClipboardNames::Locked,
-                None => ClipboardNames::Gone,
-            },
-            ClipboardSource::Tab { id, .. } => match self.tabs.get(*id).and_then(|t| t.view()) {
-                Some(view) => ClipboardNames::Names(view.read(cx).pii.review().export_identities()),
-                None => ClipboardNames::Gone,
-            },
-        }
-    }
-
-    /// A shelf row's click: the tab comes forward in its current view, a
-    /// stored document opens in a tab, and a document that is not ready
-    /// shows its first pending proposal once it has loaded. With `step`
-    /// (a refused row's button), that step runs instead once it has loaded.
-    pub(crate) fn open_from_shelf(
-        &mut self,
-        key: &ShelfKey,
-        ready: bool,
-        step: Option<Step>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let tab = match key {
-            ShelfKey::Tab(tab) => {
-                if !self.tabs.contains(*tab) {
-                    return;
-                }
-                self.activate_as(*tab, Arrival::Visit, window, cx);
-                *tab
-            }
-            ShelfKey::Document(id) => {
-                self.open_vault_document(id.clone(), window, cx);
-                let document = DocumentId::Vault(id.clone());
-                match self.find_document(&document, None, cx) {
-                    Some(tab) => tab,
-                    None => return,
-                }
-            }
-        };
-        if ready && step.is_none() {
-            self.focus_active(window, cx);
-            return;
-        }
-        // A tab still loading shows its proposals once it is ready: wait a
-        // little for them.
-        cx.spawn_in(window, async move |this, cx| {
-            for _ in 0..50 {
-                let shown = this
-                    .update_in(cx, |this, window, cx| {
-                        let Some(view) = (this.tabs.get(tab)).and_then(|tab| tab.view().cloned())
-                        else {
-                            return false;
-                        };
-                        if !view.read(cx).lifecycle.ready() {
-                            return false;
-                        }
-                        match step {
-                            Some(step) => this.run_tab_step(tab, step, window, cx),
-                            None => {
-                                view.update(cx, |view, cx| view.select_first_proposal(window, cx))
-                            }
-                        }
-                    })
-                    .unwrap_or(true);
-                if shown {
-                    return;
-                }
-                cx.background_executor()
-                    .timer(std::time::Duration::from_millis(100))
-                    .await;
-            }
-        })
-        .detach();
-    }
-
-    /// "Open mdoc": Home lists every document.
-    pub(crate) fn home_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_home(window, cx);
-    }
-
-    /// The shelf's Settings gear.
-    pub(crate) fn settings_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_settings(window, cx);
-    }
-
-    /// The first-close note's "Quit when windows close": the
-    /// switch goes off and mdoc quits, as it now would with its last window
-    /// closed. The hidden window shows only if the quit asks something; a
-    /// quit that cannot start brings it back, since no item is left to.
-    pub(crate) fn quit_when_windows_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let saved = self.update_general(|general| general.menu_bar = false, cx);
-        crate::shelf::menu_bar::quit_when_windows_close(cx);
-        if let Err(error) = saved {
-            // Quitting now would bring the item back at the next launch with
-            // no note: show the window and say so instead.
-            crate::shelf::menu_bar::reveal_if_hidden(window, cx);
-            self.notices
-                .post(crate::shelf::text::quit_when_windows_close_not_saved(error));
-            cx.notify();
-            return;
-        }
-        self.quit(window, cx);
-        if !self.quit_flow.quitting() {
-            crate::shelf::menu_bar::reveal_if_hidden(window, cx);
-        }
-    }
-
-    /// Whether the first-close note has shown.
-    pub(crate) fn menu_bar_note_shown(&self) -> bool {
-        self.general()
-            .is_some_and(|general| general.menu_bar_note_shown)
-    }
-
-    /// Whether a shelf drag has dropped, retiring its hint.
-    pub(crate) fn shelf_drag_hint_shown(&self) -> bool {
-        self.general()
-            .is_some_and(|general| general.shelf_drag_hint_shown)
-    }
-
     fn general(&self) -> Option<settings::GeneralConfig> {
         self.preferences
             .borrow()
@@ -627,15 +409,5 @@ impl Workspace {
         self.settings
             .update(cx, |panel, cx| panel.general_changed(change, cx));
         saved
-    }
-
-    /// "Unlock in mdoc…": the Keychain explainer, in the window.
-    pub(crate) fn unlock_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.unlock_projects(window, cx);
-    }
-
-    /// "Restart to update": the ordinary quit, prompts included.
-    pub(crate) fn restart_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.restart_to_update(window, cx);
     }
 }
