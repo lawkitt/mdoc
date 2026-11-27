@@ -6,7 +6,7 @@ use crate::workspace::{
     Close, Import, New, Open, OpenPalette, OpenProject, PasteAiResponse, PseudonymizeClipboard,
     RetryDocument, Settings, SwitchDocument, SwitchDocumentBack, ToggleSidebar, Workspace,
     palette::shortcuts_ui::ShowShortcuts,
-    projects::folder_sheet::{CAP, DroppedFolder, Pending, Sheet, Status, Target},
+    projects::folder_sheet::{CAP, CAP_NOTE, DroppedFolder, Pending, Sheet, Status, Target},
 };
 use crate::{ui, ui::style};
 use gpui::{
@@ -554,9 +554,9 @@ impl Workspace {
         let total = sheet.rows().len();
         let count = text::selected(ticked, total);
         let (note, refused) = if sheet.refused() {
-            (text::with_cap_note(&count), true)
+            (text::with_cap_note(&count, CAP_NOTE), true)
         } else if sheet.over_cap() {
-            (text::with_cap_note(&count), false)
+            (text::with_cap_note(&count, CAP_NOTE), false)
         } else {
             (count, false)
         };

@@ -10,8 +10,7 @@ use std::{
 
 /// One folder drop opens at most this many new tabs.
 pub(in crate::workspace) const CAP: usize = 20;
-/// Said when a tick would go over the cap; the tests read it here.
-#[cfg(test)]
+/// Said when a tick would go over the cap.
 pub(in crate::workspace) use text::CAP_NOTE;
 
 /// A dropped folder: its supported files, read off the UI thread.

@@ -122,8 +122,8 @@ pub(crate) fn selected(ticked: usize, total: usize) -> String {
     format!("{ticked} of {total} selected")
 }
 /// The count with the cap's note.
-pub(crate) fn with_cap_note(count: &str) -> String {
-    format!("{count}. {CAP_NOTE}.")
+pub(crate) fn with_cap_note(count: &str, note: &str) -> String {
+    format!("{count}. {note}.")
 }
 /// The sheet, as a screen reader names it.
 pub(crate) fn open_folder(folder: &str) -> String {
