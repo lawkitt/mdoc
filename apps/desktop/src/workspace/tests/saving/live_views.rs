@@ -490,7 +490,7 @@ fn the_window_menu_lists_the_live_views(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert!(tabs.shell.palette.is_some());
+        assert!(tabs.palette.palette.is_some());
         assert_eq!(tabs.tabs.active(), ids[0]);
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.close_palette(window, cx));

@@ -35,12 +35,12 @@ pub(in crate::workspace::headless_renders) fn scenes(
     })?;
     // The local note's explanation, as hovering it shows it (U16).
     d.change(|w, _, cx| {
-        w.shell.local_note_hover = true;
+        w.home.local_note_hover = true;
         cx.notify();
     })?;
     d.capture("home-local-note")?;
     d.change(|w, _, cx| {
-        w.shell.local_note_hover = false;
+        w.home.local_note_hover = false;
         cx.notify();
     })?;
     d.change(|w, _, cx| {

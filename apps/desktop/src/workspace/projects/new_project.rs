@@ -57,7 +57,7 @@ impl Workspace {
         }
         // Over the palette or the Open Project list, the sheet takes their
         // place, and focus goes back where they would have sent it.
-        if self.shell.palette.is_some() {
+        if self.palette.palette.is_some() {
             self.close_palette(window, cx);
         }
         if self.project_ui.list_open {

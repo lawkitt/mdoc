@@ -21,7 +21,7 @@ fn decision_history_palette_opens_the_popover(cx: &mut TestAppContext) {
     key(cx, "enter");
     assert!(cx.debug_bounds("decision-history").is_some());
     tabs.read_with(cx, |tabs, cx| {
-        assert!(tabs.shell.palette.is_none());
+        assert!(tabs.palette.palette.is_none());
         assert!(tabs.active_view().unwrap().read(cx).history.open);
     });
 }

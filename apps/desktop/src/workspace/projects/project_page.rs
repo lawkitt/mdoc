@@ -647,7 +647,7 @@ impl Workspace {
             .on_drop(
                 cx.listener(move |this, paths: &gpui::ExternalPaths, window, cx| {
                     cx.stop_propagation();
-                    this.shell.drop = None;
+                    this.home.drop = None;
                     this.drop_on_project(paths, &drop_into, window, cx);
                 }),
             )

@@ -73,7 +73,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.shell.shortcuts.is_some() {
+        if self.palette.shortcuts.is_some() {
             self.close_shortcuts(window, cx);
             return;
         }
@@ -84,7 +84,7 @@ impl Workspace {
                 .with_placeholder(super::text::FILTER_SHORTCUTS)
         });
         let changes = cx.subscribe(&filter, |this, _, _: &SearchInputEvent, cx| {
-            if let Some(sheet) = &this.shell.shortcuts {
+            if let Some(sheet) = &this.palette.shortcuts {
                 sheet.scroll.set_offset(point(px(0.), px(0.)));
             }
             cx.notify();
@@ -96,11 +96,11 @@ impl Workspace {
         // rather than acting behind it.
         // Switching to another app is not one of them.
         let focus_out = cx.on_focus_out(&focus, window, |this, _, window, cx| {
-            if window.is_window_active() && this.shell.shortcuts.take().is_some() {
+            if window.is_window_active() && this.palette.shortcuts.take().is_some() {
                 cx.notify();
             }
         });
-        self.shell.shortcuts = Some(ShortcutsSheet {
+        self.palette.shortcuts = Some(ShortcutsSheet {
             filter,
             focus,
             list: cx.focus_handle().tab_stop(true),
@@ -117,7 +117,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(sheet) = self.shell.shortcuts.take() {
+        if let Some(sheet) = self.palette.shortcuts.take() {
             match sheet.return_focus {
                 Some(focus) => window.focus(&focus, cx),
                 None => self.focus_active(window, cx),
@@ -128,7 +128,7 @@ impl Workspace {
 
     /// The list scrolls with ↑ ↓, Page Up / Down, Home and End.
     fn scroll_shortcuts(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
-        let Some(sheet) = &self.shell.shortcuts else {
+        let Some(sheet) = &self.palette.shortcuts else {
             return;
         };
         if event.keystroke.modifiers.modified() {
@@ -158,7 +158,7 @@ impl Workspace {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let sheet = self.shell.shortcuts.as_ref()?;
+        let sheet = self.palette.shortcuts.as_ref()?;
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let groups = visible(sheet.filter.read(cx).value());
@@ -288,13 +288,13 @@ impl Workspace {
                                 this.close_shortcuts(window, cx)
                             }))
                             .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                                if let Some(sheet) = &this.shell.shortcuts {
+                                if let Some(sheet) = &this.palette.shortcuts {
                                     ui::cycle(window, cx, Some(&sheet.focus), false);
                                 }
                                 cx.stop_propagation();
                             }))
                             .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                                if let Some(sheet) = &this.shell.shortcuts {
+                                if let Some(sheet) = &this.palette.shortcuts {
                                     ui::cycle(window, cx, Some(&sheet.focus), true);
                                 }
                                 cx.stop_propagation();

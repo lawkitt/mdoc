@@ -180,7 +180,7 @@ fn strip_cards_are_reachable_by_tab_and_open_with_enter(cx: &mut TestAppContext)
     );
     let shown = strip_documents(&tabs, cx);
     let cards: Vec<_> = cx.update(|_, cx| {
-        let focus = tabs.read(cx).shell.card_focus.borrow();
+        let focus = tabs.read(cx).home.card_focus.borrow();
         (shown.iter()).map(|id| focus[id].clone()).collect()
     });
     let mut reached = [false; 3];
@@ -276,7 +276,7 @@ fn the_palette_finds_documents_by_title_and_project_name(cx: &mut TestAppContext
     draw(cx);
     cx.update(|_, cx| {
         let w = tabs.read(cx);
-        assert!(w.shell.palette.is_none() && !w.showing_home(cx));
+        assert!(w.palette.palette.is_none() && !w.showing_home(cx));
         let tab = w.tabs.active_tab().unwrap();
         assert_eq!(w.live_document(tab, cx).unwrap().as_str(), notes);
     });
@@ -673,15 +673,15 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
 
     // A drag anywhere over Home lights the drop zone and counts the files.
     drag_files(cx, std::slice::from_ref(&unknown), center);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, Some(0)));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).home.drop, Some(0)));
     drop_files(cx, center);
     cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).shell.drop, None);
+        assert_eq!(tabs.read(cx).home.drop, None);
         assert_eq!(tabs.read(cx).tabs.len(), 1);
     });
 
     drag_files(cx, &[a.clone(), b.clone(), unknown.clone()], center);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, Some(2)));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).home.drop, Some(2)));
     drop_files(cx, center);
     assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
     cx.update(|_, cx| {
@@ -697,7 +697,7 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     // A document is no Home drop target.
     assert!(cx.debug_bounds("home-drop").is_none());
     drag_files(cx, std::slice::from_ref(&b), center);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, None));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).home.drop, None));
     drop_files(cx, center);
     assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
 }

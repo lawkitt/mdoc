@@ -84,7 +84,7 @@ impl Workspace {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .track_scroll(&self.shell.home_scroll)
+                    .track_scroll(&self.home.home_scroll)
                     .child(
                         div()
                             .w_full()
@@ -184,8 +184,8 @@ impl Workspace {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let accent = theme.search_accent();
-        let active = self.shell.drop.is_some_and(|n| n > 0);
-        let refused = self.shell.drop == Some(0);
+        let active = self.home.drop.is_some_and(|n| n > 0);
+        let refused = self.home.drop == Some(0);
         let ink = if active { accent } else { p.header_muted };
         let layer = |data: &'static [u8], color: gpui::Hsla| {
             gpui::svg()
@@ -225,7 +225,7 @@ impl Workspace {
         let illustration = if active {
             illustration
                 .with_animation(
-                    ("drop-lift", self.shell.drop_generation),
+                    ("drop-lift", self.home.drop_generation),
                     Animation::new(Duration::from_millis(180)).with_easing(gpui::ease_out_quint()),
                     |v, delta| v.mt(px(-6. * delta)).mb(px(6. * delta)),
                 )
@@ -239,7 +239,7 @@ impl Workspace {
         }
         // No Vault this run: nothing can be added, and the zone says why.
         let unavailable = self.home_unavailable();
-        let title = match self.shell.drop {
+        let title = match self.home.drop {
             _ if unavailable.is_some() => text::DOCUMENTS_UNAVAILABLE.to_string(),
             Some(0) => text::CANT_BE_OPENED.to_string(),
             Some(1) => text::DROP_TO_OPEN.to_string(),
@@ -370,7 +370,7 @@ impl Workspace {
                             .text_color(p.header_muted),
                     )
                     .child(text::local_note(machine))
-                    .when(self.shell.local_note_hover, |v| {
+                    .when(self.home.local_note_hover, |v| {
                         v.child(
                             gpui::deferred(
                                 div()
@@ -496,7 +496,7 @@ impl Workspace {
                 }
             };
             let label = text::card_label(&title, &place, &status, &age);
-            let focus = (self.shell.card_focus.borrow_mut())
+            let focus = (self.home.card_focus.borrow_mut())
                 .entry(card.id().to_string())
                 .or_insert_with(|| cx.focus_handle().tab_stop(true))
                 .clone();

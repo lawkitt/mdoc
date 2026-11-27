@@ -109,11 +109,11 @@ impl Workspace {
                 .filter(|path| import::droppable(path))
                 .count()
         });
-        if self.shell.drop != count {
-            if self.shell.drop.is_none() {
-                self.shell.drop_generation += 1;
+        if self.home.drop != count {
+            if self.home.drop.is_none() {
+                self.home.drop_generation += 1;
             }
-            self.shell.drop = count;
+            self.home.drop = count;
             cx.notify();
         }
     }
@@ -192,8 +192,8 @@ impl Workspace {
 
     /// The pointer moved onto or off Home's local note.
     pub(super) fn hover_local_note(&mut self, hovered: bool, cx: &mut Context<Self>) {
-        if self.shell.local_note_hover != hovered {
-            self.shell.local_note_hover = hovered;
+        if self.home.local_note_hover != hovered {
+            self.home.local_note_hover = hovered;
             cx.notify();
         }
     }

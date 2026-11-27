@@ -53,14 +53,12 @@ mod saving;
 use saving::docx_queue::DocxJob;
 // The tests read these through `use super::*`.
 use gpui::KeyBinding;
-use palette::Palette;
 use palette::PaletteConfirm;
 use palette::PaletteDown;
 use palette::PaletteUp;
 pub(crate) use saving::quit_flow::CloseWatch;
 #[cfg(test)]
 use sidebar::{REVEAL_SLIDE, Reveal};
-use std::collections::HashMap;
 #[cfg(test)]
 use std::collections::VecDeque;
 mod shelf_source;
@@ -413,7 +411,8 @@ pub(super) struct Workspace {
     live_view_menu: Vec<crate::commands::menus::LiveViewItem>,
     /// Shared with document headers: title-bar inset and drag state.
     title: style::TitleBar,
-    shell: ShellState,
+    home: home::Home,
+    palette: palette::Overlays,
     /// The sidebar's Settings row; Settings returns focus here.
     settings_focus: gpui::FocusHandle,
     _appearance: Option<Subscription>,
@@ -668,7 +667,8 @@ impl Workspace {
             window_title: String::new(),
             live_view_menu: Vec::new(),
             title: style::TitleBar::default(),
-            shell: ShellState::new(),
+            home: home::Home::new(),
+            palette: palette::Overlays::default(),
             settings_focus: cx.focus_handle().tab_stop(true),
             _appearance: None,
             _checkpoint: None,
@@ -1238,8 +1238,8 @@ impl Render for Workspace {
             self.live_view_menu = views.clone();
             cx.defer(move |cx| crate::commands::menus::set_live_views(&views, cx));
         }
-        if !cx.has_active_drag() && self.shell.drop.is_some() {
-            self.shell.drop = None;
+        if !cx.has_active_drag() && self.home.drop.is_some() {
+            self.home.drop = None;
         }
         // Notices wait behind the header's bell; a new one opens it, and so
         // does a locked or unavailable Vault. A Vault sealed with another key
@@ -1268,7 +1268,7 @@ impl Render for Workspace {
                 "collapsed"
             },
             theme,
-            if self.shell.palette.is_some() {
+            if self.palette.palette.is_some() {
                 ", palette open"
             } else {
                 ""
@@ -1555,7 +1555,7 @@ impl Workspace {
                     .when(home && self.project_ui.page.is_none(), |v| {
                         v.on_drop(
                             cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
-                                this.shell.drop = None;
+                                this.home.drop = None;
                                 activate_for_drop(window, cx);
                                 this.open_paths(paths.paths().to_vec(), window, cx);
                             }),
@@ -1581,35 +1581,6 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("enter", PaletteConfirm, Some(PALETTE)),
     ]);
     sidebar::switcher_ui::bind_keys(cx);
-}
-
-struct ShellState {
-    pub palette: Option<Palette>,
-    /// The keyboard shortcuts sheet, while open.
-    pub shortcuts: Option<palette::shortcuts_ui::ShortcutsSheet>,
-    /// Files dragged over the window while Home shows: how many are droppable.
-    pub drop: Option<usize>,
-    pub drop_generation: u64,
-    home_scroll: gpui::ScrollHandle,
-    /// Focus for each card of Home's Continue strip, by its document's or
-    /// reply's id, so a reordered strip keeps focus on the same card.
-    pub card_focus: std::cell::RefCell<HashMap<String, gpui::FocusHandle>>,
-    /// The pointer is over Home's "Documents stay on this Mac".
-    pub local_note_hover: bool,
-}
-
-impl ShellState {
-    pub fn new() -> Self {
-        Self {
-            palette: None,
-            shortcuts: None,
-            drop: None,
-            drop_generation: 0,
-            home_scroll: gpui::ScrollHandle::new(),
-            card_focus: Default::default(),
-            local_note_hover: false,
-        }
-    }
 }
 
 impl Workspace {
@@ -1674,8 +1645,8 @@ impl Workspace {
             || self.project_ui.explainer
             || self.folder_sheets.open()
             || self.new_project.is_some()
-            || self.shell.palette.is_some()
-            || self.shell.shortcuts.is_some()
+            || self.palette.palette.is_some()
+            || self.palette.shortcuts.is_some()
             || window
                 .context_stack()
                 .iter()

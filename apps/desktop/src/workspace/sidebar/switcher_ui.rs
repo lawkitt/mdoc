@@ -38,7 +38,7 @@ impl Workspace {
         }
         if self.dialog_up(window)
             || self.settings.read(cx).open
-            || self.shell.palette.is_some()
+            || self.palette.palette.is_some()
             || self.project_ui.list_open
         {
             return;
@@ -107,7 +107,7 @@ impl Workspace {
     ) {
         if self.quit_flow.quitting()
             || self.modal_up(window, cx)
-            || self.shell.palette.is_some()
+            || self.palette.palette.is_some()
             || self.project_ui.list_open
             || self.switcher.is_some()
             || !self.tabs.contains(id)

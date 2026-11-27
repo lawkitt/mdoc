@@ -44,6 +44,15 @@ actions!(
 
 pub(crate) const PALETTE: &str = "CommandPalette";
 
+/// The palette's own fields on the window: the palette and the keyboard
+/// shortcuts sheet, each while open.
+#[derive(Default)]
+pub(in crate::workspace) struct Overlays {
+    pub(in crate::workspace) palette: Option<Palette>,
+    /// The keyboard shortcuts sheet, while open.
+    pub(in crate::workspace) shortcuts: Option<shortcuts_ui::ShortcutsSheet>,
+}
+
 pub(super) struct Palette {
     input: Entity<SearchInput>,
     selected: usize,

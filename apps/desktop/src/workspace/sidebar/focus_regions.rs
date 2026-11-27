@@ -165,8 +165,8 @@ impl Workspace {
             || self.project_ui.explainer
             || self.folder_sheets.open()
             || self.new_project.is_some()
-            || self.shell.palette.is_some()
-            || self.shell.shortcuts.is_some()
+            || self.palette.palette.is_some()
+            || self.palette.shortcuts.is_some()
         {
             return;
         }

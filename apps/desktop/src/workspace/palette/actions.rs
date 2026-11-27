@@ -40,7 +40,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.shell.palette.is_some() {
+        if self.palette.palette.is_some() {
             self.close_palette(window, cx);
             return;
         }
@@ -51,7 +51,7 @@ impl Workspace {
                 .with_placeholder(text::SEARCH_OR_RUN)
         });
         let changes = cx.subscribe(&input, |this, _, _: &SearchInputEvent, cx| {
-            if let Some(palette) = &mut this.shell.palette {
+            if let Some(palette) = &mut this.palette.palette {
                 palette.selected = 0;
                 palette.scroll.set_offset(gpui::Point::default());
             }
@@ -59,7 +59,7 @@ impl Workspace {
         });
         let return_focus = window.focused(cx);
         window.focus(&input.read(cx).focus_handle(cx), cx);
-        self.shell.palette = Some(Palette {
+        self.palette.palette = Some(Palette {
             input,
             selected: 0,
             scroll: gpui::ScrollHandle::new(),
@@ -74,7 +74,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(palette) = self.shell.palette.take() {
+        if let Some(palette) = self.palette.palette.take() {
             match palette.return_focus {
                 Some(focus) => window.focus(&focus, cx),
                 None => self.focus_active(window, cx),
@@ -85,7 +85,7 @@ impl Workspace {
 
     pub(super) fn palette_rows(&self, cx: &App) -> Vec<Row> {
         let query = self
-            .shell
+            .palette
             .palette
             .as_ref()
             .map(|p| p.input.read(cx).value().trim().to_lowercase())
@@ -369,7 +369,7 @@ impl Workspace {
     /// The palette list's vertical scroll offset, for tests.
     #[cfg(test)]
     pub(in crate::workspace) fn palette_offset(&self) -> gpui::Pixels {
-        self.shell
+        self.palette
             .palette
             .as_ref()
             .map_or(px(0.), |palette| palette.scroll.offset().y)
@@ -396,7 +396,7 @@ impl Workspace {
 
     pub(in crate::workspace) fn palette_step(&mut self, delta: isize, cx: &mut Context<Self>) {
         let rows = self.palette_rows(cx);
-        if let Some(palette) = &mut self.shell.palette
+        if let Some(palette) = &mut self.palette.palette
             && !rows.is_empty()
         {
             let selected =
@@ -420,7 +420,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let rows = self.palette_rows(cx);
-        let index = index.or(self.shell.palette.as_ref().map(|p| p.selected));
+        let index = index.or(self.palette.palette.as_ref().map(|p| p.selected));
         let Some(row) = index.and_then(|i| rows.into_iter().nth(i)) else {
             return;
         };
@@ -530,7 +530,7 @@ impl Workspace {
         query: &str,
         cx: &mut Context<Self>,
     ) {
-        if let Some(palette) = &self.shell.palette {
+        if let Some(palette) = &self.palette.palette {
             (palette.input.clone()).update(cx, |input, cx| {
                 input.set_value(query.into(), cx);
                 input.move_to_end(cx);

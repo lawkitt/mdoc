@@ -5,7 +5,7 @@ use super::*;
 use crate::{commands::shortcuts, workspace::palette::shortcuts_ui};
 
 fn sheet_open(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
-    tabs.read_with(cx, |tabs, _| tabs.shell.shortcuts.is_some())
+    tabs.read_with(cx, |tabs, _| tabs.palette.shortcuts.is_some())
 }
 
 /// How many rows the sheet draws.
@@ -120,7 +120,7 @@ fn the_palette_opens_the_sheet_and_shows_keys_from_the_table(cx: &mut TestAppCon
     cx.simulate_input("keyboard shortcuts");
     cx.simulate_keystrokes("enter");
     draw(cx);
-    assert!(tabs.read_with(cx, |tabs, _| tabs.shell.palette.is_none()));
+    assert!(tabs.read_with(cx, |tabs, _| tabs.palette.palette.is_none()));
     assert!(sheet_open(&tabs, cx));
 }
 
@@ -142,7 +142,7 @@ fn a_command_that_moves_focus_closes_the_sheet(cx: &mut TestAppContext) {
     // The palette would take focus the closed sheet cannot give back.
     cx.simulate_keystrokes("secondary-k");
     draw(cx);
-    assert!(tabs.read_with(cx, |tabs, _| tabs.shell.palette.is_none()));
+    assert!(tabs.read_with(cx, |tabs, _| tabs.palette.palette.is_none()));
     assert!(sheet_open(&tabs, cx));
     // ⌘N opens a tab in front, not behind the sheet.
     cx.simulate_keystrokes("secondary-n");
@@ -270,7 +270,7 @@ fn command_palette_filters_and_runs_actions(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("escape");
     draw(cx);
     assert!(cx.debug_bounds("command-palette").is_none());
-    cx.update(|_, cx| assert!(tabs.read(cx).shell.palette.is_none()));
+    cx.update(|_, cx| assert!(tabs.read(cx).palette.palette.is_none()));
     // View actions without a menu bar on Windows are in the palette too.
     let visible = tabs.read_with(cx, |tabs, _| tabs.sidebar.visible());
     cx.simulate_keystrokes("secondary-k");
@@ -338,7 +338,7 @@ fn command_palette_routes_every_settings_category(cx: &mut TestAppContext) {
         cx.simulate_keystrokes("enter");
         draw(cx);
         cx.update(|_, cx| {
-            assert!(tabs.read(cx).shell.palette.is_none());
+            assert!(tabs.read(cx).palette.palette.is_none());
             assert!(panel.read(cx).open);
             assert_eq!(panel.read(cx).category(), category);
         });

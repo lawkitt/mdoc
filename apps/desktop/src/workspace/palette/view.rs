@@ -13,7 +13,7 @@ use gpui::px;
 
 impl Workspace {
     pub(in crate::workspace) fn palette_view(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let palette = self.shell.palette.as_ref()?;
+        let palette = self.palette.palette.as_ref()?;
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let rows = self.palette_rows(cx);

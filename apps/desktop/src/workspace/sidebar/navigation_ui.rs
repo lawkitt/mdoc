@@ -110,7 +110,7 @@ impl Workspace {
             || self.project_ui.explainer
             || self.folder_sheets.open()
             || self.new_project.is_some()
-            || self.shell.palette.is_some()
+            || self.palette.palette.is_some()
             || window.has_active_prompt()
             || self.quit_flow.quitting()
         {
