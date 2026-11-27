@@ -15,6 +15,7 @@
 // Windows only ever uses the inert registrar.
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
+use crate::ai::text;
 use gpui::{App, Global, Keystroke};
 use mdoc_store::settings::Hotkey;
 
@@ -31,22 +32,6 @@ pub(crate) enum Refused {
     Taken,
     /// The OS said no for another reason, in its words.
     Failed(String),
-}
-
-impl Refused {
-    /// What Settings › AI connector shows under the row.
-    pub(crate) fn message(&self, hotkey: Hotkey) -> String {
-        let label = hotkey.label();
-        match self {
-            Refused::Taken => format!(
-                "{label} is in use by another app or by macOS. Record another shortcut; the \
-                 menu bar icon still opens the companion."
-            ),
-            Refused::Failed(why) => {
-                format!("Couldn't set {label}: {why}. The menu bar icon still opens the companion.")
-            }
-        }
-    }
 }
 
 /// The app's hotkey: what the window wants registered and what is.
@@ -280,8 +265,8 @@ pub(crate) fn recorded(
         return Err(NotAHotkey::Cancel);
     }
     let rejected = |why: &str| Err(NotAHotkey::Rejected(why.to_string()));
-    let not_offered = "Use a letter, a digit, a symbol, Space or F1–F20.";
-    let unmodified = "Hold ⌘, ⌃ or ⌥ with the key, so typing never triggers it.";
+    let not_offered = text::NOT_OFFERED;
+    let unmodified = text::UNMODIFIED;
     if let Some(down) = native {
         let Some(&(_, code)) = VIRTUAL.iter().find(|(key, _)| *key == down.key) else {
             return rejected(not_offered);
@@ -327,7 +312,9 @@ fn code_of(key: &str) -> Option<(String, bool)> {
         return Some(("Space".into(), false));
     }
     if let Some(n) = key.strip_prefix('f').and_then(|n| n.parse::<u8>().ok()) {
-        return (1..=20).contains(&n).then(|| (format!("F{n}"), false));
+        return (1..=20)
+            .contains(&n)
+            .then(|| (text::function_key_code(n), false));
     }
     let mut chars = key.chars();
     let (Some(c), None) = (chars.next(), chars.next()) else {
@@ -335,15 +322,15 @@ fn code_of(key: &str) -> Option<(String, bool)> {
     };
     if c.is_ascii_alphabetic() {
         return Some((
-            format!("Key{}", c.to_ascii_uppercase()),
+            text::letter_key_code(c.to_ascii_uppercase()),
             c.is_ascii_uppercase(),
         ));
     }
     if c.is_ascii_digit() {
-        return Some((format!("Digit{c}"), false));
+        return Some((text::digit_key_code(c), false));
     }
     if let Some(digit) = SHIFTED_DIGITS.iter().position(|&s| s == c) {
-        return Some((format!("Digit{digit}"), true));
+        return Some((text::digit_key_code(digit), true));
     }
     SYMBOLS.iter().find_map(|&(code, plain, shifted)| {
         (c == plain || c == shifted).then(|| (code.to_string(), c == shifted))

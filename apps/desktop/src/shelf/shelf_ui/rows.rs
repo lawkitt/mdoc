@@ -18,7 +18,7 @@ pub(crate) use row::row_label;
 
 use crate::{
     review::refusal::Step,
-    shelf::{self, ShelfDocument, ShelfExports},
+    shelf::{self, ShelfDocument, ShelfExports, text},
     ui::style::Theme,
     workspace::Workspace,
 };
@@ -502,7 +502,7 @@ impl ShelfRows {
             .justify_center()
             .text_size(px(11.))
             .text_color(p.header_muted)
-            .child("Drag a preview into any app")
+            .child(text::DRAG_HINT)
             .into_any_element()
     }
 }
@@ -517,7 +517,7 @@ impl Render for ShelfRows {
                 .items_center()
                 .justify_center()
                 .text_color(p.header_muted)
-                .child("Pseudonymized documents appear here");
+                .child(text::NO_DOCUMENTS);
         }
         div()
             .flex()

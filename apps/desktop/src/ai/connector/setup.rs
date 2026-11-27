@@ -16,6 +16,8 @@
 use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
 
+pub(crate) use crate::ai::text::FIRST_PROMPT;
+
 /// The key mdoc adds under the app's servers, as the app lists it.
 pub(crate) const SERVER: &str = "mdoc";
 /// The backup's suffix: `claude_desktop_config.json.mdoc-backup`, the
@@ -27,8 +29,6 @@ pub(crate) const SHIM: &str = if cfg!(windows) {
 } else {
     "mdoc-mcp"
 };
-/// What Test connection asks in the new chat.
-pub(crate) const FIRST_PROMPT: &str = "List my documents in mdoc.";
 
 /// An AI app mdoc can add itself to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -212,53 +212,6 @@ pub(crate) enum Refusal {
     Linked,
     /// Reading or writing failed.
     Io { writing: bool, error: String },
-}
-
-impl Refusal {
-    /// The sentence the page shows.
-    pub(crate) fn message(&self, host: Host) -> String {
-        let app = host.name();
-        match self {
-            Self::NotInstalled => {
-                format!("{app} isn't installed on this computer, or hasn't been opened yet.")
-            }
-            Self::NoShim => {
-                "mdoc-mcp isn't installed beside mdoc. Reinstall mdoc to add it.".into()
-            }
-            Self::NotInPlace => format!(
-                "Move mdoc to your Applications folder first: {app} can't start it from where it \
-                 runs now."
-            ),
-            Self::Unparsable => format!(
-                "{app}'s settings file can't be read, so mdoc won't change it. Fix or remove it, \
-                 then try again."
-            ),
-            Self::Unexpected => format!(
-                "{app}'s settings file isn't in the form mdoc expects, so mdoc won't change it."
-            ),
-            Self::AlreadyAdded => format!("mdoc is already in {app}'s settings."),
-            Self::NotAdded => format!("mdoc isn't in {app}'s settings."),
-            Self::Linked => format!(
-                "{app}'s settings file is a link to another file, so mdoc won't replace it. \
-                 Add the entry where the link points, by hand."
-            ),
-            Self::Changed => format!(
-                "{app}'s settings file changed since mdoc showed it. Nothing was written; look \
-                 at the change again."
-            ),
-            Self::Io {
-                writing: false,
-                error,
-            } => format!("mdoc couldn't read {app}'s settings file: {error}."),
-            Self::Io {
-                writing: true,
-                error,
-            } => format!(
-                "mdoc couldn't write {app}'s settings file: {error}. If {app} is open, quit it \
-                 and try again."
-            ),
-        }
-    }
 }
 
 /// Where an AI app stands with mdoc.

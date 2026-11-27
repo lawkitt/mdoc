@@ -3,6 +3,7 @@
 //! pauses, and never part of what leaves for an AI. Also the header's
 //! "From AI reply" line of a document promoted from a saved reply.
 use super::{AUTOSAVE_DELAY, DocumentView, Inspector};
+use crate::document::text;
 use crate::{ui, workspace};
 use gpui::{
     AnyElement, Context, Entity, Focusable, Subscription, Task, Window, div, prelude::*, px,
@@ -86,10 +87,6 @@ pub(crate) struct FromReply {
     pub(crate) gone: bool,
 }
 
-/// What the tab says with no notes to edit yet.
-pub(crate) const EMPTY_HINT: &str =
-    "Notes about this document: deadlines, who to call, what to check. Only you see them.";
-
 impl DocumentView {
     /// Vault document `document` loaded with `notes`, read when `writes`
     /// writes of its notes had ended. Another document's notes replace
@@ -138,7 +135,7 @@ impl DocumentView {
         let text = self.notes.text.clone();
         let scroll = self.notes.scroll.clone();
         let editor = cx.new(|cx| {
-            let mut editor = EditorState::new(window, cx).with_placeholder(EMPTY_HINT);
+            let mut editor = EditorState::new(window, cx).with_placeholder(text::EMPTY_HINT);
             editor.set_plain_text(true);
             editor.set_autoscroll(scroll);
             editor.set_text(text, cx);
@@ -234,14 +231,14 @@ impl DocumentView {
                     .flex_col()
                     .gap_2()
                     .child(
-                        muted("Private to this computer. Never sent with Copy for AI or Share.")
+                        muted(text::NOTES_PRIVATE)
                             .when(cfg!(test), |v| v.debug_selector(|| "notes-private".into())),
                     )
                     .child(
                         // The editor tracks its own handle; the box rings it.
                         ui::focus_ring("notes-box", theme)
                             .ring_for(&focus)
-                            .aria_label("Notes")
+                            .aria_label(text::NOTES)
                             .when(cfg!(test), |v| v.debug_selector(|| "notes-box".into()))
                             .key_context("NotesBox")
                             .flex_1()
@@ -261,7 +258,7 @@ impl DocumentView {
                     )
                     .into_any_element()
             }
-            None => muted("Notes are kept once the document is saved in mdoc.")
+            None => muted(text::NOTES_UNAVAILABLE)
                 .when(cfg!(test), |v| {
                     v.debug_selector(|| "notes-unavailable".into())
                 })
@@ -316,14 +313,14 @@ impl DocumentView {
                     .when(cfg!(test), |v| v.debug_selector(|| "from-reply".into()))
                     .text_size(px(12.))
                     .text_color(p.header_muted)
-                    .child("From a deleted AI reply")
+                    .child(text::FROM_A_DELETED_REPLY)
                     .into_any_element(),
             );
         }
         Some(
-            ui::control("from-reply", "From AI reply", theme, true)
+            ui::control("from-reply", text::FROM_AI_REPLY, theme, true)
                 .when(cfg!(test), |v| v.debug_selector(|| "from-reply".into()))
-                .aria_label("From AI reply: open the reply")
+                .aria_label(text::OPEN_THE_REPLY)
                 .text_size(px(12.))
                 .text_color(theme.search_accent())
                 .on_click(cx.listener(|this, _, _, cx| this.open_source_reply(cx)))
