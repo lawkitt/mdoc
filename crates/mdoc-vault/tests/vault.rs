@@ -347,6 +347,8 @@ fn run_step(vault: &Vault, step: usize) -> Result<(), VaultError> {
     vault.flush()
 }
 const STEPS: usize = 6;
+/// The step that deletes; it removes a file before its first write step.
+const DELETE_STEP: usize = 5;
 
 #[test]
 fn a_crash_between_two_writes_loses_nothing() {
@@ -361,72 +363,102 @@ fn a_crash_between_two_writes_loses_nothing() {
             expected.push(snapshot(&vault));
         }
     }
-    // Crash at the 1st write step, then the 2nd, and so on, until a run
-    // ends with no crash.
-    let (mut before, mut after) = (0, 0);
-    for crash_at in 1.. {
-        let folder = Folder::new();
-        let calls = Arc::new(AtomicUsize::new(0));
-        let hook: FaultHook = {
-            let calls = calls.clone();
-            Arc::new(move |_step| {
-                if calls.fetch_add(1, Ordering::SeqCst) + 1 == crash_at {
-                    Fault::Crash
-                } else {
-                    Fault::Continue
-                }
-            })
-        };
-        let in_flight = match Vault::open_with_hook(&folder.root, &KEY, hook) {
-            Err(VaultError::Crashed) => Some(0),
-            Err(other) => panic!("{other}"),
-            Ok(vault) => {
-                let mut crashed = None;
-                for step in 0..STEPS {
-                    match run_step(&vault, step) {
-                        Ok(()) => {}
-                        Err(VaultError::Crashed) => {
-                            crashed = Some(step);
-                            break;
-                        }
-                        Err(other) => panic!("{other}"),
+    // Phase 0 is the open, phase `s + 1` step `s`. Crash at the 1st write
+    // step of a phase, then the 2nd, and so on, until the phase ends with
+    // no crash; then the next phase. Counted from the phase's own start, a
+    // crash point never moves with the clock: a summary's `updated` is in
+    // whole seconds, so a step that crosses one also writes the manifest,
+    // which shifted every later point when they were counted from the
+    // open (#1356).
+    let (mut before, mut after) = ([0; STEPS + 1], [0; STEPS + 1]);
+    for target in 0..=STEPS {
+        for crash_at in 1.. {
+            assert!(crash_at <= 16, "phase {target} keeps writing");
+            let folder = Folder::new();
+            let phase = Arc::new(AtomicUsize::new(0));
+            let calls = Arc::new(AtomicUsize::new(0));
+            let hook: FaultHook = {
+                let (phase, calls) = (phase.clone(), calls.clone());
+                Arc::new(move |_step| {
+                    if phase.load(Ordering::SeqCst) == target
+                        && calls.fetch_add(1, Ordering::SeqCst) + 1 == crash_at
+                    {
+                        Fault::Crash
+                    } else {
+                        Fault::Continue
                     }
+                })
+            };
+            let in_flight = match Vault::open_with_hook(&folder.root, &KEY, hook) {
+                Err(VaultError::Crashed) => Some(0),
+                Err(other) => panic!("{other}"),
+                Ok(vault) => {
+                    let mut crashed = None;
+                    for step in 0..STEPS {
+                        phase.store(step + 1, Ordering::SeqCst);
+                        match run_step(&vault, step) {
+                            Ok(()) => {}
+                            Err(VaultError::Crashed) => {
+                                crashed = Some(step + 1);
+                                break;
+                            }
+                            Err(other) => panic!("{other}"),
+                        }
+                    }
+                    assert!(
+                        matches!(
+                            vault.create_project(NewProject::default()),
+                            Err(VaultError::Crashed)
+                        ) || crashed.is_none()
+                    );
+                    crashed
                 }
-                assert!(
-                    matches!(
-                        vault.create_project(NewProject::default()),
-                        Err(VaultError::Crashed)
-                    ) || crashed.is_none()
+            };
+            let Some(crashed) = in_flight else {
+                // The phase ended before its `crash_at`th write step.
+                assert!(crash_at > 1, "phase {target} writes nothing");
+                break;
+            };
+            assert_eq!(crashed, target, "crash at write step {crash_at}");
+            // What the crash may leave: the step as it began or as it
+            // ended; a crash in the open leaves the empty Vault.
+            let vault = folder.open();
+            let now = snapshot(&vault);
+            if target == 0 {
+                assert_eq!(
+                    now, expected[0],
+                    "crash at write step {crash_at} of the open"
                 );
-                crashed
+                before[0] += 1;
+            } else if now == expected[target - 1] {
+                before[target] += 1;
+            } else {
+                assert_eq!(
+                    now,
+                    expected[target],
+                    "crash at write step {crash_at} of step {}",
+                    target - 1
+                );
+                after[target] += 1;
             }
-        };
-        let Some(step) = in_flight else {
-            assert!(crash_at > STEPS * 2, "every step writes twice");
-            break;
-        };
-        let vault = folder.open();
-        let now = snapshot(&vault);
-        if now == expected[step] {
-            before += 1;
-        } else {
-            assert_eq!(
-                now,
-                expected[step + 1],
-                "crash at write step {crash_at}, in step {step}"
-            );
-            after += 1;
+            drop(vault);
+            let reopened = folder.open();
+            assert_eq!(reopened.opened(), ManifestCheck::Current);
+            assert_eq!(snapshot(&reopened), now);
         }
-        drop(vault);
-        let reopened = folder.open();
-        assert_eq!(reopened.opened(), ManifestCheck::Current);
-        assert_eq!(snapshot(&reopened), now);
     }
-    // Crashes landed both before and after a step's record was written.
-    assert!(
-        before >= STEPS && after >= STEPS,
-        "{before} before, {after} after"
-    );
+    // Each step's crashes landed both before and after its record was
+    // written; a delete removes its file before its first write step, so
+    // its crashes all come after.
+    for step in 0..STEPS {
+        let (b, a) = (before[step + 1], after[step + 1]);
+        assert!(a >= 1, "step {step}: {b} before, {a} after");
+        assert!(
+            b >= 1 || step == DELETE_STEP,
+            "step {step}: {b} before, {a} after"
+        );
+    }
+    assert!(before[0] >= 1, "the open writes the manifest");
 }
 
 #[test]
