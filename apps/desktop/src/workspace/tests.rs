@@ -37,6 +37,7 @@ mod ai;
 mod document;
 mod exits;
 mod home;
+mod menus;
 mod notices;
 mod ordering;
 mod palette;
@@ -48,7 +49,6 @@ mod review;
 mod saving;
 mod settings;
 mod shelf;
-mod shell;
 mod sidebar;
 mod vault;
 

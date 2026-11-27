@@ -1,3 +1,5 @@
+//! The document's header: its filled button (Convert, Pseudonymize, Apply or Share), the
+//! ⋯ menu, the Markdown and Source switch, and the empty page a blank tab shows.
 use super::DocumentView;
 use crate::{
     document::spelling::ToggleDocumentSpelling,
