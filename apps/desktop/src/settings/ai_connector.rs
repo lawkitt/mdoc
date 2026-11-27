@@ -9,7 +9,16 @@
 //! written until its primary button.
 use super::Panel;
 use crate::ai::connector::setup::{Change, Host, Places, Status};
-use gpui::{Context, FocusHandle};
+#[cfg(any(
+    test,
+    all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    )
+))]
+use gpui::Context;
+use gpui::FocusHandle;
 
 #[cfg(test)]
 mod tests;

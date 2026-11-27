@@ -2,7 +2,13 @@
 //! categories, the dictionary and the lists), model downloads and their status, and
 //! saving each change.
 use crate::{app::models, document::markdown_search::SearchInput, ui::style::Theme};
-use gpui::{App, Context, Entity, FocusHandle, KeyBinding, Window, actions, prelude::*, px};
+#[cfg(all(
+    debug_assertions,
+    feature = "headless-renders",
+    any(target_os = "macos", target_os = "windows")
+))]
+use gpui::px;
+use gpui::{App, Context, Entity, FocusHandle, KeyBinding, Window, actions, prelude::*};
 use mdoc_import::{
     model_download::{Pending, Progress},
     ocr,
