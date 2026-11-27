@@ -29,6 +29,8 @@ import io.github.lawkitt.mdoc.jobs.Jobs
 import io.github.lawkitt.mdoc.jobs.RunningJob
 import io.github.lawkitt.mdoc.ui.UiState
 import io.github.lawkitt.mdoc.ui.onMain
+import io.github.lawkitt.mdoc.ui.onMainThread
+import kotlinx.coroutines.async
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -276,7 +278,7 @@ class DocumentViewModel(
     }
 
     /** What to put on the clipboard for `action` on `range`, which read `shown`, and whether it is marked; null, with why shown, on failure. */
-    suspend fun copySelection(range: SourceRange, shown: String, action: SelectionAction): SelectionCopy? = onMainThread {
+    suspend fun copySelection(range: SourceRange, shown: String, action: SelectionAction): SelectionCopy? = inModel {
         // Selected in the snapshot shown: refused if a move opened the document again since.
         val seen = mutable.value.snapshot.opened
         withContext(Dispatchers.IO) { runCatching { session.copySelection(range, shown, action, seen) } }
@@ -297,7 +299,7 @@ class DocumentViewModel(
     // Hand-off
 
     /** Copy for AI's text; null when refused, and the refusal's dialog shows with its step. */
-    suspend fun handOff(): HandOff? = onMainThread {
+    suspend fun handOff(): HandOff? = inModel {
         withContext(Dispatchers.IO) { runCatching { session.copyForAi() } }.onFailure(::refused).getOrNull()
     }
 
@@ -354,11 +356,11 @@ class DocumentViewModel(
      * Replace N does, then Copy for AI's text, through the same check;
      * null when either refuses, and why shows.
      */
-    suspend fun replaceAndHandOff(): HandOff? = onMainThread {
+    suspend fun replaceAndHandOff(): HandOff? = inModel {
         mutable.update { it.copy(refusal = null) }
         // A failed replace or save is a refusal in plain words too, never the core's.
         val replaced = withContext(Dispatchers.IO) { runCatching { session.replaceAllPending() } }
-            .onFailure { refused(AppError.HandOffRefused(HandOffRefusal.Failed)) }.getOrNull() ?: return@onMainThread null
+            .onFailure { refused(AppError.HandOffRefused(HandOffRefusal.Failed)) }.getOrNull() ?: return@inModel null
         mutable.update { it.copy(snapshot = replaced) }
         handOff()
     }
@@ -372,11 +374,11 @@ class DocumentViewModel(
      * goes on, or null. Text changed since asks again; a save that fails
      * is a refusal in plain words.
      */
-    suspend fun confirmNamesChecked(): HandOffKind? = onMainThread {
+    suspend fun confirmNamesChecked(): HandOffKind? = inModel {
         mutable.update { it.copy(refusal = null) }
         val checked = withContext(Dispatchers.IO) { runCatching { session.confirmNamesChecked() } }
             .onFailure { refused(it as? AppError.HandOffRefused ?: AppError.HandOffRefused(HandOffRefusal.Failed)) }
-            .getOrNull() ?: return@onMainThread null
+            .getOrNull() ?: return@inModel null
         mutable.update { it.copy(snapshot = checked) }
         mutable.value.tapped
     }
@@ -421,7 +423,7 @@ class DocumentViewModel(
      * wait for the answer armed; null, with why shown, until Ready, and
      * then nothing waits.
      */
-    suspend fun askAi(): HandOff? = onMainThread { handOff()?.also { offer { AskAiWait.asked() } } }
+    suspend fun askAi(): HandOff? = inModel { handOff()?.also { offer { AskAiWait.asked() } } }
 
     /** Ask AI's chooser started an app; `inFront`: mdoc is resumed. */
     fun askAiChosen(inFront: Boolean) = offer { AskAiWait.chosen(it, inFront) }
@@ -464,7 +466,7 @@ class DocumentViewModel(
     fun showNotes() = mutable.update { it.copy(showsNotes = true) }
 
     /** The document's notes as the core holds them, once what was typed before is in; null when they can't be read. */
-    suspend fun notes(): String? = withContext(notesCalls) { runCatching { session.notes() }.onFailure(::show).getOrNull() }
+    suspend fun notes(): String? = onMainThread { withContext(notesCalls) { runCatching { session.notes() }.onFailure(::show).getOrNull() } }
 
     /** Typed in Notes: the core holds it at once, and it is saved once typing pauses. */
     fun setNotes(notes: String) {
@@ -564,12 +566,14 @@ class DocumentViewModel(
     }
 
     /**
-     * `body` on the main thread, whatever the caller's dispatcher: a screen's
-     * coroutine scope resumes after `withContext(Dispatchers.IO)` on the IO
-     * thread under Compose's test dispatcher, so its writes come back here
-     * explicitly (#1332).
+     * A change the screen asked for, run in the view model's own scope on
+     * the main thread and awaited: its state is written there whatever the
+     * screen's dispatcher (#1332), and a screen that goes meanwhile stops
+     * waiting while the change still lands, as when it ran inside the IO
+     * block. What the screen does with the answer (the clipboard, a share)
+     * stays the screen's, and goes with it.
      */
-    private suspend fun <T> onMainThread(body: suspend () -> T): T = withContext(Dispatchers.Main.immediate) { body() }
+    private suspend fun <T> inModel(body: suspend () -> T): T = viewModelScope.async { body() }.await()
 
     /**
      * A core call off the main thread, then its result written into the

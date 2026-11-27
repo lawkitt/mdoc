@@ -63,6 +63,7 @@ import io.github.lawkitt.mdoc.document.copy
 import io.github.lawkitt.mdoc.ui.MdocTheme
 import io.github.lawkitt.mdoc.ui.Palette
 import io.github.lawkitt.mdoc.ui.RestoredText
+import io.github.lawkitt.mdoc.ui.onMainThread
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.mdoc_ffi.markdownStyling
@@ -114,16 +115,19 @@ private fun RestoreScreen(reply: String?, replies: Replies?, onDone: () -> Unit)
     var notice by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(replies) {
         if (replies == null) return@LaunchedEffect
-        val read = withContext(Dispatchers.IO) { runCatching { replies.places() }.getOrDefault(RestorePlaces()) }
+        // Written back on the main thread whatever the composition's dispatcher (#1332).
+        val read = onMainThread { withContext(Dispatchers.IO) { runCatching { replies.places() }.getOrDefault(RestorePlaces()) } }
         places = read
         place = read.default
     }
     LaunchedEffect(place) {
         val chosen = place ?: return@LaunchedEffect
         if (reply == null || replies == null) return@LaunchedEffect
-        restored = withContext(Dispatchers.IO) {
-            runCatching { replies.restore(reply, chosen) }
-                .fold({ Restored(it, null) }, { Restored(null, it.message) })
+        restored = onMainThread {
+            withContext(Dispatchers.IO) {
+                runCatching { replies.restore(reply, chosen) }
+                    .fold({ Restored(it, null) }, { Restored(null, it.message) })
+            }
         }
         notice = null
     }

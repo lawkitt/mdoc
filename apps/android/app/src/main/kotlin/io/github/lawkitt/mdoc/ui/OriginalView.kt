@@ -103,7 +103,8 @@ private fun PdfPages(file: OriginalData, modifier: Modifier) {
     // Opened off the main thread (a Vault original decrypts first) and closed
     // when the pane goes, even if it went while the renderer was opening.
     val opening by produceState<Result<PdfRenderer>?>(null, file) {
-        val opened = withContext(Dispatchers.IO + NonCancellable) { runCatching { open(file) } }
+        // Written back on the main thread whatever the composition's dispatcher (#1332).
+        val opened = onMainThread { withContext(Dispatchers.IO + NonCancellable) { runCatching { open(file) } } }
         value = opened
         awaitDispose { opened.getOrNull()?.close() }
     }
@@ -131,7 +132,7 @@ private fun PdfPages(file: OriginalData, modifier: Modifier) {
             items(renderer.pageCount) { index ->
                 val page by produceState<Bitmap?>(null, renderer, index, width) {
                     // A pane can be measured at zero width first (side by side on a tablet).
-                    if (width > 0) value = withContext(Dispatchers.IO) { synchronized(renderer) { render(renderer, index, width) } }
+                    if (width > 0) value = onMainThread { withContext(Dispatchers.IO) { synchronized(renderer) { render(renderer, index, width) } } }
                 }
                 page?.let {
                     Image(
@@ -209,7 +210,7 @@ private sealed interface PageImage {
 private fun ImagePage(file: OriginalData, number: Int, count: Int, scale: ContentScale, modifier: Modifier) {
     val description = stringResource(R.string.original_page, number, count)
     val page by produceState<PageImage>(PageImage.Loading, file) {
-        value = decodes.withPermit { withContext(Dispatchers.IO) { decode(file) } }
+        value = onMainThread { decodes.withPermit { withContext(Dispatchers.IO) { decode(file) } } }
             ?.let(PageImage::Shown) ?: PageImage.Unavailable
     }
     when (val shown = page) {

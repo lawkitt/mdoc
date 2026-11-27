@@ -3,10 +3,12 @@ package io.github.lawkitt.mdoc.ui
 import android.os.Handler
 import android.os.Looper
 import io.github.lawkitt.mdoc.BuildConfig
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withContext
 
 /**
  * State a screen collects, written on the main thread only (#1332).
@@ -45,10 +47,13 @@ class UiState<T>(initial: T) {
 /** The main looper; null off Android (the JVM unit tests). */
 private val mainLooper: Looper? = runCatching { Looper.getMainLooper() }.getOrNull()
 
-private val mainHandler: Handler? by lazy { mainLooper?.let(::Handler) }
+// Asynchronous, as Dispatchers.Main's: a post made before a coroutine's
+// continuation is dispatched runs before it, so a job's last progress never
+// lands after the job has ended and cleared it.
+private val mainHandler: Handler? by lazy { mainLooper?.let(Handler::createAsync) }
 
 /** On the main thread, or off Android. */
-fun onMainThread(): Boolean = mainLooper?.isCurrentThread ?: true
+fun isMainThread(): Boolean = mainLooper?.isCurrentThread ?: true
 
 /**
  * Debug builds: fails when UI state is written off the main thread
@@ -56,12 +61,20 @@ fun onMainThread(): Boolean = mainLooper?.isCurrentThread ?: true
  */
 fun checkMain() {
     if (BuildConfig.DEBUG) {
-        check(onMainThread()) { "UI state written on ${Thread.currentThread().name}, not the main thread (#1332)" }
+        check(isMainThread()) { "UI state written on ${Thread.currentThread().name}, not the main thread (#1332)" }
     }
 }
+
+/**
+ * [body], which may go off the main thread, then back on it whatever the
+ * caller's dispatcher: a composition's coroutine resumes after
+ * `withContext(Dispatchers.IO)` on the IO thread under Compose's test
+ * dispatcher, so a screen's state written after it comes back here (#1332).
+ */
+suspend fun <T> onMainThread(body: suspend () -> T): T = withContext(Dispatchers.Main.immediate) { body() }
 
 /** Runs [write] on the main thread: at once when already there, else posted. */
 fun onMain(write: () -> Unit) {
     val handler = mainHandler
-    if (onMainThread() || handler == null) write() else handler.post(write)
+    if (isMainThread() || handler == null) write() else handler.post(write)
 }
