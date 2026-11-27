@@ -1,3 +1,5 @@
+//! The app's look: the light and dark themes, the colours of every surface and category,
+//! the title bar's sizes, and the styles of the editor and the PDF pages.
 use gpui::{Hsla, font, hsla, rgb};
 use gpui_pdf::{PageOverlays, PdfStyle, ThemedPages};
 use mdoc_editor::SyntaxStyle;

@@ -1,3 +1,5 @@
+//! The one-line text field every screen uses, for find and Replace, names and passwords:
+//! its editing keys, selection and clipboard, and a masked mode for passwords.
 use std::ops::Range;
 
 use gpui::{
