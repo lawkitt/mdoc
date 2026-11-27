@@ -1184,7 +1184,7 @@ fn tab_label(tab: &Tab, cx: &App) -> TabLabel {
 /// for the user's own mdoc.
 fn window_title(title: String, dev_profile: bool) -> String {
     if dev_profile {
-        format!("{title} — dev profile")
+        text::dev_profile_title(title)
     } else {
         title
     }
@@ -1253,8 +1253,7 @@ impl Render for Workspace {
         }
         self.title.notices.set(notices);
         // A crash report says what the window showed (no text, no names).
-        crate::app::crash::note_state(format!(
-            "{}, {} tabs, sidebar {}, {:?} theme{}",
+        crate::app::crash::note_state(text::crash_state(
             if home {
                 "Home".to_string()
             } else {
