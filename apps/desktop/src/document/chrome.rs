@@ -757,7 +757,7 @@ impl DocumentView {
                         .child(
                             row(
                                 "more-close",
-                                "Close".into(),
+                                crate::ui::text::CLOSE.into(),
                                 Some(modifier("⌘W", "Ctrl+W")),
                                 None,
                                 true,

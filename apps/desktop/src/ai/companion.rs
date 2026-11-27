@@ -1119,7 +1119,11 @@ impl CompanionView {
             .child(
                 ui::action_control(
                     "companion-reply-copy",
-                    if copied { "Copied" } else { "Copy" },
+                    if copied {
+                        crate::ui::text::COPIED
+                    } else {
+                        "Copy"
+                    },
                     theme,
                     true,
                     false,

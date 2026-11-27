@@ -458,15 +458,20 @@ impl DocumentView {
             ))
             .child(
                 ui::card_actions().child(
-                    crate::settings::control("cancel-pii-setup", "Cancel", theme, !cancelling)
-                        .track_focus(&self.card_focus.clone().tab_stop(!cancelling))
-                        .when(cfg!(test), |v| {
-                            v.debug_selector(|| "cancel-pii-setup".into())
-                        })
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.model_panel
-                                .update(cx, |panel, cx| panel.cancel_setup(cx))
-                        })),
+                    crate::settings::control(
+                        "cancel-pii-setup",
+                        crate::ui::text::CANCEL,
+                        theme,
+                        !cancelling,
+                    )
+                    .track_focus(&self.card_focus.clone().tab_stop(!cancelling))
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "cancel-pii-setup".into())
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.model_panel
+                            .update(cx, |panel, cx| panel.cancel_setup(cx))
+                    })),
                 ),
             )
         } else {
@@ -495,13 +500,18 @@ impl DocumentView {
                             )),
                         )
                         .child(
-                            crate::settings::control("pii-setup-cancel", "Cancel", theme, true)
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "pii-setup-cancel".into())
-                                })
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.close_replacements(window, cx)
-                                })),
+                            crate::settings::control(
+                                "pii-setup-cancel",
+                                crate::ui::text::CANCEL,
+                                theme,
+                                true,
+                            )
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "pii-setup-cancel".into())
+                            })
+                            .on_click(cx.listener(
+                                |this, _, window, cx| this.close_replacements(window, cx),
+                            )),
                         )
                         .child(
                             ui::link_button("choose-pii-model", "Choose model…", theme, true)
@@ -769,7 +779,11 @@ impl DocumentView {
             .notice_visible()
             .then(|| {
                 if let Some((added, _)) = mapping.added_at(history) {
-                    Some((format!("Added “{}”", added.original), "Cancel", true))
+                    Some((
+                        format!("Added “{}”", added.original),
+                        crate::ui::text::CANCEL,
+                        true,
+                    ))
                 } else if let Some(kept) = mapping.kept_at(history) {
                     Some((format!("Kept {kept}"), "Undo", false))
                 } else if let Some(wording) = mapping.merged_at(history) {

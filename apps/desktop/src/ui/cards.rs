@@ -100,14 +100,11 @@ pub fn setup_progress(
 ) -> gpui::Div {
     let (received, total) = state.overall();
     let label = if cancelling {
-        "Cancelling…".to_owned()
+        super::text::CANCELLING.to_owned()
     } else if state.downloading() {
-        format!(
-            "Downloading {}%",
-            (received * 100).checked_div(total).unwrap_or(0)
-        )
+        super::text::downloading((received * 100).checked_div(total).unwrap_or(0))
     } else if state.phase.is_empty() {
-        "Preparing…".to_owned()
+        super::text::PREPARING.to_owned()
     } else {
         format!("{}…", state.phase.trim_end_matches('…'))
     };

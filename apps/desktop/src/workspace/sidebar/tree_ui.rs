@@ -413,7 +413,7 @@ impl Workspace {
             Some(detail),
             &[
                 gpui::PromptButton::new("Delete"),
-                gpui::PromptButton::cancel("Cancel"),
+                gpui::PromptButton::cancel(crate::ui::text::CANCEL),
             ],
             cx,
         );

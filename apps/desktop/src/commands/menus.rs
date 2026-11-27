@@ -175,7 +175,7 @@ fn menus(views: &[LiveViewItem]) -> Vec<Menu> {
             MenuItem::action("Copy for AI", CopyForAi),
             MenuItem::action("Paste AI Reply", PasteAiResponse),
             MenuItem::separator(),
-            MenuItem::action("Close", Close),
+            MenuItem::action(crate::ui::text::CLOSE, Close),
         ]),
         Menu::new("Project").items([
             MenuItem::action("New Project…", NewProject),

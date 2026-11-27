@@ -286,7 +286,7 @@ impl Workspace {
                                     .child(
                                         ui::action_control(
                                             "new-project-cancel",
-                                            "Cancel",
+                                            crate::ui::text::CANCEL,
                                             theme,
                                             true,
                                             false,

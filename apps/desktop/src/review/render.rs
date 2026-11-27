@@ -105,7 +105,7 @@ impl DocumentView {
                         .text_color(palette.header_fg)
                         .opacity(0.)
                         .group_hover("scan-status", |s| s.opacity(1.))
-                        .child("Cancel"),
+                        .child(crate::ui::text::CANCEL),
                 )
                 .into_any_element(),
         )

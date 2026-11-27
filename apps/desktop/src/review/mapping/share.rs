@@ -240,7 +240,7 @@ impl DocumentView {
                 format!("Replace {names} {unit} and copy")
             }
             Some(step) => step.label(),
-            None if copied && self.copied_for_ai => "Copied".into(),
+            None if copied && self.copied_for_ai => crate::ui::text::COPIED.into(),
             None => "Copy for AI".into(),
         }
     }
@@ -350,7 +350,11 @@ impl DocumentView {
                         .child(
                             ui::primary_button(
                                 "share-copy-reply",
-                                if copied { "Copied" } else { "Copy reply" },
+                                if copied {
+                                    crate::ui::text::COPIED
+                                } else {
+                                    "Copy reply"
+                                },
                                 theme,
                                 restorable,
                             )

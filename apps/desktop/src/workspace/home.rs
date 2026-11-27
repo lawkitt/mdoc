@@ -411,7 +411,7 @@ impl Workspace {
                 )
                 .child(
                     ui::control("dismiss-whats-new", "×", theme, true)
-                        .aria_label("Dismiss")
+                        .aria_label(crate::ui::text::DISMISS)
                         .on_click(|_, _, cx| crate::app::updater::dismiss_banner(cx)),
                 )
                 .into_any_element(),

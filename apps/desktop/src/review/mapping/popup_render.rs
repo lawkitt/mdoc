@@ -407,7 +407,12 @@ impl DocumentView {
                     .child(if cancel {
                         // A just-made selection is backed out, not kept.
                         secondary(
-                            self.popup_control("direct-cancel-addition", "Cancel", enabled, cx),
+                            self.popup_control(
+                                "direct-cancel-addition",
+                                crate::ui::text::CANCEL,
+                                enabled,
+                                cx,
+                            ),
                             theme,
                         )
                         .when(cfg!(test), |v| {

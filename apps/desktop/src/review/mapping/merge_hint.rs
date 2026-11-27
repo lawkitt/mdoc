@@ -146,7 +146,7 @@ impl DocumentView {
                 .when(cfg!(test), |v| {
                     v.debug_selector(move || format!("merge-hint-dismiss-{from}"))
                 })
-                .aria_label("Dismiss")
+                .aria_label(crate::ui::text::DISMISS)
                 .px_1()
                 .text_size(px(12.))
                 .text_color(palette.header_muted)

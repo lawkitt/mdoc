@@ -942,7 +942,7 @@ impl DocumentView {
                 "Close side by side (Esc)"
             },
             ui::Icon::Close,
-            "Close",
+            crate::ui::text::CLOSE,
             theme,
             true,
         )

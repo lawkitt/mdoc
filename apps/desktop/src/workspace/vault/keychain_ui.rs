@@ -468,7 +468,7 @@ impl Workspace {
                                     .child(
                                         ui::action_control(
                                             "keychain-not-now",
-                                            "Not now",
+                                            crate::ui::text::NOT_NOW,
                                             theme,
                                             true,
                                             false,

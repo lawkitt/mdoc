@@ -668,7 +668,7 @@ impl Workspace {
                                     .child(
                                         ui::action_control(
                                             "folder-cancel",
-                                            "Cancel",
+                                            crate::ui::text::CANCEL,
                                             theme,
                                             true,
                                             false,

@@ -347,7 +347,7 @@ impl Workspace {
             }
             rows.extend([Row {
                 section: "Actions",
-                label: "Close".into(),
+                label: crate::ui::text::CLOSE.into(),
                 detail: None,
                 command: Command::Close,
             }]);

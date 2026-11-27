@@ -397,7 +397,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
-        "Close",
+        crate::ui::text::CLOSE,
         &[on!(App, None, &["mod-w"], workspace::Close)],
     ),
     row(

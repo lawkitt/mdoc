@@ -8,6 +8,7 @@ mod cards;
 pub(crate) mod confirm_dialog;
 mod menus;
 pub(crate) mod style;
+pub(crate) mod text;
 mod title_bar;
 
 use crate::ui::style::Theme;
