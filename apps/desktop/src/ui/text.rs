@@ -90,7 +90,6 @@ mod tests {
         "workspace/ai",
         "workspace/headless_renders",
         "workspace/replies",
-        "workspace/saving",
         "workspace/shelf_source",
     ];
 

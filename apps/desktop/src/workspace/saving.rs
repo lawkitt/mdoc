@@ -7,3 +7,4 @@ pub(super) mod intake;
 pub(super) mod live_views;
 pub(super) mod quit_flow;
 pub(super) mod session_writer;
+mod text;

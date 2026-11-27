@@ -8,6 +8,7 @@
 //! Project first and then the text ([`Workspace::capture`]); the Vault
 //! checks what the job knew before under its write lock; and the window
 //! shows the result once the job has committed it.
+use super::text;
 use crate::workspace::{
     Workspace,
     saving::document_writer::{DocumentWriter, Target},
@@ -147,8 +148,8 @@ pub(in crate::workspace) enum TabWriteError {
 impl std::fmt::Display for TabWriteError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Names(error) => write!(f, "its names could not be kept. {error}"),
-            Self::Write(error) => write!(f, "its text could not be saved. {error}"),
+            Self::Names(error) => f.write_str(&text::names_not_kept(error)),
+            Self::Write(error) => f.write_str(&text::text_not_saved(error)),
         }
     }
 }
@@ -201,7 +202,7 @@ pub(in crate::workspace) fn first_line_title(text: &str) -> String {
         .unwrap_or("");
     let title: String = line.chars().take(80).collect();
     if title.is_empty() {
-        "Untitled".into()
+        text::UNTITLED.into()
     } else {
         title
     }
@@ -294,8 +295,8 @@ impl Workspace {
                 let name = (tab.and_then(|tab| self.tabs.get(tab)?.view().cloned()))
                     .map(|view| view.read(cx).display_name());
                 self.notices.post(match name {
-                    Some(name) => format!("Could not save the notes of “{name}”: {error}"),
-                    None => format!("Could not save a closed document's notes: {error}"),
+                    Some(name) => text::notes_not_saved(&name, &error),
+                    None => text::closed_notes_not_saved(&error),
                 });
             }
         }
@@ -486,8 +487,7 @@ impl Workspace {
             (Target::Project(id), Write::Project) => {
                 // Its open members' names waiting for their fold go too.
                 if let Err(error) = self.fold_members(&[Some(id.clone())], cx) {
-                    self.notices
-                        .post(format!("Could not keep the Project's names: {error}"));
+                    self.notices.post(text::project_names_not_kept(&error));
                 }
                 match self.projects.project(id) {
                     Some(project) => Job::Project(Box::new(project.clone())),
@@ -523,7 +523,7 @@ impl Workspace {
         };
         let vault = self.vault.vault().cloned();
         let task = cx.background_executor().spawn(async move {
-            let no_vault = || "Documents are unavailable.".to_string();
+            let no_vault = || text::DOCUMENTS_UNAVAILABLE.to_string();
             let Some(vault) = vault else {
                 return Err(Failed {
                     error: no_vault(),
@@ -545,7 +545,7 @@ impl Workspace {
                         .create_document(new)
                         .map_err(|e| failed(e.to_string()))?;
                     let id = VaultId::parse(&created.id)
-                        .ok_or_else(|| failed("Invalid id.".to_string()))?;
+                        .ok_or_else(|| failed(text::INVALID_ID.to_string()))?;
                     Ok(Wrote::Created {
                         id,
                         markdown: created.markdown,
@@ -689,15 +689,14 @@ impl Workspace {
             // Written again by the next write of it, or the next quit.
             self.project_ui.mark_unwritten(id);
             let name = (self.projects.project(id)).map_or_else(String::new, |p| p.name.clone());
-            self.notices
-                .post(format!("Could not save the Project “{name}”: {error}"));
+            self.notices.post(text::project_not_saved(&name, &error));
             return;
         }
         let name = (tab.and_then(|tab| self.tabs.get(tab)?.view().cloned()))
             .map(|view| view.read(cx).display_name());
         self.notices.post(match name {
-            Some(name) => format!("Could not save “{name}”: {error}"),
-            None => format!("Could not save a closed document: {error}"),
+            Some(name) => text::not_saved(&name, &error),
+            None => text::closed_not_saved(&error),
         });
     }
 
@@ -864,7 +863,7 @@ impl Workspace {
         let follows = new.origin == DocumentOrigin::New;
         let title = new.title.clone();
         let created = vault.create_document(new).map_err(|e| e.to_string())?;
-        let document = VaultId::parse(&created.id).ok_or_else(|| "Invalid id.".to_string())?;
+        let document = VaultId::parse(&created.id).ok_or_else(|| text::INVALID_ID.to_string())?;
         self.took_created(id, document, created.markdown, follows, title, cx);
         Ok(())
     }

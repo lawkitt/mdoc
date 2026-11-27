@@ -2,6 +2,7 @@
 //! writer's last job (ADR 0130): documents, Projects and the session are
 //! written and the window closes in one turn. The workspace view asks,
 //! writes and closes the window; this owner decides what comes next.
+use super::text;
 use crate::document::comparison_ui;
 use crate::workspace::{
     Workspace, replies, saving, saving::session_writer::SessionEffect, sidebar::navigation::Arrival,
@@ -242,10 +243,8 @@ impl Workspace {
                 if let Err(error) = self.quit_writes(id, &vault, window, cx) {
                     self.unsaved.insert(id);
                     let name = (self.tab_view(id)).map(|view| view.read(cx).display_name());
-                    self.notices.post(format!(
-                        "Could not save \u{201c}{}\u{201d}: {error}",
-                        name.unwrap_or_default()
-                    ));
+                    self.notices
+                        .post(text::quit_not_saved(&name.unwrap_or_default(), &error));
                     self.quit_failed(window, cx);
                     return saving::autosave::Ran::Ended;
                 }
@@ -268,9 +267,8 @@ impl Workspace {
                     self.project_ui.mark_unwritten(&id);
                     let name =
                         (self.projects.project(&id)).map_or_else(String::new, |p| p.name.clone());
-                    self.notices.post(format!(
-                        "Could not save the Project \u{201c}{name}\u{201d}: {error}"
-                    ));
+                    self.notices
+                        .post(text::quit_project_not_saved(&name, &error));
                     self.quit_failed(window, cx);
                     return saving::autosave::Ran::Ended;
                 }
@@ -296,8 +294,7 @@ impl Workspace {
         if let Some(vault) = self.vault.vault()
             && let Err(error) = vault.flush()
         {
-            self.notices
-                .post(format!("Could not save the document list: {error}"));
+            self.notices.post(text::list_not_saved(&error));
         }
         self.close_window(window, cx);
         // The window is gone: nothing after the last job runs.

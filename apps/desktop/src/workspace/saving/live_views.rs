@@ -4,6 +4,7 @@
 //! the least recently viewed beyond them is evicted. Generic over the view,
 //! so the recency rules run without a window; the workspace view creates,
 //! releases and focuses the documents.
+use super::text;
 use crate::document::{Background, DocumentView, DocumentViewDependencies};
 use crate::workspace::{
     SidebarStatus, Workspace, saving, sidebar, sidebar::navigation::Arrival, tab_label,
@@ -190,11 +191,7 @@ impl<V> LiveViews<V> {
                 continue;
             }
             loop {
-                let name = if number == 1 {
-                    "Untitled.md".to_string()
-                } else {
-                    format!("Untitled {number}.md")
-                };
+                let name = text::untitled_file(number);
                 number += 1;
                 if used.insert(name.clone()) {
                     tab.record.name = Some(name);
@@ -367,7 +364,7 @@ pub(in crate::workspace) fn load_from_vault(
 ) -> Result<Loaded, String> {
     let stored = vault
         .document(id.as_str())
-        .map_err(|error| format!("Could not open the document. {error}"))?;
+        .map_err(|error| text::could_not_open(&error))?;
     let original = (stored.original.as_ref()).filter(|original| {
         saving::intake::needs_conversion(std::path::Path::new(&original.info.file_name))
     });
@@ -379,23 +376,12 @@ pub(in crate::workspace) fn load_from_vault(
             match vault.copy_original_to(id.as_str(), &dir, &original.info.file_name) {
                 Ok(copy) => (Some(copy), None),
                 Err(error) if stored.pending_conversion() => {
-                    return Err(format!("Could not open the document's source. {error}"));
+                    return Err(text::source_not_opened(&error));
                 }
-                Err(mdoc_vault::VaultError::NotFound { .. }) => (
-                    None,
-                    Some(
-                        "The original file is missing from the Vault, so it can't be shown. \
-                         The Markdown is not affected."
-                            .to_string(),
-                    ),
-                ),
-                Err(error) => (
-                    None,
-                    Some(format!(
-                        "The original file could not be opened, so it can't be shown. The \
-                         Markdown is not affected. {error}"
-                    )),
-                ),
+                Err(mdoc_vault::VaultError::NotFound { .. }) => {
+                    (None, Some(text::ORIGINAL_MISSING.to_string()))
+                }
+                Err(error) => (None, Some(text::original_not_opened(&error))),
             }
         }
         _ => (None, None),
@@ -617,7 +603,7 @@ impl Workspace {
                     match self.vault.unavailable() {
                         // No Vault this run: say why where the text would be.
                         Some(why) => {
-                            let error = format!("This document can't open. {why}");
+                            let error = text::document_cannot_open(why);
                             view.update(cx, |view, cx| {
                                 view.lifecycle.finish_load(generation, false);
                                 view.error = Some(error);

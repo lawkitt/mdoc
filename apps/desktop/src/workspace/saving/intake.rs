@@ -4,6 +4,7 @@
 //! its bytes kept as its Source Original. A file the Vault already holds
 //! asks once, for every such file in the open, whether to open the existing
 //! document or import it again.
+use super::text;
 use crate::document::OcrState;
 use crate::workspace::projects;
 use crate::workspace::{TabRecord, Workspace};
@@ -204,29 +205,14 @@ impl Workspace {
             self.import(files, existing, Repeats::ImportAgain, project, window, cx);
             return;
         }
-        let (question, detail) = match repeats.as_slice() {
-            [one] => (
-                format!("“{one}” is already in mdoc"),
-                "Open the document you imported before, or import the file again as a new \
-                 document."
-                    .to_string(),
-            ),
-            many => (
-                format!("{} files are already in mdoc", many.len()),
-                format!(
-                    "{}\n\nOpen the documents you imported before, or import the files again \
-                     as new documents. Other files open either way.",
-                    many.join("\n")
-                ),
-            ),
-        };
+        let (question, detail) = text::repeats_question(&repeats);
         let answer = window.prompt(
             PromptLevel::Info,
             &question,
             Some(&detail),
             &[
-                gpui::PromptButton::new("Open Existing"),
-                gpui::PromptButton::new("Import Again"),
+                gpui::PromptButton::new(text::OPEN_EXISTING),
+                gpui::PromptButton::new(text::IMPORT_AGAIN),
                 gpui::PromptButton::cancel(crate::ui::text::CANCEL),
             ],
             cx,
@@ -268,12 +254,7 @@ impl Workspace {
         if failed.is_empty() {
             return;
         }
-        let names: Vec<_> = failed
-            .iter()
-            .map(|(name, error)| format!("{name} ({error})"))
-            .collect();
-        self.notices
-            .post(format!("Could not import: {}", names.join(", ")));
+        self.notices.post(text::could_not_import(&failed));
     }
 
     /// Import `files` into the Vault, each as `repeats` says when it is a
@@ -394,7 +375,7 @@ impl Workspace {
                         Ok(Some(document)) => Some(
                             VaultId::parse(&document.id)
                                 .map(|id| Ok((id, title, file.path)))
-                                .ok_or_else(|| (document.title, "Invalid id.".into())),
+                                .ok_or_else(|| (document.title, text::INVALID_ID.into())),
                         ),
                         Err(error) => Some(Err((name, import_error(&error)))),
                     }
@@ -528,7 +509,7 @@ fn import_error(error: &mdoc_vault::VaultError) -> String {
         mdoc_vault::VaultError::NotFound {
             kind: mdoc_vault::ObjectKind::Project,
             ..
-        } => "Its Project no longer exists.".into(),
+        } => text::PROJECT_GONE.into(),
         error => error.to_string(),
     }
 }
@@ -683,8 +664,7 @@ impl Workspace {
             })
             .collect();
         if !names.is_empty() {
-            self.notices
-                .post(format!("Unsupported files skipped: {}", names.join(", ")));
+            self.notices.post(text::unsupported_skipped(&names));
         }
     }
 

@@ -3,6 +3,7 @@
 //! since the last save. Generic over the snapshot, so the queue rules run
 //! without a window or a disk; the workspace view takes snapshots, runs the
 //! writes in the background and reports how they ended.
+use super::text;
 use crate::workspace::{Workspace, saving};
 use gpui::{App, Context, PromptLevel, Window};
 use mdoc_store::{session_store, session_store::Session};
@@ -227,19 +228,15 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.notices
-            .post(format!("Could not save session: {error}"));
+        self.notices.post(text::session_not_saved(&error));
         if self.quit_flow.abandon() {
             // A window hidden in the menu bar shows to ask.
             crate::shelf::menu_bar::reveal_if_hidden(window, cx);
             let answer = window.prompt(
                 PromptLevel::Warning,
-                "Could not save the tab list",
-                Some(
-                    "Your documents are saved. Cancel to retry, or quit using the previous \
-                     session list.",
-                ),
-                &[crate::ui::text::CANCEL, "Quit without updating session"],
+                text::TAB_LIST_NOT_SAVED,
+                Some(text::TAB_LIST_DETAIL),
+                &[crate::ui::text::CANCEL, text::QUIT_WITHOUT_SESSION],
                 cx,
             );
             cx.spawn_in(window, async move |this, cx| {
