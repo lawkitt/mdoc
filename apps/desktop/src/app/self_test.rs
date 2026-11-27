@@ -8,11 +8,12 @@
 //! `<pdf>` through the app's own import path and compares it with
 //! `<expected.txt>` word for word.
 
+use super::text;
 use std::path::Path;
 
 pub fn run(pdf: &Path, expected: &Path) -> Result<(), String> {
     if !mdoc_import::ocr::SUPPORTED {
-        return Err("The self-test needs Apple Silicon macOS or Windows x64.".into());
+        return Err(text::SELF_TEST_UNSUPPORTED.into());
     }
     let storage = tempfile::tempdir().map_err(|e| e.to_string())?;
     let installed = mdoc_import::ocr::install_config_in(
@@ -25,16 +26,16 @@ pub fn run(pdf: &Path, expected: &Path) -> Result<(), String> {
     let imported =
         mdoc_import::import::prepare_cancellable(pdf, None, Some(&installed), false, &cancel)
             .map_err(|e| match e {
-                mdoc_import::import::ImportError::NeedsOcr(..) => "OCR did not run.".into(),
+                mdoc_import::import::ImportError::NeedsOcr(..) => text::OCR_DID_NOT_RUN.into(),
                 other => other.to_string(),
             })?;
     if imported.ocr_configuration.is_none() {
-        return Err("The document converted without OCR.".into());
+        return Err(text::CONVERTED_WITHOUT_OCR.into());
     }
     let expected = std::fs::read_to_string(expected).map_err(|e| e.to_string())?;
     let got = words(&imported.markdown);
     if got != expected.split_whitespace().collect::<Vec<_>>() {
-        return Err(format!("Recognized text differs:\n{}", imported.markdown));
+        return Err(text::text_differs(&imported.markdown));
     }
     Ok(())
 }

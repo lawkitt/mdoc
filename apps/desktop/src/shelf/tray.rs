@@ -20,21 +20,7 @@ pub(crate) use native::{anchor, hide_window, remove, show, show_window};
 use gpui::{App, Bounds, Global, Pixels, point, px, size};
 use std::time::{Duration, Instant};
 
-/// The setting's name, in Settings › General and in what mdoc says about
-/// it. The same stored switch (`general.menu_bar`), on by default; the
-/// default lives with the store's.
-pub(crate) const SETTING: &str = if cfg!(windows) {
-    "Keep mdoc in the system tray"
-} else {
-    "Show mdoc in the menu bar"
-};
-
-/// The first-close note's title.
-pub(crate) const NOTE_TITLE: &str = if cfg!(windows) {
-    "mdoc is still in the system tray."
-} else {
-    "mdoc is still in the menu bar."
-};
+pub(crate) use crate::shelf::text::{NOTE_TITLE, SETTING};
 
 /// Closing the window hides it while the item shows. On Windows this is
 /// the maintainer's choice for item 17 (#1164); `!cfg!(windows)` keeps the

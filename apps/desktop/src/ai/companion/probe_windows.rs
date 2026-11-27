@@ -24,6 +24,7 @@
 //! other app, and the native tray menu.
 #![allow(unsafe_code)] // Win32 calls, each under a `SAFETY:` note.
 
+use crate::ai::text::probes as text;
 use gpui::{
     App, AppContext as _, Bounds, Context, MouseButton, Render, Window, WindowHandle, div, point,
     prelude::*, px, size,
@@ -294,7 +295,7 @@ fn failures(native: Option<Native>, before: Front, own: u32) -> Vec<String> {
         (native.subclassed, "not subclassed"),
         (
             native.mouse_activate == MA_NOACTIVATE as isize,
-            "WM_MOUSEACTIVATE would activate it",
+            text::WOULD_ACTIVATE,
         ),
         (native.on_top, "not above the other app"),
         (!native.active, "it became mdoc's active window"),
@@ -338,17 +339,14 @@ pub(crate) fn run() -> ! {
     gpui_platform::application().run(move |cx: &mut App| {
         let before = front();
         if before.process == own {
-            println!(
-                "note: mdoc was in front before the window opened; run the probe from a \
-                 terminal with another app in front"
-            );
+            println!("{}", text::IN_FRONT_BEFORE_WINDOW);
         }
         // Its one window closes on the way to reopening: that is no quit.
         cx.set_quit_mode(gpui::QuitMode::Explicit);
         crate::shelf::tray::show(cx);
         let clicks = Rc::new(Cell::new(0));
         let Some(window) = open_probe(cx, clicks.clone()) else {
-            eprintln!("companion probe: the window did not open");
+            eprintln!("{}", text::DID_NOT_OPEN);
             std::process::exit(1);
         };
         cx.spawn(async move |cx| {
@@ -359,7 +357,7 @@ pub(crate) fn run() -> ! {
                 failed |= !found.is_empty();
                 let verdict = match found.is_empty() {
                     true => "ok".to_string(),
-                    false => format!("FAILED {found:?}"),
+                    false => text::failed(&found),
                 };
                 println!("{step}: {verdict} {native:?}");
             };
@@ -375,15 +373,12 @@ pub(crate) fn run() -> ! {
             // SAFETY: as above.
             unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) };
             settle.timer(SETTLE).await;
-            println!(
-                "control capture without the exclusion: {:.1} %",
-                control * 100.
-            );
+            println!("{}", text::capture_without_exclusion(control * 100.));
             report(
                 "opened",
                 opened,
                 (control < 0.5)
-                    .then_some("the control capture missed it: the capture check proves nothing")
+                    .then_some(text::CAPTURE_MISSED)
                     .into_iter()
                     .collect(),
             );
@@ -409,9 +404,9 @@ pub(crate) fn run() -> ! {
                 .map(inspect);
             report("reopened", reopened, Vec::new());
             let icon = crate::shelf::tray::icon_status();
-            println!("tray icon (added, placed): {icon:?}");
+            println!("{}", text::tray_icon(icon));
             if icon != Some((true, true)) {
-                println!("tray: FAILED");
+                println!("{}", text::TRAY_FAILED);
                 failed = true;
             }
             cx.update(|_| crate::shelf::tray::remove());

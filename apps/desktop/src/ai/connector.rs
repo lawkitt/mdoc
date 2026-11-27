@@ -11,6 +11,9 @@
 //! it asked for needs review (item 9's notifications).
 pub(crate) mod setup;
 
+pub(crate) use crate::ai::text::failed_start;
+
+use crate::ai::text;
 use mdoc_connector::Connector;
 use mdoc_mcp::ipc::{self, Endpoint, Listening};
 use mdoc_mcp::wire::{self, Answer, Done, Refusal, Request};
@@ -128,8 +131,8 @@ pub(crate) fn start(
         return Ok(None);
     };
     let Some(endpoint) = endpoint else {
-        eprintln!("mdoc: the AI connector has no endpoint: no data folder");
-        return Err("Couldn't start the connector: this system gives mdoc no data folder.".into());
+        eprintln!("{}", text::NO_ENDPOINT_LOG);
+        return Err(text::NO_DATA_FOLDER.into());
     };
     listen(running, endpoint).map(Some)
 }
@@ -151,32 +154,11 @@ fn listen(mut running: Running, endpoint: &Endpoint) -> Result<Running, String> 
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
             Err(error) => {
-                eprintln!("mdoc: the AI connector can't listen at {endpoint}: {error}");
+                eprintln!("{}", text::cant_listen_log(endpoint, &error));
                 return Err(failed_start(&error));
             }
         }
     }
-}
-
-/// A failed start in Settings' words (#1220, decided by default on #1091).
-pub(crate) fn failed_start(error: &std::io::Error) -> String {
-    if error.kind() == std::io::ErrorKind::AddrInUse {
-        return "Couldn't start the connector: another copy of mdoc is using it. Quit the other \
-                copy, then turn AI connector (preview) off and on."
-            .into();
-    }
-    // A socket's path the system can't take (#1311): no retry helps.
-    if error.kind() == std::io::ErrorKind::InvalidFilename {
-        return "Couldn't start the connector: the path to its folder is too long for this \
-                computer."
-            .into();
-    }
-    let why = error.to_string();
-    let why = why.trim_end().trim_end_matches('.');
-    format!(
-        "Couldn't start the connector: {why}. Turn AI connector (preview) off and on to try \
-         again."
-    )
 }
 
 /// How many times [`start`] tries to listen, 50 ms apart.
@@ -248,7 +230,7 @@ pub(crate) fn display_name(app: &str) -> String {
     let app = line.trim_end();
     match product_name(app) {
         Some(name) => name.into(),
-        None if app.is_empty() => "An AI app".into(),
+        None if app.is_empty() => text::AN_AI_APP.into(),
         None => app.into(),
     }
 }
@@ -258,7 +240,7 @@ pub(crate) fn display_name(app: &str) -> String {
 /// these: any other name is the client's free text (item 9 review).
 pub(crate) fn product_name(app: &str) -> Option<&'static str> {
     match app.trim().to_ascii_lowercase().as_str() {
-        "" | "ai app" => Some("An AI app"),
+        "" | "ai app" => Some(text::AN_AI_APP),
         "claude-ai" | "claude" => Some("Claude"),
         "claude-code" => Some("Claude Code"),
         "chatgpt" | "openai-chatgpt" => Some("ChatGPT"),

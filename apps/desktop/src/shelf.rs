@@ -17,6 +17,7 @@ pub(crate) mod menu_bar;
 pub(crate) mod shelf_ui;
 #[cfg(test)]
 mod tests;
+pub(crate) mod text;
 pub(crate) mod tray;
 
 use crate::workspace::ProjectLink;
@@ -28,6 +29,7 @@ use mdoc_pii::{
 };
 use mdoc_store::document_id::VaultId;
 use std::{ops::Range, time::SystemTime};
+use text::neutral_name;
 
 /// The shelf lists at most this many documents.
 pub(crate) const MAX_DOCUMENTS: usize = 8;
@@ -69,19 +71,6 @@ pub(crate) enum Readiness {
 impl Readiness {
     pub(crate) fn is_ready(self) -> bool {
         self == Self::Ready
-    }
-
-    /// The row's state, as the row and VoiceOver read it.
-    pub(crate) fn label(self) -> String {
-        match self {
-            Self::Ready => "ready".into(),
-            Self::LeftToReview(n) => format!("{n} left to review"),
-            Self::Checking => "Checking names".into(),
-            Self::ChangedSinceReview => "Changed since review".into(),
-            Self::NotReviewed => "Not reviewed".into(),
-            Self::NamesNotReplaced(1) => "1 name not replaced".into(),
-            Self::NamesNotReplaced(n) => format!("{n} names not replaced"),
-        }
     }
 }
 
@@ -352,17 +341,6 @@ impl ShelfDocument {
             })
     }
 
-    /// The row's state as it and VoiceOver read it: never scanned reads
-    /// apart from a review left unfinished, as its step differs, and one
-    /// moved since it was saved Ready says so (#1292).
-    pub(crate) fn state(&self) -> String {
-        match self.readiness {
-            Readiness::NotReviewed if !self.scanned => "Names not looked for yet".into(),
-            Readiness::NotReviewed if self.moved => "Moved · open it to share".into(),
-            readiness => readiness.label(),
-        }
-    }
-
     /// What resolves the row's refusal: "Replace 2 and copy", "Review" or
     /// "Find names"; `None` while ready or still checking.
     pub(crate) fn step(&self) -> Option<crate::review::refusal::Step> {
@@ -428,14 +406,6 @@ impl ShelfDocument {
     pub(crate) fn set_share_name(&mut self, name: Option<String>) {
         self.share_name = name;
     }
-}
-
-/// The name a document leaves under when the Vault gave none: "Document
-/// – 2026-11-25", the day `at` falls on in UTC, as `Vault::share_name`
-/// dates a creation.
-fn neutral_name(at: SystemTime) -> String {
-    let day = chrono::DateTime::<chrono::Utc>::from(at).format("%Y-%m-%d");
-    format!("Document \u{2013} {day}")
 }
 
 /// The mentions `text` holds by an alias, and the distinct names they are,
@@ -1182,18 +1152,6 @@ pub(crate) struct ClipboardRestore {
     pub restored: usize,
     /// Alias-shaped tokens naming none of the Project's identities.
     pub unrecognised: usize,
-}
-
-impl ClipboardRestore {
-    /// "7 names restored · 1 unrecognized".
-    pub(crate) fn summary(&self) -> String {
-        format!(
-            "{} {} restored · {} unrecognized",
-            self.restored,
-            if self.restored == 1 { "name" } else { "names" },
-            self.unrecognised
-        )
-    }
 }
 
 /// Restore Clipboard: replace one Project's aliases in `text` with their

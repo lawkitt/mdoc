@@ -17,6 +17,7 @@
 //! app).
 #![allow(unsafe_code)] // AppKit and the window server through objc2 (#897).
 
+use crate::ai::text::probes as text;
 use gpui::{
     App, AppContext as _, Bounds, Context, MouseButton, Render, Window, WindowHandle, div, point,
     prelude::*, px, size,
@@ -298,14 +299,11 @@ pub(crate) fn run() -> ! {
     gpui_platform::application().run(move |cx: &mut App| {
         let before = frontmost();
         if before == Some(own) {
-            println!(
-                "note: mdoc was frontmost before the window opened; run the probe from a \
-                 terminal with another app in front"
-            );
+            println!("{}", text::FRONTMOST_BEFORE_WINDOW);
         }
         let clicks = Rc::new(Cell::new(0));
         let Some(window) = open_probe(cx, clicks.clone()) else {
-            eprintln!("companion probe: the window did not open");
+            eprintln!("{}", text::DID_NOT_OPEN);
             std::process::exit(1);
         };
         cx.spawn(async move |cx| {
@@ -316,7 +314,7 @@ pub(crate) fn run() -> ! {
                 failed |= !found.is_empty();
                 let verdict = match found.is_empty() {
                     true => "ok".to_string(),
-                    false => format!("FAILED {found:?}"),
+                    false => text::failed(&found),
                 };
                 println!("{step}: {verdict} {native:?}");
             };
