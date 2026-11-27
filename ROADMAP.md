@@ -571,6 +571,168 @@ none of the owner's flags is a field of `Workspace`.
     the installer, updater and signing checks pass on it, and the build is
     named on [#1266](https://github.com/lawkitt/mdoc/issues/1266) for the day of use.
 
+## Desktop redesign (#1357)
+
+The desktop app gets a quiet look and calmer screens for 0.5.0: a
+monochrome interface in which the only colour is on names, a Home that
+shows the Vault as cards, one reading column for a document, and Settings
+as a page (spec and grill record in
+[#1357](https://github.com/lawkitt/mdoc/issues/1357);
+[ADR 0131](docs/adr/0131-a-quiet-desktop-library-home-and-colour-only-on-names.md)).
+The kit is ported from [Quiet.md](https://github.com/s1dashu/quiet-md)
+(MIT) with credit; its editor, icons and GPUI patches are not taken.
+macOS and Windows only; the phones adopt the tokens later.
+
+**The start gate:** no item starts until the last item of the desktop code
+reorganization has merged and 0.4.0 is tagged. Items 4 and 5 run one at a
+time with no other desktop UI pull request open, because every screen reads
+them; items 6–10 then run side by side, one owner folder each, and items
+12–19 follow in order. The maintainer alone accepts a look. There is no
+switch back to the old one: 0.5.0 ships the skin (items 4–11) and whichever
+screens are finished.
+
+**Every item's pull request** carries its flow tests, its headless renders
+in both themes, before-and-after PNGs, and the lines of
+`docs/specs/desktop.md` it makes untrue, changed in the same pull request.
+
+1. **[Desktop] Spike: a frosted sidebar.** *From
+   [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 19 and 24.* The main window
+   with the blurred background the shelf already uses, the sidebar drawn
+   over it, on macOS; Mica on Windows. *Done when:* the worst-case contrast
+   of sidebar text over a black and a white desktop is on #1357 with the
+   colours that pass 4.5:1, a real legal document scrolls with no hitch
+   over one frame in a native release build, and #1357 says frosted or
+   opaque for each platform.
+2. **[Desktop] Spike: 200 thumbnails.** *From
+   [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 6 and 24.* A card grid of 200
+   Vault documents, each drawing the first screen of its text with its
+   names marked. *Done when:* the time to first paint, the scroll frame
+   times and the memory held are on #1357, nothing is written to disk, and
+   #1357 says thumbnails or plain cards.
+3. **[Desktop] Spike: a replaced name drawn two ways.** *From
+   [#1357](https://github.com/lawkitt/mdoc/issues/1357), decision 29.* The editor draws an
+   applied alias as the wording it replaced, while the text it holds keeps
+   the alias, and typing, selection, copy, find and undo work around it.
+   *Done when:* a branch shows one document switching between the two
+   drawings with the caret kept, a hand copy from either still passes the
+   outbound check, and #1357 says one editable text, or `Text` read-only
+   once names are replaced.
+4. **[Desktop] Tokens.** *From
+   [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 3, 17, 18, 32 and 36.*
+   Neutral greys in explicit light and dark pairs, one radius value the
+   others derive from, the control heights, the type sizes for the three
+   interface sizes, the floating-surface shadow, seven category colour
+   families for the twelve categories and the five colours that are not on
+   names, all in `ui/`; mint and the mint focus ring go. *Blocked by:* item
+   1. *Done when:* every pair a screen uses is in the contrast tests and
+   passes, two category families are never told apart by hue alone, and
+   the headless renders differ from `main` only in colour, radius and size.
+5. **[Desktop] The kit and its gallery.** *From
+   [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 13, 21, 33 and 35.* Button,
+   segmented control, switch, checkbox, field, badge (neutral and amber),
+   toggle chip, card, menu, popover, dialog, tooltip and toast in `ui/`,
+   ported from Quiet.md's `src/design` and credited in the third-party
+   notices; states are `selected`, `disabled` and `destructive`, nothing
+   else. *Blocked by:* item 4. *Done when:* a gallery screen in the
+   headless renders shows every component in every state, light and dark,
+   and no component draws a colour or a size that is not a token.
+6. **[Desktop] The skin: shell and sidebar.** *From
+   [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 15, 19, 20 and 35.* The
+   sidebar sits on the window with no frame, frosted or opaque as item 1
+   found, and the page is one flat plane. The bell shows only while a
+   notice exists and opens a popover titled "Notices". Results of actions
+   go to the toast stack: bottom centre, 4 seconds, 6 with Undo, at most
+   three. *Blocked by:* item 5. *Done when:* the folder builds every
+   control from the kit.
+7. **[Desktop] The skin: settings.** *From
+   [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 20 and 33.* A category is one
+   chip with its dot. *Blocked by:* item 5. *Done when:* the folder builds
+   every control from the kit.
+8. **[Desktop] The skin: document and review.** *From
+   [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 16 and 20.* The editor's type
+   moves to 15/24 with the title and heading sizes of #1357; menus, toasts
+   and toggles fade in 150 ms and nothing else animates but a drag.
+   *Blocked by:* item 5. *Done when:* the folder builds every control from
+   the kit, and wrap, caret and scroll are unchanged in a native build.
+9. **[Desktop] The skin: shelf and companion.** *From
+   [#1357](https://github.com/lawkitt/mdoc/issues/1357), decision 20.* *Blocked by:* item 5.
+   *Done when:* the folders build every control from the kit.
+10. **[Desktop] The skin: dialogs.** *From
+    [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 20 and 25.* Every dialog and
+    sheet, the Keychain explainer included, and then the lint. *Blocked
+    by:* items 6–9. *Done when:* `just lint` fails on a colour or a
+    text-size literal outside `ui/`, and passes.
+11. **[Release] The skin, by eye.** *From
+    [#1357](https://github.com/lawkitt/mdoc/issues/1357), decision 25.* *Blocked by:* item 10.
+    *Done when:* the maintainer has accepted twelve screens named on #1357
+    in a native build on macOS and on Windows.
+12. **[Desktop] Settings as a page.** *From
+    [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 10, 18 and 34.* The sidebar
+    becomes the settings list with Back, rows sit in grouped cards, a
+    model row shows name, size and one button with the rest behind
+    Details, General gains Interface size, and the detection threshold is
+    Lower · Default · Higher. *Blocked by:* item 7. *Done when:* no setting
+    is reachable only through the old modal, the palette's `Settings ›`
+    rows open the page, and the three threshold values are named on #1357
+    from the detection evaluation.
+13. **[Desktop] One menu.** *From
+    [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 13 and 14.* ⋯, right-click,
+    Add and sort use the kit's menu, each row with an icon, the
+    destructive one last. A row's right-click menu and its ⋯ menu come
+    from one list per kind of thing. Missing icons are drawn from Lucide
+    and credited. *Blocked by:* item 10. *Done when:* a test compares the
+    two menus of a document, a Project and a reply.
+14. **[Desktop] Names in the text.** *From
+    [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 30, 31 and 32.* A click on a
+    name opens the card: category and a Replace switch, the whole wording,
+    the alias as a button with what it is the same as, and the place
+    among its places with previous and next. "Same as…" lists the same
+    category first, with search and a row for a new alias. The category
+    menu has a dot on each row, in groups, without the next-alias numbers.
+    *Blocked by:* item 13. *Done when:* the card never clips the wording at
+    the minimum window width, every control in it is reached and worked by
+    keyboard alone, and Esc returns the caret to the name.
+15. **[Desktop] Plain words.** *From
+    [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 12 and 36.* Find names,
+    Replace N names, Names, For AI, Export text…, Copy text, "Original"
+    for the pane that said Source, and a document icon for the type tags,
+    in each owner's `text.rs`; `CONTEXT.md`, Help and the README's captions
+    follow in the same pull request. *Blocked by:* item 13. *Done when:* no
+    label a user reads says Pseudonymize, Apply, Source or Markdown, and
+    Settings and the privacy text still say pseudonymization.
+16. **[Desktop] The Project page as a grid.** *From
+    [#1357](https://github.com/lawkitt/mdoc/issues/1357), decision 7.* Cards as item 2 found,
+    a grid or list toggle that is remembered, Move to Unfiled in the
+    card's menu. *Blocked by:* items 2 and 13. *Done when:* the page's
+    flow tests pass in both layouts.
+17. **[Desktop] Home, the library.** *From
+    [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 5, 6 and 15.* Projects as
+    stacks, Unfiled documents as cards, the count that needs review, drop
+    anywhere, one Add menu, and the drop zone only when the Vault is
+    empty; a locked Vault says so on Home. *Blocked by:* item 16. *Done
+    when:* Home's flow tests cover an empty, a locked and a full Vault,
+    and a setting shows plain cards.
+18. **[Desktop] The document view.** *From
+    [#1357](https://github.com/lawkitt/mdoc/issues/1357), decisions 8, 9, 29 and 36.* One reading
+    column; `Text · Original · For AI` in the header with side by side,
+    drawn as item 3 found; a reply opens as its own page; the rail without
+    its frame; the Original's toolbar cut to page, zoom and find, its band
+    for where you are in neutral grey. *Blocked by:* items 3, 8 and 15.
+    *Done when:* nothing rests over the text at the minimum window width,
+    and every control that left a toolbar is in a ⋯ menu, the palette and
+    the menu bar.
+19. **[Desktop] Welcome and the sample.** *From
+    [#1357](https://github.com/lawkitt/mdoc/issues/1357), decision 11.* Two pages on the first
+    launch, and a sample Project stored with its names found and one saved
+    reply. *Blocked by:* item 17. *Done when:* on a fresh profile with no
+    model, a flow test goes from the welcome to a restored reply; the
+    sample deletes as one unit and never counts as needing review.
+20. **[Release] 0.5.0's acceptance.** *From
+    [#1357](https://github.com/lawkitt/mdoc/issues/1357), decision 26.* *Blocked by:* item 11 and
+    the screens that ship. *Done when:* the maintainer's day of use and
+    the five use cases of #1357, walked in a native build on both
+    platforms, are in the release's issue.
+
 ## Unlocked files and images (#1024)
 
 A password-protected file shows its Original once unlocked, nothing
