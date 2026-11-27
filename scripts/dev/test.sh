@@ -150,6 +150,7 @@ suites+=(ci/test-nightly.sh)
 suites+=(ci/test-ci-stats.sh)
 suites+=(dev/test-fixed-delays.sh)
 suites+=(dev/test-docs-lint.sh)
+suites+=(dev/test-module-map.sh)
 suites+=(ios/test-ios-ui-shards.sh)
 suites+=(ios/test-ios-test-part.sh)
 for suite in "${suites[@]}"; do

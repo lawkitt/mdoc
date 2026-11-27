@@ -1,3 +1,5 @@
+//! The app's look: the light and dark themes, the colours of every surface and category,
+//! the title bar's sizes, and the styles of the editor and the PDF pages.
 use gpui::{Hsla, font, hsla, rgb};
 use gpui_pdf::{PageOverlays, PdfStyle, ThemedPages};
 use mdoc_editor::SyntaxStyle;
@@ -78,9 +80,9 @@ pub fn project_color(hue: u32, theme: Theme) -> Hsla {
 
 pub fn theme_label(choice: ThemeChoice) -> &'static str {
     match choice {
-        ThemeChoice::System => "Theme: System",
-        ThemeChoice::Light => "Theme: Light",
-        ThemeChoice::Dark => "Theme: Dark",
+        ThemeChoice::System => super::text::THEME_SYSTEM,
+        ThemeChoice::Light => super::text::THEME_LIGHT,
+        ThemeChoice::Dark => super::text::THEME_DARK,
     }
 }
 

@@ -123,3 +123,111 @@ fn view_keep_one(view: &Entity<DocumentView>, cx: &mut VisualTestContext) {
     cx.dispatch_action(crate::review::KeepThis);
     draw(cx);
 }
+
+#[gpui::test]
+fn chrome_history_undoes_toolbar_apply_and_redoes_without_editor_focus(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    cx.update(|_, cx| bind_app_keys(cx));
+    let view = active(&tabs, cx);
+    let source = "Anna Petrova met Northwind Traders Ltd.";
+    let applied = "PERSON_1 met ORG_1.";
+    view.update_in(cx, |view, window, cx| {
+        view.editor
+            .update(cx, |editor, cx| editor.undo(&mdoc_editor::Undo, window, cx));
+    });
+    cx.run_until_parked();
+    click_toolbar(cx, "primary-apply");
+    cx.update(|window, cx| {
+        assert_eq!(view.read(cx).editor.read(cx).text(), applied);
+        assert!(
+            window
+                .context_stack()
+                .iter()
+                .any(|context| context.contains("UiControl"))
+        );
+        assert!(
+            !view
+                .read(cx)
+                .editor
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        );
+    });
+    let (undo, redo) = if cfg!(target_os = "macos") {
+        ("cmd-z", "cmd-shift-z")
+    } else {
+        ("ctrl-z", "ctrl-shift-z")
+    };
+    key(cx, undo);
+    cx.update(|_, cx| {
+        assert_eq!(view.read(cx).editor.read(cx).text(), source);
+        assert_eq!(view.read(cx).pii.review().remaining(), 2);
+    });
+    key(cx, redo);
+    cx.update(|_, cx| {
+        assert_eq!(view.read(cx).editor.read(cx).text(), applied);
+        assert_eq!(view.read(cx).pii.review().remaining(), 0);
+    });
+    if !cfg!(target_os = "macos") {
+        key(cx, undo);
+        key(cx, "ctrl-y");
+        cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), applied));
+    }
+}
+
+#[gpui::test]
+fn chrome_history_targets_the_active_tab_and_leaves_home_and_settings_alone(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    cx.update(|_, cx| bind_app_keys(cx));
+    let first = active(&tabs, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    let second = active(&tabs, cx);
+    second.update(cx, |view, cx| {
+        view.editor
+            .update(cx, |editor, cx| editor.replace_range(0..0, "second", cx));
+    });
+    cx.run_until_parked();
+    // The sidebar's toggle is outside DocumentView's dispatch subtree.
+    click_toolbar(cx, "sidebar-toggle");
+    let undo = if cfg!(target_os = "macos") {
+        "cmd-z"
+    } else {
+        "ctrl-z"
+    };
+    key(cx, undo);
+    cx.update(|_, cx| {
+        assert_eq!(second.read(cx).editor.read(cx).text(), "");
+        assert_eq!(first.read(cx).editor.read(cx).text(), "PERSON_1 met ORG_1.");
+    });
+    key(
+        cx,
+        if cfg!(target_os = "macos") {
+            "cmd-shift-z"
+        } else {
+            "ctrl-shift-z"
+        },
+    );
+    click_toolbar(cx, "sidebar-toggle");
+    click_toolbar(cx, "sidebar-home");
+    key(cx, undo);
+    cx.update(|_, cx| assert_eq!(second.read(cx).editor.read(cx).text(), "second"));
+    tabs.update_in(cx, |tabs, window, cx| {
+        let id = tabs
+            .tabs
+            .iter()
+            .find(|tab| tab.view() == Some(&second))
+            .unwrap()
+            .id();
+        tabs.activate(id, window, cx);
+        tabs.show_settings(window, cx);
+    });
+    cx.run_until_parked();
+    key(cx, undo);
+    cx.update(|_, cx| assert_eq!(second.read(cx).editor.read(cx).text(), "second"));
+}
