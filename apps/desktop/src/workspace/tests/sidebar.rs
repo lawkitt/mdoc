@@ -1,5 +1,6 @@
 //! The sidebar: collapsing, the rail's reveal of the tree, dropped files and row names
 //! (`Sidebar`).
+use crate::workspace::{sidebar::middle_cut, sidebar::split_extension};
 pub(super) mod focus_regions;
 pub(super) mod navigation;
 pub(super) mod tree;

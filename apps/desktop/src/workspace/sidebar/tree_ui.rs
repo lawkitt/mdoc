@@ -783,7 +783,7 @@ impl Workspace {
         }))
         // OS files dropped here are imported into this Project.
         .drag_over::<gpui::ExternalPaths>(move |v, _, _, _| v.bg(theme.sidebar_selected()))
-        .can_drop(crate::workspace::can_drop_files)
+        .can_drop(crate::workspace::sidebar::can_drop_files)
         .on_drop(cx.listener({
             let id = id.clone();
             move |this, paths: &gpui::ExternalPaths, window, cx| {
@@ -866,16 +866,16 @@ impl Workspace {
             div()
                 .flex_1()
                 .min_w_0()
-                .child(crate::workspace::middle_truncated(&title)),
+                .child(crate::workspace::sidebar::middle_truncated(&title)),
         )
         .when(recognized, |v| {
-            v.child(crate::workspace::tab_badge(
+            v.child(crate::workspace::sidebar::tab_badge(
                 ui::Icon::Ocr,
                 palette.header_muted,
             ))
         })
         .when(pseudonymized, |v| {
-            v.child(crate::workspace::tab_badge(
+            v.child(crate::workspace::sidebar::tab_badge(
                 ui::Icon::Anonymous,
                 palette.header_muted,
             ))

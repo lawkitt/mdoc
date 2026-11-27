@@ -263,3 +263,17 @@ impl Workspace {
         )
     }
 }
+
+#[cfg(test)]
+impl Workspace {
+    /// Show the next most recent live view, as a quick `⌃Tab` does.
+    pub(in crate::workspace) fn show_next_recent(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(next) = self.tabs.iter().nth(1).map(|tab| tab.id()) {
+            self.activate(next, window, cx);
+        }
+    }
+}
