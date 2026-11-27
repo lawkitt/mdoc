@@ -45,35 +45,18 @@
 //! the output stays temporary unless that variable names a new folder. The
 //! images establish neither native input, IME, accessibility nor display
 //! presentation.
-mod ai_ask;
-mod ai_connector;
-mod ai_project;
-mod comments;
-mod companion;
-mod comparison;
-mod confirm;
-mod cut_over;
-mod decisions;
-mod docx_source;
+mod ai;
+mod document;
 mod encoder;
-mod folder_sheet;
 mod home;
-mod import;
-mod narrow;
-mod navigation;
-mod new_project;
-mod notes;
-mod old_cases;
-mod pdf_source;
+mod palette;
 mod projects;
 mod refusals;
-mod restore;
 mod review;
-mod search;
 mod settings;
 mod shelf;
-mod shell;
-mod tree;
+mod sidebar;
+mod ui;
 mod vault;
 
 use super::{Workspace, app_actions::bind as bind_app_actions};
@@ -297,7 +280,7 @@ impl Driver {
             self.cx
                 .update(|cx| stage.read(cx).map(|stage| stage.state(cx)))
                 .map_err(|e| e.to_string())?
-        } else if let Some(stage) = self.window.downcast::<companion::Stage>() {
+        } else if let Some(stage) = self.window.downcast::<ai::companion::Stage>() {
             self.cx
                 .update(|cx| stage.read(cx).map(|stage| stage.state(cx)))
                 .map_err(|e| e.to_string())?
@@ -402,47 +385,47 @@ fn fixture() -> Result<(String, Vec<mdoc_pii::Detection>)> {
 /// Every scene in order. Later scenes build on earlier state: the fixture
 /// document, its review and its Project.
 fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) -> Result<()> {
-    let view = navigation::scenes(d, path)?;
+    let view = sidebar::navigation::scenes(d, path)?;
     review::scenes(d, &view, detections)?;
     settings::scenes(d)?;
-    ai_connector::scenes(d)?;
-    shell::scenes(d)?;
-    search::scenes(d, &view)?;
+    settings::ai_connector::scenes(d)?;
+    palette::scenes(d)?;
+    document::search::scenes(d, &view)?;
     review::before_after(d, &view)?;
     review::applied_alias(d, &view)?;
-    restore::reply_view(d, &view)?;
-    notes::scenes(d, &view)?;
-    decisions::scenes(d, &view)?;
+    review::restore::reply_view(d, &view)?;
+    document::notes::scenes(d, &view)?;
+    document::decisions::scenes(d, &view)?;
     let project = projects::scenes(d)?;
-    tree::scenes(d, &project)?;
-    folder_sheet::scenes(d, path, &project)?;
-    ai_project::scenes(d, &project)?;
-    ai_ask::scenes(d, &project)?;
+    sidebar::tree::scenes(d, &project)?;
+    projects::folder_sheet::scenes(d, path, &project)?;
+    ai::project::scenes(d, &project)?;
+    ai::ask::scenes(d, &project)?;
     projects::delete(d, project)?;
-    new_project::scenes(d)?;
-    confirm::scenes(d)?;
-    comparison::scenes(d, &view)?;
-    import::scenes(d)?;
-    restore::saved_reply(d)?;
-    notes::promoted(d)?;
-    comments::scenes(d)?;
-    pdf_source::scenes(d)?;
-    pdf_source::encrypted(d)?;
-    pdf_source::unlocked(d)?;
-    pdf_source::locked(d)?;
-    docx_source::scenes(d)?;
+    projects::new_project::scenes(d)?;
+    ui::scenes(d)?;
+    document::comparison::scenes(d, &view)?;
+    document::import::scenes(d)?;
+    review::restore::saved_reply(d)?;
+    document::notes::promoted(d)?;
+    document::comments::scenes(d)?;
+    document::pdf_source::scenes(d)?;
+    document::pdf_source::encrypted(d)?;
+    document::pdf_source::unlocked(d)?;
+    document::pdf_source::locked(d)?;
+    document::docx_source::scenes(d)?;
     review::merge_hint(d)?;
     review::long_counts(d)?;
-    restore::share_leftover(d)?;
+    review::restore::share_leftover(d)?;
     refusals::scenes(d)?;
     review::scanning(d)?;
     home::scenes(d)?;
-    narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;
+    sidebar::narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;
     vault::repeated_import(d, path.parent().ok_or("fixture folder")?)?;
     vault::original_missing(d)?;
     vault::unavailable_home(d)?;
     vault::recovery_key(d)?;
-    companion::scenes(d)?;
+    ai::companion::scenes(d)?;
     // Last: it leaves the Vault locked.
     shelf::scenes(d)
 }
@@ -470,8 +453,8 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     // An earlier build's cases folder, its key and its recents: no path
     // below may touch them (#1091 Decision 2).
     let mdoc = data_directory.join("mdoc");
-    old_cases::fill(&mdoc)?;
-    let old = old_cases::Snapshot::take(&mdoc)?;
+    vault::old_cases::fill(&mdoc)?;
+    let old = vault::old_cases::Snapshot::take(&mdoc)?;
     let network_probe = mdoc_import::model_download::fetch(
         "https://invalid.invalid/headless-network-probe",
         1,
@@ -562,7 +545,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             window.focus(w.focus_regions.home(), cx);
         })?;
         scenarios(&mut d, &path, &detections)?;
-        cut_over::run(
+        vault::cut_over::run(
             &mut d,
             &profile.path().join(tag).join("vault"),
             profile.path(),

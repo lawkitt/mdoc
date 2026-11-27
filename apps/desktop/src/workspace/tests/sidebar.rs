@@ -1,5 +1,8 @@
 //! The sidebar: collapsing, the rail's reveal of the tree, dropped files and row names
 //! (`Sidebar`).
+pub(super) mod focus_regions;
+pub(super) mod navigation;
+pub(super) mod tree;
 use super::*;
 
 #[gpui::test]

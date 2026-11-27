@@ -1,6 +1,7 @@
 //! Pseudonymization review: the Replacements panel, the word popup, model
 //! setup, Before/After, an applied alias selected at the minimum window
 //! size (#303), the merge hint and a running scan.
+pub(super) mod restore;
 use super::{Driver, HEIGHT, Result, WIDTH};
 use crate::{
     document::DocumentView,
