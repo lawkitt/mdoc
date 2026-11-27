@@ -1,10 +1,15 @@
-//! Find-session ownership, scheduling, and editor integration.
+//! Find-session ownership, scheduling, editor integration, and the find
+//! bar's buttons, counter and keys.
 //!
 //! Replace, Replace all, Whole word and their keys follow the buffer search
 //! bar of Zed's `search` crate (https://github.com/zed-industries/zed),
 //! GPL-3.0-or-later; see THIRD-PARTY-LICENSES.html.
 use crate::document::DocumentView;
-use gpui::{Context, Focusable, SharedString, Window, actions, px};
+use crate::{
+    ui,
+    ui::style::{self, Theme},
+};
+use gpui::{App, Context, Focusable, SharedString, Window, actions, prelude::*, px};
 use mdoc_editor::{SearchIndex, SearchMatch, SearchOptions};
 use std::{ops::Range, sync::Arc};
 actions!(
@@ -786,6 +791,88 @@ pub(crate) fn map_edit_offset(old: &str, new: &str, offset: usize) -> usize {
         return new.len().saturating_sub(old.len().saturating_sub(offset));
     }
     prefix.min(new.len())
+}
+
+/// A find-bar control: a focusable button named for assistive technology,
+/// whose tooltip shows its shortcut.
+pub(super) fn search_bar_button(
+    id: &'static str,
+    content: impl IntoElement,
+    label: &'static str,
+    shortcut: &'static str,
+    theme: Theme,
+) -> ui::Control {
+    let palette = theme.pdf_style();
+    crate::ui::focus_ring(id, theme)
+        .when(cfg!(test), |v| v.debug_selector(move || id.into()))
+        .role(gpui::Role::Button)
+        .key_context("UiControl")
+        .tab_index(0)
+        .aria_label(label)
+        .aria_keyshortcuts(shortcut)
+        .tooltip(style::tooltip(format!("{label}  {shortcut}"), theme))
+        .flex_shrink_0()
+        .rounded_md()
+        .px_2()
+        .h(px(28.))
+        .flex()
+        .items_center()
+        .cursor_pointer()
+        .text_color(palette.header_muted)
+        .hover(|view| view.bg(palette.placeholder_bg))
+        .child(content)
+}
+
+/// The macOS or the Windows/Linux spelling of a shortcut.
+pub(super) const fn chord(mac: &'static str, other: &'static str) -> &'static str {
+    if cfg!(target_os = "macos") {
+        mac
+    } else {
+        other
+    }
+}
+
+/// The find bar's counter: what it shows ("14 / 16") and what a screen reader
+/// says ("Match 14 of 16").
+pub(crate) fn find_counter(
+    empty_query: bool,
+    searching: bool,
+    active: Option<usize>,
+    matches: usize,
+) -> (String, gpui::SharedString) {
+    if empty_query {
+        ("0 / 0".into(), "No search".into())
+    } else if searching {
+        ("Searching…".into(), "Searching…".into())
+    } else if matches == 0 {
+        ("0 matches".into(), "No matches".into())
+    } else {
+        let position = active.map_or(0, |index| index + 1);
+        let spoken = if position == 0 {
+            format!(
+                "{matches} {}",
+                if matches == 1 { "match" } else { "matches" }
+            )
+        } else {
+            ui::position_announcement("Match", position, matches)
+        };
+        (format!("{position} / {matches}"), spoken.into())
+    }
+}
+
+pub(super) fn toggled(on: bool) -> gpui::Toggled {
+    if on {
+        gpui::Toggled::True
+    } else {
+        gpui::Toggled::False
+    }
+}
+
+/// The find bar's keys, from the shortcuts table.
+pub(crate) fn bind_markdown_search_keys(cx: &mut App) {
+    let bindings =
+        crate::commands::shortcuts::bindings(crate::commands::shortcuts::Owner::Find, cx);
+    cx.bind_keys(bindings);
 }
 
 #[cfg(test)]

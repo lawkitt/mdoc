@@ -6,8 +6,8 @@ use crate::{
     ui,
     ui::style,
     workspace::{
-        CancelProjectName, Close, ConfirmProjectName, Import, Open, PasteAiResponse, ProjectEvent,
-        TabEvent,
+        self, CancelProjectName, Close, ConfirmProjectName, Import, Open, PasteAiResponse,
+        ProjectEvent, TabEvent, ToggleTheme,
     },
 };
 use gpui::{App, Context, Focusable, Window, div, prelude::*, px};
@@ -848,4 +848,92 @@ fn local_note(theme: crate::ui::style::Theme) -> impl IntoElement {
                 .text_color(p.header_muted),
         )
         .child(format!("Documents stay on {machine}"))
+}
+
+impl DocumentView {
+    pub(super) fn toggle_theme(&mut self, _: &ToggleTheme, _: &mut Window, cx: &mut Context<Self>) {
+        cx.emit(workspace::TabEvent::ToggleTheme);
+    }
+
+    /// A Markdown tab with no content and no source shows the empty page.
+    pub(super) fn shows_empty_page(&self, cx: &App) -> bool {
+        !self.lifecycle.loading()
+            && !self.lifecycle.unavailable()
+            && !self.lifecycle.source_only()
+            && self.session.source.is_none()
+            && self.preview.source().is_none()
+            && self.preview.attachment().is_none()
+            && self.editor.read(cx).text().is_empty()
+    }
+
+    /// Zoom the Markdown text between 50% and 200% in 5% steps.
+    pub(crate) fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
+        let zoom = ((zoom * 20.).round() / 20.).clamp(0.5, 2.);
+        // Show the pill so keyboard zoom reports its level.
+        self.wake_switcher(cx);
+        if zoom != self.zoom {
+            self.zoom = zoom;
+            cx.notify();
+        }
+    }
+
+    /// A plain click below the text's last line: caret at the end, editor
+    /// focused. Clicks on the text itself are the editor's own.
+    pub(super) fn click_below_text(
+        &mut self,
+        event: &gpui::MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let below = self
+            .editor
+            .read(cx)
+            .painted_bounds()
+            .is_some_and(|bounds| event.position.y > bounds.bottom());
+        if !below || event.modifiers.modified() || event.click_count > 1 {
+            return;
+        }
+        self.editor.update(cx, |editor, cx| {
+            let end = editor.text().len();
+            editor.set_cursor(end, cx);
+            editor.focus(window, cx);
+        });
+        // Ancestors that track focus would take it back on this same press.
+        window.prevent_default();
+    }
+
+    /// Focus handles outside the toolbar whose controls count as the
+    /// toolbar's region.
+    pub(crate) fn toolbar_members(&self) -> [&gpui::FocusHandle; 3] {
+        [
+            &self.controls_region,
+            &self.find_region,
+            &self.switcher_region,
+        ]
+    }
+
+    /// The document's F6 regions in order, each with whether it is a single
+    /// focus target (the editor) rather than a group of controls.
+    pub(crate) fn focus_regions(&self, cx: &App) -> Vec<(gpui::FocusHandle, bool)> {
+        let (markdown, original) = self.panes_drawn.get();
+        let mut regions = vec![(self.toolbar_region.clone(), false)];
+        if markdown
+            && !self.lifecycle.source_only()
+            && !self.lifecycle.loading()
+            && !self.lifecycle.unavailable()
+            && self.compare.is_none()
+        {
+            regions.push((self.editor.read(cx).focus_handle(cx), true));
+        }
+        if self.replacements_open() && self.can_copy_markdown() {
+            regions.push((self.replacements_focus(), false));
+        }
+        if self.preview.visible() && original {
+            regions.push((self.preview_region.clone(), false));
+            if self.preview.comments_shown(cx) {
+                regions.push((self.comments_region.clone(), false));
+            }
+        }
+        regions
+    }
 }
