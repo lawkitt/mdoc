@@ -2,7 +2,7 @@
 //! the middle; a sidebar dragged wide; and the minimum window, where the
 //! sidebar collapses by itself until the user expands it.
 use super::{Driver, HEIGHT, Result, WIDTH};
-use crate::document_view::DocumentView;
+use crate::document::DocumentView;
 use gpui::Entity;
 use std::path::Path;
 

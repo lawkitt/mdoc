@@ -876,13 +876,13 @@ impl Workspace {
 
 /// Whether `view`'s review is Ready where its last write said it was not,
 /// or the other way round: a write is due though nothing else changed.
-pub(super) fn ready_unwritten(view: &crate::document_view::DocumentView, cx: &gpui::App) -> bool {
+pub(super) fn ready_unwritten(view: &crate::document::DocumentView, cx: &gpui::App) -> bool {
     super::shelf_source::ready(view, cx) != view.session.document.ready
 }
 
 /// The save of `view`'s Vault document showing `text`.
 fn vault_save(
-    view: &crate::document_view::DocumentView,
+    view: &crate::document::DocumentView,
     text: String,
     review: Option<SavedReview>,
     cx: &gpui::App,

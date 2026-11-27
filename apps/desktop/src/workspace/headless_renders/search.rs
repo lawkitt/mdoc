@@ -1,6 +1,6 @@
 //! Markdown find and replace.
 use super::{Driver, Result};
-use crate::{document_view::DocumentView, search_session::CloseMarkdownSearch};
+use crate::{document::DocumentView, document::search_session::CloseMarkdownSearch};
 use gpui::Entity;
 
 pub(super) fn scenes(d: &mut Driver, view: &Entity<DocumentView>) -> Result<()> {

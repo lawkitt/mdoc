@@ -8,7 +8,7 @@ use super::{
     document_writer::Target,
     projects::ProjectLink,
 };
-use crate::{document_view::DocumentView, markdown_search, ui, ui::style};
+use crate::{document::DocumentView, document::markdown_search, ui, ui::style};
 use gpui::{AnyElement, App, Context, Entity, Focusable, PromptLevel, Window, div, prelude::*, px};
 use mdoc_pii::restore::{ExportedIdentity, RestoreMap};
 use mdoc_store::{

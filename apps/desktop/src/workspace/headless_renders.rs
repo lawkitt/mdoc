@@ -77,7 +77,7 @@ mod tree;
 mod vault;
 
 use super::{Workspace, app_actions::bind as bind_app_actions};
-use crate::{bind_all_keys, pii::ui::CompareMode};
+use crate::{bind_all_keys, review::CompareMode};
 use gpui::{Context, HeadlessAppContext, Keystroke, Window, prelude::*, px, size};
 use image::ImageEncoder;
 use mdoc_store::session_store::{Session, ThemeChoice};
@@ -289,7 +289,7 @@ impl Driver {
                 // The "Not copied" notice and its step (#1209).
                 state["copy_refusal"] = json!(w.active_view().and_then(|v| v.read(cx).copy_refusal.clone()).map(|refusal| json!({
                     "reason": refusal.reason,
-                    "step": refusal.step.map(crate::refusal::Step::label),
+                    "step": refusal.step.map(crate::review::refusal::Step::label),
                 })));
                 state
             })?

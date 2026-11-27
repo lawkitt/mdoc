@@ -3,7 +3,7 @@
 //! Vault under the OS-held key, never in `settings.json`, so the window
 //! loads and saves them; while the Vault is locked they wait too.
 use super::{Event, Panel};
-use crate::{markdown_search::SearchInput, ui, ui::style::Theme};
+use crate::{document::markdown_search::SearchInput, ui, ui::style::Theme};
 use gpui::{AnyElement, Context, Entity, Focusable, actions, div, prelude::*, px};
 use mdoc_store::lists::Lists;
 

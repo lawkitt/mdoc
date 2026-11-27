@@ -248,7 +248,7 @@ fn a_document_moved_out_of_a_deleted_project_is_ready_once_opened(cx: &mut TestA
     let moved = listed(cx);
     assert_eq!(moved.readiness, Readiness::NotReviewed);
     assert_eq!(moved.state(), "Moved · open it to share");
-    assert_eq!(moved.step(), Some(crate::refusal::Step::Review));
+    assert_eq!(moved.step(), Some(crate::review::refusal::Step::Review));
     assert_eq!(moved.text_for_ai(), None);
     let stored = vault(&tabs, cx).document(document.as_str()).unwrap();
     assert!(stored.scanned && stored.project.is_none(), "review 3");
@@ -382,7 +382,7 @@ fn copy_for_ai_in_the_editor_is_checked_against_the_projects_names(cx: &mut Test
     let copy = |cx: &mut VisualTestContext| {
         view.update_in(cx, |view, window, cx| {
             view.error = None;
-            view.copy_for_ai(&crate::pii::ui::CopyForAi, window, cx)
+            view.copy_for_ai(&crate::review::CopyForAi, window, cx)
         });
         cx.run_until_parked();
     };
@@ -413,16 +413,19 @@ fn copy_for_ai_in_the_editor_is_checked_against_the_projects_names(cx: &mut Test
         // Its review proposes the Project's new name, as the shelf's row
         // says, and the notice offers to replace it.
         assert_eq!(why.reason, "1 proposal is left to review.");
-        assert_eq!(why.step, Some(crate::refusal::Step::ReplaceAndCopy(1)));
+        assert_eq!(
+            why.step,
+            Some(crate::review::refusal::Step::ReplaceAndCopy(1))
+        );
     });
     // The shortcut and the menu dispatch the same action.
     cx.update(|window, cx| window.focus(&view.read(cx).editor.read(cx).focus_handle(cx), cx));
-    cx.dispatch_action(crate::pii::ui::CopyForAi);
+    cx.dispatch_action(crate::review::CopyForAi);
     cx.run_until_parked();
     assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "before");
     // Copy Markdown copies the text as it is, on purpose.
     view.update_in(cx, |view, window, cx| {
-        view.copy_markdown(&crate::document_view::CopyMarkdown, window, cx)
+        view.copy_markdown(&crate::document::CopyMarkdown, window, cx)
     });
     let raw = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
     assert_eq!(raw, "PERSON_1 wrote to Boris Ivanov about the lease.");
@@ -445,7 +448,7 @@ fn a_waiting_copy_for_ai_never_replaces_a_newer_copy(cx: &mut TestAppContext) {
     let view = active(&tabs, cx);
     // Unsaved: the copy waits for its write.
     view.update_in(cx, |view, window, cx| {
-        view.copy_for_ai(&crate::pii::ui::CopyForAi, window, cx)
+        view.copy_for_ai(&crate::review::CopyForAi, window, cx)
     });
     let waiting = cx.update(|_, cx| tabs.read(cx).copy_for_ai_waiting.is_some());
     assert!(waiting, "the copy waits for its write");
@@ -454,7 +457,7 @@ fn a_waiting_copy_for_ai_never_replaces_a_newer_copy(cx: &mut TestAppContext) {
     assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "newer");
     // Asked again with nothing newer, it copies.
     view.update_in(cx, |view, window, cx| {
-        view.copy_for_ai(&crate::pii::ui::CopyForAi, window, cx)
+        view.copy_for_ai(&crate::review::CopyForAi, window, cx)
     });
     cx.run_until_parked();
     let copied = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
@@ -936,7 +939,7 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
         cx.read_from_clipboard().unwrap().text().unwrap(),
         "Anna Petrova owes Northwind Ltd; PERSON_9 is new."
     );
-    assert!(crate::restored_clipboard::is_restored(
+    assert!(crate::review::restored_clipboard::is_restored(
         &cx.read_from_clipboard().unwrap()
     ));
 

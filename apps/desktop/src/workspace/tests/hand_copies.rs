@@ -4,7 +4,7 @@
 //! right-click menu while proposals are pending in it. Hand copies are the
 //! user's own copies, not exits (`exits.rs`).
 use super::*;
-use crate::{pii::ui::CompareMode, restored_clipboard::is_restored};
+use crate::{review::CompareMode, review::restored_clipboard::is_restored};
 use mdoc_editor::EditorState;
 use mdoc_pii::Category::{Organization, Person};
 use std::ops::Range;
@@ -189,7 +189,7 @@ fn a_kept_name_and_a_document_never_scanned_copy_marked(cx: &mut TestAppContext)
     let editor = main_editor(&view, cx);
     let markdown = |cx: &mut VisualTestContext| {
         view.update_in(cx, |view, window, cx| {
-            view.copy_markdown(&crate::document_view::CopyMarkdown, window, cx)
+            view.copy_markdown(&crate::document::CopyMarkdown, window, cx)
         });
         let item = cx.read_from_clipboard().unwrap();
         (item.text().unwrap(), is_restored(&item))

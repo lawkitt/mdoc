@@ -2,7 +2,7 @@
 //! with a name left after Apply (#301) and a saved reply reopened from the
 //! public Claude fixture.
 use super::{Driver, Result};
-use crate::{document_view::DocumentView, pii::ui::PiiApplyAll};
+use crate::{document::DocumentView, review::PiiApplyAll};
 use gpui::Entity;
 use serde_json::Value;
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use std::sync::Arc;
 pub(super) fn reply_view(d: &mut Driver, view: &Entity<DocumentView>) -> Result<()> {
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
-            v.inspector = crate::document_view::Inspector::Share;
+            v.inspector = crate::document::Inspector::Share;
             if !v.replacements_open() {
                 v.toggle_replacements_panel(window, cx);
             }
@@ -43,7 +43,7 @@ pub(super) fn reply_view(d: &mut Driver, view: &Entity<DocumentView>) -> Result<
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
             v.fill_reply("", window, cx);
-            v.inspector = crate::document_view::Inspector::Review;
+            v.inspector = crate::document::Inspector::Review;
             cx.notify();
         })
     })?;
@@ -92,7 +92,7 @@ pub(super) fn share_leftover(d: &mut Driver) -> Result<()> {
                 v.toggle_replacements_panel(window, cx);
             }
             v.apply_all_pii(&PiiApplyAll, window, cx);
-            v.inspector = crate::document_view::Inspector::Share;
+            v.inspector = crate::document::Inspector::Share;
             window.focus(&v.replacements_focus(), cx);
         });
     })?;

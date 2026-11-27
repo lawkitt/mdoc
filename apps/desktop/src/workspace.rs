@@ -1,11 +1,10 @@
 //! Window-level tabs. Each initialized tab owns a retained document view;
 //! unopened session records allocate no editor, PDF, or conversion worker.
 use crate::{
-    comparison, comparison_ui,
-    document_view::{
-        Background, DocumentView, DocumentViewDependencies, OcrState, known_ocr_state,
-    },
-    pii::ui::PiiApplyAll,
+    document::comparison,
+    document::comparison_ui,
+    document::{Background, DocumentView, DocumentViewDependencies, OcrState, known_ocr_state},
+    review::PiiApplyAll,
     ui,
     ui::style::{self, Theme},
 };
@@ -154,11 +153,11 @@ pub(super) enum TabEvent {
     NamesFound,
     /// A refused Copy for AI's step, from its notice or the Share tab: the
     /// window runs it unless the document is kept from AI.
-    CopyStep(crate::refusal::Step),
+    CopyStep(crate::review::refusal::Step),
     ToggleTheme,
     /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
     /// Source follows and Settings keeps it.
-    SourceDisplay(crate::preview::SourceDisplay),
+    SourceDisplay(crate::document::preview::SourceDisplay),
 }
 
 /// Tabs to add (`LiveViews`).
@@ -1343,7 +1342,7 @@ impl Workspace {
                                 names = vault.names;
                                 view.load_notes(loading.as_str(), vault.notes, notes_writes, cx);
                                 view.from_reply = (vault.from_reply).map(|id| {
-                                    crate::document_view::notes::FromReply { id, gone: false }
+                                    crate::document::notes::FromReply { id, gone: false }
                                 });
                                 view.session.name = Some(vault.title);
                                 view.session.follows_first_line = vault.follows;

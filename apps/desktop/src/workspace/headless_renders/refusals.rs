@@ -3,7 +3,7 @@
 //! from AI, still checking), and the Share tab's button showing the step
 //! before the click. The shelf's rows are in `shelf`.
 use super::{Driver, Result};
-use crate::{document_view::Inspector, refusal::Refusal, shelf::Readiness};
+use crate::{document::Inspector, review::refusal::Refusal, shelf::Readiness};
 use mdoc_pii::{Category, Detection, Recognizer};
 
 const TEXT: &str = "Anna Petrova wrote to Boris Ivanov about the lease.";
@@ -44,7 +44,7 @@ fn document(d: &mut Driver, propose: bool, applied: bool) -> Result<()> {
                 v.toggle_replacements_panel(window, cx);
             }
             if applied {
-                v.apply_all_pii(&crate::pii::ui::PiiApplyAll, window, cx);
+                v.apply_all_pii(&crate::review::PiiApplyAll, window, cx);
             }
             v.inspector = Inspector::Share;
             cx.notify();

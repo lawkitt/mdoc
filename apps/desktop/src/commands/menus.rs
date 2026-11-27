@@ -9,13 +9,15 @@
 //! rebuild's actions, so switching documents must not rebuild it.
 
 use crate::{
-    document_view::{
+    document::search_session::{
+        FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown,
+    },
+    document::{
         CopyMarkdown, ExportMarkdown, OpenSourceReply, Save, ShowEditView, ShowNotes,
         ShowOriginalView, ShowPseudonymizedView, ShowReplacements, ToggleCompare, ZoomIn, ZoomOut,
         ZoomReset,
     },
-    pii::ui::{CopyForAi, Pseudonymize},
-    search_session::{FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown},
+    review::{CopyForAi, Pseudonymize},
     workspace::{
         AddDocumentToProject, ChangeProjectColour, CheckForUpdates, Close, DeleteProject,
         ExportProject, Import, MoveToNewProject, MoveToProject, New, NewProject, Open, OpenPalette,

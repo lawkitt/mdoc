@@ -1,7 +1,7 @@
 //! The comment rail in the real tab shell: the keyboard flow, the "comments"
 //! F6 region, the app-wide Source toggles and markers in a narrow window.
 use super::*;
-use crate::comment_rail::{CommentRail, NextComment, PreviousComment};
+use crate::document::comment_rail::{CommentRail, NextComment, PreviousComment};
 
 /// comments.docx open in a window wide enough for the rail; its threads in
 /// rail order are "0" (with a reply), "1", the point "2", the resolved "4",

@@ -365,8 +365,8 @@ impl ShelfDocument {
 
     /// What resolves the row's refusal: "Replace 2 and copy", "Review" or
     /// "Find names"; `None` while ready or still checking.
-    pub(crate) fn step(&self) -> Option<crate::refusal::Step> {
-        crate::refusal::Step::of(self.readiness, self.scanned)
+    pub(crate) fn step(&self) -> Option<crate::review::refusal::Step> {
+        crate::review::refusal::Step::of(self.readiness, self.scanned)
     }
 
     /// The card a drag shows under the pointer: the title as the

@@ -1,10 +1,10 @@
 //! An edit's new text is scanned (Vault & Projects item 44), and item 39's
 //! desktop part: once typing pauses, the paragraphs edited since they were
-//! scanned are scanned as a fresh document is (`pii::ui::edit_scan`). A
+//! scanned are scanned as a fresh document is (`review::edit_scan`). A
 //! new name typed into a Ready document becomes a proposal and never
 //! leaves as typed; an edit with no new name is Ready again with no click.
 use super::*;
-use crate::pii::ui::{CopyForAi, TEST_SCAN};
+use crate::review::{CopyForAi, TEST_SCAN};
 use mdoc_pii::{Category::Person, Detection, Recognizer};
 
 /// Pending autosaves, and the Project writes they start, land.

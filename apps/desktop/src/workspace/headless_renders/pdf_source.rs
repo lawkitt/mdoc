@@ -234,9 +234,9 @@ pub(super) fn locked(d: &mut Driver) -> Result<()> {
             })
         })?;
         let expected = if typed.is_some() {
-            crate::preview::OriginalPassword::Wrong
+            crate::document::preview::OriginalPassword::Wrong
         } else {
-            crate::preview::OriginalPassword::Asking
+            crate::document::preview::OriginalPassword::Asking
         };
         d.change(|_, _, cx| match view.read(cx).preview.password() {
             Some(prompt) if prompt == expected => Ok(()),

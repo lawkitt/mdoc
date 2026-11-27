@@ -425,7 +425,7 @@ impl Workspace {
                     // Shown until the document loads; never saved.
                     record.name = Some(title);
                     let id = self.push(record);
-                    crate::document_view::LastFolder::note(&path, cx);
+                    crate::document::LastFolder::note(&path, cx);
                     // The path now finds the newest import of it.
                     self.admitted_from.retain(|_, from| *from != path);
                     self.admitted_from.insert(id, path);

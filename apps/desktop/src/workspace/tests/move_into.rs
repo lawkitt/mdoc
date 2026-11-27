@@ -65,7 +65,7 @@ fn shown(cx: &mut VisualTestContext, id: &str) -> bool {
 fn open_share(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
     let view = active(tabs, cx);
     view.update_in(cx, |view, window, cx| {
-        view.inspector = crate::document_view::Inspector::Share;
+        view.inspector = crate::document::Inspector::Share;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }

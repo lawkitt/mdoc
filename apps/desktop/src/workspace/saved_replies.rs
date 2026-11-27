@@ -10,7 +10,7 @@ use super::{
     document_writer::Target,
     navigation::{Arrival, Stop},
 };
-use crate::{pii::ui::SavedReplyRow, ui, ui::style};
+use crate::{review::SavedReplyRow, ui, ui::style};
 use gpui::{
     AnyElement, Context, Entity, FocusHandle, PromptLevel, SharedString, Window, div, prelude::*,
     px,
@@ -401,7 +401,7 @@ impl Workspace {
             editor.set_read_only(true, cx);
             editor.set_autoscroll(scroll.clone());
             // The restored reply holds originals.
-            editor.set_copy_metadata(Some(crate::restored_clipboard::TAG.into()));
+            editor.set_copy_metadata(Some(crate::review::restored_clipboard::TAG.into()));
             editor
         });
         let focus = || cx.focus_handle().tab_index(0).tab_stop(true);
@@ -470,7 +470,7 @@ impl Workspace {
         }
         let restored = map.restore_in_place(&reply.markdown);
         let theme = self.theme.get();
-        let marks = crate::pii::ui::reply_marks(&restored, theme);
+        let marks = crate::review::reply_marks(&restored, theme);
         let page = self.reply_page.as_mut().unwrap();
         let text = restored.text.clone();
         page.editor.update(cx, |editor, cx| {
@@ -494,7 +494,9 @@ impl Workspace {
         if page.loaded.is_err() {
             return;
         }
-        cx.write_to_clipboard(crate::restored_clipboard::item(page.restored.text.clone()));
+        cx.write_to_clipboard(crate::review::restored_clipboard::item(
+            page.restored.text.clone(),
+        ));
         page.copied = true;
         cx.notify();
     }
@@ -511,7 +513,7 @@ impl Workspace {
         let at = page.next % tokens.len();
         page.next = at + 1;
         let range = tokens[at].clone();
-        let id = crate::pii::ui::UNRESOLVED_ID | range.start as u64;
+        let id = crate::review::UNRESOLVED_ID | range.start as u64;
         page.editor.update(cx, |editor, cx| {
             editor.set_active_annotation(Some(id), cx);
             editor.reveal_offset(range.start, cx);

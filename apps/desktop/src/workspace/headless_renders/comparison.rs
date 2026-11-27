@@ -1,6 +1,6 @@
 //! The model comparison window.
 use super::{Driver, HEIGHT, Result, WIDTH};
-use crate::{comparison, comparison_ui, document_view::DocumentView};
+use crate::{document::DocumentView, document::comparison, document::comparison_ui};
 use gpui::{Entity, Focusable, prelude::*, px, size};
 use std::sync::Arc;
 

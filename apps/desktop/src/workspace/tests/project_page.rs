@@ -512,7 +512,7 @@ fn share_and_sidebar_header_open_the_same_page(cx: &mut TestAppContext) {
     let (tabs, cx, tab, id) = in_project(cx, dir.path());
     let view = active(&tabs, cx);
     view.update_in(cx, |view, window, cx| {
-        view.inspector = crate::document_view::Inspector::Share;
+        view.inspector = crate::document::Inspector::Share;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }

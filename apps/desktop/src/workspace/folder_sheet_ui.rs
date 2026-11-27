@@ -589,7 +589,7 @@ impl Workspace {
                             .on_action(|_: &PseudonymizeClipboard, _, _| {})
                             .on_action(|_: &super::RestoreClipboard, _, _| {})
                             .on_action(|_: &super::CheckForUpdates, _, _| {})
-                            .on_action(|_: &crate::pii::ui::PiiApplyAll, _, _| {})
+                            .on_action(|_: &crate::review::PiiApplyAll, _, _| {})
                             .key_context("FolderSheet UiPanel")
                             .track_focus(&focus.group)
                             .tab_group()

@@ -5,8 +5,8 @@
 
 use super::{ProjectLink, Workspace, document_writer::Target, navigation::Arrival};
 use crate::{
-    document_view::DocumentView,
-    refusal::{Refusal, Step},
+    document::DocumentView,
+    review::refusal::{Refusal, Step},
     shelf::{self, OpenTab, Outbound, ShelfDocument, ShelfKey, StoredDocument},
 };
 use gpui::{App, Context, Window};

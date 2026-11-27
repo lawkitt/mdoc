@@ -48,7 +48,7 @@ impl Stage {
             "rows": content.documents.iter().map(|d| json!({
                 "title": d.display_title(),
                 "state": d.state(),
-                "step": d.step().map(crate::refusal::Step::label),
+                "step": d.step().map(crate::review::refusal::Step::label),
                 "preview": d.preview.as_ref().map(|p| p.text.clone()),
                 "replaced": d.replaced_count(),
                 "names": d.names_count(),

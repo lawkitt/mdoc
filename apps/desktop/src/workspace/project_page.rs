@@ -7,7 +7,7 @@ use super::{
     projects_ui::{AddProjectName, CancelProjectName, ClearProjectName, ConfirmProjectName},
 };
 use crate::{
-    markdown_search::{SearchInput, SearchInputEvent},
+    document::markdown_search::{SearchInput, SearchInputEvent},
     ui,
     ui::style,
 };

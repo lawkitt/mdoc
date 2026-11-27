@@ -153,7 +153,7 @@ fn the_companion_window_never_asks_for_focus() {
 /// read, an ask, or a review request repeated while it is quiet.
 #[gpui::test]
 fn it_opens_by_itself_only_for_a_delivery_or_a_review_request(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, _notes) = shared_lease(cx, &fixture);
     install_menu_bar(&tabs, cx);
@@ -219,7 +219,7 @@ fn it_opens_by_itself_only_for_a_delivery_or_a_review_request(cx: &mut TestAppCo
         view(open, cx, |view, _| view.content().review.clone()),
         None
     );
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// Done when: the companion always names what is shared, and its Stop
@@ -298,7 +298,7 @@ fn the_restored_reply_copies_and_saves(cx: &mut TestAppContext) {
     update(open, cx, |view, window, cx| view.copy_reply(window, cx));
     let copied = cx.update(|_, cx| cx.read_from_clipboard()).unwrap();
     assert_eq!(copied.text().as_deref(), Some("Anna Petrova pays on time."));
-    assert!(crate::restored_clipboard::is_restored(&copied));
+    assert!(crate::review::restored_clipboard::is_restored(&copied));
     // Save as document: one new Document in Lease, restored.
     let members = |cx: &mut VisualTestContext| vault(&tabs, cx).documents_in(Some(&fixture.lease));
     let before = members(cx).len();
@@ -361,7 +361,7 @@ fn save_as_document_counts_only_what_was_saved(cx: &mut TestAppContext) {
 /// takes the review card off the companion at once.
 #[gpui::test]
 fn the_review_card_goes_once_the_document_opens(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, _notes) = shared_lease(cx, &fixture);
     install_menu_bar(&tabs, cx);
@@ -385,7 +385,7 @@ fn the_review_card_goes_once_the_document_opens(cx: &mut TestAppContext) {
         view(open, cx, |view, _| view.content().review.clone()),
         None
     );
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// Done when: files dropped on the companion are imported into the AI
@@ -590,7 +590,7 @@ fn tab_review(
 /// request goes.
 #[gpui::test]
 fn replace_all_in_the_companion_makes_the_document_ready(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, _notes) = shared_lease(cx, &fixture);
     install_menu_bar(&tabs, cx);
@@ -654,7 +654,7 @@ fn replace_all_in_the_companion_makes_the_document_ready(cx: &mut TestAppContext
     };
     assert!(text.contains(&expected), "{text}");
     assert_eq!(step(open, cx), None);
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// Done when: what only the window decides stays there: a Keep left in
@@ -663,7 +663,7 @@ fn replace_all_in_the_companion_makes_the_document_ready(cx: &mut TestAppContext
 /// front; a document never reviewed offers only Open in mdoc.
 #[gpui::test]
 fn what_only_mdoc_decides_offers_open_in_mdoc(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, _notes) = shared_lease(cx, &fixture);
     install_menu_bar(&tabs, cx);
@@ -709,15 +709,15 @@ fn what_only_mdoc_decides_offers_open_in_mdoc(cx: &mut TestAppContext) {
         let view = view.read(cx);
         view.replacements_open().then_some(view.inspector)
     });
-    assert_eq!(inspector, Some(crate::document_view::Inspector::Share));
-    crate::document_view::DocumentView::hold_scans(false);
+    assert_eq!(inspector, Some(crate::document::Inspector::Share));
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// Done when: Open in mdoc on a request the companion has not touched
 /// opens its review in front, at its proposals.
 #[gpui::test]
 fn open_in_mdoc_opens_the_documents_review(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, _notes) = shared_lease(cx, &fixture);
     install_menu_bar(&tabs, cx);
@@ -745,7 +745,7 @@ fn open_in_mdoc_opens_the_documents_review(cx: &mut TestAppContext) {
     assert_eq!(step(open, cx), None);
     let stored = vault(&tabs, cx).document(&fixture.lease_doc).unwrap();
     assert_eq!(stored.markdown, "Anna Petrova rents.");
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// Done when: a document with no review yet has nothing the companion
@@ -753,7 +753,7 @@ fn open_in_mdoc_opens_the_documents_review(cx: &mut TestAppContext) {
 /// nothing.
 #[gpui::test]
 fn a_document_never_reviewed_goes_to_mdoc(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, _notes) = shared_lease(cx, &fixture);
     install_menu_bar(&tabs, cx);
@@ -780,7 +780,7 @@ fn a_document_never_reviewed_goes_to_mdoc(cx: &mut TestAppContext) {
         tabs_before,
         "no tab opened"
     );
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// Done when: Replace all replaces only what the card listed: when the
@@ -788,7 +788,7 @@ fn a_document_never_reviewed_goes_to_mdoc(cx: &mut TestAppContext) {
 /// is replaced and the card lists what it proposes now.
 #[gpui::test]
 fn replace_all_replaces_only_what_the_card_listed(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, _notes) = shared_lease(cx, &fixture);
     install_menu_bar(&tabs, cx);
@@ -820,7 +820,7 @@ fn replace_all_replaces_only_what_the_card_listed(cx: &mut TestAppContext) {
         panic!("its proposals again");
     };
     assert_eq!(now.len(), 2);
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// A new document in Lease that reads `text`, by title `title`.
@@ -847,7 +847,7 @@ fn lease_document(
 /// the next card's: they show only once the pointer moves onto them.
 #[gpui::test]
 fn the_next_cards_proposals_wait_for_the_pointer(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, _notes) = shared_lease(cx, &fixture);
     install_menu_bar(&tabs, cx);
@@ -888,7 +888,7 @@ fn the_next_cards_proposals_wait_for_the_pointer(cx: &mut TestAppContext) {
     window.simulate_mouse_move(bounds.center(), None, gpui::Modifiers::none());
     window.run_until_parked();
     assert!(view(open, &mut window, |view, _| view.proposals_shown()));
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// Review of #1269: with mdoc's live views all taken, Replace all on a
@@ -898,7 +898,7 @@ fn the_next_cards_proposals_wait_for_the_pointer(cx: &mut TestAppContext) {
 #[gpui::test]
 fn replace_all_outlasts_eviction_and_a_newer_request(cx: &mut TestAppContext) {
     use crate::workspace::live_views::LIMIT;
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, _notes) = shared_lease(cx, &fixture);
     install_menu_bar(&tabs, cx);
@@ -955,14 +955,14 @@ fn replace_all_outlasts_eviction_and_a_newer_request(cx: &mut TestAppContext) {
         view.read(cx).editor.read(cx).text().to_owned()
     });
     assert_eq!(shown, text);
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// Review of #1269: when the requested document's tab finds proposals,
 /// the card offers them at once, with no other change to the window.
 #[gpui::test]
 fn proposals_found_in_the_tab_reach_the_card(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, _notes) = shared_lease(cx, &fixture);
     install_menu_bar(&tabs, cx);
@@ -993,7 +993,7 @@ fn proposals_found_in_the_tab_reach_the_card(cx: &mut TestAppContext) {
         panic!("its proposals now");
     };
     assert_eq!(proposals[0].original, "Anna Petrova");
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// Review of #1269: an applied alias corrected since would be rewritten by
@@ -1001,7 +1001,7 @@ fn proposals_found_in_the_tab_reach_the_card(cx: &mut TestAppContext) {
 /// mdoc alone.
 #[gpui::test]
 fn a_correction_no_proposal_shows_goes_to_mdoc(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, _notes) = shared_lease(cx, &fixture);
     install_menu_bar(&tabs, cx);
@@ -1038,5 +1038,5 @@ fn a_correction_no_proposal_shows_goes_to_mdoc(cx: &mut TestAppContext) {
     let Some(crate::workspace::ReviewStep::InMdoc(_)) = step(open, cx) else {
         panic!("only mdoc shows the correction: {:?}", step(open, cx));
     };
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }

@@ -37,10 +37,10 @@ fn decision_history_click_tab_enter_travels_and_escape_returns_to_the_clock(
     view.update_in(cx, |view, window, cx| {
         view.pii.set_decision_clock(|| "14:02".into());
         let id = view.pii.review().applied()[0].id;
-        view.activate_annotation(crate::pii::ui::APPLIED_ID | id, window, cx);
+        view.activate_annotation(crate::review::APPLIED_ID | id, window, cx);
     });
     draw(cx);
-    cx.dispatch_action(crate::pii::ui::KeepThis);
+    cx.dispatch_action(crate::review::KeepThis);
     draw(cx);
     view.read_with(cx, |view, cx| assert_eq!(lines(view, cx).len(), 2));
     click_toolbar(cx, "header-history");
@@ -80,7 +80,7 @@ fn decision_history_restore_from_home_and_session_snapshot_stays_private(cx: &mu
     // The undone entries still contain the original and its fixed time.
     source.update_in(cx, |view, window, cx| {
         view.travel_to_decision(0, window, cx);
-        view.close_pii_popup(&crate::pii::ui::PiiClosePopup, window, cx);
+        view.close_pii_popup(&crate::review::PiiClosePopup, window, cx);
     });
     cx.run_until_parked();
     click_toolbar(cx, "sidebar-home");
@@ -115,11 +115,11 @@ fn decision_history_restore_from_home_and_session_snapshot_stays_private(cx: &mu
 fn view_keep_one(view: &Entity<DocumentView>, cx: &mut VisualTestContext) {
     view.update_in(cx, |view, window, cx| {
         let id = view.pii.review().applied()[0].id;
-        view.activate_annotation(crate::pii::ui::APPLIED_ID | id, window, cx);
+        view.activate_annotation(crate::review::APPLIED_ID | id, window, cx);
     });
     draw(cx);
-    cx.dispatch_action(crate::pii::ui::KeepThis);
+    cx.dispatch_action(crate::review::KeepThis);
     draw(cx);
-    cx.dispatch_action(crate::pii::ui::KeepThis);
+    cx.dispatch_action(crate::review::KeepThis);
     draw(cx);
 }

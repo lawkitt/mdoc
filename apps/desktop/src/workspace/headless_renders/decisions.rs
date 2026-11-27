@@ -1,8 +1,8 @@
 //! What you did: the decision history and travelling back.
 use super::{Driver, Result};
 use crate::{
-    document_view::DocumentView,
-    pii::ui::{APPLIED_ID, KeepThis, PiiClosePopup},
+    document::DocumentView,
+    review::{APPLIED_ID, KeepThis, PiiClosePopup},
 };
 use gpui::Entity;
 

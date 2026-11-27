@@ -3,8 +3,8 @@
 //! size (#303), the merge hint and a running scan.
 use super::{Driver, HEIGHT, Result, WIDTH};
 use crate::{
-    document_view::DocumentView,
-    pii::ui::{APPLIED_ID, PiiApplyAll, PiiClosePopup},
+    document::DocumentView,
+    review::{APPLIED_ID, PiiApplyAll, PiiClosePopup},
 };
 use gpui::{Entity, Focusable};
 use mdoc_import::model_download::Pending;
@@ -63,7 +63,7 @@ pub(super) fn scenes(
     d.focus_pair("sidebar-row", sidebar)?;
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
-            v.inspector = crate::document_view::Inspector::Share;
+            v.inspector = crate::document::Inspector::Share;
             window.focus(&v.replacements_focus(), cx);
             cx.notify();
         });
@@ -74,7 +74,7 @@ pub(super) fn scenes(
     d.focus_pair("beside-selected-tab", review_tab)?;
     d.change(|_, _, cx| {
         view.update(cx, |v, cx| {
-            v.inspector = crate::document_view::Inspector::Review;
+            v.inspector = crate::document::Inspector::Review;
             cx.notify();
         })
     })?;

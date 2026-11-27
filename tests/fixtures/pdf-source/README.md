@@ -13,7 +13,7 @@ only an appearance. Page 2 has `/Rotate 90` and text drawn to read upright,
 with a commented highlight and a sticky note. `generate.py`'s header lists
 each annotation by pdf-inspector's index.
 
-`src/pdf_comments.rs` pins where each annotation anchors (through the
+`src/document/pdf_comments.rs` pins where each annotation anchors (through the
 CropBox and the turn) and checks that each markup anchor covers its words'
 ink; the comment-rail flow test and the `pdf-comments-*` headless renders use
 it too. To regenerate:

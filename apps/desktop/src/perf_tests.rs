@@ -1,7 +1,7 @@
 //! Explicit host CPU measurements, not display latency or visual acceptance.
 use crate::{
-    document_view::tests::{boot, close_document, open_document},
-    search_session::{CloseMarkdownSearch, FindMarkdown, FindNextMarkdown},
+    document::search_session::{CloseMarkdownSearch, FindMarkdown, FindNextMarkdown},
+    document::tests::{boot, close_document, open_document},
 };
 use gpui::{Entity, TestAppContext, VisualTestContext, px};
 use mdoc_editor::SearchIndex;

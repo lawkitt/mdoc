@@ -1,8 +1,8 @@
 use crate::{
     app::models,
     app::updater,
-    document_view::{ExportMarkdown, Save},
-    markdown_search::SearchInput,
+    document::markdown_search::SearchInput,
+    document::{ExportMarkdown, Save},
     ui,
     ui::style::Theme,
     workspace::{Close, Import, New, Open, SwitchDocument, SwitchDocumentBack},

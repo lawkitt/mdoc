@@ -3,7 +3,7 @@
 //! virtualized, so only visible rows are drawn and focusable.
 use super::{Event, Panel, quiet_control};
 use crate::{
-    markdown_search::{self, SearchInput},
+    document::markdown_search::{self, SearchInput},
     ui,
     ui::style::{self, Theme},
 };

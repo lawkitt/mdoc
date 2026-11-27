@@ -5,7 +5,7 @@
 use super::Workspace;
 use crate::{
     commands::shortcuts::{self, Group},
-    markdown_search::{SearchInput, SearchInputEvent},
+    document::markdown_search::{SearchInput, SearchInputEvent},
     ui,
 };
 use gpui::{
