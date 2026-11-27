@@ -268,17 +268,18 @@ class DocumentViewModel(
     // A selection copied by hand (#1209): the user's own copy, never refused.
 
     /** The selection's copy menu, from what the core finds in it; Copy with names alone when the check fails. */
-    suspend fun selectionMenu(range: SourceRange): List<SelectionAction> {
+    suspend fun selectionMenu(range: SourceRange): List<SelectionAction> = onMainThread {
         val seen = mutable.value.snapshot.opened
         val check = withContext(Dispatchers.IO) { runCatching { session.checkSelection(range, seen) }.getOrNull() }
-        return SelectionAction.menu(check)
+        // Back on the main thread: the caller goes on with the view's menu.
+        SelectionAction.menu(check)
     }
 
     /** What to put on the clipboard for `action` on `range`, which read `shown`, and whether it is marked; null, with why shown, on failure. */
-    suspend fun copySelection(range: SourceRange, shown: String, action: SelectionAction): SelectionCopy? {
+    suspend fun copySelection(range: SourceRange, shown: String, action: SelectionAction): SelectionCopy? = onMainThread {
         // Selected in the snapshot shown: refused if a move opened the document again since.
         val seen = mutable.value.snapshot.opened
-        return withContext(Dispatchers.IO) { runCatching { session.copySelection(range, shown, action, seen) } }
+        withContext(Dispatchers.IO) { runCatching { session.copySelection(range, shown, action, seen) } }
             .onSuccess { copied -> copied.snapshot?.let { next -> mutable.update { it.copy(snapshot = next) } } }
             .onFailure(::show)
             .getOrNull()
@@ -296,8 +297,9 @@ class DocumentViewModel(
     // Hand-off
 
     /** Copy for AI's text; null when refused, and the refusal's dialog shows with its step. */
-    suspend fun handOff(): HandOff? =
+    suspend fun handOff(): HandOff? = onMainThread {
         withContext(Dispatchers.IO) { runCatching { session.copyForAi() } }.onFailure(::refused).getOrNull()
+    }
 
     // Refusals in plain words (#1209 decisions 13 and 14)
 
@@ -352,13 +354,13 @@ class DocumentViewModel(
      * Replace N does, then Copy for AI's text, through the same check;
      * null when either refuses, and why shows.
      */
-    suspend fun replaceAndHandOff(): HandOff? {
+    suspend fun replaceAndHandOff(): HandOff? = onMainThread {
         mutable.update { it.copy(refusal = null) }
         // A failed replace or save is a refusal in plain words too, never the core's.
         val replaced = withContext(Dispatchers.IO) { runCatching { session.replaceAllPending() } }
-            .onFailure { refused(AppError.HandOffRefused(HandOffRefusal.Failed)) }.getOrNull() ?: return null
+            .onFailure { refused(AppError.HandOffRefused(HandOffRefusal.Failed)) }.getOrNull() ?: return@onMainThread null
         mutable.update { it.copy(snapshot = replaced) }
-        return handOff()
+        handOff()
     }
 
     /** A hand-off tapped: kept here, so the screen made again still knows it. */
@@ -370,13 +372,13 @@ class DocumentViewModel(
      * goes on, or null. Text changed since asks again; a save that fails
      * is a refusal in plain words.
      */
-    suspend fun confirmNamesChecked(): HandOffKind? {
+    suspend fun confirmNamesChecked(): HandOffKind? = onMainThread {
         mutable.update { it.copy(refusal = null) }
         val checked = withContext(Dispatchers.IO) { runCatching { session.confirmNamesChecked() } }
             .onFailure { refused(it as? AppError.HandOffRefused ?: AppError.HandOffRefused(HandOffRefusal.Failed)) }
-            .getOrNull() ?: return null
+            .getOrNull() ?: return@onMainThread null
         mutable.update { it.copy(snapshot = checked) }
-        return mutable.value.tapped
+        mutable.value.tapped
     }
 
     /**
@@ -419,7 +421,7 @@ class DocumentViewModel(
      * wait for the answer armed; null, with why shown, until Ready, and
      * then nothing waits.
      */
-    suspend fun askAi(): HandOff? = handOff()?.also { offer { AskAiWait.asked() } }
+    suspend fun askAi(): HandOff? = onMainThread { handOff()?.also { offer { AskAiWait.asked() } } }
 
     /** Ask AI's chooser started an app; `inFront`: mdoc is resumed. */
     fun askAiChosen(inFront: Boolean) = offer { AskAiWait.chosen(it, inFront) }
@@ -560,6 +562,14 @@ class DocumentViewModel(
             .onSuccess { onDeleted() }
             .onFailure(::show)
     }
+
+    /**
+     * `body` on the main thread, whatever the caller's dispatcher: a screen's
+     * coroutine scope resumes after `withContext(Dispatchers.IO)` on the IO
+     * thread under Compose's test dispatcher, so its writes come back here
+     * explicitly (#1332).
+     */
+    private suspend fun <T> onMainThread(body: suspend () -> T): T = withContext(Dispatchers.Main.immediate) { body() }
 
     /**
      * A core call off the main thread, then its result written into the
