@@ -62,7 +62,10 @@ impl Workspace {
                             let effect = this.sidebar.schedule(false);
                             this.carry_out_sidebar(Some(effect), window, cx);
                         } else {
-                            let focused = this.reveal_focus.contains_focused(window, cx);
+                            let focused = this
+                                .sidebar_controls
+                                .reveal_focus
+                                .contains_focused(window, cx);
                             this.dismiss_reveal(window, cx);
                             if focused {
                                 this.focus_active(window, cx);
@@ -91,15 +94,17 @@ impl Workspace {
     /// slips off the menu onto a row. Rendering a control without its
     /// tooltip is GPUI's one way to dismiss it.
     pub(crate) fn context_menu_open(&self) -> bool {
-        self.document_menu.is_some() || self.project_ui.header_menu.is_some()
+        self.sidebar_controls.document_menu.is_some() || self.project_ui.header_menu.is_some()
     }
     /// A context menu, drag, the pointer, or keyboard focus keeps the reveal open.
     pub(in crate::workspace) fn reveal_held(&self, window: &Window, cx: &App) -> bool {
-        self.document_menu.is_some()
+        self.sidebar_controls.document_menu.is_some()
             || cx.has_active_drag()
-            || self
-                .sidebar
-                .holds(|| self.reveal_focus.contains_focused(window, cx))
+            || self.sidebar.holds(|| {
+                self.sidebar_controls
+                    .reveal_focus
+                    .contains_focused(window, cx)
+            })
     }
     pub(in crate::workspace) fn show_reveal(&mut self, keyboard: bool, cx: &mut Context<Self>) {
         self.sidebar.show(keyboard);
@@ -144,9 +149,18 @@ impl Workspace {
             .sidebar
             .keyboard_may_open(|focus| focus.is_focused(window));
         let focused = [
-            (&self.rail_toggle_focus, &self.panel_toggle_focus),
-            (&self.rail_new_focus, &self.panel_new_focus),
-            (&self.rail_home_focus, &self.panel_home_focus),
+            (
+                &self.sidebar_controls.rail_toggle_focus,
+                &self.sidebar_controls.panel_toggle_focus,
+            ),
+            (
+                &self.sidebar_controls.rail_new_focus,
+                &self.sidebar_controls.panel_new_focus,
+            ),
+            (
+                &self.sidebar_controls.rail_home_focus,
+                &self.sidebar_controls.panel_home_focus,
+            ),
         ]
         .into_iter()
         .find(|(rail, _)| rail.is_focused(window))
@@ -362,7 +376,8 @@ impl Workspace {
     }
     /// The row whose focus handle holds focus.
     pub(in crate::workspace) fn focused_tree_row(&self, window: &Window) -> Option<RowKey> {
-        self.tree_row_focus
+        self.sidebar_controls
+            .tree_row_focus
             .borrow()
             .iter()
             .find(|(_, focus)| focus.is_focused(window))
@@ -668,8 +683,8 @@ impl Workspace {
             return;
         };
         self.menu_return = window.focused(cx);
-        self.document_menu = Some((document, at));
-        self.move_menu = Some(tab);
+        self.sidebar_controls.document_menu = Some((document, at));
+        self.sidebar_controls.move_menu = Some(tab);
         window.focus(&self.menu_focus, cx);
         cx.notify();
     }
@@ -700,8 +715,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.document_menu = None;
-        self.move_menu = None;
+        self.sidebar_controls.document_menu = None;
+        self.sidebar_controls.move_menu = None;
         if let Some(focus) = self.menu_return.take() {
             window.focus(&focus, cx);
         }
@@ -818,7 +833,7 @@ impl Workspace {
         let stop = self.navigation.go(index);
         self.close_shortcuts(window, cx);
         // A menu belongs to the page it was opened over.
-        self.document_menu = None;
+        self.sidebar_controls.document_menu = None;
         self.project_ui.header_menu = None;
         self.project_ui.ask_menu = None;
         self.menu_return = None;
@@ -869,8 +884,8 @@ impl Workspace {
             return;
         };
         self.switcher = Some(switcher);
-        self.switcher_return = window.focused(cx);
-        window.focus(&self.switcher_focus, cx);
+        self.sidebar_controls.switcher_return = window.focused(cx);
+        window.focus(&self.sidebar_controls.switcher_focus, cx);
         cx.notify();
     }
     /// Show the switcher's pick.
@@ -882,7 +897,7 @@ impl Workspace {
         let Some(switcher) = self.switcher.take() else {
             return;
         };
-        self.switcher_return = None;
+        self.sidebar_controls.switcher_return = None;
         let picked = switcher.picked();
         if self.tabs.contains(picked) {
             self.activate(picked, window, cx);
@@ -938,7 +953,7 @@ impl Workspace {
         if self.switcher.take().is_none() {
             return;
         }
-        if let Some(focus) = self.switcher_return.take() {
+        if let Some(focus) = self.sidebar_controls.switcher_return.take() {
             window.focus(&focus, cx);
         }
         cx.notify();

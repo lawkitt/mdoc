@@ -218,7 +218,10 @@ fn f6_into_the_sidebar_on_home_lands_on_home(cx: &mut TestAppContext) {
     draw(cx);
     let (settings, home_row) = cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        (tabs.settings_focus.clone(), tabs.panel_home_focus.clone())
+        (
+            tabs.settings_focus.clone(),
+            tabs.sidebar_controls.panel_home_focus.clone(),
+        )
     });
     let in_home = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
         cx.update(|window, cx| {
@@ -245,7 +248,7 @@ fn f6_into_the_sidebar_on_home_lands_on_home(cx: &mut TestAppContext) {
     assert!(in_sidebar(&tabs, cx));
     assert!(cx.update(|window, cx| {
         let tabs = tabs.read(cx);
-        home_row.is_focused(window) || tabs.rail_home_focus.is_focused(window)
+        home_row.is_focused(window) || tabs.sidebar_controls.rail_home_focus.is_focused(window)
     }));
 }
 
@@ -432,6 +435,7 @@ fn tab_leaves_the_tree_from_any_row(cx: &mut TestAppContext) {
     let on_row = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
         cx.update(|window, cx| {
             tabs.read(cx)
+                .sidebar_controls
                 .tree_row_focus
                 .borrow()
                 .values()
@@ -701,12 +705,13 @@ fn ctrl_enter_opens_a_document_rows_menu(cx: &mut TestAppContext) {
     key(cx, "ctrl-enter");
     assert_eq!(
         cx.update(|_, cx| {
-            (tabs.read(cx).document_menu.as_ref()).map(|(id, _)| id.as_str().to_string())
+            (tabs.read(cx).sidebar_controls.document_menu.as_ref())
+                .map(|(id, _)| id.as_str().to_string())
         }),
         Some(document)
     );
     key(cx, "escape");
-    assert!(cx.update(|_, cx| tabs.read(cx).document_menu.is_none()));
+    assert!(cx.update(|_, cx| tabs.read(cx).sidebar_controls.document_menu.is_none()));
     assert!(cx.update(|window, _| row.is_focused(window)));
 }
 

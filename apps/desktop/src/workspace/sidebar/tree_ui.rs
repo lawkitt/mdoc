@@ -51,7 +51,8 @@ impl Workspace {
 
     /// The focus handle of row `key`, made on first use.
     pub(in crate::workspace) fn tree_focus(&self, key: &RowKey, cx: &mut App) -> gpui::FocusHandle {
-        self.tree_row_focus
+        self.sidebar_controls
+            .tree_row_focus
             .borrow_mut()
             .entry(key.clone())
             .or_insert_with(|| cx.focus_handle().tab_stop(true))
@@ -152,7 +153,13 @@ impl Workspace {
             .when(cfg!(test), move |v| {
                 v.debug_selector(move || selector.clone())
             })
-            .map(|v| ui::reveal_focus(v.track_focus(&focus), focus, self.sidebar_scroll.clone()))
+            .map(|v| {
+                ui::reveal_focus(
+                    v.track_focus(&focus),
+                    focus,
+                    self.sidebar_controls.sidebar_scroll.clone(),
+                )
+            })
             .key_context("UiControl SidebarRow")
             .tab_index(0)
             .tab_stop(stop.as_ref() == Some(key))
@@ -171,8 +178,8 @@ impl Workspace {
                 match &menu_key {
                     RowKey::Document(id) => {
                         if let Some(id) = VaultId::parse(id) {
-                            this.document_menu = Some((id, at));
-                            this.move_menu = None;
+                            this.sidebar_controls.document_menu = Some((id, at));
+                            this.sidebar_controls.move_menu = None;
                         }
                     }
                     RowKey::Project(id) => this.project_ui.header_menu = Some((id.clone(), at)),
@@ -445,8 +452,8 @@ impl Workspace {
                     // The row keeps no focus of its own from this press.
                     window.prevent_default();
                     window.focus(&this.menu_focus, cx);
-                    this.document_menu = Some((id.clone(), event.position));
-                    this.move_menu = None;
+                    this.sidebar_controls.document_menu = Some((id.clone(), event.position));
+                    this.sidebar_controls.move_menu = None;
                     cx.notify();
                 }
             }),
@@ -558,7 +565,7 @@ impl Workspace {
                     theme,
                     false,
                 )
-                .track_focus(&self.panel_new_focus)
+                .track_focus(&self.sidebar_controls.panel_new_focus)
                 .when(!self.context_menu_open(), |v| {
                     v.tooltip(style::tooltip(
                         crate::commands::shortcuts::tip(
@@ -650,7 +657,7 @@ impl Workspace {
             {
                 let (to, document) = (p.id.clone(), document.clone());
                 // Tab reveals a row scrolled out of the list.
-                let focus = (self.move_row_focus.borrow_mut())
+                let focus = (self.sidebar_controls.move_row_focus.borrow_mut())
                     .entry(p.id.clone())
                     .or_insert_with(|| cx.focus_handle().tab_stop(true))
                     .clone();
@@ -663,7 +670,7 @@ impl Workspace {
                         ui::reveal_focus(
                             v.track_focus(&focus),
                             focus,
-                            self.move_menu_scroll.clone(),
+                            self.sidebar_controls.move_menu_scroll.clone(),
                         )
                     })
                     .on_click(cx.listener(move |this, _, window, cx| {
@@ -678,7 +685,7 @@ impl Workspace {
                 items.push(
                     div()
                         .id("context-move-projects")
-                        .track_scroll(&self.move_menu_scroll)
+                        .track_scroll(&self.sidebar_controls.move_menu_scroll)
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "context-move-projects".into())
                         })
@@ -717,7 +724,10 @@ impl Workspace {
                 );
             }
         }
-        if project.is_none() && !self.moving.contains(document) && self.move_menu.is_none() {
+        if project.is_none()
+            && !self.moving.contains(document)
+            && self.sidebar_controls.move_menu.is_none()
+        {
             let chosen = self.tree.to_delete(document.as_str());
             let label = super::text::delete_documents(chosen.len());
             if !items.is_empty() {

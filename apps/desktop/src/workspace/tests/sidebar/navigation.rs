@@ -264,9 +264,9 @@ fn navigation_buttons_are_keyboard_reachable_in_both_sidebar_layouts(cx: &mut Te
             wait(cx, 250); // settle the rail's keyboard reveal before tabbing
             let target = tabs.read_with(cx, |w, _| {
                 if backwards {
-                    w.back_focus.clone()
+                    w.sidebar_controls.back_focus.clone()
                 } else {
-                    w.forward_focus.clone()
+                    w.sidebar_controls.forward_focus.clone()
                 }
             });
             for _ in 0..32 {
@@ -293,7 +293,9 @@ fn f6_lands_on_the_shown_row_not_back_across_sidebar_layouts(cx: &mut TestAppCon
     tabs.update_in(cx, |w, window, cx| {
         note(w, window, cx);
     });
-    let (back, active) = tabs.read_with(cx, |w, _| (w.back_focus.clone(), w.tabs.active()));
+    let (back, active) = tabs.read_with(cx, |w, _| {
+        (w.sidebar_controls.back_focus.clone(), w.tabs.active())
+    });
     for expanded in [false, true] {
         tabs.update_in(cx, |w, window, cx| {
             w.sidebar.restore(expanded, Some(expanded));
@@ -315,7 +317,10 @@ fn f6_lands_on_the_shown_row_not_back_across_sidebar_layouts(cx: &mut TestAppCon
         } else {
             // The rail has no document rows: its Home row, which reveals.
             let rail = tabs.read_with(cx, |w, _| {
-                (w.rail_home_focus.clone(), w.panel_home_focus.clone())
+                (
+                    w.sidebar_controls.rail_home_focus.clone(),
+                    w.sidebar_controls.panel_home_focus.clone(),
+                )
             });
             assert!(cx.update(|window, _| rail.0.is_focused(window) || rail.1.is_focused(window)));
         }
@@ -446,11 +451,11 @@ fn navigating_closes_the_document_and_project_menus(cx: &mut TestAppContext) {
     let row = tree_row_focus(&tabs, second, cx);
     cx.update(|window, cx| window.focus(&row, cx));
     key(cx, "shift-f10");
-    assert!(tabs.read_with(cx, |w, _| w.document_menu.is_some()));
+    assert!(tabs.read_with(cx, |w, _| w.sidebar_controls.document_menu.is_some()));
     key(cx, back_key());
     tabs.read_with(cx, |w, _| {
         assert_eq!(w.tabs.active(), first);
-        assert!(w.document_menu.is_none());
+        assert!(w.sidebar_controls.document_menu.is_none());
     });
     tabs.update_in(cx, |w, window, cx| {
         w.project_ui.header_menu = Some(("lease".into(), gpui::point(px(10.), px(10.))));

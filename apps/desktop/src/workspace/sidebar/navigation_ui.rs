@@ -11,8 +11,18 @@ impl Workspace {
         let theme = self.theme.get();
         let mut buttons = div().flex().items_center().gap_1();
         for (backwards, id, glyph, focus) in [
-            (true, "workspace-back", "‹", &self.back_focus),
-            (false, "workspace-forward", "›", &self.forward_focus),
+            (
+                true,
+                "workspace-back",
+                "‹",
+                &self.sidebar_controls.back_focus,
+            ),
+            (
+                false,
+                "workspace-forward",
+                "›",
+                &self.sidebar_controls.forward_focus,
+            ),
         ] {
             let enabled = self.navigation_target(backwards, cx).is_some();
             let label = self.navigation_label(backwards, cx);

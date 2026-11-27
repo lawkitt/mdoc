@@ -239,8 +239,8 @@ fn the_move_menu_lists_every_project(cx: &mut TestAppContext) {
         tabs.tab_document(tabs.tabs.active(), cx).unwrap()
     });
     tabs.update(cx, |tabs, cx| {
-        tabs.document_menu = Some((document, gpui::point(px(40.), px(200.))));
-        tabs.move_menu = None;
+        tabs.sidebar_controls.document_menu = Some((document, gpui::point(px(40.), px(200.))));
+        tabs.sidebar_controls.move_menu = None;
         cx.notify();
     });
     assert!(shown(cx, "context-delete-document"));
@@ -307,7 +307,10 @@ fn the_move_menu_closes_when_its_document_leaves(cx: &mut TestAppContext) {
     assert!(!shown(cx, "document-context-menu"));
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert!(tabs.document_menu.is_none() && tabs.move_menu.is_none());
+        assert!(
+            tabs.sidebar_controls.document_menu.is_none()
+                && tabs.sidebar_controls.move_menu.is_none()
+        );
     });
 }
 
@@ -333,7 +336,7 @@ fn tab_reveals_the_move_menus_rows(cx: &mut TestAppContext) {
         draw(cx);
         let focused = cx.update(|window, cx| {
             let tabs = tabs.read(cx);
-            (tabs.move_row_focus.borrow().iter())
+            (tabs.sidebar_controls.move_row_focus.borrow().iter())
                 .find(|(_, focus)| focus.is_focused(window))
                 .map(|(id, _)| id.clone())
         });
