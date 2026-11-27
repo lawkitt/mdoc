@@ -2,6 +2,7 @@
 //! line per pseudonymization decision; a click travels the undo history to
 //! it. Keyboard reach and Esc follow the More menu.
 use super::DocumentView;
+use crate::document::text;
 use crate::ui;
 use gpui::{App, Context, FocusHandle, Window, div, prelude::*, px};
 use mdoc_pii::decisions::EntryState;
@@ -37,11 +38,6 @@ impl HistoryPopover {
         }
     }
 }
-
-/// The footer note: travel takes text edits with it.
-pub(crate) const FOOTER: &str = "Text edits made between decisions are undone with them.";
-/// A row whose undo point the editor's undo limit dropped.
-pub(crate) const PAST_LIMIT: &str = "Older than the undo limit";
 
 impl DocumentView {
     /// The palette's What you did, and the clock button: open the popover
@@ -80,7 +76,7 @@ impl DocumentView {
             .child(
                 ui::header_menu_icon(
                     "header-history",
-                    "What you did",
+                    text::WHAT_YOU_DID,
                     ui::Icon::Clock,
                     theme,
                     open,
@@ -124,8 +120,8 @@ impl DocumentView {
                 let reachable = state != EntryState::PastLimit;
                 let note = match state {
                     EntryState::Done => None,
-                    EntryState::Undone => Some("Undone"),
-                    EntryState::PastLimit => Some(PAST_LIMIT),
+                    EntryState::Undone => Some(text::UNDONE),
+                    EntryState::PastLimit => Some(text::PAST_LIMIT),
                 };
                 let id = format!("decision-{i}");
                 let focus = handles[i].clone().tab_stop(reachable);
@@ -137,9 +133,9 @@ impl DocumentView {
                         None => format!("{label} · {time}"),
                     })
                     .aria_description(match state {
-                        EntryState::Done => "Undo back to just after this",
-                        EntryState::Undone => "Redo up to here",
-                        EntryState::PastLimit => PAST_LIMIT,
+                        EntryState::Done => text::UNDO_BACK_TO_HERE,
+                        EntryState::Undone => text::REDO_UP_TO_HERE,
+                        EntryState::PastLimit => text::PAST_LIMIT,
                     })
                     .key_context("UiControl")
                     .tab_index(0)
@@ -195,7 +191,7 @@ impl DocumentView {
                         .track_focus(&self.history.menu)
                         .key_context("UiPanel UiMenu")
                         .role(gpui::Role::Menu)
-                        .aria_label("What you did")
+                        .aria_label(text::WHAT_YOU_DID)
                         .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
                             ui::cycle(window, cx, Some(&this.history.menu), false);
                             cx.stop_propagation();
@@ -237,7 +233,7 @@ impl DocumentView {
                                 .px(px(12.))
                                 .pt_1()
                                 .font_weight(gpui::FontWeight::MEDIUM)
-                                .child("What you did"),
+                                .child(text::WHAT_YOU_DID),
                         )
                         .when(empty, |v| {
                             v.child(
@@ -245,7 +241,7 @@ impl DocumentView {
                                     .px(px(12.))
                                     .pt_1()
                                     .text_color(p.header_muted)
-                                    .child("Your pseudonymization decisions appear here."),
+                                    .child(text::NO_DECISIONS_YET),
                             )
                         })
                         .child(
@@ -268,7 +264,7 @@ impl DocumentView {
                                 .pb_1()
                                 .text_size(px(12.))
                                 .text_color(p.header_muted)
-                                .child(FOOTER),
+                                .child(text::FOOTER),
                         ),
                 ),
         )

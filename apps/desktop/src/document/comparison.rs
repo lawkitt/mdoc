@@ -1,4 +1,5 @@
 //! Immutable local QA input. These results never enter the document/review owners.
+use crate::document::text;
 use mdoc_import::ocr;
 use mdoc_store::settings::{OcrConfig, PiiConfig};
 use serde::{Deserialize, Serialize};
@@ -37,13 +38,13 @@ impl Input {
             .read_to_end(&mut bytes)
             .map_err(|e| e.to_string())?;
         if bytes.len() > 256 * 1024 * 1024 {
-            return Err("PDF comparison supports up to 256 MiB.".into());
+            return Err(text::PDF_TOO_LARGE.into());
         }
         if !bytes[..bytes.len().min(1024)]
             .windows(5)
             .any(|b| b == b"%PDF-")
         {
-            return Err("OCR comparison requires an original PDF.".into());
+            return Err(text::NEEDS_AN_ORIGINAL_PDF.into());
         }
         Ok(Self::Pdf(Arc::new(bytes)))
     }
@@ -62,24 +63,19 @@ impl Config {
     }
     pub fn summary(&self) -> String {
         match self {
-            Self::Ocr(c) => format!(
-                "{} · {} DPI · minimum confidence {} · Force · CPU",
-                c.model.name(),
-                c.dpi,
-                c.minimum_confidence
-            ),
-            Self::Pii(c) => format!("{} · threshold {} · CPU", c.model.name(), c.threshold),
+            Self::Ocr(c) => text::ocr_summary(c.model.name(), c.dpi, c.minimum_confidence),
+            Self::Pii(c) => text::pii_summary(c.model.name(), c.threshold),
         }
     }
     pub fn identity(&self) -> serde_json::Value {
         match self {
             Self::Ocr(c) => {
                 let m = mdoc_import::ocr::manifest::for_model(c.model);
-                serde_json::json!({"model":m.id,"revision":m.revision,"mode":"Force","runtime":"ONNX Runtime 1.32.0","renderer":"PDFium native-v7988","artifacts":m.artifacts.iter().map(|a|serde_json::json!({"file":a.filename,"sha256":a.sha256})).collect::<Vec<_>>()})
+                serde_json::json!({"model":m.id,"revision":m.revision,"mode":"Force","runtime":"ONNX Runtime 1.32.0","renderer":text::RENDERER,"artifacts":m.artifacts.iter().map(|a|serde_json::json!({"file":a.filename,"sha256":a.sha256})).collect::<Vec<_>>()})
             }
             Self::Pii(c) => {
                 let m = mdoc_detect::manifest_for(c.model);
-                serde_json::json!({"model":m.id,"revision":m.revision,"repository":m.repository,"runtime":"ONNX Runtime 1.32.0","engine":c.model.engine(),"model_card":c.model.hugging_face_url(),"languages":c.model.languages(),"description":c.model.description(),"confidence":"GLiNER2 span confidence","execution":"CPU","threads":4,"artifacts":m.files.iter().map(|a|serde_json::json!({"file":a.path,"sha256":a.sha256})).collect::<Vec<_>>()})
+                serde_json::json!({"model":m.id,"revision":m.revision,"repository":m.repository,"runtime":"ONNX Runtime 1.32.0","engine":c.model.engine(),"model_card":c.model.hugging_face_url(),"languages":c.model.languages(),"description":c.model.description(),"confidence":text::SPAN_CONFIDENCE,"execution":"CPU","threads":4,"artifacts":m.files.iter().map(|a|serde_json::json!({"file":a.path,"sha256":a.sha256})).collect::<Vec<_>>()})
             }
         }
     }
@@ -104,9 +100,27 @@ impl ResultRecord {
     }
     pub fn measurements(&self) -> String {
         if let Some(count) = self.output.get("count") {
-            return format!("{count} candidates · confidence and count are not accuracy scores");
+            return text::candidates(count);
         }
-        self.output.get("pages").and_then(|v|v.as_array()).map(|pages|pages.iter().map(|p|format!("Page {} · render {} ms · recognition {} ms · preparation {} ms · warnings {}",p["page"],p["render_ms"],p["ocr_ms"],p["assembly_ms"],warning_text(&p["warnings"]))).collect::<Vec<_>>().join("\n")).unwrap_or_default()
+        self.output
+            .get("pages")
+            .and_then(|v| v.as_array())
+            .map(|pages| {
+                pages
+                    .iter()
+                    .map(|p| {
+                        text::page_measurements(
+                            &p["page"],
+                            &p["render_ms"],
+                            &p["ocr_ms"],
+                            &p["assembly_ms"],
+                            warning_text(&p["warnings"]),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default()
     }
     pub fn text(&self, raw: bool) -> String {
         if let Some(error) = &self.error {
@@ -127,13 +141,12 @@ impl ResultRecord {
                 predictions
                     .iter()
                     .map(|p| {
-                        format!(
-                            "{}  [{}]  {:.3}  bytes {}–{}",
+                        text::prediction(
                             p["text"].as_str().unwrap_or(""),
                             p["category"].as_str().unwrap_or(""),
                             p["confidence"].as_f64().unwrap_or_default(),
-                            p["start"],
-                            p["end"]
+                            &p["start"],
+                            &p["end"],
                         )
                     })
                     .collect::<Vec<_>>()
@@ -155,14 +168,14 @@ pub fn parse_pages(text: &str) -> Result<Option<BTreeSet<u32>>, String> {
             let n = part.parse::<u32>();
             (n.clone(), n)
         };
-        let from = from.map_err(|_| "Use page numbers such as 1, 3-5.".to_string())?;
-        let to = to.map_err(|_| "Use page numbers such as 1, 3-5.".to_string())?;
+        let from = from.map_err(|_| text::USE_PAGE_NUMBERS.to_string())?;
+        let to = to.map_err(|_| text::USE_PAGE_NUMBERS.to_string())?;
         if from == 0 || from > to || to - from > 10000 {
-            return Err("Invalid page range; use positive, ascending page numbers.".into());
+            return Err(text::INVALID_PAGE_RANGE.into());
         }
         pages.extend(from..=to);
         if pages.len() > 10000 {
-            return Err("Page selection is too large.".into());
+            return Err(text::TOO_MANY_PAGES.into());
         }
     }
     Ok(Some(pages))
@@ -176,7 +189,7 @@ pub fn run(
     let started = Instant::now();
     let output = (|| {
         if cancel.load(Ordering::Relaxed) {
-            return Err("Comparison cancelled.".into());
+            return Err(text::COMPARISON_CANCELLED.into());
         }
         match (input, &config) {
             (Input::Markdown(source), Config::Pii(c)) => {
@@ -184,7 +197,7 @@ pub fn run(
                     mdoc_detect::scan_reserved(source, cancel, c).map_err(|e| e.to_string())?;
                 let predictions=detections.iter().map(|d|serde_json::json!({"text":&source[d.range.clone()],"category":format!("{:?}",d.category),"start":d.range.start,"end":d.range.end,"confidence":d.score})).collect::<Vec<_>>();
                 Ok(
-                    serde_json::json!({"predictions":predictions,"count":predictions.len(),"warnings":[c.model.evidence(),c.model.languages(),c.model.description(),"Confidence and candidate count are not accuracy scores."]}),
+                    serde_json::json!({"predictions":predictions,"count":predictions.len(),"warnings":[c.model.evidence(),c.model.languages(),c.model.description(),text::NOT_ACCURACY_SCORES]}),
                 )
             }
             (Input::Pdf(bytes), Config::Ocr(c)) => {
@@ -198,14 +211,13 @@ pub fn run(
                     .recognition
                     .iter()
                     .map(|p| {
-                        format!(
-                            "Page {}\n{}",
+                        text::page_text(
                             p.page_number,
                             p.spans
                                 .iter()
                                 .map(|s| s.text.as_str())
                                 .collect::<Vec<_>>()
-                                .join("\n")
+                                .join("\n"),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -216,14 +228,14 @@ pub fn run(
                     serde_json::json!({"recognition_text":recognition_text,"recognition":raw,"prepared_markdown":result.markdown,"pages":prepared,"warnings":c.model.evidence(),"render_ms":result.render_time_ms,"ocr_ms":result.ocr_time_ms}),
                 )
             }
-            _ => Err("Configuration does not match the captured input.".into()),
+            _ => Err(text::CONFIGURATION_MISMATCH.into()),
         }
     })();
     let (output, error) = match output {
         Ok(output) if !cancel.load(Ordering::Relaxed) => (output, None),
         Ok(_) => (
             serde_json::Value::Null,
-            Some("Comparison cancelled.".into()),
+            Some(text::COMPARISON_CANCELLED.into()),
         ),
         Err(e) => (serde_json::Value::Null, Some(e)),
     };
@@ -244,7 +256,7 @@ pub fn export_path_is_source(path: &Path, sources: &[PathBuf]) -> bool {
 }
 pub fn save_report(path: &Path, records: &[ResultRecord]) -> Result<(), String> {
     let data = serde_json::json!({"version":1,"application":"mdoc","build":env!("CARGO_PKG_VERSION"),"profile":if cfg!(debug_assertions){"debug"}else{"release"},"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"runs":records});
-    let parent = path.parent().ok_or("Invalid report path")?;
+    let parent = path.parent().ok_or(text::INVALID_REPORT_PATH)?;
     let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
     serde_json::to_writer_pretty(&mut file, &data).map_err(|e| e.to_string())?;
     file.flush().map_err(|e| e.to_string())?;

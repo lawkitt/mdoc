@@ -5,6 +5,7 @@
 //! bar of Zed's `search` crate (https://github.com/zed-industries/zed),
 //! GPL-3.0-or-later; see THIRD-PARTY-LICENSES.html.
 use crate::document::DocumentView;
+use crate::document::text::{self, replace_all_status};
 use crate::{
     ui,
     ui::style::{self, Theme},
@@ -178,22 +179,6 @@ fn replace_skip(search_match: &SearchMatch, applied: &[Range<usize>]) -> Option<
         .get(first)
         .is_some_and(|alias| alias.start < range.end)
         .then_some(ReplaceSkip::Alias)
-}
-
-fn replace_all_status(replaced: usize, formatting: usize, alias: usize) -> String {
-    let mut status = format!("Replaced {replaced}");
-    let mut skipped = Vec::new();
-    if formatting > 0 {
-        skipped.push(format!("{formatting} (formatting)"));
-    }
-    if alias > 0 {
-        skipped.push(format!("{alias} (alias)"));
-    }
-    if !skipped.is_empty() {
-        status.push_str(" · skipped ");
-        status.push_str(&skipped.join(" · "));
-    }
-    status
 }
 
 impl DocumentView {
@@ -413,8 +398,8 @@ impl DocumentView {
             Some(skip) => {
                 self.search.status = Some(
                     match skip {
-                        ReplaceSkip::Formatting => "Skipped: crosses formatting",
-                        ReplaceSkip::Alias => "Skipped: alias, change it in Replacements",
+                        ReplaceSkip::Formatting => text::SKIPPED_FORMATTING,
+                        ReplaceSkip::Alias => text::SKIPPED_ALIAS,
                     }
                     .into(),
                 );
@@ -829,34 +814,6 @@ pub(super) const fn chord(mac: &'static str, other: &'static str) -> &'static st
         mac
     } else {
         other
-    }
-}
-
-/// The find bar's counter: what it shows ("14 / 16") and what a screen reader
-/// says ("Match 14 of 16").
-pub(crate) fn find_counter(
-    empty_query: bool,
-    searching: bool,
-    active: Option<usize>,
-    matches: usize,
-) -> (String, gpui::SharedString) {
-    if empty_query {
-        ("0 / 0".into(), "No search".into())
-    } else if searching {
-        ("Searching…".into(), "Searching…".into())
-    } else if matches == 0 {
-        ("0 matches".into(), "No matches".into())
-    } else {
-        let position = active.map_or(0, |index| index + 1);
-        let spoken = if position == 0 {
-            format!(
-                "{matches} {}",
-                if matches == 1 { "match" } else { "matches" }
-            )
-        } else {
-            ui::position_announcement("Match", position, matches)
-        };
-        (format!("{position} / {matches}"), spoken.into())
     }
 }
 
