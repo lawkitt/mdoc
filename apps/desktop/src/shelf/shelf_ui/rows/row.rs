@@ -7,7 +7,10 @@
 
 use super::{ShelfRows, ShelfRowsEvent};
 use crate::{
-    shelf::{Preview, ShelfDocument},
+    shelf::{
+        Preview, ShelfDocument,
+        text::{self, ago, breakdown, words},
+    },
     ui,
     ui::style::{self, Theme},
 };
@@ -16,6 +19,7 @@ use gpui::{
     MouseDownEvent, MouseMoveEvent, SharedString, StyledText, TextRun, TextStyle, Window, div,
     prelude::*, px,
 };
+#[cfg(test)]
 use mdoc_pii::Category;
 use std::{ops::Range, time::SystemTime};
 
@@ -45,89 +49,6 @@ pub(super) fn height(document: &ShelfDocument) -> f32 {
         READY_ROW
     } else {
         WAITING_ROW
-    }
-}
-
-/// "just now", "5 min ago", "3 h ago", "yesterday", then a date.
-pub(crate) fn ago(edited: SystemTime, now: SystemTime) -> String {
-    let seconds = now
-        .duration_since(edited)
-        .map_or(0, |elapsed| elapsed.as_secs());
-    if seconds < 60 {
-        return "just now".into();
-    }
-    if seconds < 3600 {
-        return format!("{} min ago", seconds / 60);
-    }
-    let edited = chrono::DateTime::<chrono::Local>::from(edited);
-    let now = chrono::DateTime::<chrono::Local>::from(now);
-    let (day, today) = (edited.date_naive(), now.date_naive());
-    if day == today {
-        format!("{} h ago", seconds / 3600)
-    } else if today.pred_opt() == Some(day) {
-        "yesterday".into()
-    } else if chrono::Datelike::year(&day) == chrono::Datelike::year(&today) {
-        edited.format("%-d %b").to_string()
-    } else {
-        edited.format("%-d %b %Y").to_string()
-    }
-}
-
-/// "1,240 words".
-pub(crate) fn words(count: usize) -> String {
-    let digits = count.to_string();
-    let mut grouped = String::new();
-    for (i, digit) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            grouped.push(',');
-        }
-        grouped.push(digit);
-    }
-    format!("{grouped} {}", if count == 1 { "word" } else { "words" })
-}
-
-fn category_noun(category: Category, count: usize) -> &'static str {
-    let one = count == 1;
-    match category {
-        Category::Person if one => "person",
-        Category::Person => "people",
-        Category::Organization if one => "organization",
-        Category::Organization => "organizations",
-        Category::Email if one => "email",
-        Category::Email => "emails",
-        Category::Url if one => "web address",
-        Category::Url => "web addresses",
-        Category::Phone if one => "phone number",
-        Category::Phone => "phone numbers",
-        Category::Address if one => "address",
-        Category::Address => "addresses",
-        Category::Identity if one => "ID",
-        Category::Identity => "IDs",
-        Category::Tax if one => "tax ID",
-        Category::Tax => "tax IDs",
-        Category::Bank if one => "bank account",
-        Category::Bank => "bank accounts",
-        Category::CaseNumber if one => "case number",
-        Category::CaseNumber => "case numbers",
-        Category::Date if one => "date",
-        Category::Date => "dates",
-        Category::Other => "other",
-    }
-}
-
-/// What hovering "24 replaced" lists: the distinct names those mentions
-/// are, "14 names: 6 people · 4 organizations · 4 IDs". Each count keeps
-/// its noun on its line ("1 phone number"): a long list wraps at the dots.
-pub(crate) fn breakdown(replaced: &[(Category, usize)]) -> String {
-    let names: usize = replaced.iter().map(|(_, n)| n).sum();
-    let categories = replaced
-        .iter()
-        .map(|(category, n)| format!("{n} {}", category_noun(*category, *n)).replace(' ', "\u{a0}"))
-        .collect::<Vec<_>>()
-        .join(" · ");
-    match names {
-        1 => format!("1\u{a0}name: {categories}"),
-        n => format!("{n}\u{a0}names: {categories}"),
     }
 }
 
@@ -411,7 +332,7 @@ impl ShelfRows {
                 header.child(
                     ui::focus_ring(("shelf-copy", index), theme)
                         .role(gpui::Role::Button)
-                        .aria_label("Copy for AI")
+                        .aria_label(text::COPY_FOR_AI)
                         .key_context("UiControl")
                         .tab_stop(true)
                         .flex_shrink_0()
@@ -442,7 +363,7 @@ impl ShelfRows {
                         .child(if copied {
                             crate::ui::text::COPIED
                         } else {
-                            "Copy for AI"
+                            text::COPY_FOR_AI
                         })
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
@@ -503,7 +424,7 @@ impl ShelfRows {
         let count = (ready && replaced > 0).then(|| {
             let count = div()
                 .id(("shelf-replaced", index))
-                .child(format!("{replaced} replaced"))
+                .child(text::replaced_label(replaced))
                 .tooltip(style::tooltip(breakdown(&document.replaced), theme));
             #[cfg(all(
                 debug_assertions,
@@ -542,12 +463,12 @@ impl ShelfRows {
             .whitespace_nowrap()
             // Listed ready, gone or kept from AI by the time it was asked.
             .when(ready && refused, |line| {
-                line.child(label("Not copied", theme.proposed()).mr(px(6.)))
+                line.child(label(text::NOT_COPIED, theme.proposed()).mr(px(6.)))
             })
             .when(!ready, |line| {
                 let state = document.state();
                 let state = if refused {
-                    format!("Not copied · {state}")
+                    text::not_copied(state)
                 } else {
                     state
                 };

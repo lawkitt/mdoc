@@ -77,14 +77,11 @@ mod tests {
     /// Owner folders (and root files) not checked for sentences yet. An owner
     /// item that gives its folder a `text.rs` deletes its line here.
     const EXEMPT: &[&str] = &[
-        "ai",
-        "app",
         "commands",
         "document",
         "main",
         "review",
         "settings",
-        "shelf",
         "workspace",
     ];
 
