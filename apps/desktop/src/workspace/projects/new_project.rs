@@ -20,6 +20,8 @@ use crate::{
 use gpui::{AnyElement, Context, Entity, FocusHandle, Focusable, Window, div, prelude::*, px};
 use std::collections::HashSet;
 
+use super::text;
+
 /// The name question while it shows: view state only.
 pub(in crate::workspace) struct NewProjectSheet {
     input: Entity<SearchInput>,
@@ -68,8 +70,8 @@ impl Workspace {
             SearchInput::new(cx)
                 .with_theme(self.theme.clone())
                 .with_key_context("ProjectName")
-                .with_placeholder("Project name")
-                .with_label("Name")
+                .with_placeholder(text::PROJECT_NAME)
+                .with_label(text::NAME)
         });
         let changes = cx.subscribe(&input, |_, _, _: &SearchInputEvent, cx| cx.notify());
         let focus = input.read(cx).focus_handle(cx);
@@ -160,9 +162,7 @@ impl Workspace {
             // The sheet has gone: the bell opens with the reason, even if
             // it was closed over an earlier notice.
             Err(error) => {
-                let effect = self
-                    .notices
-                    .post_now(format!("Could not create “{name}”: {error}"));
+                let effect = self.notices.post_now(text::could_not_create(&name, &error));
                 self.carry_out_notices(effect);
             }
         }
@@ -209,7 +209,7 @@ impl Workspace {
                                 v.debug_selector(|| "new-project-sheet".into())
                             })
                             .role(gpui::Role::Dialog)
-                            .aria_label("New Project")
+                            .aria_label(text::NEW_PROJECT)
                             // Window commands wait until the sheet is answered.
                             .on_action(|_: &Close, _, _| {})
                             .on_action(|_: &New, _, _| {})
@@ -264,11 +264,8 @@ impl Workspace {
                             .flex()
                             .flex_col()
                             .gap_3()
-                            .child(ui::card_title("New Project"))
-                            .child(ui::card_text(
-                                "Documents you add from its page land in it.",
-                                theme,
-                            ))
+                            .child(ui::card_title(text::NEW_PROJECT))
+                            .child(ui::card_text(text::NEW_PROJECT_NOTE, theme))
                             .child(
                                 div()
                                     .border_1()
@@ -303,7 +300,7 @@ impl Workspace {
                                     .child(
                                         ui::primary_button(
                                             "new-project-create",
-                                            "Create",
+                                            text::CREATE,
                                             theme,
                                             named,
                                         )
@@ -355,7 +352,7 @@ pub(in crate::workspace) fn unused_name(name: &str, taken: &HashSet<String>) -> 
         return name.to_string();
     }
     (2..)
-        .map(|n| format!("{name} {n}"))
+        .map(|n| text::numbered(name, n))
         .find(|candidate| !taken.contains(candidate))
         .unwrap_or_default()
 }

@@ -6,7 +6,7 @@ use crate::workspace::{
     Close, Import, New, Open, OpenPalette, OpenProject, PasteAiResponse, PseudonymizeClipboard,
     RetryDocument, Settings, SwitchDocument, SwitchDocumentBack, ToggleSidebar, Workspace,
     palette::shortcuts_ui::ShowShortcuts,
-    projects::folder_sheet::{CAP, CAP_NOTE, DroppedFolder, Pending, Sheet, Status, Target},
+    projects::folder_sheet::{CAP, DroppedFolder, Pending, Sheet, Status, Target},
 };
 use crate::{ui, ui::style};
 use gpui::{
@@ -15,6 +15,8 @@ use gpui::{
 };
 use mdoc_vault::NewProject;
 use std::path::{Path, PathBuf};
+
+use super::text;
 
 /// A dropped folder's new Project, waiting for its turn on the writer.
 pub(in crate::workspace) struct FolderProject {
@@ -323,10 +325,8 @@ impl Workspace {
                 self.fill_folder_project(sheet, id, window, cx);
             }
             Err(error) => {
-                self.notices.post(format!(
-                    "“{}” could not become a Project: {error}",
-                    sheet.name()
-                ));
+                self.notices
+                    .post(text::could_not_become_project(sheet.name(), &error));
                 self.open_ticked(&sheet, None, window, cx);
                 self.show_next_folder(window, cx);
             }
@@ -473,7 +473,7 @@ impl Workspace {
         let rows = sheet.rows().iter().enumerate().map(|(index, row)| {
             let status = row.status.label();
             let spoken = match &status {
-                Some(status) => format!("{}, {status}", row.name),
+                Some(status) => text::row_label(&row.name, status),
                 None => row.name.clone(),
             };
             ui::focus_ring(("folder-row", index), theme)
@@ -552,11 +552,11 @@ impl Workspace {
         });
         let ticked = sheet.ticked_count();
         let total = sheet.rows().len();
-        let count = format!("{ticked} of {total} selected");
+        let count = text::selected(ticked, total);
         let (note, refused) = if sheet.refused() {
-            (format!("{count}. {CAP_NOTE}."), true)
+            (text::with_cap_note(&count), true)
         } else if sheet.over_cap() {
-            (format!("{count}. {CAP_NOTE}."), false)
+            (text::with_cap_note(&count), false)
         } else {
             (count, false)
         };
@@ -583,7 +583,7 @@ impl Workspace {
                         ui::panel("folder-sheet", theme)
                             .when(cfg!(test), |v| v.debug_selector(|| "folder-sheet".into()))
                             .role(gpui::Role::Dialog)
-                            .aria_label(format!("Open folder “{}”", sheet.name()))
+                            .aria_label(text::open_folder(sheet.name()))
                             // Window commands wait until the sheet is answered.
                             .on_action(|_: &Close, _, _| {})
                             .on_action(|_: &New, _, _| {})
@@ -629,13 +629,13 @@ impl Workspace {
                             .flex()
                             .flex_col()
                             .gap_3()
-                            .child(ui::card_title(format!("“{}”", sheet.name())))
+                            .child(ui::card_title(text::quoted_name(sheet.name())))
                             .children(sheet.skipped().map(|s| ui::card_text(s.to_string(), theme)))
                             .child(
                                 div()
                                     .id("folder-sheet-list")
                                     .role(gpui::Role::List)
-                                    .aria_label("Files")
+                                    .aria_label(text::FILES)
                                     .track_scroll(&focus.scroll)
                                     .overflow_y_scroll()
                                     .max_h(list_height)
@@ -685,7 +685,7 @@ impl Workspace {
                                     .child(
                                         ui::action_control(
                                             "folder-open-files",
-                                            "Open files",
+                                            text::OPEN_FILES,
                                             theme,
                                             enabled,
                                             false,

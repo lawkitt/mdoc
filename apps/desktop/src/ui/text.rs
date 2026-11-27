@@ -89,7 +89,6 @@ mod tests {
         "shelf",
         "workspace/ai",
         "workspace/headless_renders",
-        "workspace/projects",
         "workspace/replies",
         "workspace/saving",
         "workspace/shelf_source",

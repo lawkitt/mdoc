@@ -21,17 +21,19 @@ use mdoc_store::document_id::{DocumentId, VaultId};
 use mdoc_vault::{Colour, DocumentSummary, Project, ReplySummary, SourceKind};
 use std::{cell::RefCell, collections::HashMap};
 
+use super::text;
+
 /// A swatch's name, as the page reads it out.
 pub(crate) fn colour_name(colour: Colour) -> &'static str {
     match colour {
-        Colour::Red => "Red",
-        Colour::Orange => "Orange",
-        Colour::Amber => "Amber",
-        Colour::Green => "Green",
-        Colour::Teal => "Teal",
-        Colour::Blue => "Blue",
-        Colour::Violet => "Violet",
-        Colour::Pink => "Pink",
+        Colour::Red => text::RED,
+        Colour::Orange => text::ORANGE,
+        Colour::Amber => text::AMBER,
+        Colour::Green => text::GREEN,
+        Colour::Teal => text::TEAL,
+        Colour::Blue => text::BLUE,
+        Colour::Violet => text::VIOLET,
+        Colour::Pink => text::PINK,
     }
 }
 
@@ -55,10 +57,10 @@ impl Segment {
 
     fn label(self) -> &'static str {
         match self {
-            Segment::Documents => "Documents",
-            Segment::Replies => "Replies",
-            Segment::Names => "Names",
-            Segment::Activity => "AI activity",
+            Segment::Documents => text::DOCUMENTS,
+            Segment::Replies => text::REPLIES,
+            Segment::Names => text::NAMES,
+            Segment::Activity => text::AI_ACTIVITY,
         }
     }
 
@@ -249,11 +251,11 @@ impl Workspace {
                 cx.notify();
             }));
         for (key, label, place) in [
-            ("project-action-rename", "Rename", Place::Rename),
-            ("project-action-colour", "Colour", Place::Colour),
+            ("project-action-rename", text::RENAME, Place::Rename),
+            ("project-action-colour", text::COLOUR, Place::Colour),
             (
                 "project-action-categories",
-                "Categories to detect",
+                text::CATEGORIES_TO_DETECT,
                 Place::Categories,
             ),
         ] {
@@ -270,7 +272,7 @@ impl Workspace {
         // Its Markdown and originals as plain files (#1091 Decision 22).
         let export = id.clone();
         menu = menu.child(
-            ui::control("project-action-export", "Export Project…", theme, true)
+            ui::control("project-action-export", text::EXPORT_PROJECT, theme, true)
                 .when(cfg!(test), |v| {
                     v.debug_selector(|| "project-action-export".into())
                 })
@@ -281,7 +283,7 @@ impl Workspace {
         );
         let delete = id.clone();
         menu = menu.child(ui::menu_divider(theme)).child(
-            ui::control("project-action-delete", "Delete Project…", theme, true)
+            ui::control("project-action-delete", text::DELETE_PROJECT, theme, true)
                 .text_color(style::markdown_style(theme).popover_danger)
                 .when(cfg!(test), |v| {
                     v.debug_selector(|| "project-action-delete".into())
@@ -310,8 +312,13 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let (id, alias) = (id.to_string(), alias.to_string());
-        let answer = window.prompt(gpui::PromptLevel::Warning, &format!("Forget identity “{alias}”?"),
-            Some("Its originals are forgotten from this Project and its documents. Document text is untouched. This cannot be undone."), &["Forget Identity", crate::ui::text::CANCEL], cx);
+        let answer = window.prompt(
+            gpui::PromptLevel::Warning,
+            &text::forget_identity_question(&alias),
+            Some(text::FORGET_IDENTITY_DETAIL),
+            &[text::FORGET_IDENTITY, crate::ui::text::CANCEL],
+            cx,
+        );
         cx.spawn_in(window, async move |this, cx| {
             if answer.await.ok() == Some(0) {
                 let _ = this.update_in(cx, |this, window, cx| {
@@ -381,8 +388,8 @@ impl Workspace {
                 .with_placeholder(placeholder)
                 .with_key_context(context)
         };
-        let filter = cx.new(|cx| input(cx, "Search names", "ProjectPageFilter"));
-        let add = cx.new(|cx| input(cx, "Add a name", "ProjectTerm"));
+        let filter = cx.new(|cx| input(cx, text::SEARCH_NAMES, "ProjectPageFilter"));
+        let add = cx.new(|cx| input(cx, text::ADD_A_NAME, "ProjectTerm"));
         let changes = cx.subscribe(&filter, |_, _, _: &SearchInputEvent, cx| cx.notify());
         let segment = match place {
             Place::Categories => Segment::Names,
@@ -508,7 +515,7 @@ impl Workspace {
                 files: true,
                 directories: false,
                 multiple: true,
-                prompt: Some(format!("Add to \u{201c}{name}\u{201d}").into()),
+                prompt: Some(text::add_to_curly(&name).into()),
             },
         );
         cx.spawn_in(window, async move |this, cx| {
@@ -516,8 +523,7 @@ impl Workspace {
                 Ok(Some(paths)) => paths,
                 Err(error) => {
                     let _ = this.update(cx, |this, cx| {
-                        this.notices
-                            .post(format!("Could not show the file chooser: {error}"));
+                        this.notices.post(text::chooser_did_not_show(&error));
                         cx.notify();
                     });
                     return;
@@ -623,7 +629,7 @@ impl Workspace {
                 .rounded_full()
                 .bg(style::project_color(ProjectLink::of(&project).hue(), theme)),
         )
-        .child("Project")
+        .child(text::PROJECT)
         .child(div().flex_1())
         .children(ui::notice_bell(&self.title, theme).map(|bell| ui::no_drag(div().child(bell))));
         let header = ui::title_bar(bar, (!detached).then_some(p.border), window, theme);
@@ -707,7 +713,7 @@ impl Workspace {
         let segments = div()
             .id("project-segments")
             .role(gpui::Role::TabList)
-            .aria_label("Project view")
+            .aria_label(text::PROJECT_VIEW)
             .flex()
             .items_center()
             .gap_1()
@@ -794,7 +800,7 @@ impl Workspace {
                 .into_any_element(),
             None => self
                 .page_control("project-page-rename", project.name.clone(), cx)
-                .aria_label(format!("Rename {}", project.name))
+                .aria_label(text::rename(&project.name))
                 .flex_1()
                 .min_w_0()
                 .truncate()
@@ -818,7 +824,7 @@ impl Workspace {
                     .gap_3()
                     .child(
                         self.page_control("project-page-color", "", cx)
-                            .aria_label("Project colour")
+                            .aria_label(text::PROJECT_COLOUR)
                             .p_2()
                             .child(div().size(px(16.)).rounded_full().bg(color))
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -831,7 +837,7 @@ impl Workspace {
                     .child(name)
                     .children(self.project_ask_button(&project.id, cx))
                     .child(
-                        self.page_control("project-page-add-document", "Add document", cx)
+                        self.page_control("project-page-add-document", text::ADD_DOCUMENT, cx)
                             .flex_shrink_0()
                             .border_1()
                             .border_color(p.border)
@@ -841,7 +847,7 @@ impl Workspace {
                     )
                     .child(
                         self.page_control("project-page-menu", "⋯", cx)
-                            .aria_label(format!("Actions for Project {}", project.name))
+                            .aria_label(text::actions_for(&project.name))
                             .flex_shrink_0()
                             .on_click(cx.listener(
                                 move |this, event: &gpui::ClickEvent, window, cx| {
@@ -918,23 +924,15 @@ impl Workspace {
             .flex_col()
             .gap_1();
         if members.is_empty() {
-            list = list.child(empty_line(
-                "No documents yet. Add a document, or drop files on this page.",
-                p,
-            ));
+            list = list.child(empty_line(text::NO_DOCUMENTS, p));
         }
         for (index, summary) in members.iter().enumerate() {
             let Some(document) = VaultId::parse(&summary.id) else {
                 continue;
             };
-            let detail = format!(
-                "{}{}",
-                if !self.member_needs_review(summary, cx) {
-                    ""
-                } else {
-                    "Needs review · "
-                },
-                format_args!("updated {}", created_date(summary.updated))
+            let detail = text::member_detail(
+                self.member_needs_review(summary, cx),
+                &created_date(summary.updated),
             );
             let (open_document, remove_document) = (document.clone(), document);
             let id = project.id.clone();
@@ -970,11 +968,11 @@ impl Workspace {
                     .child(
                         self.page_control(
                             SharedString::from(format!("project-remove-{index}")),
-                            "Move to Unfiled",
+                            text::MOVE_TO_UNFILED,
                             cx,
                         )
                         .flex_shrink_0()
-                        .aria_label(format!("Move “{}” to Unfiled", summary.title))
+                        .aria_label(text::move_to_unfiled(&summary.title))
                         .on_click(cx.listener(
                             move |this, _, window, cx| {
                                 this.remove_project_member(&id, remove_document.clone(), window, cx)
@@ -1011,11 +1009,7 @@ impl Workspace {
             .flex_col()
             .gap_1();
         if replies.is_empty() {
-            list = list.child(empty_line(
-                "No saved replies. An AI reply pasted into one of this Project's documents is \
-                 kept here.",
-                p,
-            ));
+            list = list.child(empty_line(text::NO_REPLIES, p));
         }
         for (index, reply) in replies.iter().enumerate() {
             let detail = crate::workspace::replies::reply_detail(
@@ -1060,11 +1054,11 @@ impl Workspace {
                     .child(
                         self.page_control(
                             SharedString::from(format!("project-reply-delete-{index}")),
-                            "Delete…",
+                            text::DELETE,
                             cx,
                         )
                         .flex_shrink_0()
-                        .aria_label(format!("Delete “{}”", reply.title))
+                        .aria_label(text::delete_named(&reply.title))
                         .on_click(cx.listener(
                             move |this, _, window, cx| {
                                 this.confirm_delete_reply(&delete, window, cx)
@@ -1148,10 +1142,10 @@ impl Workspace {
                         let count = review
                             .identity_by_alias(&identity.alias)
                             .map_or(0, |id| review.identity_count(id));
-                        format!("{title}: {count}")
+                        text::open_count(title, count)
                     })
                     .collect::<Vec<_>>()
-                    .join(" · ");
+                    .join(text::DOT);
                 names = names.child(
                     div()
                         .id(SharedString::from(format!("project-identity-{alias}")))
@@ -1170,32 +1164,21 @@ impl Workspace {
                                 .flex()
                                 .flex_col()
                                 .gap_1()
-                                .child(div().text_size(px(13.)).child(format!(
-                                    "{} · {}",
-                                    identity.alias,
-                                    identity.originals.first().map_or("", String::as_str)
+                                .child(div().text_size(px(13.)).child(text::identity_line(
+                                    &identity.alias,
+                                    identity.originals.first().map_or("", String::as_str),
                                 )))
-                                .child(div().text_size(px(11.)).text_color(p.header_muted).child(
-                                    format!(
-                                        "{} {}{}",
-                                        identity.originals.len(),
-                                        if identity.originals.len() == 1 {
-                                            "variant"
-                                        } else {
-                                            "variants"
-                                        },
-                                        if counts.is_empty() {
-                                            String::new()
-                                        } else {
-                                            format!(" · {counts}")
-                                        }
-                                    ),
-                                )),
+                                .child(
+                                    div()
+                                        .text_size(px(11.))
+                                        .text_color(p.header_muted)
+                                        .child(text::variants(identity.originals.len(), &counts)),
+                                ),
                         )
                         .child(
                             self.page_control(
                                 SharedString::from(format!("project-forget-{alias}")),
-                                "Forget identity…",
+                                text::FORGET_IDENTITY_MENU,
                                 cx,
                             )
                             .on_click(cx.listener(
@@ -1210,9 +1193,9 @@ impl Workspace {
         if shown == 0 {
             names = names.child(empty_line(
                 if filter.is_empty() {
-                    "No names yet. Names replaced in this Project's documents appear here."
+                    text::NO_NAMES
                 } else {
-                    "No names match."
+                    text::NO_NAMES_MATCH
                 },
                 p,
             ));
@@ -1245,7 +1228,7 @@ impl Workspace {
                     page.scroll.clone(),
                 ))
                 .child(
-                    self.page_control("project-page-add", "Add a name", cx)
+                    self.page_control("project-page-add", text::ADD_A_NAME, cx)
                         .on_click(cx.listener(|this, _, _, cx| this.add_page_name(cx))),
                 ),
         );
@@ -1254,10 +1237,13 @@ impl Workspace {
             .flex()
             .flex_col()
             .gap_2()
-            .child(section("Categories to detect"))
-            .child(div().text_size(px(12.)).text_color(p.header_muted).child(
-                "Scans skip categories that are off. Names you mark yourself are still replaced.",
-            ))
+            .child(section(text::CATEGORIES_TO_DETECT))
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(p.header_muted)
+                    .child(text::CATEGORIES_NOTE),
+            )
             .child(
                 div().flex().flex_wrap().gap_2().children(
                     mdoc_pii::Category::ALL
@@ -1268,11 +1254,7 @@ impl Workspace {
                             let on = !skipped.contains(&category);
                             self.page_control(
                                 SharedString::from(format!("page-category-{}", category.token())),
-                                format!(
-                                    "{} {}",
-                                    if on { "✓" } else { "○" },
-                                    category.detection_label()
-                                ),
+                                text::category_toggle(on, category.detection_label()),
                                 cx,
                             )
                             .role(gpui::Role::CheckBox)
@@ -1309,11 +1291,13 @@ impl Workspace {
             .flex()
             .flex_col()
             .gap_2()
-            .child(section("Always and never replace"))
-            .child(div().text_size(px(12.)).text_color(p.header_muted).child(
-                "Scans in this Project's documents propose what you marked yourself and skip \
-                 what you kept.",
-            ));
+            .child(section(text::ALWAYS_AND_NEVER))
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(p.header_muted)
+                    .child(text::LISTS_NOTE),
+            );
         // Each list's wordings, with the category of an Always one.
         type Entries = Vec<(String, Option<&'static str>)>;
         let entries: [(bool, Entries); 2] = [
@@ -1344,17 +1328,17 @@ impl Workspace {
                     .text_size(px(12.))
                     .text_color(p.header_muted)
                     .child(if always {
-                        "Always replace"
+                        text::ALWAYS_REPLACE
                     } else {
-                        "Never replace"
+                        text::NEVER_REPLACE
                     }),
             );
             if entries.is_empty() {
                 lists = lists.child(div().text_size(px(12.)).text_color(p.header_muted).child(
                     if always {
-                        "Nothing yet. Words you mark yourself appear here."
+                        text::NO_ALWAYS
                     } else {
-                        "Nothing yet. Names you keep everywhere in a document appear here."
+                        text::NO_NEVER
                     },
                 ));
             }
@@ -1375,8 +1359,8 @@ impl Workspace {
                                 .child(label)
                         }))
                         .child(
-                            self.page_control(SharedString::from(control), "Remove", cx)
-                                .aria_label(format!("Remove “{wording}”"))
+                            self.page_control(SharedString::from(control), text::REMOVE, cx)
+                                .aria_label(text::remove_named(&wording))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.remove_project_list_entry(&id, always, &remove, cx)
                                 })),
@@ -1416,15 +1400,15 @@ fn empty_line(text: &'static str, p: gpui_pdf::PdfStyle) -> gpui::Div {
 /// A document's file family, as its row shows it.
 pub(in crate::workspace) fn kind_label(kind: SourceKind) -> &'static str {
     match kind {
-        SourceKind::Pdf => "PDF",
-        SourceKind::Word => "DOC",
-        SourceKind::Spreadsheet => "XLS",
-        SourceKind::Presentation => "PPT",
-        SourceKind::Ebook => "BOOK",
-        SourceKind::Image => "IMG",
-        SourceKind::Scan => "SCAN",
-        SourceKind::Markdown => "MD",
-        SourceKind::Text => "TXT",
+        SourceKind::Pdf => text::PDF,
+        SourceKind::Word => text::DOC,
+        SourceKind::Spreadsheet => text::XLS,
+        SourceKind::Presentation => text::PPT,
+        SourceKind::Ebook => text::BOOK,
+        SourceKind::Image => text::IMG,
+        SourceKind::Scan => text::SCAN,
+        SourceKind::Markdown => text::MD,
+        SourceKind::Text => text::TXT,
     }
 }
 
@@ -1445,16 +1429,7 @@ fn kind_badge(kind: SourceKind, p: gpui_pdf::PdfStyle) -> gpui::Div {
 
 /// "4 documents · 2 replies · 11 names · created 3 Nov".
 fn project_counts(documents: usize, replies: usize, names: usize, created: u64) -> String {
-    let plural = |count: usize, one: &str, many: &str| {
-        format!("{count} {}", if count == 1 { one } else { many })
-    };
-    format!(
-        "{} · {} · {} · created {}",
-        plural(documents, "document", "documents"),
-        plural(replies, "reply", "replies"),
-        plural(names, "name", "names"),
-        created_date(created)
-    )
+    text::project_counts(documents, replies, names, &created_date(created))
 }
 
 /// Gregorian civil date from Unix days; independent of locale and OS access.
@@ -1467,12 +1442,7 @@ pub(in crate::workspace) fn created_date(seconds: u64) -> String {
     let mp = (5 * doy + 2) / 153;
     let day = doy - (153 * mp + 2) / 5 + 1;
     let month = mp + if mp < 10 { 3 } else { -9 };
-    format!(
-        "{day} {}",
-        [
-            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-        ][(month - 1) as usize]
-    )
+    text::day_month(day, (month - 1) as usize)
 }
 
 #[cfg(test)]

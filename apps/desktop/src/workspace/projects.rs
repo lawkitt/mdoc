@@ -10,6 +10,7 @@ pub(super) mod folder_sheet_ui;
 pub(super) mod new_project;
 pub(super) mod project_page;
 pub(super) mod projects_ui;
+mod text;
 
 use mdoc_vault::{Colour, Project, ProjectSummary};
 

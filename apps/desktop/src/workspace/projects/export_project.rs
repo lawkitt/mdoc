@@ -10,6 +10,8 @@ use crate::workspace::{
 use gpui::{Context, PathPromptOptions, Window};
 use std::path::PathBuf;
 
+use super::text;
+
 /// An Export Project waiting for its turn.
 pub(in crate::workspace) struct Export {
     project: String,
@@ -41,8 +43,7 @@ impl Workspace {
         let name = match vault.project(&project) {
             Ok(found) => found.name,
             Err(error) => {
-                self.notices
-                    .post(format!("Could not export the Project: {error}"));
+                self.notices.post(text::export_failed(&error));
                 cx.notify();
                 return;
             }
@@ -53,7 +54,7 @@ impl Workspace {
                 files: false,
                 directories: true,
                 multiple: false,
-                prompt: Some(format!("Export \u{201c}{name}\u{201d} Here").into()),
+                prompt: Some(text::export_here(&name).into()),
             },
         );
         cx.spawn_in(window, async move |this, cx| {
@@ -63,10 +64,7 @@ impl Workspace {
                 Ok(None) => None,
                 Err(error) => {
                     let _ = this.update(cx, |this, cx| {
-                        this.notices.post(format!(
-                            "Could not export \u{201c}{name}\u{201d}: the folder chooser \
-                             didn't open. {error}"
-                        ));
+                        this.notices.post(text::chooser_failed(&name, &error));
                         cx.notify();
                     });
                     None
@@ -138,7 +136,7 @@ impl Workspace {
         // nothing is exported, and the notice says which.
         let unsaved = self.project_unsaved(&project, cx);
         if !unsaved.is_empty() {
-            self.notices.post(unsaved_notice(&name, &unsaved));
+            self.notices.post(text::unsaved_notice(&name, &unsaved));
             cx.notify();
             return Ran::Ended;
         }
@@ -153,7 +151,7 @@ impl Workspace {
                 if let Ok(exported) = &exported {
                     this.saw_export(&vault, &project, exported.folder.clone());
                 }
-                this.notices.post(exported_notice(&name, exported));
+                this.notices.post(text::exported_notice(&name, exported));
                 cx.notify();
                 this.advance_writer(window, cx);
             });
@@ -189,11 +187,11 @@ impl Workspace {
                     || view.unsaved(cx)
                     || view.notes.unsaved()
                     || view.saved_review() != view.session.document.review;
-                behind.then(|| format!("\u{201c}{}\u{201d}", view.display_name()))
+                behind.then(|| text::quoted(view.display_name()))
             })
             .collect();
         if self.project_ui.is_unwritten(project) {
-            unsaved.push("its names".into());
+            unsaved.push(text::ITS_NAMES.into());
         }
         unsaved
     }
@@ -215,35 +213,4 @@ impl Workspace {
             documents,
         });
     }
-}
-
-fn unsaved_notice(name: &str, unsaved: &[String]) -> String {
-    format!(
-        "Could not export \u{201c}{name}\u{201d}: {} could not be saved, so the export \
-         would miss the latest changes. Nothing was exported.",
-        unsaved.join(", ")
-    )
-}
-
-fn exported_notice(
-    name: &str,
-    exported: Result<mdoc_vault::Exported, mdoc_vault::VaultError>,
-) -> String {
-    let exported = match exported {
-        Ok(exported) => exported,
-        Err(error) => return format!("Could not export \u{201c}{name}\u{201d}: {error}"),
-    };
-    let folder = dunce::simplified(&exported.folder).display().to_string();
-    let written = match exported.documents {
-        1 => "1 document".to_string(),
-        n => format!("{n} documents"),
-    };
-    let mut notice = format!("Exported {written} of \u{201c}{name}\u{201d} to {folder}.");
-    if !exported.failed.is_empty() {
-        let failed: Vec<String> = (exported.failed.iter())
-            .map(|(title, error)| format!("\u{201c}{title}\u{201d} ({error})"))
-            .collect();
-        notice.push_str(&format!(" Not written in full: {}.", failed.join(", ")));
-    }
-    notice
 }

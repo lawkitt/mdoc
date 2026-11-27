@@ -1,6 +1,7 @@
 //! The folder sheet: what a dropped folder shows before anything
 //! opens. Plain state, no GPUI: the files with their ticks and the 20-file
 //! cap, the keyboard cursor, and the folders waiting for their turn.
+use super::text;
 use mdoc_store::session_store;
 use std::{
     collections::VecDeque,
@@ -9,8 +10,9 @@ use std::{
 
 /// One folder drop opens at most this many new tabs.
 pub(in crate::workspace) const CAP: usize = 20;
-/// Said when a tick would go over the cap.
-pub(in crate::workspace) const CAP_NOTE: &str = "Up to 20 files at a time";
+/// Said when a tick would go over the cap; the tests read it here.
+#[cfg(test)]
+pub(in crate::workspace) use text::CAP_NOTE;
 
 /// A dropped folder: its supported files, read off the UI thread.
 pub(in crate::workspace) struct DroppedFolder {
@@ -50,7 +52,7 @@ impl DroppedFolder {
             path: session_store::identity(path),
             name: path
                 .file_name()
-                .map_or_else(|| "Folder".into(), |n| n.to_string_lossy().into_owned()),
+                .map_or_else(|| text::FOLDER.into(), |n| n.to_string_lossy().into_owned()),
             files,
             skipped_folders,
             skipped_hidden,
@@ -61,36 +63,28 @@ impl DroppedFolder {
     pub fn skipped(&self) -> Option<String> {
         let mut parts = Vec::new();
         if self.skipped_folders > 0 {
-            parts.push(plural(self.skipped_folders, "subfolder", "subfolders"));
+            parts.push(text::subfolders(self.skipped_folders));
         }
         if self.skipped_hidden > 0 {
-            parts.push(plural(self.skipped_hidden, "hidden file", "hidden files"));
+            parts.push(text::hidden_files(self.skipped_hidden));
         }
-        (!parts.is_empty()).then(|| parts.join(", ") + " skipped")
+        (!parts.is_empty()).then(|| text::skipped(&parts))
     }
 
     /// The notice for a folder with nothing to open: no sheet shows.
     pub fn empty_notice(&self) -> String {
-        let mut notes = vec![format!("“{}” has no supported files", self.name)];
+        let mut notes = vec![text::no_supported_files(&self.name)];
         if self.skipped_folders > 0 {
-            notes.push(format!(
-                "{} inside “{}” skipped",
-                plural(self.skipped_folders, "subfolder", "subfolders"),
-                self.name
+            notes.push(text::subfolders_inside_skipped(
+                self.skipped_folders,
+                &self.name,
             ));
         }
         if self.skipped_hidden > 0 {
-            notes.push(format!(
-                "{} skipped",
-                plural(self.skipped_hidden, "hidden file", "hidden files")
-            ));
+            notes.push(text::hidden_files_skipped(self.skipped_hidden));
         }
-        notes.join("; ") + "."
+        text::notes(&notes)
     }
-}
-
-fn plural(n: usize, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
 }
 
 /// Whether a file of the folder already has a tab.
@@ -106,8 +100,8 @@ impl Status {
     pub fn label(&self) -> Option<String> {
         match self {
             Self::New => None,
-            Self::Open => Some("Already open".into()),
-            Self::InProject(name) => Some(format!("In “{name}”")),
+            Self::Open => Some(text::ALREADY_OPEN.into()),
+            Self::InProject(name) => Some(text::in_project(name)),
         }
     }
 }
@@ -204,8 +198,8 @@ impl Sheet {
     }
     pub fn primary_label(&self) -> String {
         match &self.target {
-            Some(target) => format!("Add to “{}”", target.name),
-            None => "Open as New Project".into(),
+            Some(target) => text::add_to(&target.name),
+            None => text::OPEN_AS_NEW_PROJECT.into(),
         }
     }
     pub fn ticked(&self) -> Vec<PathBuf> {

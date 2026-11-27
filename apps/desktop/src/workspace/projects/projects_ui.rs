@@ -2,6 +2,7 @@
 //! Project's mapping and folds its own back in; a document moves into a
 //! Project, into a new one or out to Unfiled with an undoable toast;
 //! rename, colour, categories, lists and delete; the Open Project list.
+use super::text;
 use crate::workspace::{
     Workspace,
     projects::ProjectLink,
@@ -215,14 +216,7 @@ impl Workspace {
         self.projects.finish_load(projects);
         self.user_lists_read(vault.user_lists(), cx);
         if failed > 0 {
-            self.notices.post(if failed == 1 {
-                "1 Project could not be opened. It is damaged or saved with another key.".into()
-            } else {
-                format!(
-                    "{failed} Projects could not be opened. They are damaged or saved with \
-                     another key."
-                )
-            });
+            self.notices.post(text::projects_not_opened(failed));
         }
         let ids: Vec<_> = self.tabs.iter().map(|t| t.id()).collect();
         for id in ids {
@@ -329,8 +323,7 @@ impl Workspace {
     /// A member tab's mapping changed: fold it into its Project.
     pub(in crate::workspace) fn project_changed(&mut self, id: u64, cx: &mut Context<Self>) {
         if let Err(error) = self.fold_into_project(id, cx) {
-            self.notices
-                .post(format!("Could not keep the Project's names: {error}"));
+            self.notices.post(text::names_not_kept(&error));
         }
     }
 
@@ -853,7 +846,7 @@ impl Workspace {
             let title =
                 (self.tab_view(tab)).map_or_else(String::new, |v| v.read(cx).display_name());
             self.notices
-                .post(format!("Could not move \u{201c}{title}\u{201d}: {error}"));
+                .post(text::could_not_move_curly(&title, &error));
             cx.notify();
             return Ran::Ended;
         }
@@ -870,10 +863,7 @@ impl Workspace {
         };
         if let Err(error) = self.fold_members(&places, cx) {
             self.moving.remove(&document);
-            self.notices.post(format!(
-                "Could not move \u{201c}{title}\u{201d}: its Project's names could not be kept. \
-                 {error}"
-            ));
+            self.notices.post(text::move_names_not_kept(&title, &error));
             cx.notify();
             return Ran::Ended;
         }
@@ -1010,16 +1000,12 @@ impl Workspace {
                     });
                 }
                 let place = match &moved.project {
-                    Some(project) => format!("“{}”", project.name),
-                    None => "Unfiled".to_string(),
+                    Some(project) => text::quoted_name(&project.name),
+                    None => text::UNFILED.to_string(),
                 };
                 let text = match moving {
-                    Moving::Undo => format!("“{title}” moved back to {place}."),
-                    _ if renumbered > 0 => format!(
-                        "“{title}” moved to {place}. {renumbered} {} renumbered to fit.",
-                        if renumbered == 1 { "alias" } else { "aliases" }
-                    ),
-                    _ => format!("“{title}” moved to {place}."),
+                    Moving::Undo => text::moved_back(&title, &place),
+                    _ => text::moved(&title, &place, renumbered),
                 };
                 let undo = (!matches!(moving, Moving::Undo)).then(|| (moved.undo.clone(), made));
                 self.show_toast(text, undo, window, cx);
@@ -1034,8 +1020,7 @@ impl Workspace {
             }
             Err(error) => {
                 self.moving.remove(&document);
-                self.notices
-                    .post(format!("Could not move “{title}”: {error}"));
+                self.notices.post(text::could_not_move(&title, &error));
                 if let Some(tab) = self.find_document(&DocumentId::Vault(document), None, cx) {
                     self.autosave(tab, window, cx);
                 }
@@ -1254,7 +1239,7 @@ impl Workspace {
             .child(div().flex_1().min_w_0().child(toast.text.clone()))
             .when(toast.undo.is_some(), |v| {
                 v.child(
-                    ui::control("move-toast-undo", "Undo", theme, true)
+                    ui::control("move-toast-undo", text::UNDO, theme, true)
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "move-toast-undo".into())
                         })
@@ -1306,31 +1291,19 @@ impl Workspace {
         let answer = if count == 0 {
             window.prompt(
                 PromptLevel::Warning,
-                &format!("Delete the Project “{name}”?"),
-                Some(
-                    "Its names and its AI replies are deleted from this computer. This cannot \
-                     be undone.",
-                ),
-                &["Delete", crate::ui::text::CANCEL],
+                &text::delete_project_question(&name),
+                Some(text::DELETE_EMPTY_DETAIL),
+                &[text::DELETE_BUTTON, crate::ui::text::CANCEL],
                 cx,
             )
         } else {
-            let documents = if count == 1 {
-                "Its document".to_string()
-            } else {
-                format!("Its {count} documents")
-            };
             window.prompt(
                 PromptLevel::Warning,
-                &format!("Delete the Project “{name}”?"),
-                Some(&format!(
-                    "{documents} can move to Unfiled, keeping the names their text uses, or be \
-                     deleted with it. The Project's own AI replies are deleted either way. This \
-                     cannot be undone."
-                )),
+                &text::delete_project_question(&name),
+                Some(&text::delete_detail(count)),
                 &[
-                    gpui::PromptButton::new("Move to Unfiled"),
-                    gpui::PromptButton::new("Delete Documents"),
+                    gpui::PromptButton::new(text::MOVE_TO_UNFILED),
+                    gpui::PromptButton::new(text::DELETE_DOCUMENTS),
                     gpui::PromptButton::cancel(crate::ui::text::CANCEL),
                 ],
                 cx,
@@ -1440,10 +1413,8 @@ impl Workspace {
                     let name = (self.tabs.get(tab).and_then(|tab| tab.view().cloned()))
                         .map(|view| view.read(cx).display_name())
                         .unwrap_or_default();
-                    self.notices.post(format!(
-                        "Could not delete the Project: \u{201c}{name}\u{201d} could not be \
-                         saved first, so nothing was moved. {error}"
-                    ));
+                    self.notices
+                        .post(text::delete_member_not_saved(&name, &error));
                     cx.notify();
                     return Ran::Ended;
                 }
@@ -1455,10 +1426,7 @@ impl Workspace {
                     self.moving.remove(member);
                 }
                 self.project_ui.mark_unwritten(&project_id);
-                self.notices.post(format!(
-                    "Could not delete the Project: its names could not be saved first, so \
-                     nothing was moved. {error}"
-                ));
+                self.notices.post(text::delete_names_not_saved(&error));
                 cx.notify();
                 return Ran::Ended;
             }
@@ -1539,8 +1507,7 @@ impl Workspace {
                         self.moving.remove(member);
                     }
                 }
-                self.notices
-                    .post(format!("Could not delete the Project: {error}"));
+                self.notices.post(text::could_not_delete(&error));
             }
         }
         // Its own replies went with it.
@@ -1563,10 +1530,7 @@ impl Workspace {
         for member in members {
             self.moving.remove(member);
         }
-        self.notices.post(
-            "The Project's documents changed before it was deleted, so nothing was \
-             deleted. Choose again for them as they are now.",
-        );
+        self.notices.post(text::DELETE_CHANGED);
         self.delete_project(project_id, window, cx);
         cx.notify();
         Ran::Ended
@@ -1587,7 +1551,7 @@ impl Workspace {
             let mut input = markdown_search::SearchInput::new(cx)
                 .with_theme(self.theme.clone())
                 .with_key_context("ProjectName")
-                .with_placeholder("Project name");
+                .with_placeholder(text::PROJECT_NAME);
             input.set_value(name, cx);
             input
         });
@@ -1891,7 +1855,7 @@ impl Workspace {
                         .tab_index(0)
                         .tab_stop(true)
                         .role(gpui::Role::Button)
-                        .aria_label(format!("Open {}", summary.name))
+                        .aria_label(text::open_named(&summary.name))
                         .rounded_sm()
                         .flex_1()
                         .min_w_0()
@@ -1903,19 +1867,10 @@ impl Workspace {
                             div()
                                 .text_size(px(11.))
                                 .text_color(palette.header_muted)
-                                .child(format!(
-                                    "{names} {} · {documents} {}{}",
-                                    if names == 1 { "name" } else { "names" },
-                                    if documents == 1 {
-                                        "document"
-                                    } else {
-                                        "documents"
-                                    },
-                                    if open.contains(&summary.id) {
-                                        " · open"
-                                    } else {
-                                        ""
-                                    }
+                                .child(text::list_row_detail(
+                                    names,
+                                    documents,
+                                    open.contains(&summary.id),
                                 )),
                         )
                         .on_click(cx.listener(
@@ -1925,7 +1880,7 @@ impl Workspace {
                     .child(
                         ui::control(
                             gpui::SharedString::from(format!("delete-project-{}", summary.id)),
-                            "Delete…",
+                            text::DELETE,
                             theme,
                             true,
                         )
@@ -1993,10 +1948,10 @@ impl Workspace {
                     .items_center()
                     .px_2()
                     .pb_1()
-                    .child(div().flex_1().child("Open Project"))
+                    .child(div().flex_1().child(text::OPEN_PROJECT))
                     .child(
                         ui::control("close-project-list", "×", theme, true)
-                            .aria_label("Close Project list")
+                            .aria_label(text::CLOSE_PROJECT_LIST)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.close_project_list(window, cx);
                             })),
@@ -2012,10 +1967,7 @@ impl Workspace {
                         .py_2()
                         .text_size(px(12.))
                         .text_color(palette.header_muted)
-                        .child(
-                            "No Projects yet. Choose New Project, or right-click a document \
-                             and choose Move to New Project.",
-                        ),
+                        .child(text::NO_PROJECTS),
                 )
             })
             .children(rows)
@@ -2029,10 +1981,10 @@ impl Workspace {
                         .py_2()
                         .text_size(px(12.))
                         .text_color(palette.header_muted)
-                        .child("Your documents are locked."),
+                        .child(text::LOCKED),
                 )
                 .child(
-                    ui::control("project-list-unlock", "Unlock…", theme, true)
+                    ui::control("project-list-unlock", text::UNLOCK, theme, true)
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "project-list-unlock".into())
                         })
