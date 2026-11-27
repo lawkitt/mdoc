@@ -1254,25 +1254,15 @@ impl Render for Workspace {
         self.title.notices.set(notices);
         // A crash report says what the window showed (no text, no names).
         crate::app::crash::note_state(text::crash_state(
-            if home {
-                "Home".to_string()
-            } else {
+            (!home).then(|| {
                 self.active_view()
                     .map(|v| v.read(cx).crash_state(cx))
                     .unwrap_or_default()
-            },
+            }),
             self.tabs.len(),
-            if self.sidebar.choice().unwrap_or(true) {
-                "expanded"
-            } else {
-                "collapsed"
-            },
+            self.sidebar.choice().unwrap_or(true),
             theme,
-            if self.shell.palette.is_some() {
-                ", palette open"
-            } else {
-                ""
-            },
+            self.shell.palette.is_some(),
         ));
         // Collapsed, headers join the title row: they leave room for the
         // traffic lights and the expand toggle that sit in it.

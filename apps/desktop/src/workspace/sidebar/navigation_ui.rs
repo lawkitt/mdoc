@@ -72,9 +72,13 @@ impl Workspace {
     }
 
     pub(in crate::workspace) fn navigation_label(&self, backwards: bool, cx: &App) -> String {
-        let direction = if backwards { "Back" } else { "Forward" };
+        let direction = if backwards {
+            super::text::BACK
+        } else {
+            super::text::FORWARD
+        };
         let destination = match self.navigation_target(backwards, cx) {
-            Some(Stop::Home) => Some("Home".into()),
+            Some(Stop::Home) => Some(super::text::HOME.into()),
             Some(Stop::Tab(id)) => self
                 .tabs
                 .get(*id)
