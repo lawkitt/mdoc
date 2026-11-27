@@ -1,6 +1,7 @@
 //! The document's header: its filled button (Convert, Pseudonymize, Apply or Share), the
 //! ⋯ menu, the Markdown and Source switch, and the empty page a blank tab shows.
 use super::DocumentView;
+use crate::document::text::{self, apply_label};
 use crate::{
     document::spelling::ToggleDocumentSpelling,
     document::{CopyMarkdown, ExportMarkdown, Save, TogglePreview},
@@ -23,11 +24,6 @@ enum Primary {
     Apply(usize),
     /// Applied: the header opens the Inspector's Share tab.
     Share,
-}
-
-/// The header's Apply, counting names as the Review tab does (#1314).
-fn apply_label(names: usize) -> String {
-    format!("Apply {names}")
 }
 
 impl DocumentView {
@@ -64,12 +60,12 @@ impl DocumentView {
             Some(true) => div()
                 .text_size(px(15.))
                 .text_color(accent)
-                .child("Drop to open")
+                .child(text::DROP_TO_OPEN)
                 .into_any_element(),
             Some(false) => div()
                 .text_size(px(15.))
                 .text_color(p.header_muted)
-                .child("No supported files")
+                .child(text::NO_SUPPORTED_FILES)
                 .into_any_element(),
             None => div()
                 .flex()
@@ -77,7 +73,7 @@ impl DocumentView {
                 .items_center()
                 .gap_2()
                 .child(
-                    ui::primary_button("empty-page-open", "Open files…", theme, true)
+                    ui::primary_button("empty-page-open", text::OPEN_FILES, theme, true)
                         .flex()
                         .items_center()
                         .gap_2()
@@ -100,14 +96,14 @@ impl DocumentView {
                         .text_size(px(12.))
                         .text_color(p.header_muted)
                         .child(mdoc_import::import::supported_formats())
-                        .child("Select several to open each in its own tab"),
+                        .child(text::SELECT_SEVERAL),
                 )
                 .child(
                     div()
                         .text_size(px(12.))
                         .text_color(p.header_muted)
                         .opacity(0.7)
-                        .child("or just start typing"),
+                        .child(text::OR_JUST_START_TYPING),
                 )
                 .child(local_note(theme))
                 .into_any_element(),
@@ -196,9 +192,9 @@ impl DocumentView {
                 // After a failed conversion the same action is a retry; say so,
                 // since a click that fails again changes nothing on screen.
                 let label = if self.error.is_some() {
-                    "Try again"
+                    text::TRY_AGAIN
                 } else {
-                    "Convert to Markdown"
+                    text::CONVERT_TO_MARKDOWN
                 };
                 ui::filled_button("primary-action", label, theme, true)
                     .when(cfg!(test), |v| {
@@ -208,10 +204,10 @@ impl DocumentView {
                     .into_any_element()
             }
             Primary::Pseudonymize => {
-                ui::filled_button("primary-action", "Pseudonymize", theme, true)
+                ui::filled_button("primary-action", text::PSEUDONYMIZE, theme, true)
                     .tooltip(crate::ui::style::tooltip(
                         crate::commands::shortcuts::tip(
-                            "Find names to replace",
+                            text::FIND_NAMES_TO_REPLACE,
                             &crate::review::Pseudonymize,
                         ),
                         theme,
@@ -229,7 +225,7 @@ impl DocumentView {
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(PiiApplyAll), cx))
                     .into_any_element()
             }
-            Primary::Share => ui::primary_button("primary-action", "Share", theme, true)
+            Primary::Share => ui::primary_button("primary-action", text::SHARE, theme, true)
                 .when(cfg!(test), |v| v.debug_selector(|| "primary-share".into()))
                 .h(px(28.))
                 .on_click(cx.listener(|this, _, window, cx| {
@@ -351,7 +347,7 @@ impl DocumentView {
                         // accessibility tree, and the line truncates at the
                         // minimum window width (#948).
                         .role(gpui::Role::Label)
-                        .aria_label(format!("Left out of the Markdown: {line}"))
+                        .aria_label(text::left_out(&line))
                         .child(div().flex_shrink_0().child("ⓘ"))
                         .child(div().min_w_0().truncate().child(line.clone()))
                         .tooltip(crate::ui::style::tooltip(line, theme)),
@@ -372,9 +368,9 @@ impl DocumentView {
                     ui::header_icon(
                         "header-panel",
                         if self.replacements_open() {
-                            "Hide replacements"
+                            text::HIDE_REPLACEMENTS
                         } else {
-                            "Show replacements"
+                            text::SHOW_REPLACEMENTS
                         },
                         ui::Icon::PanelRight,
                         theme,
@@ -393,9 +389,9 @@ impl DocumentView {
                     ui::header_icon(
                         "header-source",
                         if self.preview.visible() {
-                            "Hide the original file"
+                            text::HIDE_THE_ORIGINAL_FILE
                         } else {
-                            "Show the original file"
+                            text::SHOW_THE_ORIGINAL_FILE
                         },
                         ui::Icon::Source,
                         theme,
@@ -460,20 +456,26 @@ impl DocumentView {
                     .inset_0(),
             )
             .child(
-                ui::header_menu_icon("header-more", "More actions", ui::Icon::More, theme, open)
-                    .track_focus(&self.more_focus)
-                    .when(cfg!(test), |v| v.debug_selector(|| "header-more".into()))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.more_open = !this.more_open;
-                        this.history.open = false;
-                        this.ask.open = false;
-                        this.ask.unfiled = None;
-                        // The menu takes focus, so Tab and Esc work in it.
-                        if this.more_open {
-                            window.focus(&this.more_menu_focus, cx);
-                        }
-                        cx.notify();
-                    })),
+                ui::header_menu_icon(
+                    "header-more",
+                    text::MORE_ACTIONS,
+                    ui::Icon::More,
+                    theme,
+                    open,
+                )
+                .track_focus(&self.more_focus)
+                .when(cfg!(test), |v| v.debug_selector(|| "header-more".into()))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.more_open = !this.more_open;
+                    this.history.open = false;
+                    this.ask.open = false;
+                    this.ask.unfiled = None;
+                    // The menu takes focus, so Tab and Esc work in it.
+                    if this.more_open {
+                        window.focus(&this.more_menu_focus, cx);
+                    }
+                    cx.notify();
+                })),
             )
             .children(menu)
             .into_any_element()
@@ -483,18 +485,18 @@ impl DocumentView {
     /// work. The menu shows it and screen readers hear it.
     pub(crate) fn alias_actions_reason(&self) -> Option<&'static str> {
         if self.lifecycle.source_only() {
-            Some("Convert the document to Markdown first.")
+            Some(text::CONVERT_FIRST)
         } else if !self.can_copy_markdown() {
-            Some("Available once the document has loaded.")
+            Some(text::AVAILABLE_ONCE_LOADED)
         } else if self.has_applied_aliases() {
             None
         } else if self.pii.review().variants().is_empty() {
-            Some("Pseudonymize the document first.")
+            Some(text::PSEUDONYMIZE_FIRST)
         } else if self.pii.review().remaining() > 0 {
-            Some("Apply replacements first.")
+            Some(text::APPLY_REPLACEMENTS_FIRST)
         } else {
             // Every proposal was kept as the original.
-            Some("No names in this document are replaced.")
+            Some(text::NO_NAMES_REPLACED)
         }
     }
 
@@ -530,11 +532,11 @@ impl DocumentView {
         // Only a loaded, converted Vault document moves, as the window's
         // own check has it.
         let move_reason = if self.session.document.vault.is_none() {
-            Some("Only a document in the Vault moves.")
+            Some(text::ONLY_VAULT_DOCUMENTS_MOVE)
         } else if self.lifecycle.source_only() {
-            Some("Convert the document to Markdown first.")
+            Some(text::CONVERT_FIRST)
         } else if !self.lifecycle.ready() || self.lifecycle.loading() {
-            Some("Available once the document has loaded.")
+            Some(text::AVAILABLE_ONCE_LOADED)
         } else {
             None
         };
@@ -621,7 +623,7 @@ impl DocumentView {
                         .child(
                             row(
                                 "more-save",
-                                "Save".into(),
+                                text::SAVE.into(),
                                 Some(modifier("⌘S", "Ctrl+S")),
                                 None,
                                 copy,
@@ -631,7 +633,7 @@ impl DocumentView {
                         .child(
                             row(
                                 "more-export",
-                                "Export Markdown…".into(),
+                                text::EXPORT_MARKDOWN.into(),
                                 Some(modifier("⇧⌘S", "Ctrl+Shift+S")),
                                 None,
                                 copy,
@@ -642,7 +644,7 @@ impl DocumentView {
                         .child(
                             row(
                                 "more-copy-markdown",
-                                "Copy Markdown".into(),
+                                text::COPY_MARKDOWN.into(),
                                 Some(modifier("⇧⌘M", "Ctrl+Shift+M")),
                                 None,
                                 has_text,
@@ -652,7 +654,7 @@ impl DocumentView {
                         .child(
                             ui::menu_row_because(
                                 "more-copy-for-ai",
-                                "Copy for AI",
+                                text::COPY_FOR_AI,
                                 Some(modifier("⇧⌘C", "Ctrl+Shift+C")),
                                 None,
                                 theme,
@@ -667,7 +669,7 @@ impl DocumentView {
                         .child(
                             ui::menu_row_because(
                                 "more-paste-reply",
-                                "Paste AI reply",
+                                text::PASTE_AI_REPLY,
                                 Some(modifier("⌥⇧⌘V", "Ctrl+Alt+Shift+V")),
                                 None,
                                 theme,
@@ -680,7 +682,7 @@ impl DocumentView {
                             .on_click(cx.listener(guard(aliases, || Box::new(PasteAiResponse)))),
                         )
                         .child(
-                            row("more-notes", "Notes".into(), None, None, notes).on_click(
+                            row("more-notes", text::NOTES.into(), None, None, notes).on_click(
                                 cx.listener(move |this, _, window, cx| {
                                     if notes {
                                         this.more_open = false;
@@ -694,9 +696,9 @@ impl DocumentView {
                             row(
                                 "more-spelling",
                                 if spelling_on && misspelled > 0 {
-                                    format!("Spelling · {misspelled}")
+                                    text::spelling_count(misspelled)
                                 } else {
-                                    "Spelling".into()
+                                    text::SPELLING.into()
                                 },
                                 None,
                                 Some(spelling_on),
@@ -711,7 +713,7 @@ impl DocumentView {
                         .child(
                             row(
                                 "more-rescan",
-                                "Rescan".into(),
+                                text::RESCAN.into(),
                                 None,
                                 None,
                                 copy && !self.pii.scanning(),
@@ -735,7 +737,7 @@ impl DocumentView {
                         .child(
                             ui::menu_row_because(
                                 "more-move",
-                                "Move to Project…",
+                                text::MOVE_TO_PROJECT,
                                 None,
                                 None,
                                 theme,
@@ -778,7 +780,7 @@ impl DocumentView {
         div()
             .id("pane-switch")
             .role(gpui::Role::RadioGroup)
-            .aria_label("View")
+            .aria_label(text::VIEW)
             .flex()
             .gap_1()
             .px_2()
@@ -786,33 +788,35 @@ impl DocumentView {
             .flex_shrink_0()
             .border_b_1()
             .border_color(theme.pdf_style().border)
-            .children([(false, "Markdown"), (true, "Source")].into_iter().map(
-                |(original, label)| {
-                    ui::control(label, label, theme, true)
-                        .role(gpui::Role::RadioButton)
-                        .aria_toggled(if self.original_selected == original {
-                            gpui::Toggled::True
-                        } else {
-                            gpui::Toggled::False
-                        })
-                        .when(cfg!(test), |v| v.debug_selector(move || label.into()))
-                        .when(self.original_selected == original, |v| {
-                            v.bg(theme.sidebar_selected())
-                                .text_color(theme.search_accent())
-                        })
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.original_selected = original;
-                            if original {
-                                if let Some(pdf) = this.preview.pdf() {
-                                    window.focus(&pdf.read(cx).focus_handle(cx), cx);
+            .children(
+                [(false, text::MARKDOWN), (true, text::SOURCE)]
+                    .into_iter()
+                    .map(|(original, label)| {
+                        ui::control(label, label, theme, true)
+                            .role(gpui::Role::RadioButton)
+                            .aria_toggled(if self.original_selected == original {
+                                gpui::Toggled::True
+                            } else {
+                                gpui::Toggled::False
+                            })
+                            .when(cfg!(test), |v| v.debug_selector(move || label.into()))
+                            .when(self.original_selected == original, |v| {
+                                v.bg(theme.sidebar_selected())
+                                    .text_color(theme.search_accent())
+                            })
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.original_selected = original;
+                                if original {
+                                    if let Some(pdf) = this.preview.pdf() {
+                                        window.focus(&pdf.read(cx).focus_handle(cx), cx);
+                                    }
+                                } else if !this.lifecycle.source_only() {
+                                    window.focus(&this.editor.read(cx).focus_handle(cx), cx);
                                 }
-                            } else if !this.lifecycle.source_only() {
-                                window.focus(&this.editor.read(cx).focus_handle(cx), cx);
-                            }
-                            cx.notify();
-                        }))
-                },
-            ))
+                                cx.notify();
+                            }))
+                    }),
+            )
             .into_any_element()
     }
 }
@@ -822,14 +826,11 @@ impl DocumentView {
 fn local_note(theme: crate::ui::style::Theme) -> impl IntoElement {
     let p = theme.pdf_style();
     let machine = if cfg!(target_os = "macos") {
-        "this Mac"
+        text::THIS_MAC
     } else {
-        "this computer"
+        text::THIS_COMPUTER
     };
-    let detail = format!(
-        "Detection, conversion and Projects run on {machine}. mdoc goes online only \
-         to check for updates and to download models you choose."
-    );
+    let detail = text::runs_on(machine);
     div()
         .id("empty-page-local")
         .when(cfg!(test), |v| {
@@ -841,7 +842,7 @@ fn local_note(theme: crate::ui::style::Theme) -> impl IntoElement {
         .gap_1()
         .text_size(px(12.))
         .text_color(p.header_muted)
-        .aria_label(format!("Documents stay on {machine}. {detail}"))
+        .aria_label(text::stay_on_detail(machine, &detail))
         .tooltip(crate::ui::style::tooltip(detail, theme))
         .child(
             gpui::svg()
@@ -849,7 +850,7 @@ fn local_note(theme: crate::ui::style::Theme) -> impl IntoElement {
                 .size(px(13.))
                 .text_color(p.header_muted),
         )
-        .child(format!("Documents stay on {machine}"))
+        .child(text::stay_on(machine))
 }
 
 impl DocumentView {

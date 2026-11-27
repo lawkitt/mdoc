@@ -7,6 +7,7 @@
 //! effects.
 
 use super::{Background, DocumentView, Next, OcrState, SetupOcr, import_flow, markdown_search};
+use crate::document::text;
 use crate::{
     ui,
     workspace::{self, Import},
@@ -331,7 +332,7 @@ impl ImportFlow {
         self.job.complete(
             generation,
             Err(ImportError::NeedsOcr(
-                "Scanned agreement.pdf".into(),
+                text::SCANNED_AGREEMENT.into(),
                 vec![1],
                 Vec::new(),
                 1,
@@ -668,9 +669,7 @@ impl ImportFlow {
             return None;
         }
         if model_busy {
-            return Some(ImportEffect::Error(
-                "Another model job is running. Retry when it finishes.".into(),
-            ));
+            return Some(ImportEffect::Error(text::ANOTHER_MODEL_JOB.into()));
         }
         self.defer_for_setup(generation, path)
             .then_some(ImportEffect::SetUp)
@@ -919,9 +918,7 @@ impl DocumentView {
             }),
         };
         if allow_ocr && installed.is_none() {
-            self.error = Some(
-                "Selected OCR model is not ready. Open Settings to download or repair it.".into(),
-            );
+            self.error = Some(text::OCR_MODEL_NOT_READY.into());
             cx.notify();
             return;
         }
@@ -1111,11 +1108,7 @@ impl DocumentView {
             }
             cx.notify();
         } else if self.import.setting_up() {
-            self.finish_ocr_setup(
-                Err("Another model job is running. Retry when it finishes.".into()),
-                window,
-                cx,
-            );
+            self.finish_ocr_setup(Err(text::ANOTHER_MODEL_JOB.into()), window, cx);
         }
     }
 
@@ -1197,7 +1190,7 @@ impl DocumentView {
         }
         self.password_form(
             card,
-            "Enter its password to convert it. mdoc unlocks it in memory while this tab is open and never saves the password or an unlocked copy.",
+            text::PASSWORD_TO_CONVERT,
             prompt == import_flow::PasswordPrompt::Wrong,
             self.password_field.clone(),
             ("document-password", "unlock-document"),
@@ -1225,7 +1218,7 @@ impl DocumentView {
                 .px_6()
                 .text_center()
                 .text_size(px(14.))
-                .child("Enter the document’s password to show the Original.")
+                .child(text::PASSWORD_PENDING)
                 .into_any_element();
         }
         let field_focus = self.original_password_field.read(cx).focus_handle(cx);
@@ -1256,7 +1249,7 @@ impl DocumentView {
             .justify_center()
             .child(self.password_form(
                 card,
-                "Enter its password to show the Original. mdoc unlocks it in memory while this tab is open and never saves the password or an unlocked copy.",
+                text::PASSWORD_TO_SHOW,
                 password == crate::document::preview::OriginalPassword::Wrong,
                 self.original_password_field.clone(),
                 ("original-password", "unlock-original"),
@@ -1283,7 +1276,7 @@ impl DocumentView {
     ) -> gpui::AnyElement {
         let theme = self.theme.get();
         let (field_id, button_id) = ids;
-        card.child(ui::card_title("This document is password-protected"))
+        card.child(ui::card_title(text::PASSWORD_PROTECTED))
             .child(ui::card_text(body, theme))
             .when(wrong, |v| {
                 v.child(ui::card_error(
@@ -1319,7 +1312,7 @@ impl DocumentView {
                             .child(field),
                     )
                     .child(
-                        ui::primary_button(button_id, "Unlock", theme, enabled)
+                        ui::primary_button(button_id, text::UNLOCK, theme, enabled)
                             .when(cfg!(test), |v| v.debug_selector(move || button_id.into()))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 unlock(this, window, cx);
