@@ -1,3 +1,5 @@
+//! The Model comparison window, opened from Settings: the chosen models run one after
+//! another on one captured input, and their results are shown and exported.
 use crate::{
     document::comparison::{self, Config, Input, ResultRecord},
     document::markdown_search,

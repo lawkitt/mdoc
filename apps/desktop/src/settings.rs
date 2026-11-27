@@ -1,3 +1,6 @@
+//! Settings: the panel and its sections (General, Models, AI connector, the Vault,
+//! categories, the dictionary and the lists), model downloads and their status, and
+//! saving each change.
 use crate::{
     app::models,
     app::updater,
