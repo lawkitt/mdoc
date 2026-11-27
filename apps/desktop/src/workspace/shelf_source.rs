@@ -560,11 +560,8 @@ impl Workspace {
             // Quitting now would bring the item back at the next launch with
             // no note: show the window and say so instead.
             crate::shelf::menu_bar::reveal_if_hidden(window, cx);
-            self.notices.post(format!(
-                "Could not save \u{201c}Quit when windows close\u{201d}: {error}. \
-                 Turn off Settings \u{203a} General \u{203a} {} to try again.",
-                crate::shelf::tray::SETTING
-            ));
+            self.notices
+                .post(crate::shelf::text::quit_when_windows_close_not_saved(error));
             cx.notify();
             return;
         }
@@ -624,7 +621,7 @@ impl Workspace {
             None => Ok(()),
         };
         if let Err(error) = &saved {
-            eprintln!("mdoc: could not save a General choice: {error}");
+            eprintln!("{}", crate::shelf::text::general_not_saved(error));
         }
         self.preferences.borrow_mut().current = Some(changed);
         self.settings

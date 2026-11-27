@@ -16,17 +16,13 @@
 //! - Copy for AI is today's Copy for AI; it shares nothing.
 use mdoc_store::settings::AskWith;
 
+pub(crate) use super::text::{
+    EXCLUDED, MOVE_AND_SHARE, PROJECT_PROMPT, UNFILED_TEXT, document_prompt, label,
+    move_into_and_ask, opened, unfiled_shared_text, unfiled_title,
+};
+
 /// Every choice, in the menu's order.
 pub(crate) const CHOICES: [AskWith; 3] = [AskWith::Claude, AskWith::ChatGpt, AskWith::CopyForAi];
-
-/// What `with`'s menu row and the button's main part read.
-pub(crate) fn label(with: AskWith) -> &'static str {
-    match with {
-        AskWith::Claude => "Ask Claude",
-        AskWith::ChatGpt => "Ask in a ChatGPT thread",
-        AskWith::CopyForAi => "Copy for AI",
-    }
-}
 
 /// The AI app `with` opens, as the window names it.
 pub(crate) fn app(with: AskWith) -> Option<&'static str> {
@@ -46,15 +42,6 @@ pub(crate) fn on_project_page(last: AskWith) -> AskWith {
     }
 }
 
-/// The prompt for a document the connector labels `label`, id `doc_id`.
-pub(crate) fn document_prompt(label: &str, doc_id: &str) -> String {
-    format!("Read \u{201c}{label}\u{201d} in mdoc (doc_id {doc_id}). My question: ")
-}
-
-/// The prompt for the shared Project as a whole.
-pub(crate) const PROJECT_PROMPT: &str =
-    "List my documents in mdoc and read the ones you need. My question: ";
-
 /// The link that opens `with`'s app with `prompt` filled in, not sent;
 /// `None` for Copy for AI.
 pub(crate) fn link(with: AskWith, prompt: &str) -> Option<String> {
@@ -64,49 +51,6 @@ pub(crate) fn link(with: AskWith, prompt: &str) -> Option<String> {
         AskWith::CopyForAi => None,
     }
 }
-
-/// The notice after `with`'s app opened, with Project `project` shared.
-pub(crate) fn opened(with: AskWith, project: &str) -> String {
-    let shared = format!("\u{201c}{project}\u{201d} is shared with AI apps.");
-    match with {
-        AskWith::ChatGpt => format!(
-            "{shared} ChatGPT opened a new local Work thread with the prompt: add your question \
-             and send it. Its ordinary chats can't read mdoc."
-        ),
-        _ => format!(
-            "{shared} Claude opened a new chat with the prompt: add your question and send it."
-        ),
-    }
-}
-
-/// The Unfiled card's title, for `with`'s app.
-pub(crate) fn unfiled_title(with: AskWith) -> String {
-    format!(
-        "Ask {} about an Unfiled document?",
-        app(with).unwrap_or("an AI app")
-    )
-}
-
-pub(crate) const UNFILED_TEXT: &str = "AI apps read only the Project you share, never Unfiled. Move it to a new Project and share \
-     that?";
-
-pub(crate) const MOVE_AND_SHARE: &str = "Move to a new Project and share";
-
-/// The Unfiled card's text when Project `shared` is shared (#1312).
-pub(crate) fn unfiled_shared_text(shared: &str) -> String {
-    format!(
-        "AI apps read only the Project you share, never Unfiled. Move it to \u{201c}{shared}\u{201d}, \
-         the Project you share, or to a new Project?"
-    )
-}
-
-/// The Unfiled card's first choice when Project `shared` is shared.
-pub(crate) fn move_into_and_ask(shared: &str) -> String {
-    format!("Move to \u{201c}{shared}\u{201d} and ask")
-}
-
-/// Why Ask did nothing for a document excluded from AI.
-pub(crate) const EXCLUDED: &str = "This document is excluded from AI apps.";
 
 /// An Ask waiting for its document's move to a new Project.
 #[derive(Default)]

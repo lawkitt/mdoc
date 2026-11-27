@@ -1,8 +1,13 @@
+use super::model_setup::SetupCompletion;
 use super::*;
-use gpui::size;
+use crate::{app::updater, ui};
 use gpui::{Focusable, TestAppContext};
+use gpui::{px, size};
+use mdoc_store::model_state::Files;
 use mdoc_store::settings::OcrModel;
+use mdoc_store::settings::PiiModel;
 use mdoc_store::settings::Store;
+use std::time::Duration;
 
 #[gpui::test]
 fn existing_panel_reloads_checks_saved_by_another_panel(cx: &mut TestAppContext) {

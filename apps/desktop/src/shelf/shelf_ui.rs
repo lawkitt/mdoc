@@ -23,7 +23,7 @@ pub(crate) use rows::{ShelfRows, ShelfRowsEvent, clear_exports, height as rows_h
 
 use crate::{
     shelf::menu_bar,
-    shelf::{self, ShelfDocument, ShelfKey},
+    shelf::{self, ShelfDocument, ShelfKey, text},
     ui,
     ui::style::Theme,
     workspace::{ClipboardNames, ClipboardSource, Quit, Workspace},
@@ -578,7 +578,7 @@ impl ShelfView {
             _ => return,
         };
         let summary = match cx.read_from_clipboard().and_then(|item| item.text()) {
-            None => "The clipboard has no text".to_string(),
+            None => text::NO_TEXT.to_string(),
             Some(text) => match row {
                 ClipboardRow::Restore => {
                     let restored = shelf::restore_clipboard(&text, names);
@@ -594,11 +594,7 @@ impl ShelfView {
                     if count > 0 {
                         cx.write_to_clipboard(ClipboardItem::new_string(replaced));
                     }
-                    match count {
-                        0 => "No known names found".to_string(),
-                        1 => "1 name replaced".to_string(),
-                        n => format!("{n} names replaced"),
-                    }
+                    text::names_replaced(count)
                 }
             },
         };
@@ -618,7 +614,7 @@ impl ShelfView {
         self.result.clone().or_else(|| {
             self.source
                 .as_ref()
-                .map(|source| format!("Names from {}", source.name()))
+                .map(|source| text::names_from(source.name()))
         })
     }
 
@@ -701,7 +697,7 @@ impl ShelfView {
         let buttons = if enabled && self.clipboard_locked(cx) {
             div().flex().flex_row().child(self.clipboard_button(
                 "shelf-unlock",
-                "Unlock in mdoc…",
+                text::UNLOCK_IN_MDOC,
                 true,
                 cx,
                 |this, window, cx| this.clipboard(ClipboardRow::Restore, window, cx),
@@ -713,14 +709,14 @@ impl ShelfView {
                 .gap(px(6.))
                 .child(self.clipboard_button(
                     "shelf-pseudonymize",
-                    "Pseudonymize",
+                    text::PSEUDONYMIZE,
                     enabled,
                     cx,
                     |this, window, cx| this.clipboard(ClipboardRow::Pseudonymize, window, cx),
                 ))
                 .child(self.clipboard_button(
                     "shelf-restore",
-                    "Restore",
+                    text::RESTORE,
                     enabled,
                     cx,
                     |this, window, cx| this.clipboard(ClipboardRow::Restore, window, cx),
@@ -728,7 +724,7 @@ impl ShelfView {
         };
         let line = self
             .source_line()
-            .unwrap_or_else(|| "Names appear once a document is pseudonymized".into());
+            .unwrap_or_else(|| text::NAMES_APPEAR.into());
         let source = div()
             .h(px(SOURCE_LINE))
             .px(px(4.))
@@ -752,7 +748,7 @@ impl ShelfView {
                 v.child(
                     ui::control("shelf-pick", "▾", theme, true)
                         .track_focus(&self.pick_button)
-                        .aria_label("Choose whose names to use")
+                        .aria_label(text::CHOOSE_WHOSE_NAMES)
                         .px(px(4.))
                         .py_0()
                         .text_size(px(11.))
@@ -777,7 +773,7 @@ impl ShelfView {
                     .text_size(px(11.))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(p.header_muted)
-                    .child("Clipboard"),
+                    .child(text::CLIPBOARD),
             )
             .child(buttons)
             .child(source)
@@ -798,7 +794,7 @@ impl ShelfView {
                     .items_center()
                     .text_size(px(11.))
                     .text_color(p.header_muted)
-                    .child("Clipboard names from"),
+                    .child(text::CLIPBOARD_NAMES_FROM),
             )
             .children(self.sources.iter().enumerate().map(|(i, source)| {
                 let chosen = self.source.as_ref() == Some(source);
@@ -831,18 +827,21 @@ impl ShelfView {
             .flex()
             .flex_row()
             .items_center()
-            .child(
-                self.action_row("shelf-open-mdoc", "Open mdoc", cx, |this, window, cx| {
+            .child(self.action_row(
+                "shelf-open-mdoc",
+                text::OPEN_MDOC,
+                cx,
+                |this, window, cx| {
                     this.in_mdoc(window, cx, |workspace, window, cx| {
                         workspace.home_from_shelf(window, cx)
                     })
-                }),
-            )
+                },
+            ))
             .child(div().flex_1())
             .child(
                 ui::header_icon(
                     "shelf-settings",
-                    "Settings",
+                    text::SETTINGS,
                     ui::Icon::Settings,
                     theme,
                     false,
@@ -854,7 +853,7 @@ impl ShelfView {
                 })),
             )
             .child(
-                self.action_row("shelf-quit", "Quit", cx, |this, window, cx| {
+                self.action_row("shelf-quit", text::QUIT, cx, |this, window, cx| {
                     this.close(window, cx);
                     // The quit flow asks about unsaved work as ⌘Q does.
                     cx.defer(|cx| cx.dispatch_action(&Quit));
@@ -934,7 +933,7 @@ impl ShelfView {
             .when_some(update, |v, version| {
                 v.child(self.action_row(
                     "shelf-restart",
-                    format!("Restart to update to {version}"),
+                    text::restart_to_update(version),
                     cx,
                     |this, window, cx| {
                         this.in_mdoc(window, cx, |workspace, window, cx| {

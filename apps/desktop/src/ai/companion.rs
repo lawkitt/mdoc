@@ -38,6 +38,7 @@ pub(crate) mod probe_windows;
 pub(crate) mod windows;
 
 use crate::{
+    ai::text,
     shelf::ShelfKey,
     shelf::menu_bar,
     shelf::shelf_ui::{COPIED_FOR, Fit, ShelfRows, ShelfRowsEvent},
@@ -722,10 +723,10 @@ impl CompanionView {
                     .text_size(px(10.))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(p.header_muted)
-                    .child("SHARED WITH AI APPS"),
+                    .child(text::SHARED_WITH_AI_APPS_HEADING),
             )
             .child(
-                ui::header_icon("companion-hide", "Hide", ui::Icon::Close, theme, false)
+                ui::header_icon("companion-hide", text::HIDE, ui::Icon::Close, theme, false)
                     .track_focus(&self.hide_focus)
                     .size(px(22.))
                     .on_click(cx.listener(|this, _, window, cx| this.hide(window, cx))),
@@ -736,7 +737,7 @@ impl CompanionView {
                 v.debug_selector(|| "companion-project".into())
             })
             .role(gpui::Role::Group)
-            .aria_label("Shared with AI apps")
+            .aria_label(text::SHARED_WITH_AI_APPS)
             .h(px(PROJECT_LINE))
             .px(px(4.))
             .flex()
@@ -760,7 +761,7 @@ impl CompanionView {
                         .child(project.name.clone()),
                 )
                 .child(
-                    ui::link_button("companion-stop-sharing", "Stop sharing", theme, true)
+                    ui::link_button("companion-stop-sharing", text::STOP_SHARING, theme, true)
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "companion-stop-sharing".into())
                         })
@@ -770,8 +771,8 @@ impl CompanionView {
                 ),
             None => line.child(div().text_color(p.header_muted).child(
                 match self.content.running {
-                    true => "No Project shared",
-                    false => "No Project shared. Unlock mdoc to share one.",
+                    true => text::NO_PROJECT_SHARED,
+                    false => text::NO_PROJECT_SHARED_LOCKED,
                 },
             )),
         };
@@ -792,26 +793,23 @@ impl CompanionView {
         let p = theme.pdf_style();
         let (title, line) = match &review.step {
             ReviewStep::Ready => (
-                format!("\u{201c}{}\u{201d} is Ready", review.label),
-                format!("{} can read it now.", review.from),
+                text::review_ready(&review.label),
+                text::can_read_it_now(&review.from),
             ),
             ReviewStep::InMdoc(state) => (
-                format!("{} asked for \u{201c}{}\u{201d}", review.from, review.label),
-                match state.strip_prefix("Needs review · ") {
-                    Some(why) => format!("Finish its review in mdoc · {why}"),
-                    None => "Finish its review in mdoc.".to_string(),
-                },
+                text::asked_for(&review.from, &review.label),
+                text::finish_in_mdoc(state.strip_prefix(text::NEEDS_REVIEW)),
             ),
             ReviewStep::Proposals(_) | ReviewStep::Replacing(_) => (
-                format!("{} asked for \u{201c}{}\u{201d}", review.from, review.label),
-                "It needs review before AI apps can read it.".to_string(),
+                text::asked_for(&review.from, &review.label),
+                text::NEEDS_REVIEW_BEFORE.to_string(),
             ),
         };
         let open = |primary: bool, cx: &mut Context<Self>| {
             let id = "companion-review-open";
             let button = match primary {
-                true => ui::primary_button(id, "Open in mdoc", theme, true),
-                false => ui::action_control(id, "Open in mdoc", theme, true, false),
+                true => ui::primary_button(id, text::OPEN_IN_MDOC, theme, true),
+                false => ui::action_control(id, text::OPEN_IN_MDOC, theme, true, false),
             };
             button
                 .when(cfg!(test), |v| {
@@ -825,7 +823,7 @@ impl CompanionView {
                 Some(self.proposals(proposals, cx)),
                 Some(
                     buttons.child(open(false, cx)).child(
-                        ui::primary_button("companion-replace-all", "Replace all", theme, true)
+                        ui::primary_button("companion-replace-all", text::REPLACE_ALL, theme, true)
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "companion-replace-all".into())
                             })
@@ -837,7 +835,7 @@ impl CompanionView {
                 Some(self.proposals(proposals, cx)),
                 Some(buttons.child(open(false, cx)).child(ui::primary_button(
                     "companion-replace-all",
-                    "Replacing…",
+                    text::REPLACING,
                     theme,
                     false,
                 ))),
@@ -888,10 +886,7 @@ impl CompanionView {
     fn proposals(&self, proposals: &[CompanionProposal], cx: &mut Context<Self>) -> AnyElement {
         let p = self.theme.get().pdf_style();
         let shown = self.shows_proposals();
-        let names = match proposals.len() {
-            1 => "1 name to replace".to_string(),
-            n => format!("{n} names to replace"),
-        };
+        let names = text::names_to_replace(proposals.len());
         let list = div()
             .id("companion-proposals")
             .when(cfg!(test), |v| {
@@ -899,8 +894,8 @@ impl CompanionView {
             })
             .role(gpui::Role::List)
             .aria_label(match shown {
-                true => "Proposals".to_string(),
-                false => format!("{names}, hidden. Point at them to see them."),
+                true => text::PROPOSALS.to_string(),
+                false => text::proposals_hidden(&names),
             })
             .h(px(proposals_height(proposals)))
             .p(px(PROPOSALS_PADDING))
@@ -918,16 +913,10 @@ impl CompanionView {
                 div()
                     .id(("companion-proposal", i))
                     .role(gpui::Role::ListItem)
-                    .aria_label(format!(
-                        "{} becomes {}, {} {}",
-                        proposal.original,
-                        proposal.alias,
+                    .aria_label(text::proposal(
+                        &proposal.original,
+                        &proposal.alias,
                         proposal.mentions,
-                        if proposal.mentions == 1 {
-                            "mention"
-                        } else {
-                            "mentions"
-                        }
                     ))
                     .h(px(PROPOSAL_ROW))
                     .flex()
@@ -964,7 +953,7 @@ impl CompanionView {
                     .items_center()
                     .justify_center()
                     .text_color(p.header_muted)
-                    .child(format!("{names}. Point here to see them.")),
+                    .child(text::point_to_see(&names)),
             ),
         };
         #[cfg(all(
@@ -1005,14 +994,12 @@ impl CompanionView {
                 v.debug_selector(|| "companion-documents".into())
             })
             .role(gpui::Role::List)
-            .aria_label("Documents AI apps can ask for")
+            .aria_label(text::DOCUMENTS_AI_APPS_CAN_ASK_FOR)
             .flex()
             .flex_col();
         let list = match &self.content.documents {
-            Err(error) => list.child(line(format!("The documents can't be listed. {error}"))),
-            Ok(documents) if documents.is_empty() => {
-                list.child(line("No documents in this Project yet.".into()))
-            }
+            Err(error) => list.child(line(text::documents_not_listed(error))),
+            Ok(documents) if documents.is_empty() => list.child(line(text::NO_DOCUMENTS.into())),
             Ok(documents) => list.children(documents.iter().enumerate().map(|(i, document)| {
                 div()
                     .id(("companion-document", i))
@@ -1047,7 +1034,7 @@ impl CompanionView {
             div()
                 .flex()
                 .flex_col()
-                .child(self.heading("Documents"))
+                .child(self.heading(text::DOCUMENTS))
                 .child(list)
                 .into_any_element(),
         )
@@ -1067,8 +1054,8 @@ impl CompanionView {
             })
             .role(gpui::Role::Group)
             .aria_label(match shown {
-                true => "Reply with the names restored",
-                false => "Reply hidden. Point at it to read it with the names restored.",
+                true => text::REPLY_RESTORED,
+                false => text::REPLY_HIDDEN,
             })
             .h(px(REPLY_TEXT))
             .p_2()
@@ -1091,7 +1078,7 @@ impl CompanionView {
                     .justify_center()
                     .text_size(px(12.))
                     .text_color(p.header_muted)
-                    .child("Point here to read it with the names restored")
+                    .child(text::POINT_TO_READ)
                     .into_any_element(),
             });
         #[cfg(all(
@@ -1122,7 +1109,7 @@ impl CompanionView {
                     if copied {
                         crate::ui::text::COPIED
                     } else {
-                        "Copy"
+                        text::COPY
                     },
                     theme,
                     true,
@@ -1134,10 +1121,10 @@ impl CompanionView {
                 ui::action_control(
                     "companion-reply-save",
                     match (reply.saved, reply.saving, reply.failed) {
-                        (true, _, _) => "Saved as a document",
-                        (false, true, _) => "Saving…",
-                        (false, false, true) => "Not saved. Try again",
-                        (false, false, false) => "Save as document",
+                        (true, _, _) => text::SAVED_AS_DOCUMENT,
+                        (false, true, _) => text::SAVING,
+                        (false, false, true) => text::NOT_SAVED,
+                        (false, false, false) => text::SAVE_AS_DOCUMENT,
                     },
                     theme,
                     !reply.saved && !reply.saving,
@@ -1149,7 +1136,7 @@ impl CompanionView {
             div()
                 .flex()
                 .flex_col()
-                .child(self.heading(format!("Latest reply · from {}", reply.from)))
+                .child(self.heading(text::latest_reply(&reply.from)))
                 .child(div().relative().child(text))
                 .child(buttons)
                 .into_any_element(),
@@ -1162,8 +1149,8 @@ impl CompanionView {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let label = match &self.content.shared {
-            Some(project) => format!("Drop files here to add them to {}", project.name),
-            None => "Drop files here to open them in mdoc".into(),
+            Some(project) => text::drop_to_add(&project.name),
+            None => text::DROP_TO_OPEN.into(),
         };
         div()
             .id("companion-drop")
@@ -1202,17 +1189,19 @@ impl CompanionView {
             .flex_row()
             .items_center()
             .child(
-                row("companion-open-mdoc", "Open mdoc").on_click(cx.listener(|this, _, _, cx| {
-                    this.in_mdoc(cx, |workspace, window, cx| {
-                        workspace.home_from_shelf(window, cx)
-                    })
-                })),
+                row("companion-open-mdoc", text::OPEN_MDOC).on_click(cx.listener(
+                    |this, _, _, cx| {
+                        this.in_mdoc(cx, |workspace, window, cx| {
+                            workspace.home_from_shelf(window, cx)
+                        })
+                    },
+                )),
             )
             .child(div().flex_1())
             .child(
                 ui::header_icon(
                     "companion-settings",
-                    "Settings",
+                    text::SETTINGS,
                     ui::Icon::Settings,
                     theme,
                     false,
@@ -1223,13 +1212,13 @@ impl CompanionView {
                     })
                 })),
             )
-            .child(
-                row("companion-quit", "Quit").on_click(cx.listener(|this, _, window, cx| {
+            .child(row("companion-quit", text::QUIT).on_click(cx.listener(
+                |this, _, window, cx| {
                     this.hide(window, cx);
                     // The quit flow asks about unsaved work as ⌘Q does.
                     cx.defer(|cx| cx.dispatch_action(&Quit));
-                })),
-            )
+                },
+            )))
             .into_any_element()
     }
 }

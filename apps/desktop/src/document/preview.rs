@@ -1,6 +1,8 @@
 //! Loaded preview and pending replacement have independent lifetimes.
 //! Failure preserves the displayed preview; committing releases old PDF data
 //! before deleting its temporary DOCX backing file.
+use crate::document::text;
+pub(crate) use crate::document::text::{DOCX_NOTE, NO_PREVIEW, UNREADABLE_SOURCE, docx_message};
 use crate::{
     document::comment_rail::CommentRail,
     document::markdown_search,
@@ -12,8 +14,7 @@ use gpui::{App, Context, Entity, Focusable, Subscription, Window, actions, prelu
 use gpui_pdf::{HeaderToggle, PdfData, PdfSource, PdfView, ViewOptions};
 use mdoc_import::{
     comments::Comment,
-    docx_preview::{self, PreviewError},
-    image_pdf,
+    docx_preview, image_pdf,
     import::{self, Source, SourceStamp},
 };
 use mdoc_store::{session_store, settings};
@@ -28,10 +29,6 @@ use std::{
     },
 };
 actions!(mdoc, [RetryPreview]);
-
-/// DOCX previews are rendered locally and only approximate Word's layout;
-/// the Markdown is converted from the file itself.
-pub(crate) const DOCX_NOTE: &str = "Approximate preview: the layout may differ from Word. The Markdown is converted from the file itself.";
 
 /// The DOCX worker's reader for the comment marks in the PDF it rendered
 /// (`docx_preview::MarkReader`): the anchors' rectangles, read through
@@ -67,8 +64,8 @@ pub(crate) fn attach_search_field(
         markdown_search::SearchInput::new(cx)
             .with_focus_accent(accent)
             .with_key_context("PreviewSearch")
-            .with_placeholder("Find…")
-            .with_label("Find in preview")
+            .with_placeholder(text::FIND)
+            .with_label(text::FIND_IN_PREVIEW)
     });
     let focus = field.read(cx).focus_handle(cx);
     pdf.set_search_field(field.clone(), focus, |field| field.value().to_owned(), cx);
@@ -110,15 +107,6 @@ struct PendingPreview {
     docx: Option<docx_preview::DocxPreview>,
     _subscription: Subscription,
 }
-
-/// The preview pane's message when the source can't be read, for example
-/// because it moved; Retry can succeed once it is back.
-pub(crate) const UNREADABLE_SOURCE: &str =
-    "mdoc could not read this file. Check that it is still there.";
-
-/// The preview pane's message for a format it can't show.
-pub(crate) const NO_PREVIEW: &str =
-    "No preview for this format. mdoc previews PDF, DOCX and image files.";
 
 /// Where the Original's password card stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -660,7 +648,7 @@ impl PreviewState {
                 .into_owned();
             let note = self.docx.is_some().then_some(DOCX_NOTE.into());
             pending.pdf.update(cx, |pdf, cx| {
-                pdf.set_display_name(format!("Source · {name}"), cx);
+                pdf.set_display_name(text::source_name(&name), cx);
                 // An expected limitation, not a notice (README media decision 9).
                 pdf.set_source_note(note, cx);
             });
@@ -744,11 +732,11 @@ impl DocumentView {
         if count > 0 {
             toggles.push(HeaderToggle {
                 id: "source-comments",
-                label: format!("💬 {count}").into(),
+                label: text::comments_toggle(count).into(),
                 description: if display.comments {
-                    "Hide comments"
+                    text::HIDE_COMMENTS
                 } else {
-                    "Show comments"
+                    text::SHOW_COMMENTS
                 }
                 .into(),
                 on: display.comments,
@@ -761,11 +749,11 @@ impl DocumentView {
         if hidden > 0 {
             toggles.push(HeaderToggle {
                 id: "source-hidden-text",
-                label: format!("Hidden text ({hidden})").into(),
+                label: text::hidden_text(hidden).into(),
                 description: if display.hidden_text {
-                    "Hide hidden text"
+                    text::HIDE_HIDDEN_TEXT
                 } else {
-                    "Show hidden text"
+                    text::SHOW_HIDDEN_TEXT
                 }
                 .into(),
                 on: display.hidden_text,
@@ -961,17 +949,14 @@ impl DocumentView {
                 return;
             }
             if pdf.read(cx).is_unsupported_encryption() {
-                this.preview.fail(
-                    generation,
-                    "This PDF uses encryption mdoc can’t open, so it can’t be previewed.".into(),
-                    false,
-                );
+                this.preview
+                    .fail(generation, text::PDF_ENCRYPTION_UNSUPPORTED.into(), false);
             } else if pdf.read(cx).load_error().is_some() {
                 let retryable = pdf.read(cx).load_error_retryable();
                 let message = if retryable {
                     UNREADABLE_SOURCE
                 } else {
-                    "This PDF is damaged or incomplete, so it can't be previewed."
+                    text::PDF_DAMAGED
                 };
                 this.preview.fail(generation, message.into(), retryable);
             } else if pdf.read(cx).is_locked()
@@ -1422,10 +1407,9 @@ impl DocumentView {
                     import::ImportError::PasswordRequired | import::ImportError::WrongPassword => {
                         UnlockFailure::Wrong
                     }
-                    import::ImportError::EncryptionUnsupported(scheme) => UnlockFailure::Message(
-                        format!("This document uses {scheme} encryption, which mdoc can’t unlock."),
-                        false,
-                    ),
+                    import::ImportError::EncryptionUnsupported(scheme) => {
+                        UnlockFailure::Message(text::encryption_unsupported(scheme), false)
+                    }
                     error => UnlockFailure::Message(error.to_string(), false),
                 })
             }
@@ -1471,34 +1455,6 @@ impl DocumentView {
         {
             self.open_path(path, window, cx);
         }
-    }
-}
-
-/// The one sentence the preview pane shows for a failed DOCX preview. The
-/// error's `Display` text keeps the technical detail for tests and diagnostics.
-pub(crate) fn docx_message(error: &PreviewError) -> &'static str {
-    match error {
-        PreviewError::InputTooLarge => {
-            "This DOCX is too large to preview. Previews take files up to 50 MB."
-        }
-        PreviewError::MacrosNotSupported => "DOCX files with macros can't be previewed.",
-        // A locked DOCX asks for its password; this is a file in Word's
-        // older binary layout, or encrypted in a way mdoc can't open.
-        PreviewError::Encrypted => {
-            "This DOCX is encrypted or isn’t a Word package mdoc can read, so it can't be previewed."
-        }
-        PreviewError::TrackedChangesNotSupported => {
-            "DOCX files with tracked changes can't be previewed. Accept or reject the changes in Word first."
-        }
-        PreviewError::NestedArchive => {
-            "This DOCX contains other packed files, so it can't be previewed."
-        }
-        PreviewError::Package(_) => "This DOCX is damaged or incomplete, so it can't be previewed.",
-        PreviewError::Render(_) => "The preview could not be drawn.",
-        PreviewError::Rejected => "The preview can't draw this DOCX.",
-        PreviewError::Timeout => "The preview took longer than 30 seconds and was stopped.",
-        PreviewError::Cancelled => "The preview was cancelled.",
-        PreviewError::Read(_) => "mdoc could not read this file. Check that it is still there.",
     }
 }
 
