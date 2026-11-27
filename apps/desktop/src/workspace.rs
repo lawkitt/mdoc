@@ -70,6 +70,7 @@ pub(crate) use notices::CloseNotices;
 pub(crate) use palette::{OpenPalette, PALETTE, PaletteClose};
 pub(crate) use shelf_source::{ClipboardNames, ClipboardSource};
 mod sidebar;
+mod text;
 pub(crate) use sidebar::navigation_ui::{Back, Forward};
 mod vault;
 pub(crate) use vault::recovery_key::OpenWithRecoveryKey;
@@ -485,8 +486,7 @@ impl Workspace {
                 let session = match result {
                     Ok(session) => session,
                     Err(error) => {
-                        this.notices
-                            .post(format!("Could not restore tabs: {error}"));
+                        this.notices.post(text::could_not_restore_tabs(error));
                         Session::default()
                     }
                 };
@@ -852,8 +852,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let Some(view) = self.active_view() else {
-            self.notices
-                .post("Open a document before comparing models.");
+            self.notices.post(text::OPEN_BEFORE_COMPARING);
             cx.notify();
             return;
         };
@@ -881,8 +880,7 @@ impl Workspace {
                     .cloned()
                     .or_else(|| view.read(cx).session.source.clone());
                 let Some(source) = source else {
-                    self.notices
-                        .post("OCR comparison requires an attached original PDF.");
+                    self.notices.post(text::OCR_COMPARISON_NEEDS_PDF);
                     cx.notify();
                     return;
                 };
@@ -890,8 +888,7 @@ impl Workspace {
             }
             settings::Model::Pii(_) => {
                 if !view.read(cx).can_copy_markdown() {
-                    self.notices
-                        .post("Convert the document to Markdown before comparing detection.");
+                    self.notices.post(text::CONVERT_BEFORE_COMPARING);
                     cx.notify();
                     return;
                 }
@@ -933,9 +930,9 @@ impl Workspace {
                     },
                     move |window, cx| {
                         window.set_window_title(if matches!(input, comparison::Input::Pdf(_)) {
-                            "Compare OCR models — mdoc"
+                            text::COMPARE_OCR_TITLE
                         } else {
-                            "Compare pseudonymization models — mdoc"
+                            text::COMPARE_PSEUDONYMIZATION_TITLE
                         });
                         let view = cx.new(|cx| {
                             comparison_ui::View::new(
@@ -1381,14 +1378,14 @@ impl Render for Workspace {
             }))
             // Home's clipboard actions need a document; documents handle them first.
             .on_action(cx.listener(|this, action: &PasteAiResponse, window, cx| {
-                if let Some(view) = this.clipboard_document("Paste AI reply", window, cx) {
+                if let Some(view) = this.clipboard_document(text::PASTE_AI_REPLY, window, cx) {
                     view.update(cx, |view, cx| view.paste_ai_response(action, window, cx));
                 }
             }))
             .on_action(
                 cx.listener(|this, action: &PseudonymizeClipboard, window, cx| {
                     if let Some(view) =
-                        this.clipboard_document("Pseudonymize clipboard", window, cx)
+                        this.clipboard_document(text::PSEUDONYMIZE_CLIPBOARD, window, cx)
                     {
                         view.update(cx, |view, cx| {
                             view.pseudonymize_clipboard(action, window, cx)
@@ -1397,7 +1394,7 @@ impl Render for Workspace {
                 }),
             )
             .on_action(cx.listener(|this, action: &RestoreClipboard, window, cx| {
-                if let Some(view) = this.clipboard_document("Restore clipboard", window, cx) {
+                if let Some(view) = this.clipboard_document(text::RESTORE_CLIPBOARD, window, cx) {
                     view.update(cx, |view, cx| view.restore_clipboard(action, window, cx));
                 }
             }))

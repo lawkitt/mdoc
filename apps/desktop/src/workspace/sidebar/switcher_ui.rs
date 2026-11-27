@@ -195,7 +195,7 @@ impl Workspace {
                             .key_context(SWITCHER_CONTEXT)
                             .track_focus(&self.switcher_focus)
                             .role(gpui::Role::ListBox)
-                            .aria_label("Recent documents")
+                            .aria_label(super::text::RECENT_DOCUMENTS)
                             .w(px(360.))
                             .p_1()
                             .flex()
@@ -207,7 +207,7 @@ impl Workspace {
                                     .pb_1()
                                     .text_size(px(11.))
                                     .text_color(palette.header_muted)
-                                    .child("Recent documents"),
+                                    .child(super::text::RECENT_DOCUMENTS),
                             )
                             .children(rows)
                             .on_modifiers_changed(cx.listener(

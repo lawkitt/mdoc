@@ -88,7 +88,7 @@ impl Workspace {
                 .summaries()
                 .into_iter()
                 .find(|project| &project.id == id)
-                .map(|project| format!("Project “{}”", project.name)),
+                .map(|project| super::text::project_stop(&project.name)),
             Some(Stop::Reply(id)) => self.reply_title(id).map(|title| format!("“{title}”")),
             None => None,
         };

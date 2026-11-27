@@ -45,7 +45,9 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     /// Owner folders (and root files) not checked for sentences yet. An owner
-    /// item that gives its folder a `text.rs` deletes its line here.
+    /// item that gives its folder a `text.rs` deletes its line here. The
+    /// window's owners are named `workspace/<owner>`; `workspace` alone is the
+    /// window's own root files.
     const EXEMPT: &[&str] = &[
         "ai",
         "app",
@@ -55,7 +57,16 @@ mod tests {
         "review",
         "settings",
         "shelf",
-        "workspace",
+        "workspace/ai",
+        "workspace/headless_renders",
+        "workspace/home",
+        "workspace/notices",
+        "workspace/palette",
+        "workspace/projects",
+        "workspace/replies",
+        "workspace/saving",
+        "workspace/shelf_source",
+        "workspace/vault",
     ];
 
     /// Test-only files at the crate root, never checked.
@@ -270,8 +281,19 @@ mod tests {
             .as_os_str()
             .to_str()
             .unwrap();
-        let owner = first.trim_end_matches(".rs");
-        !EXEMPT.contains(&owner) && path.file_name().unwrap() != "text.rs"
+        let mut owner = first.trim_end_matches(".rs").to_string();
+        // A window owner is the folder or file under workspace/.
+        if owner == "workspace" && rel.components().count() > 1 {
+            let second = rel
+                .components()
+                .nth(1)
+                .unwrap()
+                .as_os_str()
+                .to_str()
+                .unwrap();
+            owner = format!("workspace/{}", second.trim_end_matches(".rs"));
+        }
+        !EXEMPT.contains(&owner.as_str()) && path.file_name().unwrap() != "text.rs"
     }
 
     /// CONTEXT.md's `Avoid "…"` words, less the ones the check skips.
