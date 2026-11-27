@@ -301,10 +301,9 @@ impl Render for View {
                     .children(self.records.iter().enumerate().map(|(index, record)| {
                         control(
                             ("qa-result", index),
-                            format!(
-                                "{} · {:.2}s",
+                            text::result_label(
                                 record.configuration.name(),
-                                record.elapsed_ms as f64 / 1000.
+                                record.elapsed_ms as f64 / 1000.,
                             ),
                             theme,
                             true,

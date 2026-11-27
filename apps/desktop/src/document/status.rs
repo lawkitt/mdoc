@@ -235,7 +235,7 @@ impl DocumentView {
         }
         let name = model
             .map(crate::app::models::short_name)
-            .unwrap_or_else(|| "OCR".into());
+            .unwrap_or_else(|| text::OCR.into());
         // The engine says what it cannot read.
         let hint = if unreadable.is_empty() {
             choice.reason.clone()
