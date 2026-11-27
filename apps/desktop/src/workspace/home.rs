@@ -2,6 +2,8 @@
 //! strip, whose rows, like the palette's search over the Vault, are read
 //! from the manifest's summaries in memory, so no document record is opened.
 
+mod text;
+
 use super::Tab;
 use super::Workspace;
 use super::home;
@@ -135,18 +137,22 @@ pub(super) fn now() -> u64 {
 pub(super) fn age(at: u64, now: u64) -> String {
     let seconds = now.saturating_sub(at);
     match seconds {
-        0..60 => "just now".into(),
-        60..3_600 => format!("{} min ago", seconds / 60),
-        3_600..86_400 => format!("{} h ago", seconds / 3_600),
-        86_400..172_800 => "yesterday".into(),
-        172_800..604_800 => format!("{} days ago", seconds / 86_400),
+        0..60 => text::JUST_NOW.into(),
+        60..3_600 => text::minutes_ago(seconds / 60),
+        3_600..86_400 => text::hours_ago(seconds / 3_600),
+        86_400..172_800 => text::YESTERDAY.into(),
+        172_800..604_800 => text::days_ago(seconds / 86_400),
         _ => chrono::DateTime::from_timestamp(at as i64, 0).map_or_else(String::new, |date| {
             let date = date.with_timezone(&chrono::Local);
             let year = |d: &chrono::DateTime<chrono::Local>| chrono::Datelike::year(d);
             let this_year = chrono::DateTime::from_timestamp(now as i64, 0)
                 .is_some_and(|today| year(&today.with_timezone(&chrono::Local)) == year(&date));
-            date.format(if this_year { "%-d %b" } else { "%-d %b %Y" })
-                .to_string()
+            date.format(if this_year {
+                text::DATE_THIS_YEAR
+            } else {
+                text::DATE_OTHER_YEAR
+            })
+            .to_string()
         }),
     }
 }
@@ -300,7 +306,11 @@ impl Workspace {
                 .text_size(px(13.)),
             self.title.armed.clone(),
         )
-        .child(div().font_weight(gpui::FontWeight::MEDIUM).child("Home"))
+        .child(
+            div()
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .child(text::HOME),
+        )
         .child(div().flex_1())
         .children(ui::notice_bell(&self.title, theme).map(|bell| ui::no_drag(div().child(bell))));
         let header = ui::title_bar(bar, (!detached).then_some(p.border), window, theme);
@@ -342,15 +352,13 @@ impl Workspace {
                                                 div()
                                                     .text_size(px(26.))
                                                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                                                    .child("Hello"),
+                                                    .child(text::HELLO),
                                             )
                                             .child(
                                                 div()
                                                     .text_size(px(14.))
                                                     .text_color(p.header_muted)
-                                                    .child(
-                                                        "What would you like to prepare for AI?",
-                                                    ),
+                                                    .child(text::PREPARE_FOR_AI),
                                             ),
                                     )
                                     .child(self.drop_zone(cx))
@@ -399,13 +407,9 @@ impl Workspace {
                 .py_2()
                 .bg(p.placeholder_bg)
                 .text_size(px(13.))
+                .child(div().flex_1().child(text::installed(&version)))
                 .child(
-                    div()
-                        .flex_1()
-                        .child(format!("mdoc {version} is installed.")),
-                )
-                .child(
-                    ui::link_button("whats-new", "What's new", theme, true).on_click(
+                    ui::link_button("whats-new", text::WHATS_NEW, theme, true).on_click(
                         move |_, _, cx| cx.open_url(&crate::app::updater::release_url(&version)),
                     ),
                 )
@@ -477,11 +481,11 @@ impl Workspace {
         // No Vault this run: nothing can be added, and the zone says why.
         let unavailable = self.vault.unavailable();
         let title = match self.shell.drop {
-            _ if unavailable.is_some() => "Documents are unavailable".to_string(),
-            Some(0) => "These files can't be opened".to_string(),
-            Some(1) => "Drop to open".to_string(),
-            Some(n) => format!("Drop {n} files"),
-            None => "Drop documents here".to_string(),
+            _ if unavailable.is_some() => text::DOCUMENTS_UNAVAILABLE.to_string(),
+            Some(0) => text::CANT_BE_OPENED.to_string(),
+            Some(1) => text::DROP_TO_OPEN.to_string(),
+            Some(n) => text::drop_files(n),
+            None => text::DROP_DOCUMENTS_HERE.to_string(),
         };
         div()
             .id("home-drop")
@@ -516,7 +520,7 @@ impl Workspace {
                     .child(title),
             )
             .child(
-                ui::filled_button("home-open", "Open files…", theme, unavailable.is_none())
+                ui::filled_button("home-open", text::OPEN_FILES, theme, unavailable.is_none())
                     .when(cfg!(test), |v| v.debug_selector(|| "home-open".into()))
                     .mt_1()
                     .child(ui::key_hint(key(&Open)))
@@ -535,7 +539,7 @@ impl Workspace {
                         Some(why) => v.max_w(px(460.)).child(why.to_owned()),
                         None => v
                             .child(mdoc_import::import::supported_formats())
-                            .child("Several at once each become a document in Unfiled"),
+                            .child(text::SEVERAL_AT_ONCE),
                     }),
             )
             .into_any_element()
@@ -544,14 +548,11 @@ impl Workspace {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let machine = if cfg!(target_os = "macos") {
-            "this Mac"
+            text::THIS_MAC
         } else {
-            "this computer"
+            text::THIS_COMPUTER
         };
-        let detail = format!(
-            "Detection, conversion and Projects run on {machine}. mdoc goes online only \
-             to check for updates and to download models you choose."
-        );
+        let detail = text::local_detail(machine);
         let intake = self.vault.unavailable().is_none();
         div()
             .flex()
@@ -559,24 +560,24 @@ impl Workspace {
             .items_center()
             .gap_2()
             .child(
-                ui::primary_button("home-new", "New document", theme, intake)
+                ui::primary_button("home-new", text::NEW_DOCUMENT, theme, intake)
                     .when(cfg!(test), |v| v.debug_selector(|| "home-new".into()))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(New), cx)),
             )
             .child(
-                ui::primary_button("home-paste", "Paste text", theme, intake)
+                ui::primary_button("home-paste", text::PASTE_TEXT, theme, intake)
                     .when(cfg!(test), |v| v.debug_selector(|| "home-paste".into()))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAsNewTab), cx)),
             )
             .child(
-                ui::primary_button("home-restore", "Paste AI reply", theme, true)
+                ui::primary_button("home-restore", text::PASTE_AI_REPLY, theme, true)
                     .when(cfg!(test), |v| v.debug_selector(|| "home-restore".into()))
                     .on_click(|_, window, cx| {
                         window.dispatch_action(Box::new(PasteAiResponse), cx)
                     }),
             )
             .child(
-                ui::primary_button("home-clipboard", "Pseudonymize clipboard", theme, true)
+                ui::primary_button("home-clipboard", text::PSEUDONYMIZE_CLIPBOARD, theme, true)
                     .when(cfg!(test), |v| v.debug_selector(|| "home-clipboard".into()))
                     .on_click(|_, window, cx| {
                         window.dispatch_action(Box::new(PseudonymizeClipboard), cx)
@@ -594,7 +595,7 @@ impl Workspace {
                     .gap_1()
                     .text_size(px(12.))
                     .text_color(p.header_muted)
-                    .aria_label(format!("Documents stay on {machine}. {detail}"))
+                    .aria_label(text::local_label(machine, &detail))
                     // Above the note, right-aligned with it: a pointer tooltip
                     // at the window's edge would flip over the buttons beside
                     // it (U16).
@@ -611,7 +612,7 @@ impl Workspace {
                             .size(px(13.))
                             .text_color(p.header_muted),
                     )
-                    .child(format!("Documents stay on {machine}"))
+                    .child(text::local_note(machine))
                     .when(self.shell.local_note_hover, |v| {
                         v.child(
                             gpui::deferred(
@@ -665,17 +666,16 @@ impl Workspace {
             .filter(|card| matches!(card, home::Card::Document { .. }))
             .count();
         let more = match strip.need_review {
-            0 if !strip.cards.is_empty() => Some("Nothing needs review".to_string()),
+            0 if !strip.cards.is_empty() => Some(text::NOTHING_NEEDS_REVIEW.to_string()),
             n if n <= documents_shown => None,
-            1 => Some("1 needs review".to_string()),
-            n => Some(format!("{n} need review")),
+            n => Some(text::need_review(n)),
         };
         let header = div()
             .flex()
             .items_center()
             .gap_2()
             .pt_2()
-            .child(home_label("Continue", theme).pt_0())
+            .child(home_label(text::CONTINUE, theme).pt_0())
             .child(div().flex_1())
             .children(more.map(|more| {
                 div()
@@ -703,7 +703,7 @@ impl Workspace {
                             })
                             .text_size(px(13.))
                             .text_color(p.header_muted)
-                            .child("Nothing needs review."),
+                            .child(text::NOTHING_NEEDS_REVIEW_SENTENCE),
                     )
                     .into_any_element(),
             );
@@ -722,7 +722,7 @@ impl Workspace {
                         project.name.clone(),
                     )
                 }
-                None => (None, "Unfiled".to_string()),
+                None => (None, text::UNFILED.to_string()),
             }
         };
         let now = home::now();
@@ -736,9 +736,8 @@ impl Workspace {
                     summary.title.clone(),
                     place(summary.project.as_deref()),
                     match proposed {
-                        Some(1) => "1 to review".to_string(),
-                        Some(n) => format!("{n} to review"),
-                        None => "Not reviewed".to_string(),
+                        Some(n) => text::to_review(*n),
+                        None => text::NOT_REVIEWED.to_string(),
                     },
                 ),
                 home::Card::Reply(reply) => {
@@ -749,14 +748,14 @@ impl Workspace {
                             .and_then(|summary| summary.project.as_deref()),
                     };
                     (
-                        "REPLY",
+                        text::REPLY,
                         reply.title.clone(),
                         place(project),
-                        "Saved reply".to_string(),
+                        text::SAVED_REPLY.to_string(),
                     )
                 }
             };
-            let label = format!("{title}, {place}, {status}, {age}");
+            let label = text::card_label(&title, &place, &status, &age);
             let focus = (self.shell.card_focus.borrow_mut())
                 .entry(card.id().to_string())
                 .or_insert_with(|| cx.focus_handle().tab_stop(true))
@@ -822,7 +821,7 @@ impl Workspace {
                             .text_size(px(12.))
                             .text_color(p.header_muted)
                             .truncate()
-                            .child(format!("{status} · {age}")),
+                            .child(text::card_status(&status, &age)),
                     );
             let view = match card {
                 home::Card::Document { summary, .. } => {
@@ -889,7 +888,7 @@ impl Workspace {
             .and_then(|item| item.text())
             .filter(|text| !has_files && !text.trim().is_empty())
         else {
-            self.notices.post("The clipboard has no text to paste.");
+            self.notices.post(text::NO_TEXT_TO_PASTE);
             cx.notify();
             return;
         };
@@ -918,9 +917,7 @@ impl Workspace {
             .is_some_and(|tab| !self.is_placeholder(tab, cx));
         if !real {
             // The notice opens even over an earlier one.
-            let effect = self.notices.post_now(format!(
-                "{action} works from a pseudonymized document. Open one, or open a Project, first."
-            ));
+            let effect = self.notices.post_now(text::needs_a_document(action));
             self.carry_out_notices(effect);
             cx.notify();
             return None;

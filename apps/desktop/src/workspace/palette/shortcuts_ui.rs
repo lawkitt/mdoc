@@ -81,7 +81,7 @@ impl Workspace {
             SearchInput::new(cx)
                 .with_theme(self.theme.clone())
                 .with_key_context(FILTER)
-                .with_placeholder("Filter shortcuts")
+                .with_placeholder(super::text::FILTER_SHORTCUTS)
         });
         let changes = cx.subscribe(&filter, |this, _, _: &SearchInputEvent, cx| {
             if let Some(sheet) = &this.shell.shortcuts {
@@ -165,7 +165,7 @@ impl Workspace {
         let mut list = ui::focus_ring("shortcuts-list", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "shortcuts-list".into()))
             .role(gpui::Role::List)
-            .aria_label("Shortcuts")
+            .aria_label(super::text::SHORTCUTS)
             .track_focus(&sheet.list)
             .track_scroll(&sheet.scroll)
             .overflow_y_scroll()
@@ -204,7 +204,7 @@ impl Workspace {
                             v.debug_selector(move || format!("shortcut-row-{index}"))
                         })
                         .role(gpui::Role::ListItem)
-                        .aria_label(format!("{}, {keys}", row.label))
+                        .aria_label(super::text::shortcut_row(row.label, &keys))
                         .flex()
                         .items_center()
                         .gap_4()
@@ -229,7 +229,7 @@ impl Workspace {
                     .px_2()
                     .py_4()
                     .text_color(p.header_muted)
-                    .child("No shortcut matches."),
+                    .child(super::text::NO_SHORTCUT_MATCHES),
             );
         }
         let height = (window.viewport_size().height - px(144.)).max(px(240.));
@@ -256,7 +256,7 @@ impl Workspace {
                                 v.debug_selector(|| "shortcuts-sheet".into())
                             })
                             .role(gpui::Role::Dialog)
-                            .aria_label("Keyboard Shortcuts")
+                            .aria_label(super::text::KEYBOARD_SHORTCUTS_TITLE)
                             .key_context(format!("{SHEET} UiPanel").as_str())
                             .track_focus(&sheet.focus)
                             .tab_group()
@@ -306,7 +306,7 @@ impl Workspace {
                             .flex()
                             .flex_col()
                             .gap_3()
-                            .child(ui::card_title("Keyboard Shortcuts"))
+                            .child(ui::card_title(super::text::KEYBOARD_SHORTCUTS_TITLE))
                             .child(
                                 div()
                                     .px_2()

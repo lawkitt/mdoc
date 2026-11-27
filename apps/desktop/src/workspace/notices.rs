@@ -1,6 +1,8 @@
 //! The workspace's notices: one session message and the last run's
 //! crash report. They wait behind the header's bell with the Vault's
 //! banner, which the Vault state owns.
+mod text;
+
 use crate::ui::{self, style};
 use crate::workspace::{Workspace, notices};
 use gpui::actions;
@@ -179,37 +181,37 @@ impl Workspace {
                                 .flex_1()
                                 .min_w_0()
                                 .text_color(palette.header_fg)
-                                .child("mdoc had a problem last time it ran."),
+                                .child(text::HAD_A_PROBLEM),
                         )
                         .when(!open, |v| {
-                            v.child(action("crash-preview", "See what would be sent").on_click(
-                                cx.listener(|this, _, _, cx| {
-                                    this.notices.preview_crash();
-                                    cx.notify();
-                                }),
-                            ))
+                            v.child(
+                                action("crash-preview", text::SEE_WHAT_WOULD_BE_SENT).on_click(
+                                    cx.listener(|this, _, _, cx| {
+                                        this.notices.preview_crash();
+                                        cx.notify();
+                                    }),
+                                ),
+                            )
                         })
                         .when(open, |v| {
                             v.child(
-                                action("crash-send", "Send…")
-                                    .tooltip(style::tooltip(
-                                        "Opens a new GitHub issue with this report for you to check and submit."
-                                            .into(),
-                                        theme,
-                                    ))
+                                action("crash-send", text::SEND)
+                                    .tooltip(style::tooltip(text::SEND_TIP.into(), theme))
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         cx.open_url(&crate::app::crash::issue_url(&send_report));
                                         done(this, cx);
                                     })),
                             )
-                            .child(action("crash-copy", "Copy").on_click(cx.listener(
-                                move |this, _, _, cx| {
-                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                                        copy_report.clone(),
-                                    ));
-                                    done(this, cx);
-                                },
-                            )))
+                            .child(
+                                action("crash-copy", text::COPY).on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                            copy_report.clone(),
+                                        ));
+                                        done(this, cx);
+                                    },
+                                )),
+                            )
                         })
                         .child(
                             action("crash-dismiss", crate::ui::text::DISMISS)
@@ -287,10 +289,10 @@ impl Workspace {
                                 })
                                 .flex_shrink_0()
                                 .role(gpui::Role::Button)
-                                .aria_label("Dismiss notice")
+                                .aria_label(text::DISMISS_NOTICE)
                                 .key_context("UiControl")
                                 .tab_index(0)
-                                .aria_label("Dismiss notice")
+                                .aria_label(text::DISMISS_NOTICE)
                                 .px_2()
                                 .py_1()
                                 .rounded_md()
@@ -393,14 +395,14 @@ impl Workspace {
                                             .text_size(px(11.))
                                             .font_weight(gpui::FontWeight::SEMIBOLD)
                                             .text_color(p.header_muted)
-                                            .child("NOTICES"),
+                                            .child(text::NOTICES),
                                     )
                                     .child(
                                         ui::control("close-notices", "×", theme, true)
                                             .when(cfg!(test), |v| {
                                                 v.debug_selector(|| "close-notices".into())
                                             })
-                                            .aria_label("Close notices")
+                                            .aria_label(text::CLOSE_NOTICES)
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.close_notices(window, cx);
                                             })),
@@ -437,16 +439,22 @@ impl Workspace {
         let accent = theme.search_accent();
         let version = banner.version.clone();
         let (title, detail) = match banner.kind {
-            BannerKind::Available => ("Update available".to_string(), format!("v{version}")),
+            BannerKind::Available => (
+                text::UPDATE_AVAILABLE.to_string(),
+                text::available_detail(&version),
+            ),
             BannerKind::Downloading => (
-                "Downloading update".to_string(),
-                format!("v{version} · {}%", state.percent().unwrap_or(0)),
+                text::DOWNLOADING_UPDATE.to_string(),
+                text::downloading_detail(&version, state.percent().unwrap_or(0)),
             ),
             BannerKind::Ready => (
-                "Installed, next launch".to_string(),
-                format!("v{version} · relaunch"),
+                text::INSTALLED_NEXT_LAUNCH.to_string(),
+                text::ready_detail(&version),
             ),
-            BannerKind::Failed => ("Update failed".to_string(), format!("v{version} · details")),
+            BannerKind::Failed => (
+                text::UPDATE_FAILED.to_string(),
+                text::failed_detail(&version),
+            ),
             BannerKind::Updated => unreachable!(),
         };
         let ready = banner.kind == BannerKind::Ready;
@@ -454,7 +462,7 @@ impl Workspace {
             crate::ui::focus_ring("update-banner", theme)
                 .when(cfg!(test), |v| v.debug_selector(|| "update-banner".into()))
                 .role(gpui::Role::Button)
-                .aria_label(format!("{title}. {detail}"))
+                .aria_label(text::card_label(&title, &detail))
                 .key_context("UiControl")
                 .tab_index(0)
                 .flex()

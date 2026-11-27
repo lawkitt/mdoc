@@ -39,6 +39,7 @@ use gpui::px;
 use mdoc_store::document_id::VaultId;
 use std::collections::HashMap;
 pub(crate) mod shortcuts_ui;
+mod text;
 
 actions!(
     mdoc_shell,
@@ -186,7 +187,7 @@ impl Workspace {
             SearchInput::new(cx)
                 .with_theme(self.theme.clone())
                 .with_key_context(PALETTE)
-                .with_placeholder("Search or run an action…")
+                .with_placeholder(text::SEARCH_OR_RUN)
         });
         let changes = cx.subscribe(&input, |this, _, _: &SearchInputEvent, cx| {
             if let Some(palette) = &mut this.shell.palette {
@@ -226,20 +227,20 @@ impl Workspace {
         let mut rows = self.page_rows();
         rows.extend(vec![
             Row {
-                section: "Actions",
-                label: "New document".into(),
+                section: text::ACTIONS,
+                label: text::NEW_DOCUMENT.into(),
                 detail: None,
                 command: Command::NewTab,
             },
             Row {
-                section: "Actions",
-                label: "Open files…".into(),
+                section: text::ACTIONS,
+                label: text::OPEN_FILES.into(),
                 detail: None,
                 command: Command::OpenFiles,
             },
             Row {
-                section: "Actions",
-                label: "Paste text as new document".into(),
+                section: text::ACTIONS,
+                label: text::PASTE_TEXT.into(),
                 detail: None,
                 command: Command::PasteText,
             },
@@ -247,44 +248,44 @@ impl Workspace {
         if has_document {
             rows.extend([
                 Row {
-                    section: "Actions",
-                    label: "Pseudonymize".into(),
+                    section: text::ACTIONS,
+                    label: text::PSEUDONYMIZE.into(),
                     detail: None,
                     command: Command::Pseudonymize,
                 },
                 Row {
-                    section: "Actions",
-                    label: "Copy for AI".into(),
+                    section: text::ACTIONS,
+                    label: text::COPY_FOR_AI.into(),
                     detail: None,
                     command: Command::CopyForAi,
                 },
                 Row {
-                    section: "Actions",
-                    label: "Copy Markdown".into(),
+                    section: text::ACTIONS,
+                    label: text::COPY_MARKDOWN.into(),
                     detail: None,
                     command: Command::CopyMarkdown,
                 },
                 Row {
-                    section: "Actions",
-                    label: "Save".into(),
+                    section: text::ACTIONS,
+                    label: text::SAVE.into(),
                     detail: None,
                     command: Command::Save,
                 },
                 Row {
-                    section: "Actions",
-                    label: "Export Markdown…".into(),
+                    section: text::ACTIONS,
+                    label: text::EXPORT_MARKDOWN.into(),
                     detail: None,
                     command: Command::ExportMarkdown,
                 },
                 Row {
-                    section: "Actions",
-                    label: "Side by side".into(),
+                    section: text::ACTIONS,
+                    label: text::SIDE_BY_SIDE.into(),
                     detail: None,
                     command: Command::BeforeAfter,
                 },
                 Row {
-                    section: "Actions",
-                    label: "What you did".into(),
+                    section: text::ACTIONS,
+                    label: text::WHAT_YOU_DID.into(),
                     detail: None,
                     command: Command::DecisionHistory,
                 },
@@ -299,16 +300,16 @@ impl Workspace {
             });
             if notes {
                 rows.push(Row {
-                    section: "Actions",
-                    label: "Notes".into(),
+                    section: text::ACTIONS,
+                    label: text::NOTES.into(),
                     detail: None,
                     command: Command::Notes,
                 });
             }
             if source {
                 rows.push(Row {
-                    section: "Actions",
-                    label: "Open source AI reply".into(),
+                    section: text::ACTIONS,
+                    label: text::OPEN_SOURCE_REPLY.into(),
                     detail: None,
                     command: Command::SourceReply,
                 });
@@ -320,14 +321,14 @@ impl Workspace {
             if panel {
                 rows.extend([
                     Row {
-                        section: "Actions",
-                        label: "Expand all identities".into(),
+                        section: text::ACTIONS,
+                        label: text::EXPAND_IDENTITIES.into(),
                         detail: None,
                         command: Command::ExpandIdentities,
                     },
                     Row {
-                        section: "Actions",
-                        label: "Collapse all identities".into(),
+                        section: text::ACTIONS,
+                        label: text::COLLAPSE_IDENTITIES.into(),
                         detail: None,
                         command: Command::CollapseIdentities,
                     },
@@ -339,14 +340,14 @@ impl Workspace {
             });
             if converting {
                 rows.push(Row {
-                    section: "Actions",
-                    label: "Cancel conversion".into(),
+                    section: text::ACTIONS,
+                    label: text::CANCEL_CONVERSION.into(),
                     detail: None,
                     command: Command::CancelConversion,
                 });
             }
             rows.extend([Row {
-                section: "Actions",
+                section: text::ACTIONS,
                 label: crate::ui::text::CLOSE.into(),
                 detail: None,
                 command: Command::Close,
@@ -354,56 +355,56 @@ impl Workspace {
         }
         rows.extend([
             Row {
-                section: "Actions",
-                label: "Paste AI reply".into(),
+                section: text::ACTIONS,
+                label: text::PASTE_AI_REPLY.into(),
                 detail: None,
                 command: Command::RestoreReply,
             },
             Row {
-                section: "Actions",
-                label: "Pseudonymize clipboard".into(),
+                section: text::ACTIONS,
+                label: text::PSEUDONYMIZE_CLIPBOARD.into(),
                 detail: None,
                 command: Command::PseudonymizeClipboard,
             },
             Row {
-                section: "Actions",
-                label: "Open a Project…".into(),
+                section: text::ACTIONS,
+                label: text::OPEN_A_PROJECT.into(),
                 detail: None,
                 command: Command::OpenProject,
             },
             Row {
-                section: "Actions",
-                label: "New Project…".into(),
+                section: text::ACTIONS,
+                label: text::NEW_PROJECT.into(),
                 detail: None,
                 command: Command::NewProject,
             },
             Row {
-                section: "Actions",
+                section: text::ACTIONS,
                 label: style::theme_switch_label(self.theme_choice.next()).into(),
                 detail: None,
                 command: Command::Theme,
             },
             Row {
-                section: "Actions",
-                label: "Toggle sidebar".into(),
+                section: text::ACTIONS,
+                label: text::TOGGLE_SIDEBAR.into(),
                 detail: None,
                 command: Command::ToggleSidebar,
             },
             Row {
-                section: "Actions",
-                label: "Keyboard shortcuts".into(),
+                section: text::ACTIONS,
+                label: text::KEYBOARD_SHORTCUTS.into(),
                 detail: None,
                 command: Command::Shortcuts,
             },
             Row {
-                section: "Go to",
-                label: "Home".into(),
+                section: text::GO_TO,
+                label: text::HOME.into(),
                 detail: None,
                 command: Command::Home,
             },
             Row {
-                section: "Go to",
-                label: "Settings".into(),
+                section: text::GO_TO,
+                label: text::SETTINGS.into(),
                 detail: None,
                 command: Command::Settings,
             },
@@ -412,8 +413,8 @@ impl Workspace {
             crate::settings::Category::ALL
                 .into_iter()
                 .map(|category| Row {
-                    section: "Go to",
-                    label: format!("Settings › {}", category.label()),
+                    section: text::GO_TO,
+                    label: text::settings_category(category.label()),
                     detail: None,
                     command: Command::SettingsCategory(category),
                 }),
@@ -427,9 +428,9 @@ impl Workspace {
             {
                 for heading in mdoc_editor::headings(view.editor.read(cx).text()) {
                     rows.push(Row {
-                        section: "Go to heading",
+                        section: text::GO_TO_HEADING,
                         label: heading.title,
-                        detail: Some(format!("H{}", heading.level)),
+                        detail: Some(text::heading_level(heading.level)),
                         command: Command::Heading(heading.offset),
                     });
                 }
@@ -462,13 +463,13 @@ impl Workspace {
             .filter_map(|summary| {
                 let place = (summary.project.as_deref())
                     .and_then(|id| names.get(id).copied())
-                    .unwrap_or("Unfiled");
+                    .unwrap_or(text::UNFILED);
                 Some(Row {
-                    section: "Documents",
+                    section: text::DOCUMENTS,
                     label: summary.title.clone(),
-                    detail: Some(format!(
-                        "{place} · {}",
-                        super::sidebar::tree_ui::kind_label(summary)
+                    detail: Some(text::document_detail(
+                        place,
+                        super::sidebar::tree_ui::kind_label(summary),
                     )),
                     command: Command::Document(VaultId::parse(&summary.id)?),
                 })
@@ -479,12 +480,9 @@ impl Workspace {
                 .filter(|summary| summary.project.as_deref() == Some(project.id.as_str()))
                 .count();
             Row {
-                section: "Projects",
+                section: text::PROJECTS,
                 label: project.name,
-                detail: Some(match count {
-                    1 => "1 document".to_string(),
-                    n => format!("{n} documents"),
-                }),
+                detail: Some(text::documents(count)),
                 command: Command::Project(project.id),
             }
         }));
@@ -738,7 +736,7 @@ impl Workspace {
                     .px_3()
                     .py_4()
                     .text_color(p.header_muted)
-                    .child("Nothing matches."),
+                    .child(text::NOTHING_MATCHES),
             );
         }
         Some(
@@ -840,31 +838,28 @@ impl Workspace {
     /// The palette's rows for the page shown: its header and ⋯ actions.
     fn page_rows(&self) -> Vec<Row> {
         let row = |label: &str, action| Row {
-            section: "Page",
+            section: text::PAGE,
             label: label.into(),
             detail: None,
             command: Command::Page(action),
         };
         if self.reply_page.is_some() {
             return vec![
-                row("Copy reply", PageAction::CopyReply),
-                row("Promote to Document", PageAction::PromoteReply),
-                row("Delete reply…", PageAction::DeleteReply),
+                row(text::COPY_REPLY, PageAction::CopyReply),
+                row(text::PROMOTE_TO_DOCUMENT, PageAction::PromoteReply),
+                row(text::DELETE_REPLY, PageAction::DeleteReply),
             ];
         }
         if self.project_ui.page.is_none() {
             return Vec::new();
         }
         vec![
-            row("Add document to Project…", PageAction::AddDocument),
-            row("Rename Project", PageAction::RenameProject),
-            row("Project colour", PageAction::ProjectColour),
-            row(
-                "Project categories to detect",
-                PageAction::ProjectCategories,
-            ),
-            row("Export Project…", PageAction::ExportProject),
-            row("Delete Project…", PageAction::DeleteProject),
+            row(text::ADD_DOCUMENT_TO_PROJECT, PageAction::AddDocument),
+            row(text::RENAME_PROJECT, PageAction::RenameProject),
+            row(text::PROJECT_COLOUR, PageAction::ProjectColour),
+            row(text::PROJECT_CATEGORIES, PageAction::ProjectCategories),
+            row(text::EXPORT_PROJECT, PageAction::ExportProject),
+            row(text::DELETE_PROJECT, PageAction::DeleteProject),
         ]
     }
     pub(super) fn run_page_action(
