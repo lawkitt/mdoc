@@ -387,7 +387,7 @@ impl Workspace {
                                 .map(|id| Ok((id, title, file.path)))
                                 .ok_or_else(|| (document.title, "Invalid id.".into())),
                         ),
-                        Err(error) => Some(Err((name, error.to_string()))),
+                        Err(error) => Some(Err((name, import_error(&error)))),
                     }
                 }
             })
@@ -509,5 +509,17 @@ impl Workspace {
                 .map(|summary| summary.title)
         });
         self.tabs.set_name(id, title);
+    }
+}
+
+/// Why an import into the Vault failed, in words: a Project gone since the
+/// import began is never named by its id (#1337).
+fn import_error(error: &mdoc_vault::VaultError) -> String {
+    match error {
+        mdoc_vault::VaultError::NotFound {
+            kind: mdoc_vault::ObjectKind::Project,
+            ..
+        } => "Its Project no longer exists.".into(),
+        error => error.to_string(),
     }
 }
