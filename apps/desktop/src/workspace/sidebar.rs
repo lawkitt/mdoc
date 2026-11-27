@@ -1,13 +1,11 @@
-//! The sidebar's state: expanded or collapsed to the
-//! rail, collapsed by itself in a narrow window, its dragged width, the
-//! collapsed rail's reveal of the full tree, and OS files dragged over it.
-//! Generic over the focus handle, so its
-//! rules run without a window; the workspace view renders it and carries out
-//! the returned effects (timers, focus).
+//! The sidebar: its state (expanded or collapsed to the rail, collapsed by
+//! itself in a narrow window, its dragged width, the rail's reveal of the
+//! full tree, OS files dragged over it), generic over the focus handle so its
+//! rules run without a window, and its render with the top and foot.
 use crate::ui::{self, style, style::Theme};
 use crate::workspace::{
     New, RAIL_WIDTH, RESIZE_GRIP, REVEAL_DELAY, REVEAL_GRACE, ToggleSidebar, Workspace,
-    activate_for_drop, shell,
+    activate_for_drop, palette,
 };
 use gpui::prelude::*;
 use gpui::{Animation, AnimationExt, AnyElement, App, Context, Window, div, px};
@@ -21,6 +19,11 @@ pub(super) mod switcher_ui;
 pub(super) mod tree;
 pub(super) mod tree_ui;
 
+use super::home::ShowHome;
+use super::palette::OpenPalette;
+use super::palette::key;
+use crate::workspace::Settings;
+use mdoc_store::session_store::ThemeChoice;
 use std::time::{Duration, Instant};
 
 /// How long a collapse or expand slides.
@@ -949,7 +952,7 @@ impl Workspace {
                                 false,
                             )
                             .on_click(|_, window, cx| {
-                                window.dispatch_action(Box::new(shell::OpenPalette), cx)
+                                window.dispatch_action(Box::new(palette::OpenPalette), cx)
                             }),
                         )
                         .child(
@@ -1155,6 +1158,261 @@ impl Workspace {
         }
         cx.notify();
     }
+}
+
+impl Workspace {
+    // ---- Sidebar ------------------------------------------------------------
+
+    /// The sidebar's first row: room for the traffic lights, then the toggle.
+    /// It moves the window like a title bar.
+    pub(super) fn sidebar_top(&self, toggle: AnyElement) -> AnyElement {
+        ui::title_drag(
+            div()
+                .flex()
+                .items_center()
+                .flex_shrink_0()
+                .h(px(style::CARD_MARGIN + style::HEADER_HEIGHT))
+                .pt(px(style::CARD_MARGIN))
+                .pl(px(style::TRAFFIC_LIGHT_INSET))
+                .pr_2(),
+            self.title.armed.clone(),
+        )
+        .child(ui::no_drag(div().child(toggle)))
+        .into_any_element()
+    }
+    /// Search ⌘K and Home under the top row.
+    pub(super) fn sidebar_nav(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let home = self.showing_home(cx);
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .px_2()
+            .pb_2()
+            .flex_shrink_0()
+            .child(
+                crate::ui::focus_ring("sidebar-search", theme)
+                    .when(cfg!(test), |v| v.debug_selector(|| "sidebar-search".into()))
+                    .role(gpui::Role::Button)
+                    .aria_label("Search or run an action")
+                    .key_context("UiControl")
+                    .tab_index(0)
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .h(px(30.))
+                    .px_2()
+                    .mb_1()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(p.border)
+                    .bg(p.bg)
+                    .text_color(p.header_muted)
+                    .cursor_pointer()
+                    .hover(move |s| s.border_color(p.header_muted))
+                    .child(
+                        gpui::svg()
+                            .data(ui::Icon::Search.data())
+                            .size(px(14.))
+                            .text_color(p.header_muted),
+                    )
+                    .child(div().flex_1().child("Search…"))
+                    .child(div().text_size(px(11.)).child(key(&OpenPalette)))
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenPalette), cx)),
+            )
+            .child(
+                nav_row("sidebar-home", ui::Icon::Home, "Home", theme, home)
+                    .track_focus(&self.panel_home_focus)
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(p.header_muted)
+                            .child(key(&ShowHome)),
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| this.show_home(window, cx))),
+            )
+            .into_any_element()
+    }
+    /// A small section label, e.g. "Open" over tabs without a Project.
+    pub(super) fn section_label(&self, label: &'static str) -> AnyElement {
+        let p = self.theme.get().pdf_style();
+        div()
+            .px_2()
+            .pt_3()
+            .pb_1()
+            .text_size(px(11.))
+            .text_color(p.header_muted)
+            .child(label)
+            .into_any_element()
+    }
+    /// The update card and the Settings · theme · Help row.
+    pub(super) fn sidebar_foot(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let theme_icon = match self.theme_choice {
+            ThemeChoice::System => ui::Icon::ThemeSystem,
+            ThemeChoice::Light => ui::Icon::Sun,
+            ThemeChoice::Dark => ui::Icon::Moon,
+        };
+        let card = self.update_card(cx);
+        // The card carries its own dot; Settings marks an update only without it.
+        let dot = card.is_none() && crate::app::updater::state(cx).marks_settings();
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .px_2()
+            .pb_2()
+            .pt_1()
+            .flex_shrink_0()
+            .children(self.ai_indicator(cx))
+            .children(card)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        nav_row("Settings", ui::Icon::Settings, "Settings", theme, false)
+                            .track_focus(&self.settings_focus)
+                            .flex_1()
+                            .when(dot, |v| {
+                                v.child(
+                                    div()
+                                        .when(cfg!(test), |v| {
+                                            v.debug_selector(|| "update-dot".into())
+                                        })
+                                        .size(px(7.))
+                                        .rounded_full()
+                                        .bg(style::markdown_style(theme).alert_warning),
+                                )
+                            })
+                            .on_click(|_, window, cx| {
+                                window.dispatch_action(Box::new(Settings), cx)
+                            }),
+                    )
+                    .child(
+                        ui::header_icon_untipped(
+                            "theme-toggle",
+                            style::theme_label(self.theme_choice),
+                            theme_icon,
+                            theme,
+                            false,
+                        )
+                        // Clicking changes the choice under the pointer; the
+                        // tooltip follows it instead of the value at hover.
+                        .tooltip({
+                            self.theme_tip.set(self.theme_choice);
+                            let (choice, theme) = (self.theme_tip.clone(), self.theme.clone());
+                            style::live_tooltip(move || {
+                                (style::theme_label(choice.get()).into(), theme.get())
+                            })
+                        })
+                        .when(cfg!(test), |v| v.debug_selector(|| "theme-toggle".into()))
+                        .on_click(cx.listener(|this, _, window, cx| this.cycle_theme(window, cx))),
+                    )
+                    .child(
+                        ui::header_icon("sidebar-help", "Help ↗", ui::Icon::Help, theme, false)
+                            .on_click(|_, _, cx| cx.open_url(crate::commands::menus::HELP_URL)),
+                    ),
+            )
+            .child(
+                div()
+                    .h(px(1.))
+                    .bg(gpui::transparent_black())
+                    .text_color(p.header_muted),
+            )
+            .into_any_element()
+    }
+    /// The collapsed rail's foot: Settings only, an update shown as a dot on
+    /// it. Theme and Help live in the open sidebar.
+    pub(super) fn rail_foot(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let update = crate::app::updater::state(cx).marks_settings();
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(px(2.))
+            .pt_1()
+            .pb_3()
+            .flex_shrink_0()
+            .children(self.ai_rail_icon(cx))
+            .child(
+                div()
+                    .relative()
+                    .child(
+                        ui::header_icon(
+                            "rail-settings",
+                            if update {
+                                "Settings — update available"
+                            } else {
+                                "Settings"
+                            },
+                            ui::Icon::Settings,
+                            theme,
+                            false,
+                        )
+                        .when(cfg!(test), |v| v.debug_selector(|| "rail-settings".into()))
+                        .size(px(32.))
+                        .on_click(|_, window, cx| window.dispatch_action(Box::new(Settings), cx)),
+                    )
+                    .when(update, |v| {
+                        v.child(
+                            div()
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "rail-update-dot".into())
+                                })
+                                .absolute()
+                                .top(px(6.))
+                                .right(px(6.))
+                                .size(px(6.))
+                                .rounded_full()
+                                .bg(style::markdown_style(theme).alert_warning),
+                        )
+                    }),
+            )
+            .into_any_element()
+    }
+}
+
+fn nav_row(
+    id: &'static str,
+    icon: ui::Icon,
+    label: &'static str,
+    theme: Theme,
+    selected: bool,
+) -> ui::Control {
+    let p = theme.pdf_style();
+    crate::ui::focus_ring(id, theme)
+        .when(cfg!(test), |v| v.debug_selector(move || id.into()))
+        .role(gpui::Role::Button)
+        .aria_label(label)
+        .key_context("UiControl")
+        .tab_index(0)
+        .flex()
+        .items_center()
+        .gap_2()
+        .h(px(30.))
+        .px_2()
+        .rounded_md()
+        .cursor_pointer()
+        .when(selected, |v| v.bg(theme.sidebar_selected()))
+        .hover(move |s| s.bg(p.placeholder_bg))
+        .child(
+            gpui::svg()
+                .data(icon.data())
+                .size(px(15.))
+                .flex_shrink_0()
+                .text_color(if selected {
+                    p.header_fg
+                } else {
+                    p.header_muted
+                }),
+        )
+        .child(div().flex_1().child(label))
 }
 
 #[cfg(test)]
