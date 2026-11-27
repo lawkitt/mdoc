@@ -174,6 +174,7 @@ pub(crate) const QUIT: &str = "Quit";
 
 // ---- The companion's hotkey ------------------------------------------------
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 impl Refused {
     /// What Settings › AI connector shows under the row.
     pub(crate) fn message(&self, hotkey: Hotkey) -> String {
@@ -191,21 +192,26 @@ impl Refused {
 }
 
 /// Why a recorded key isn't offered.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) const NOT_OFFERED: &str = "Use a letter, a digit, a symbol, Space or F1–F20.";
 /// Why a recorded key needs a modifier.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) const UNMODIFIED: &str = "Hold ⌘, ⌃ or ⌥ with the key, so typing never triggers it.";
 
 // Not words: the W3C key codes `global-hotkey` parses. Never translated.
 
 /// A function key's code, `F1` to `F20`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn function_key_code(n: impl Display) -> String {
     format!("F{n}")
 }
 /// A letter's code.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn letter_key_code(letter: impl Display) -> String {
     format!("Key{}", letter)
 }
 /// A digit's code.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn digit_key_code(c: impl Display) -> String {
     format!("Digit{c}")
 }
@@ -299,7 +305,9 @@ impl Refusal {
 /// The probes' terminal lines: no screen words, never translated.
 #[cfg(all(any(target_os = "macos", windows), debug_assertions, not(test)))]
 pub(crate) mod probes {
-    use std::fmt::{Debug, Display};
+    use std::fmt::Debug;
+    #[cfg(target_os = "macos")]
+    use std::fmt::Display;
 
     /// A step's verdict when a check failed.
     pub(crate) fn failed(found: impl Debug) -> String {
@@ -343,7 +351,7 @@ pub(crate) mod probes {
     pub(crate) const IN_FRONT_BEFORE_WINDOW: &str = "note: mdoc was in front before the window opened; run the probe from a \
                  terminal with another app in front";
     #[cfg(windows)]
-    pub(crate) fn capture_without_exclusion(share: f64) -> String {
+    pub(crate) fn capture_without_exclusion(share: f32) -> String {
         format!("control capture without the exclusion: {:.1} %", share)
     }
     #[cfg(windows)]

@@ -111,29 +111,39 @@ pub(crate) const REDIRECT_WITHOUT_LOCATION: &str =
     "The update server sent a redirect without a location.";
 pub(crate) const TOO_MANY_REDIRECTS: &str = "The update download redirected too many times.";
 
-// Installing on macOS.
+// Installing on macOS: only the macOS install steps use these.
 
+#[cfg(target_os = "macos")]
 pub(crate) const NO_APP_IN_IMAGE: &str = "The downloaded disk image does not contain mdoc.app.";
+#[cfg(target_os = "macos")]
 pub(crate) fn not_signed(e: impl Display) -> String {
     format!("The update is not signed by the mdoc developer: {e}")
 }
+#[cfg(target_os = "macos")]
 pub(crate) fn gatekeeper_rejected(e: impl Display) -> String {
     format!("macOS Gatekeeper rejected the update: {e}")
 }
+#[cfg(target_os = "macos")]
 pub(crate) fn wrong_version(found: impl Display, version: impl Display) -> String {
     format!("The update contains mdoc {found}, not the {version} the release promised.")
 }
+#[cfg(target_os = "macos")]
 pub(crate) const NO_PARENT_FOLDER: &str = "The installed app has no parent folder.";
+#[cfg(target_os = "macos")]
 pub(crate) const NO_NAME: &str = "The installed app has no name.";
+#[cfg(target_os = "macos")]
 pub(crate) fn not_restored(backup: impl Display, e: impl Display) -> String {
     format!("Couldn't restore the previous app from {}: {e}", backup)
 }
+#[cfg(target_os = "macos")]
 pub(crate) fn not_moved_aside(e: impl Display) -> String {
     format!("Couldn't move the current app aside: {e}")
 }
+#[cfg(target_os = "macos")]
 pub(crate) fn not_moved_into_place(e: impl Display) -> String {
     format!("Couldn't move the new app into place: {e}")
 }
+#[cfg(target_os = "macos")]
 pub(crate) fn not_moved_nor_restored(
     e: impl Display,
     restore: impl Display,
@@ -144,10 +154,13 @@ pub(crate) fn not_moved_nor_restored(
         backup
     )
 }
+#[cfg(target_os = "macos")]
 pub(crate) const NO_READABLE_VERSION: &str = "The update has no readable version.";
+#[cfg(target_os = "macos")]
 pub(crate) fn not_copied(e: impl Display) -> String {
     format!("Couldn't copy the update: {e}")
 }
+#[cfg(target_os = "macos")]
 pub(crate) fn image_not_opened(e: impl Display) -> String {
     format!("Couldn't open the downloaded disk image: {e}")
 }
@@ -156,6 +169,7 @@ pub(crate) fn image_not_opened(e: impl Display) -> String {
 // translated.
 
 /// `-R` with the requirement every mdoc bundle must satisfy.
+#[cfg(target_os = "macos")]
 pub(crate) fn requirement_argument(requirement: impl Display) -> String {
     format!("-R{requirement}")
 }
