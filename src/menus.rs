@@ -18,9 +18,10 @@ use crate::{
     search_session::{FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown},
     workspace::{
         AddDocumentToProject, ChangeProjectColour, CheckForUpdates, Close, DeleteProject,
-        ExportProject, Import, New, NewProject, Open, OpenPalette, OpenProject, PasteAiResponse,
-        ProjectCategories, PseudonymizeClipboard, Quit, RenameProject, RestoreClipboard, Settings,
-        ShowHome, SwitchDocument, SwitchDocumentBack, ToggleSidebar, shortcuts_ui::ShowShortcuts,
+        ExportProject, Import, MoveToNewProject, MoveToProject, New, NewProject, Open, OpenPalette,
+        OpenProject, PasteAiResponse, ProjectCategories, PseudonymizeClipboard, Quit,
+        RenameProject, RestoreClipboard, Settings, ShowHome, SwitchDocument, SwitchDocumentBack,
+        ToggleSidebar, shortcuts_ui::ShowShortcuts,
     },
 };
 use gpui::{App, Menu, MenuItem, OsAction, SharedString, SystemMenuType, actions};
@@ -175,6 +176,8 @@ fn menus(views: &[LiveViewItem]) -> Vec<Menu> {
         ]),
         Menu::new("Project").items([
             MenuItem::action("New Project…", NewProject),
+            MenuItem::action("Move to Project…", MoveToProject),
+            MenuItem::action("Move to New Project", MoveToNewProject),
             MenuItem::separator(),
             MenuItem::action("Add Document…", AddDocumentToProject),
             MenuItem::action("Rename Project", RenameProject),

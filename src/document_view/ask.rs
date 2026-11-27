@@ -15,6 +15,9 @@ pub(crate) struct AskHeader {
     pub(crate) open: bool,
     /// Ask on an Unfiled document: the card for this app shows.
     pub(crate) unfiled: Option<AskWith>,
+    /// The shared Project, its id and name, which the card offers first
+    /// (#1312).
+    pub(crate) shared: Option<(String, String)>,
     /// The open menu or card holds focus, so Tab and Esc work in it.
     focus: gpui::FocusHandle,
     /// The button's chevron, which focus returns to.
@@ -28,6 +31,7 @@ impl AskHeader {
         Self {
             open: false,
             unfiled: None,
+            shared: None,
             focus: cx.focus_handle(),
             more_focus: cx.focus_handle().tab_stop(true),
             bounds: Default::default(),
@@ -59,33 +63,44 @@ impl DocumentView {
         cx.emit(TabEvent::Ask {
             with,
             move_to_new: false,
+            into: None,
         });
         cx.notify();
     }
 
     /// The window found the document Unfiled: the card offers to move it
-    /// to a new Project and share that, for `with`'s app.
+    /// into the `shared` Project, when one is, or to a new Project and
+    /// share that, for `with`'s app.
     pub(crate) fn offer_move(
         &mut self,
         with: AskWith,
+        shared: Option<(String, String)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.ask.open = false;
         self.ask.unfiled = Some(with);
+        self.ask.shared = shared;
         window.focus(&self.ask.focus, cx);
         cx.notify();
     }
 
-    /// The Unfiled card's "Move to a new Project and share".
-    pub(crate) fn move_and_ask(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// The Unfiled card's "Move to a new Project and share", or with
+    /// `into`, its "Move to “X” and ask" into the shared Project.
+    pub(crate) fn move_and_ask(
+        &mut self,
+        into: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(with) = self.ask.unfiled.take() else {
             return;
         };
         window.focus(&self.ask.more_focus, cx);
         cx.emit(TabEvent::Ask {
             with,
-            move_to_new: true,
+            move_to_new: into.is_none(),
+            into,
         });
         cx.notify();
     }
@@ -107,11 +122,13 @@ impl DocumentView {
     pub(crate) fn show_ask(
         &mut self,
         unfiled: Option<AskWith>,
+        shared: Option<(String, String)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.ask.open = unfiled.is_none();
         self.ask.unfiled = unfiled;
+        self.ask.shared = shared;
         window.focus(&self.ask.focus, cx);
         cx.notify();
     }
@@ -278,12 +295,17 @@ impl DocumentView {
         Self::anchored(menu)
     }
 
-    /// Ask on an Unfiled document: move it to a new Project and share
-    /// that, or not.
+    /// Ask on an Unfiled document: move it into the shared Project, when
+    /// one is, or to a new Project and share that, or not.
     fn ask_unfiled_card(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
         let with = self.ask.unfiled.unwrap_or_default();
         let title = ai_ask::unfiled_title(with);
+        let shared = self.ask.shared.clone();
+        let text = match &shared {
+            Some((_, name)) => ai_ask::unfiled_shared_text(name),
+            None => ai_ask::UNFILED_TEXT.to_string(),
+        };
         let card = self
             .ask_panel("ask-unfiled", cx)
             .role(gpui::Role::Group)
@@ -299,7 +321,7 @@ impl DocumentView {
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .child(title),
             )
-            .child(ui::card_text(ai_ask::UNFILED_TEXT, theme))
+            .child(ui::card_text(text, theme))
             .child(
                 ui::card_actions()
                     .justify_end()
@@ -313,17 +335,46 @@ impl DocumentView {
                             ),
                     )
                     .child(
+                        match &shared {
+                            // The shared Project first; a new one second.
+                            Some(_) => ui::action_control(
+                                "ask-move-and-share",
+                                ai_ask::MOVE_AND_SHARE,
+                                theme,
+                                true,
+                                false,
+                            )
+                            .rounded_lg(),
+                            None => ui::primary_button(
+                                "ask-move-and-share",
+                                ai_ask::MOVE_AND_SHARE,
+                                theme,
+                                true,
+                            ),
+                        }
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "ask-move-and-share".into())
+                        })
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.move_and_ask(None, window, cx)),
+                        ),
+                    )
+                    .children(shared.map(|(id, name)| {
                         ui::primary_button(
-                            "ask-move-and-share",
-                            ai_ask::MOVE_AND_SHARE,
+                            "ask-move-into-shared",
+                            ai_ask::move_into_and_ask(&name),
                             theme,
                             true,
                         )
                         .when(cfg!(test), |v| {
-                            v.debug_selector(|| "ask-move-and-share".into())
+                            v.debug_selector(|| "ask-move-into-shared".into())
                         })
-                        .on_click(cx.listener(|this, _, window, cx| this.move_and_ask(window, cx))),
-                    ),
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.move_and_ask(Some(id.clone()), window, cx)
+                            },
+                        ))
+                    })),
             );
         Self::anchored(card)
     }

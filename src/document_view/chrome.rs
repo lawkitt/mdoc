@@ -524,6 +524,18 @@ impl DocumentView {
         let for_ai = copy && (copy_reason.is_none() || self.copy_step(cx).is_some());
         // Notes live in the Inspector, beside the text.
         let notes = copy && self.notes_available();
+        // Only a loaded, converted Vault document moves, as the window's
+        // own check has it.
+        let move_reason = if self.session.document.vault.is_none() {
+            Some("Only a document in the Vault moves.")
+        } else if self.lifecycle.source_only() {
+            Some("Convert the document to Markdown first.")
+        } else if !self.lifecycle.ready() || self.lifecycle.loading() {
+            Some("Available once the document has loaded.")
+        } else {
+            None
+        };
+        let movable = move_reason.is_none();
         let spelling_on = !self.spelling_control_off() && !self.spelling.off_here();
         let misspelled = self.editor.read(cx).diagnostics().len();
         // A menu choice hands focus back to the document first, so the action
@@ -712,6 +724,31 @@ impl DocumentView {
                                     }
                                     this.start_pii_scan(cx);
                                     window.refresh();
+                                },
+                            )),
+                        )
+                        .child(ui::menu_divider(theme))
+                        // The move menu, under the ⋯ button (#1312).
+                        .child(
+                            ui::menu_row_because(
+                                "more-move",
+                                "Move to Project…",
+                                None,
+                                None,
+                                theme,
+                                movable,
+                                move_reason.map(Into::into),
+                            )
+                            .when(cfg!(test), |v| v.debug_selector(|| "more-move".into()))
+                            .on_click(cx.listener(
+                                move |this, _, window, cx| {
+                                    if movable {
+                                        this.more_open = false;
+                                        window.focus(&this.more_focus, cx);
+                                        let at = this.more_bounds.get().bottom_left();
+                                        cx.emit(TabEvent::Project(ProjectEvent::MoveMenu(at)));
+                                        cx.notify();
+                                    }
                                 },
                             )),
                         )

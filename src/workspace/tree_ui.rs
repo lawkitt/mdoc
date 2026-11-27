@@ -629,6 +629,7 @@ impl Workspace {
                     RowKey::Document(id) => {
                         if let Some(id) = VaultId::parse(id) {
                             this.document_menu = Some((id, at));
+                            this.move_menu = None;
                         }
                     }
                     RowKey::Project(id) => this.project_ui.header_menu = Some((id.clone(), at)),
@@ -913,6 +914,7 @@ impl Workspace {
                     window.prevent_default();
                     window.focus(&this.menu_focus, cx);
                     this.document_menu = Some((id.clone(), event.position));
+                    this.move_menu = None;
                     cx.notify();
                 }
             }),
@@ -1066,8 +1068,56 @@ impl Workspace {
 
     // ---- A document row's menu ------------------------------------------------
 
-    /// Move to each other Project, Move to New Project, Move to Unfiled for a
-    /// member, and Delete… on an Unfiled row.
+    /// The document menu from Share, the ⋯ menu or the menu bar: its moves
+    /// alone, at `at` (#1312).
+    pub(super) fn open_move_menu(
+        &mut self,
+        tab: u64,
+        at: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // As the move itself checks: a loaded, converted Vault document
+        // not already moving.
+        if self.quit_flow.quitting() || !self.can_move(tab, cx) {
+            return;
+        }
+        let Some(document) = self.tab_document(tab, cx) else {
+            return;
+        };
+        self.menu_return = window.focused(cx);
+        self.document_menu = Some((document, at));
+        self.move_menu = Some(tab);
+        window.focus(&self.menu_focus, cx);
+        cx.notify();
+    }
+
+    /// The Project menu's Move to Project… (the move menu under the
+    /// header's ⋯) and Move to New Project, for the document shown.
+    pub(super) fn move_from_menu_bar(
+        &mut self,
+        new: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.showing_overview(cx) {
+            return;
+        }
+        let tab = self.tabs.active();
+        let Some(view) = self.tab_view(tab) else {
+            return;
+        };
+        if new {
+            self.move_to_new_project(tab, window, cx);
+        } else {
+            let at = view.read(cx).more_bounds.get().bottom_left();
+            self.open_move_menu(tab, at, window, cx);
+        }
+    }
+
+    /// Move to each other Project (scrolling past eight), Move to New
+    /// Project, Move to Unfiled for a member, and Delete… on an Unfiled row
+    /// of the sidebar.
     pub(super) fn document_menu_items(
         &self,
         document: &VaultId,
@@ -1099,24 +1149,50 @@ impl Workspace {
         let movable = self.vault.vault().is_some() && !self.moving.contains(document);
         let mut items = Vec::new();
         if movable {
-            for p in (self.projects.summaries().into_iter())
-                .filter(|p| project.as_ref() != Some(&p.id))
-                .take(5)
+            let mut others = Vec::new();
+            for p in
+                (self.projects.summaries().into_iter()).filter(|p| project.as_ref() != Some(&p.id))
             {
                 let (to, document) = (p.id.clone(), document.clone());
-                items.push(
+                // Tab reveals a row scrolled out of the list.
+                let focus = (self.move_row_focus.borrow_mut())
+                    .entry(p.id.clone())
+                    .or_insert_with(|| cx.focus_handle().tab_stop(true))
+                    .clone();
+                others.push(
                     row(
                         format!("context-move-{}", p.id),
                         format!("Move to “{}”", p.name),
                     )
-                    .when(cfg!(test), |v| {
-                        v.debug_selector(|| "context-move-project".into())
+                    .map(|v| {
+                        ui::reveal_focus(
+                            v.track_focus(&focus),
+                            focus,
+                            self.move_menu_scroll.clone(),
+                        )
                     })
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.close_document_menu(window, cx);
                         this.drop_document(document.clone(), Some(to.clone()), window, cx);
                     }))
                     .into_any_element(),
+                );
+            }
+            if !others.is_empty() {
+                // Eight rows show; the rest scroll.
+                items.push(
+                    div()
+                        .id("context-move-projects")
+                        .track_scroll(&self.move_menu_scroll)
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "context-move-projects".into())
+                        })
+                        .flex()
+                        .flex_col()
+                        .max_h(px(8. * 26.))
+                        .overflow_y_scroll()
+                        .children(others)
+                        .into_any_element(),
                 );
             }
             let new = document.clone();
@@ -1140,7 +1216,7 @@ impl Workspace {
                 );
             }
         }
-        if project.is_none() && !self.moving.contains(document) {
+        if project.is_none() && !self.moving.contains(document) && self.move_menu.is_none() {
             let chosen = self.tree.to_delete(document.as_str());
             let label = if chosen.len() > 1 {
                 format!("Delete {} Documents…", chosen.len())
@@ -1165,6 +1241,7 @@ impl Workspace {
 
     pub(super) fn close_document_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.document_menu = None;
+        self.move_menu = None;
         if let Some(focus) = self.menu_return.take() {
             window.focus(&focus, cx);
         }

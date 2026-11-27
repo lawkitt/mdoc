@@ -1,9 +1,12 @@
-//! Projects: the Open Project list, a move into a Project with its toast,
+//! Projects: the Open Project list, the Share tab, the ⋯ menu, the move
+//! menu they open and Ask's Unfiled card with no Project, one and a shared
+//! one (#1312), a move into a Project with its toast,
 //! the Project page's three segments and its ⋯ menu,
 //! the Project page with its rename, categories and lists, the Keychain
 //! explainer, and the delete question.
 use super::{Driver, Result};
 use crate::workspace::project_page::{Place, Segment};
+use mdoc_store::settings::AskWith;
 
 /// Moves the fixture document into the fixture Project; returns the
 /// Project's id.
@@ -17,6 +20,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<String> {
             .map(|summary| summary.id)
     })?;
     let id = id.ok_or("fixture Project")?;
+    move_menus(d, &id)?;
     d.change(|w, window, cx| {
         let tab = w.tabs.active();
         w.move_tab(tab, Some(id.clone()), window, cx);
@@ -110,6 +114,115 @@ pub(super) fn scenes(d: &mut Driver) -> Result<String> {
     d.capture("keychain-explainer")?;
     d.change(|w, window, cx| w.cancel_unlock(window, cx))?;
     Ok(id)
+}
+
+/// The Unfiled fixture document's Share tab, ⋯ menu, the move menu they
+/// open and Ask's Unfiled card, with no Project (the window's copy only,
+/// put back after), with `project` and with it shared (#1312). The Project
+/// menu's Move to Project… opens the same menu under ⋯. "AI connector
+/// (preview)" is on throughout, for Ask, and off again after.
+fn move_menus(d: &mut Driver, project: &str) -> Result<()> {
+    let tab = d.change(|w, _, _| w.tabs.active())?;
+    let view = d.change(|w, _, _| w.tab_view(tab))?;
+    let view = view.ok_or("the fixture document's tab")?;
+    let was = d.change(|_, _, cx| {
+        let v = view.read(cx);
+        (v.inspector, v.replacements_open())
+    })?;
+    let share = |d: &mut Driver, name: &str| -> Result<()> {
+        d.change(|_, window, cx| {
+            view.update(cx, |view, cx| {
+                view.inspector = crate::document_view::Inspector::Share;
+                if !view.replacements_open() {
+                    view.toggle_replacements_panel(window, cx);
+                }
+                cx.notify();
+            })
+        })?;
+        d.capture(name)
+    };
+    let menu = |d: &mut Driver, name: &str, under_more: bool| -> Result<()> {
+        d.change(|w, window, cx| {
+            let v = view.read(cx);
+            let at = if under_more {
+                v.more_bounds.get().bottom_left()
+            } else {
+                v.share_move_bounds.get().bottom_left()
+            };
+            w.open_move_menu(tab, at, window, cx);
+        })?;
+        d.capture(name)?;
+        d.change(|w, window, cx| w.close_document_menu(window, cx))
+    };
+    // Ask, as its button asks: the card, for an Unfiled document.
+    let ask = |d: &mut Driver, name: &str| -> Result<()> {
+        d.change(|w, window, cx| w.ask_from_tab(tab, AskWith::Claude, false, None, window, cx))?;
+        d.capture(name)?;
+        d.change(|_, window, cx| view.update(cx, |view, cx| view.close_ask(window, cx)))
+    };
+    preview(d, true)?;
+    // No Project.
+    let kept = d.change(|w, _, cx| {
+        let kept: Vec<_> = (w.projects.summaries().into_iter())
+            .filter_map(|summary| w.projects.project(&summary.id).cloned())
+            .collect();
+        w.projects.finish_load(Vec::new());
+        cx.notify();
+        kept
+    })?;
+    share(d, "share-project-none")?;
+    menu(d, "more-move-menu-none", true)?;
+    ask(d, "ask-unfiled-none")?;
+    d.change(|w, _, cx| {
+        w.projects.finish_load(kept);
+        cx.notify();
+    })?;
+    // One Project.
+    share(d, "share-project-one")?;
+    menu(d, "share-move-menu", false)?;
+    d.change(|_, window, cx| {
+        view.update(cx, |view, cx| {
+            view.more_open = true;
+            window.focus(&view.more_menu_focus, cx);
+            cx.notify();
+        })
+    })?;
+    d.capture("more-menu-move")?;
+    d.change(|_, _, cx| {
+        view.update(cx, |view, cx| {
+            view.more_open = false;
+            cx.notify();
+        })
+    })?;
+    menu(d, "more-move-menu", true)?;
+    ask(d, "ask-unfiled-one")?;
+    // The Project shared with AI apps.
+    d.change(|w, _, cx| w.share_with_ai(project, cx))?;
+    share(d, "share-project-shared")?;
+    menu(d, "share-move-menu-shared", false)?;
+    ask(d, "ask-unfiled-shared")?;
+    d.change(|w, _, cx| w.stop_sharing_with_ai(cx))?;
+    preview(d, false)?;
+    d.change(|_, window, cx| {
+        view.update(cx, |view, cx| {
+            view.inspector = was.0;
+            if view.replacements_open() != was.1 {
+                view.toggle_replacements_panel(window, cx);
+            }
+            cx.notify();
+        })
+    })?;
+    d.settle()
+}
+
+fn preview(d: &mut Driver, on: bool) -> Result<()> {
+    d.change(|w, window, cx| {
+        if let Some(preferences) = w.preferences.borrow_mut().current.as_mut() {
+            preferences.ai_connector.preview = on;
+        }
+        w.refresh_ai_connector(window, cx);
+    })?;
+    d.settle()
 }
 
 /// The delete question of a Project with documents, cancelled.

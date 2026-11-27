@@ -141,7 +141,9 @@ pub(crate) struct DocumentView {
     /// The open More menu, which holds focus and Tab.
     pub(crate) more_menu_focus: gpui::FocusHandle,
     /// The More button's bounds, so a press on it is left to its toggle.
-    more_bounds: std::rc::Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>,
+    pub(crate) more_bounds: std::rc::Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>,
+    /// Share's Move to Project… button, which its menu opens under.
+    pub(crate) share_move_bounds: std::rc::Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>,
     /// Whether the last frame drew the Markdown and the original panes: a
     /// narrow window shows one of them (F6 skips the hidden one).
     panes_drawn: std::cell::Cell<(bool, bool)>,
@@ -211,6 +213,9 @@ pub(crate) struct DocumentView {
     /// The Project page's name field, shown in the header's breadcrumb
     /// right after Move to New Project (#1313); the workspace owns it.
     pub(crate) project_name_field: Option<Entity<markdown_search::SearchInput>>,
+    /// How many Projects the window holds: Share offers Move to Project…
+    /// once one besides this document's own exists (#1312).
+    pub(crate) projects: Rc<Cell<usize>>,
     /// The result of Pseudonymize Clipboard, for a few seconds.
     pub(crate) clipboard_notice: pii::ui::restore::ClipboardNotice,
     /// The before/after view replaces the editor while open.
@@ -274,6 +279,8 @@ pub(crate) struct DocumentViewDependencies {
     pub(crate) title: style::TitleBar,
     /// Keyboard input source languages (`recognition::input_source_languages`).
     pub(crate) input_languages: fn() -> Vec<recognition::Language>,
+    /// How many Projects the window holds (`Projects::count`).
+    pub(crate) projects: Rc<Cell<usize>>,
 }
 
 /// The shared OCR state for the Settings model from what Settings already
@@ -422,6 +429,7 @@ impl DocumentView {
             more_focus: cx.focus_handle().tab_stop(true),
             more_menu_focus: cx.focus_handle(),
             more_bounds: Default::default(),
+            share_move_bounds: Default::default(),
             panes_drawn: std::cell::Cell::new((true, false)),
             closing: dependencies.closing,
             background: Vec::new(),
@@ -462,6 +470,7 @@ impl DocumentView {
             project_names_open: false,
             project_term: None,
             project_name_field: None,
+            projects: dependencies.projects.clone(),
             clipboard_notice: Default::default(),
             compare: None,
             switcher: Default::default(),

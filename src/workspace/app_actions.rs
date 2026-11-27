@@ -1,9 +1,10 @@
 //! Commands whose availability must not depend on a focused element.
 use super::Workspace;
 use crate::workspace::{
-    AddDocumentToProject, ChangeProjectColour, CheckForUpdates, DeleteProject, ExportProject, New,
-    NewProject, Open, OpenProject, ProjectCategories, Quit, RenameProject, Settings, ToggleSidebar,
-    ToggleTheme, shell::PageAction, shortcuts_ui::ShowShortcuts,
+    AddDocumentToProject, ChangeProjectColour, CheckForUpdates, DeleteProject, ExportProject,
+    MoveToNewProject, MoveToProject, New, NewProject, Open, OpenProject, ProjectCategories, Quit,
+    RenameProject, Settings, ToggleSidebar, ToggleTheme, shell::PageAction,
+    shortcuts_ui::ShowShortcuts,
 };
 use gpui::{App, Context, Window};
 
@@ -57,6 +58,13 @@ pub(crate) fn bind(cx: &mut App) {
     });
     app_action::<DeleteProject>(cx, |this, window, cx| {
         this.run_page_action(PageAction::DeleteProject, window, cx)
+    });
+    // The active document's moves (#1312).
+    app_action::<MoveToProject>(cx, |this, window, cx| {
+        this.move_from_menu_bar(false, window, cx)
+    });
+    app_action::<MoveToNewProject>(cx, |this, window, cx| {
+        this.move_from_menu_bar(true, window, cx)
     });
     // ⌘/ and Help › Keyboard Shortcuts from a comparison window too.
     app_action::<ShowShortcuts>(cx, |this, window, cx| {

@@ -925,9 +925,15 @@ impl Workspace {
                 });
                 self.took_move(&moved);
                 self.sync_members(&moved, &document, cx);
+                // The Project an Ask waited for: the one made, or the
+                // shared one it moved into (#1312).
+                let (into, shared) = match moving {
+                    Moving::Into => (moved.project.as_ref().map(|p| p.id.clone()), true),
+                    _ => (made.clone(), false),
+                };
                 let asked = ask
-                    .zip(made.clone())
-                    .map(|(with, made)| (with, made, id.to_string()));
+                    .zip(into)
+                    .map(|(with, into)| (with, into, id.to_string(), shared));
                 // The new Project's name is ready to edit once its tab shows
                 // the moved document (#1313).
                 // Another move of the same document since forgets it.
@@ -971,8 +977,12 @@ impl Workspace {
                 };
                 let undo = (!matches!(moving, Moving::Undo)).then(|| (moved.undo.clone(), made));
                 self.show_toast(text, undo, window, cx);
-                // "Move to a new Project and share" asks now.
-                if let Some((with, made, document)) = asked {
+                // "Move to a new Project and share" asks now. A move into
+                // the shared Project asks only while it still is: a share
+                // made since the click is never undone (#1312).
+                if let Some((with, made, document, shared)) = asked
+                    && (!shared || self.ai_shared().as_deref() == Some(made.as_str()))
+                {
                     self.ask_after_move(&document, &made, with, cx);
                 }
             }

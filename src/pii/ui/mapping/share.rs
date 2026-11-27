@@ -169,11 +169,30 @@ impl DocumentView {
                         None if !movable => note("Kept with the document, encrypted on this computer.".into()).into_any_element(),
                         None => note("Unfiled. Its names are kept with it, encrypted on this computer; in a Project, its documents share them.".into()).into_any_element(),
                     })
-                    // A row, so the button keeps its label width like Copy
-                    // Markdown instead of stretching into a field.
+                    // A row, so the buttons keep their label width like Copy
+                    // Markdown instead of stretching into a field. Move to
+                    // Project… shows once another Project exists (#1312).
                     .when(movable, |v| {
+                        let others = self.projects.get().saturating_sub(usize::from(link.is_some()));
+                        let bounds = self.share_move_bounds.clone();
                         v.child(
-                            div().flex().child(
+                            div().flex().flex_wrap().gap_2()
+                            .when(others > 0, |row| row.child(
+                                div()
+                                    .relative()
+                                    .child(gpui::canvas(move |b, _, _| bounds.set(b), |_, _, _, _| {}).absolute().inset_0())
+                                    .child(
+                                        ui::action_control("share-move-to-project", "Move to Project…", theme, true, false)
+                                            .when(cfg!(test), |v| v.debug_selector(|| "share-move-to-project".into()))
+                                            .rounded_lg()
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                window.focus(&this.pii.mapping.focus, cx);
+                                                let at = this.share_move_bounds.get().bottom_left();
+                                                cx.emit(crate::workspace::TabEvent::Project(crate::workspace::ProjectEvent::MoveMenu(at)));
+                                            })),
+                                    ),
+                            ))
+                            .child(
                                 ui::primary_button("share-new-project", "Move to New Project", theme, true)
                                     .when(cfg!(test), |v| v.debug_selector(|| "share-new-project".into()))
                                     .on_click(cx.listener(move |this, _, window, cx| {

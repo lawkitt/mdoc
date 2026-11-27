@@ -61,6 +61,10 @@ renders and flow tests specify the screens. Terms are in
   so the moved document scans again, and its toast offers Undo for 10 s.
   The new Project's name is then ready to edit, selected, in the header's
   breadcrumb, or on its page when the document is not in view; Esc keeps it.
+- A row's menu, Share's Move to Project…, the ⋯ menu and the Project menu
+  open one move menu: every other Project (eight show, the rest scroll), New
+  Project and Unfiled; Delete only on a sidebar row. Ask on an Unfiled
+  document offers the shared Project first, then a new one.
 - New Project asks for a name, trimmed and numbered when taken, as on the
   phones, and opens the empty Project's page once it is written.
 - An empty Project's delete asks Delete or Cancel; a non-empty one adds Move

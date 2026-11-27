@@ -124,6 +124,8 @@ actions!(
         ProjectCategories,
         ExportProject,
         DeleteProject,
+        MoveToProject,
+        MoveToNewProject,
     ]
 );
 
@@ -141,10 +143,12 @@ pub(super) enum TabEvent {
     /// window checks it as the shelf does before anything is copied.
     CopyForAi,
     /// The header's Ask (Milestone 2 item 10): `with`, and for an Unfiled
-    /// document, whether it moves to a new Project first.
+    /// document, whether it moves to a new Project first, or `into` the
+    /// shared Project (#1312).
     Ask {
         with: mdoc_store::settings::AskWith,
         move_to_new: bool,
+        into: Option<String>,
     },
     /// Discovery or the edited paragraphs' scan finished: a Copy for AI
     /// waiting for it is checked again.
@@ -216,6 +220,9 @@ pub(super) enum ProjectEvent {
     MoveToNew,
     /// The breadcrumb's Project name field ends: saved, or not (Esc).
     FinishRename { save: bool },
+    /// Open the move menu at this point: Share's Move to Project…, the ⋯
+    /// menu's (#1312).
+    MoveMenu(gpui::Point<gpui::Pixels>),
     /// Restoring or pseudonymizing found no mapping in the tab; a locked
     /// Vault may hold it.
     MappingMissing,
@@ -324,6 +331,14 @@ pub(super) struct Workspace {
     notices: notices::Notices,
     /// A document row's menu: its document, and where it opened.
     document_menu: Option<(mdoc_store::document_id::VaultId, gpui::Point<gpui::Pixels>)>,
+    /// The document menu opened from Share, the ⋯ menu or the menu bar:
+    /// moves only, no Delete, for the tab it was opened from; it closes
+    /// once that tab no longer shows (#1312).
+    move_menu: Option<u64>,
+    /// Its Project rows' focus, and its list's scroll, so Tab reveals the
+    /// row it reaches.
+    move_row_focus: std::cell::RefCell<std::collections::HashMap<String, gpui::FocusHandle>>,
+    move_menu_scroll: gpui::ScrollHandle,
     import_busy: Arc<AtomicBool>,
     docx_queue: docx_queue::DocxQueue,
     quit_flow: quit_flow::QuitFlow,
@@ -621,6 +636,9 @@ impl Workspace {
             awaiting_prompt: false,
             notices: Default::default(),
             document_menu: None,
+            move_menu: None,
+            move_row_focus: Default::default(),
+            move_menu_scroll: Default::default(),
             import_busy: Arc::new(AtomicBool::new(false)),
             docx_queue: docx_queue::DocxQueue::default(),
             quit_flow: quit_flow::QuitFlow::default(),
@@ -1189,6 +1207,7 @@ impl Workspace {
                     ocr: self.ocr_state.clone(),
                     title: self.title.clone(),
                     input_languages: self.input_languages,
+                    projects: self.projects.count(),
                 },
                 window,
                 cx,
@@ -1770,9 +1789,17 @@ impl Workspace {
             TabEvent::Project(ProjectEvent::FinishRename { save }) => {
                 self.finish_rename(*save, window, cx)
             }
+            TabEvent::Project(ProjectEvent::MoveMenu(at)) => {
+                self.open_move_menu(id, *at, window, cx)
+            }
             TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
-            TabEvent::Ask { with, move_to_new } => {
-                self.ask_from_tab(id, *with, *move_to_new, window, cx)
+            TabEvent::Ask {
+                with,
+                move_to_new,
+                into,
+            } => {
+                let into = into.clone();
+                self.ask_from_tab(id, *with, *move_to_new, into, window, cx)
             }
             TabEvent::NamesFound => self.copy_for_ai_after_write(cx),
             TabEvent::CopyStep(step) => {
@@ -3261,6 +3288,13 @@ impl Render for Workspace {
             window.focus(&self.rail_toggle_focus, cx);
             self.sidebar.escape_to(self.rail_toggle_focus.clone());
         }
+        // The move menu goes with the document it was opened for.
+        if let Some(tab) = self.move_menu
+            && (tab != self.tabs.active() || self.showing_overview(cx))
+        {
+            self.document_menu = None;
+            self.move_menu = None;
+        }
         // A finished edge drag saves the width it left.
         if !cx.has_active_drag() && self.sidebar.resizing() {
             self.end_sidebar_resize(cx);
@@ -3503,6 +3537,9 @@ impl Render for Workspace {
                     gpui::deferred(
                         gpui::anchored().position(position).snap_to_window().child(
                             ui::panel("document-context-menu", self.theme.get())
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "document-context-menu".into())
+                                })
                                 .key_context("UiPanel UiMenu")
                                 .track_focus(&self.menu_focus)
                                 .tab_group()
@@ -3524,6 +3561,7 @@ impl Render for Workspace {
                                 .on_mouse_down_out(cx.listener(
                                     |this, _: &gpui::MouseDownEvent, _, cx| {
                                         this.document_menu = None;
+                                        this.move_menu = None;
                                         cx.notify();
                                     },
                                 ))

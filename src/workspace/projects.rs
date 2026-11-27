@@ -35,6 +35,8 @@ impl ProjectLink {
 pub(super) struct Projects {
     projects: Vec<Project>,
     loaded: bool,
+    /// How many there are, for the documents' Share tab (#1312).
+    count: std::rc::Rc<std::cell::Cell<usize>>,
 }
 
 impl Projects {
@@ -46,12 +48,23 @@ impl Projects {
     pub(super) fn finish_load(&mut self, projects: Vec<Project>) {
         self.projects = projects;
         self.loaded = true;
+        self.counted();
+    }
+
+    /// How many Projects there are, kept current as they change.
+    pub(super) fn count(&self) -> std::rc::Rc<std::cell::Cell<usize>> {
+        self.count.clone()
+    }
+
+    fn counted(&self) {
+        self.count.set(self.projects.len());
     }
 
     /// The Vault is gone for this run: no Projects.
     pub(super) fn clear(&mut self) {
         self.projects.clear();
         self.loaded = false;
+        self.counted();
     }
 
     pub(super) fn project(&self, id: &str) -> Option<&Project> {
@@ -97,6 +110,7 @@ impl Projects {
             Some(kept) => *kept = project,
             None => self.projects.push(project),
         }
+        self.counted();
     }
 
     /// A move wrote `project`: take its mapping, keeping what this window
@@ -109,11 +123,13 @@ impl Projects {
             }
             None => self.projects.push(project),
         }
+        self.counted();
     }
 
     pub(super) fn remove(&mut self, id: &str) -> bool {
         let before = self.projects.len();
         self.projects.retain(|project| project.id != id);
+        self.counted();
         self.projects.len() != before
     }
 }
