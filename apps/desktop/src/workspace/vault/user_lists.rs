@@ -1,6 +1,7 @@
 //! The user-wide Always and Never lists of Settings › Detection: read with
 //! the Projects when the Vault opens, and saved into it on every change by
 //! a job on the window's writer, one revision after another.
+use super::text;
 use crate::workspace::{Workspace, saving::autosave::Write, saving::document_writer::Target};
 use gpui::{Context, Window};
 use mdoc_store::lists::Lists;
@@ -17,9 +18,7 @@ impl Workspace {
         let lists = match read {
             Ok(saved) => Some(saved.lists),
             Err(error) => {
-                self.notices.post(format!(
-                    "Your Always and Never lists could not be opened: {error}"
-                ));
+                self.notices.post(text::lists_not_opened(&error));
                 None
             }
         };
@@ -44,8 +43,7 @@ impl Workspace {
             return;
         }
         if self.vault.vault().is_none() {
-            self.notices
-                .post("Could not save your Always and Never lists: documents are unavailable.");
+            self.notices.post(text::LISTS_UNAVAILABLE);
             cx.notify();
             return;
         }
@@ -58,9 +56,7 @@ impl Workspace {
             return;
         };
         if let Err(error) = vault.update_user_lists(|saved| *saved = lists) {
-            self.notices.post(format!(
-                "Could not save your Always and Never lists: {error}"
-            ));
+            self.notices.post(text::lists_not_saved(&error));
             cx.notify();
         }
     }

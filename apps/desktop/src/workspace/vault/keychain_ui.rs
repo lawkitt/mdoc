@@ -2,6 +2,7 @@
 //! that may show the macOS password dialog, say why, and preview that dialog
 //! with a short, captioned animation below the text so the real one is
 //! expected, not suspicious, and the drawing is never taken for it.
+use super::text;
 use crate::workspace::Workspace;
 use crate::{
     ui,
@@ -191,16 +192,13 @@ fn preview_frame(theme: Theme, t: f32) -> gpui::Div {
                                 .text_size(px(12.))
                                 .line_height(px(15.))
                                 .font_weight(gpui::FontWeight::BOLD)
-                                .child(
-                                    "mdoc wants to use your confidential information stored \
-                                     in “io.github.lawkitt.mdoc” in your keychain.",
-                                ),
+                                .child(text::PREVIEW_ASKS),
                         )
                         .child(
                             div()
                                 .text_size(px(10.5)) // type-ramp: illustration
                                 .text_color(c.secondary)
-                                .child("To allow this, enter the “login” keychain password."),
+                                .child(text::PREVIEW_PASSWORD_LINE),
                         )
                         .child(
                             div()
@@ -209,7 +207,7 @@ fn preview_frame(theme: Theme, t: f32) -> gpui::Div {
                                 .gap(px(6.))
                                 .pt(px(2.))
                                 .text_size(px(11.))
-                                .child("Password:")
+                                .child(text::PREVIEW_PASSWORD)
                                 .child(
                                     div()
                                         .flex_1()
@@ -266,7 +264,7 @@ fn preview_frame(theme: Theme, t: f32) -> gpui::Div {
                 .left(px(ALWAYS_X))
                 .top(px(BUTTON_Y))
                 .child(button(
-                    "Always Allow",
+                    text::PREVIEW_ALWAYS_ALLOW,
                     ALWAYS_W,
                     if pressed { c.button_pressed } else { c.button },
                     c.button_text,
@@ -279,8 +277,13 @@ fn preview_frame(theme: Theme, t: f32) -> gpui::Div {
                 .top(px(BUTTON_Y))
                 .flex()
                 .gap(px(10.))
-                .child(button("Deny", 72., c.button, c.button_text))
-                .child(button("Allow", 72., c.default_button, gpui::white())),
+                .child(button(text::PREVIEW_DENY, 72., c.button, c.button_text))
+                .child(button(
+                    text::PREVIEW_ALLOW,
+                    72.,
+                    c.default_button,
+                    gpui::white(),
+                )),
         )
         .when(pointer > 0., |v| {
             let size = if pressed { 0.92 } else { 1. };
@@ -377,7 +380,7 @@ impl Workspace {
                                 v.debug_selector(|| "keychain-explainer".into())
                             })
                             .role(gpui::Role::Dialog)
-                            .aria_label("mdoc will ask for Keychain access")
+                            .aria_label(text::EXPLAINER_TITLE)
                             .w(px(440.))
                             .p_5()
                             .flex()
@@ -418,22 +421,16 @@ impl Workspace {
                                     cx.stop_propagation();
                                 }
                             }))
-                            .child(ui::card_title("mdoc will ask for Keychain access"))
+                            .child(ui::card_title(text::EXPLAINER_TITLE))
                             .child(
                                 div()
                                     .flex()
                                     .flex_col()
                                     .gap_1()
                                     .text_size(px(13.))
-                                    .child(line(
-                                        "Documents and Projects are encrypted, and the key lives in your \
-                                         Mac’s Keychain.",
-                                    ))
-                                    .child(line(
-                                        "macOS will ask for your Mac login password. mdoc never \
-                                         sees it.",
-                                    ))
-                                    .child(line("Choose Always Allow so it isn’t asked again.")),
+                                    .child(line(text::EXPLAINER_ENCRYPTED))
+                                    .child(line(text::EXPLAINER_PASSWORD))
+                                    .child(line(text::EXPLAINER_ALWAYS_ALLOW)),
                             )
                             // Below the text and captioned, so the drawing
                             // reads as what comes next, never as the system
@@ -442,7 +439,7 @@ impl Workspace {
                                 div()
                                     .id("keychain-preview-figure")
                                     .role(gpui::Role::Image)
-                                    .aria_label("Preview of the macOS Keychain dialog")
+                                    .aria_label(text::PREVIEW_LABEL)
                                     .flex()
                                     .flex_col()
                                     .items_center()
@@ -455,7 +452,7 @@ impl Workspace {
                                         div()
                                             .text_size(px(12.))
                                             .text_color(palette.header_muted)
-                                            .child("After Continue, macOS shows this:"),
+                                            .child(text::PREVIEW_CAPTION),
                                     )
                                     .child(preview(theme, cx)),
                             )
@@ -485,7 +482,7 @@ impl Workspace {
                                     .child(
                                         ui::primary_button(
                                             "keychain-continue",
-                                            "Continue",
+                                            text::CONTINUE,
                                             theme,
                                             true,
                                         )

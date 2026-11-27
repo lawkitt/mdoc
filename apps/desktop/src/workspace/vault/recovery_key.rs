@@ -5,6 +5,7 @@
 //! in the OS store as the Vault key. mdoc never writes the key to a file,
 //! a log or the clipboard. Tests and headless renders inject the key
 //! store, so they never ask the OS.
+use super::text;
 use crate::workspace::{Workspace, vault::vault_state::Opening};
 use crate::{document::markdown_search::SearchInput, settings::Category, ui, ui::style};
 use gpui::{AnyElement, Context, Entity, Focusable, Window, actions, div, prelude::*, px};
@@ -58,7 +59,7 @@ impl KeyStore {
         match self {
             Self::Os => match mdoc_store::os_key::vault_key(false) {
                 Ok(Some(key)) => Ok(Zeroizing::new(key)),
-                Ok(None) => Err("mdoc could not read the key without asking.".into()),
+                Ok(None) => Err(text::KEY_NEEDS_ASKING.into()),
                 Err(error) => Err(error.to_string()),
             },
             #[cfg(any(
@@ -71,7 +72,7 @@ impl KeyStore {
             ))]
             Self::Injected(store) => (store.lock().unwrap().key)
                 .map(Zeroizing::new)
-                .ok_or_else(|| "No key is held.".into()),
+                .ok_or_else(|| text::NO_KEY_HELD.into()),
         }
     }
 
@@ -90,7 +91,7 @@ impl KeyStore {
             Self::Injected(store) => {
                 let mut store = store.lock().unwrap();
                 if store.refuse {
-                    return Err("The key store refused it.".into());
+                    return Err(text::KEY_STORE_REFUSED.into());
                 }
                 store.key = Some(*key);
                 store.stored.push(*key);
@@ -115,16 +116,12 @@ impl Workspace {
     /// Settings › Vault's Show: the key, when it opens these documents.
     pub(in crate::workspace) fn show_recovery_key(&mut self, cx: &mut Context<Self>) {
         let key = match self.vault.vault() {
-            None => Err("Your recovery key shows here once your documents are open.".to_string()),
+            None => Err(text::KEY_SHOWS_ONCE_OPEN.to_string()),
             Some(vault) => self.recovery.store.read().and_then(|key| {
                 if vault.opens_with(&key) {
                     Ok(*key)
                 } else {
-                    Err(
-                        "The key on this computer doesn't open these documents. Quit mdoc \
-                         and open it again to enter your recovery key."
-                            .into(),
-                    )
+                    Err(text::KEY_DOES_NOT_OPEN.into())
                 }
             }),
         };
@@ -165,9 +162,7 @@ impl Workspace {
         if let Err(error) =
             self.update_general(|general| general.recovery_key_nudge_dismissed = true, cx)
         {
-            self.notices.post(format!(
-                "Could not save that the reminder was closed: {error}"
-            ));
+            self.notices.post(text::reminder_not_saved(&error));
         }
         cx.notify();
     }
@@ -198,10 +193,7 @@ impl Workspace {
                         .flex()
                         .gap_2()
                         .child(div().text_color(accent).child("ⓘ"))
-                        .child(div().flex_1().min_w_0().child(
-                            "Save your recovery key. It's the only way to open your documents \
-                             if this computer's key is lost, as after reinstalling the system.",
-                        )),
+                        .child(div().flex_1().min_w_0().child(text::NUDGE)),
                 )
                 .child(
                     div()
@@ -209,7 +201,7 @@ impl Workspace {
                         .justify_end()
                         .gap_2()
                         .child(
-                            ui::control("recovery-nudge-later", "Not Now", theme, true)
+                            ui::control("recovery-nudge-later", text::NOT_NOW, theme, true)
                                 .when(cfg!(test), |v| {
                                     v.debug_selector(|| "recovery-nudge-later".into())
                                 })
@@ -218,17 +210,24 @@ impl Workspace {
                                 ),
                         )
                         .child(
-                            ui::control("recovery-nudge-show", "Show Recovery Key", theme, true)
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "recovery-nudge-show".into())
-                                })
-                                .on_click(cx.listener(|this, _, window, cx| {
+                            ui::control(
+                                "recovery-nudge-show",
+                                text::SHOW_RECOVERY_KEY,
+                                theme,
+                                true,
+                            )
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "recovery-nudge-show".into())
+                            })
+                            .on_click(cx.listener(
+                                |this, _, window, cx| {
                                     this.title.notices_open.set(false);
                                     this.settings.update(cx, |panel, cx| {
                                         panel.show_category(Category::Vault, window, cx)
                                     });
                                     this.show_recovery_key(cx);
-                                })),
+                                },
+                            )),
                         ),
                 )
                 .into_any_element(),
@@ -261,7 +260,7 @@ impl Workspace {
                     .text_size(px(15.))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(p.header_fg)
-                    .child("Enter your recovery key"),
+                    .child(text::ENTER_RECOVERY_KEY),
             )
             .child(
                 div()
@@ -269,12 +268,7 @@ impl Workspace {
                     .text_center()
                     .text_size(px(12.))
                     .text_color(p.header_muted)
-                    .child(
-                        "Your documents were saved with a different key, as after reinstalling \
-                         the system or copying them from another computer. The recovery key \
-                         from Settings › Vault on that computer opens them, and this computer \
-                         keeps it.",
-                    ),
+                    .child(text::RECOVERY_DETAIL),
             )
             .child(
                 div()
@@ -302,7 +296,7 @@ impl Workspace {
                     .child(
                         ui::filled_button(
                             "home-recovery-open",
-                            "Open Documents",
+                            text::OPEN_DOCUMENTS,
                             theme,
                             !self.recovery.opening,
                         )
@@ -360,8 +354,8 @@ impl Workspace {
             SearchInput::new(cx)
                 .with_theme(theme)
                 .with_key_context(RECOVERY_FIELD)
-                .with_placeholder("ABCD EFGH IJKL …")
-                .with_label("Recovery key")
+                .with_placeholder(text::RECOVERY_PLACEHOLDER)
+                .with_label(text::RECOVERY_KEY)
         });
         let focus = field.read(cx).focus_handle(cx);
         window.focus(&focus, cx);
@@ -458,10 +452,7 @@ impl Workspace {
                         this.notices
                             .withdraw(crate::workspace::vault::vault_ui::WAITS_FOR_RECOVERY_KEY);
                         if let Err(why) = kept {
-                            this.notices.post(format!(
-                                "Your documents are open, but this computer couldn't keep the \
-                                 recovery key, so mdoc asks for it at the next launch. {why}"
-                            ));
+                            this.notices.post(text::key_not_kept(&why));
                         }
                         this.vault_opened(Opening::Opened(Box::new(vault)), window, cx);
                     }
@@ -478,9 +469,7 @@ impl Workspace {
 
 fn refused(error: &VaultError) -> String {
     match error {
-        VaultError::WrongKey => {
-            "That recovery key doesn't open these documents. Check each group and try again.".into()
-        }
-        error => format!("mdoc could not open the documents with it. {error}"),
+        VaultError::WrongKey => text::WRONG_RECOVERY_KEY.into(),
+        error => text::could_not_open_with_it(error),
     }
 }

@@ -4,6 +4,7 @@
 //! Vault does not open, or WrongKey when it was sealed with another key
 //! (a recovery key opens it). Tabs whose document waits for the key are kept
 //! here and load once it opens.
+use super::text::{key_unavailable, vault_unavailable};
 use mdoc_store::os_key::KeyError;
 use mdoc_vault::{Vault, VaultError};
 use std::{
@@ -136,29 +137,6 @@ impl VaultState {
     /// Tab `id` closed.
     pub(in crate::workspace) fn forget(&mut self, id: u64) {
         self.waiting.retain(|&tab| tab != id);
-    }
-}
-
-fn key_unavailable(error: &KeyError) -> String {
-    match error {
-        KeyError::NoKeyStore => "mdoc keeps documents encrypted with a key held by the macOS \
-            Keychain, Windows data protection or a Secret Service keyring, and this system has \
-            none."
-            .into(),
-        KeyError::KeyringUnavailable(why) => format!(
-            "mdoc keeps documents encrypted with a key in a Secret Service keyring (GNOME \
-             Keyring or KWallet), which is not available: {why}"
-        ),
-        error => format!("mdoc could not read the key that encrypts documents. {error}"),
-    }
-}
-
-fn vault_unavailable(error: &VaultError) -> String {
-    match error {
-        VaultError::WrongKey => {
-            "mdoc's documents were encrypted with a different key, so they can't be opened.".into()
-        }
-        error => format!("mdoc could not open its documents. {error}"),
     }
 }
 

@@ -1,5 +1,6 @@
 //! The Vault in the window: opened at launch, unlocked through the Keychain
 //! explainer, and why documents can't be added when there is none.
+use super::text;
 use crate::workspace::{
     Workspace,
     vault::vault_state::{Opening, VaultEffect},
@@ -10,9 +11,7 @@ use mdoc_vault::Vault;
 
 /// Intake refused while the Vault waits for its recovery key. The key
 /// opening the Vault withdraws it (#1161).
-pub(in crate::workspace) const WAITS_FOR_RECOVERY_KEY: &str = "Documents can't be added until your recovery \
-                                                 key opens the documents you have. Enter it on \
-                                                 Home.";
+pub(in crate::workspace) use text::WAITS_FOR_RECOVERY_KEY;
 
 impl Workspace {
     /// Read the key quietly and open the Vault; off the main thread.
@@ -59,7 +58,7 @@ impl Workspace {
                     .into_iter()
                     .filter_map(|id| self.tabs.get(id)?.view().cloned())
                 {
-                    let error = format!("This document can't open. {why}");
+                    let error = text::document_cannot_open(&why);
                     view.update(cx, |view, cx| {
                         let generation = view.lifecycle.begin_load();
                         view.lifecycle.finish_load(generation, false);
@@ -203,24 +202,13 @@ impl Workspace {
             return Some((why.to_owned().into(), None));
         }
         if self.vault.wrong_key_root().is_some() {
-            return Some((
-                "Your documents were saved with a different key. Enter your recovery key on \
-                 Home to open them."
-                    .into(),
-                None,
-            ));
+            return Some((text::SAVED_WITH_DIFFERENT_KEY.into(), None));
         }
         if self.vault.denied() {
-            return Some((
-                "Your documents need Keychain access to open.".into(),
-                Some("Try again…"),
-            ));
+            return Some((text::NEEDS_KEYCHAIN.into(), Some(text::TRY_AGAIN)));
         }
         if self.vault.locked() {
-            return Some((
-                "Your documents are locked. Unlock them to open them.".into(),
-                Some("Unlock…"),
-            ));
+            return Some((text::LOCKED.into(), Some(text::UNLOCK)));
         }
         None
     }
@@ -245,8 +233,7 @@ impl Workspace {
         let Some(why) = self.vault.unavailable() else {
             return false;
         };
-        self.notices
-            .post(format!("Documents can't be added. {why}"));
+        self.notices.post(text::cannot_add(why));
         cx.notify();
         true
     }

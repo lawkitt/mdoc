@@ -92,7 +92,6 @@ mod tests {
         "workspace/replies",
         "workspace/saving",
         "workspace/shelf_source",
-        "workspace/vault",
     ];
 
     /// Test-only files at the crate root, never checked.
