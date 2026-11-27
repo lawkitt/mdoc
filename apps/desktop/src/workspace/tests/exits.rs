@@ -63,12 +63,12 @@
 //!   review (#1209, `hand_copies.rs`).
 use super::*;
 use crate::{
-    companion::CompanionView,
+    ai::companion::CompanionView,
     exits::{Gate, take_out},
     pii::ui::CopyForAi,
     refusal::Step,
+    shelf::shelf_ui::ShelfView,
     shelf::{Readiness, ShelfKey},
-    shelf_ui::ShelfView,
 };
 use mdoc_pii::{Category::Person, restore::ExportedIdentity};
 use mdoc_store::document_id::VaultId;

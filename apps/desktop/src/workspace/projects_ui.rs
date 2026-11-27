@@ -8,7 +8,7 @@ use super::{
     document_writer::Target,
     projects::ProjectLink,
 };
-use crate::{document_view::DocumentView, markdown_search, style, ui};
+use crate::{document_view::DocumentView, markdown_search, ui, ui::style};
 use gpui::{AnyElement, App, Context, Entity, Focusable, PromptLevel, Window, div, prelude::*, px};
 use mdoc_pii::restore::{ExportedIdentity, RestoreMap};
 use mdoc_store::{
@@ -31,7 +31,8 @@ gpui::actions!(
 );
 
 pub(crate) fn bind_keys(cx: &mut App) {
-    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Projects, cx);
+    let bindings =
+        crate::commands::shortcuts::bindings(crate::commands::shortcuts::Owner::Projects, cx);
     cx.bind_keys(bindings);
 }
 

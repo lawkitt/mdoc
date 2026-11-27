@@ -10,7 +10,7 @@ use super::{
     document_writer::Target,
     navigation::{Arrival, Stop},
 };
-use crate::{pii::ui::SavedReplyRow, style, ui};
+use crate::{pii::ui::SavedReplyRow, ui, ui::style};
 use gpui::{
     AnyElement, Context, Entity, FocusHandle, PromptLevel, SharedString, Window, div, prelude::*,
     px,
@@ -365,7 +365,7 @@ impl Workspace {
         }
         if self.quit_flow.abandon() {
             Self::quit_cancelled(cx);
-            crate::menu_bar::reveal_if_hidden(window, cx);
+            crate::shelf::menu_bar::reveal_if_hidden(window, cx);
         }
     }
 
@@ -549,7 +549,7 @@ impl Workspace {
         // The companion's Save as document says how it ended: not saved,
         // unless the promotion below succeeds.
         self.ai.reply_not_saved(id);
-        crate::menu_bar::companion_changed(cx);
+        crate::shelf::menu_bar::companion_changed(cx);
         let Some(vault) = self.vault.vault().cloned() else {
             return;
         };
@@ -1016,7 +1016,7 @@ pub(super) fn reply_detail(
     };
     [
         Some(from),
-        source_app.map(crate::ai_connector::display_name),
+        source_app.map(crate::ai::connector::display_name),
         Some(super::project_page::created_date(created)),
     ]
     .into_iter()

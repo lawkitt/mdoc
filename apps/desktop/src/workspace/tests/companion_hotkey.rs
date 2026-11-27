@@ -7,8 +7,8 @@
 use super::ai_project::{boot_fixture, fixture, set_preview};
 use super::*;
 use crate::{
-    companion::hotkey::{self, Recorded},
-    menu_bar,
+    ai::companion::hotkey::{self, Recorded},
+    shelf::menu_bar,
 };
 use mdoc_store::settings::Hotkey;
 
@@ -33,7 +33,7 @@ fn apply(
     tabs.update(cx, |tabs, cx| {
         change(tabs.preferences.borrow_mut().current.as_mut().unwrap());
         tabs.settings
-            .update(cx, |_, cx| cx.emit(settings_ui::Event::Applied));
+            .update(cx, |_, cx| cx.emit(crate::settings::Event::Applied));
     });
     cx.run_until_parked();
 }
@@ -90,7 +90,7 @@ fn the_preview_shown_off_lets_go_at_once(cx: &mut TestAppContext) {
     let emit = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext, event| {
         tabs.update(cx, |tabs, cx| {
             (tabs.settings).update(cx, |panel, cx| {
-                if let settings_ui::Event::AiConnectorShown(shown) = event {
+                if let crate::settings::Event::AiConnectorShown(shown) = event {
                     panel.open = true;
                     panel.draft.ai_connector.preview = shown;
                 }
@@ -99,12 +99,12 @@ fn the_preview_shown_off_lets_go_at_once(cx: &mut TestAppContext) {
         });
         cx.run_until_parked();
     };
-    emit(&tabs, cx, settings_ui::Event::AiConnectorShown(false));
+    emit(&tabs, cx, crate::settings::Event::AiConnectorShown(false));
     assert_eq!(recorded.state().registered, None);
     // Still saved on.
-    emit(&tabs, cx, settings_ui::Event::Checked);
+    emit(&tabs, cx, crate::settings::Event::Checked);
     assert_eq!(recorded.state().registered, None, "a model check took it");
-    emit(&tabs, cx, settings_ui::Event::AiConnectorShown(true));
+    emit(&tabs, cx, crate::settings::Event::AiConnectorShown(true));
     assert_eq!(recorded.state().registered, Some(Hotkey::COMPANION));
 }
 

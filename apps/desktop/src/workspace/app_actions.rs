@@ -13,17 +13,17 @@ pub(crate) fn bind(cx: &mut App) {
     app_action::<Settings>(cx, |this, window, cx| {
         this.show_settings(window, cx);
     });
-    app_action::<crate::menus::About>(cx, |this, window, cx| {
+    app_action::<crate::commands::menus::About>(cx, |this, window, cx| {
         window.activate_window();
         this.settings.update(cx, |panel, cx| {
-            panel.show_category(crate::settings_ui::Category::About, window, cx)
+            panel.show_category(crate::settings::Category::About, window, cx)
         });
     });
     // Settings at About, where the result shows, and a check now.
     app_action::<CheckForUpdates>(cx, |this, window, cx| {
         window.activate_window();
         this.settings.update(cx, |panel, cx| {
-            panel.show_category(crate::settings_ui::Category::About, window, cx)
+            panel.show_category(crate::settings::Category::About, window, cx)
         });
         let updates = this
             .preferences
@@ -31,7 +31,7 @@ pub(crate) fn bind(cx: &mut App) {
             .snapshot()
             .unwrap_or_default()
             .updates;
-        crate::updater::spawn_check(updates.include_prereleases, false, cx);
+        crate::app::updater::spawn_check(updates.include_prereleases, false, cx);
     });
     app_action::<New>(cx, |this, window, cx| {
         if this.ready && !this.quit_flow.quitting() && !this.intake_refused(window, cx) {
@@ -80,7 +80,7 @@ pub(crate) fn bind(cx: &mut App) {
         }
     });
     app_action::<ToggleTheme>(cx, |this, window, cx| this.cycle_theme(window, cx));
-    app_action_with::<crate::menus::ShowLiveView>(cx, |this, show, window, cx| {
+    app_action_with::<crate::commands::menus::ShowLiveView>(cx, |this, show, window, cx| {
         this.show_live_view(show.0, window, cx)
     });
     app_action::<ToggleSidebar>(cx, |this, window, cx| {

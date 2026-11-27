@@ -17,7 +17,7 @@
 //! The share lives in the connector, in memory only; nothing here writes
 //! the Vault.
 use super::{Workspace, ai_project::Asked, navigation::Stop, project_page::Place};
-use crate::{ai_connector, style, ui};
+use crate::{ui, ui::style};
 use gpui::{AnyElement, App, Context, SharedString, Window, div, prelude::*, px};
 use mdoc_store::{document_id::VaultId, settings::AiConnectorConfig};
 use mdoc_vault::{AiActivity, AiEvent, Project, ReplyOwner};
@@ -81,14 +81,14 @@ impl Workspace {
         let setting = self.ai_setting();
         #[cfg(test)]
         if let Some(endpoint) = self.ai_endpoint.clone() {
-            let started = ai_connector::start(vault, &setting, Some(&endpoint));
+            let started = crate::ai::connector::start(vault, &setting, Some(&endpoint));
             self.ai_started(started, window, cx);
             return;
         }
         let started = if cfg!(test) || mdoc_store::app_paths::isolated() {
-            Ok(ai_connector::start_unlistened(vault, &setting))
+            Ok(crate::ai::connector::start_unlistened(vault, &setting))
         } else {
-            ai_connector::start(vault, &setting, ai_connector::endpoint().as_ref())
+            crate::ai::connector::start(vault, &setting, crate::ai::connector::endpoint().as_ref())
         };
         self.ai_started(started, window, cx);
     }
@@ -97,7 +97,7 @@ impl Workspace {
     /// start, which Settings › AI connector shows (#1220).
     pub(super) fn ai_started(
         &mut self,
-        started: Result<Option<ai_connector::Running>, String>,
+        started: Result<Option<crate::ai::connector::Running>, String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -142,7 +142,7 @@ impl Workspace {
     /// shares nothing.
     pub(super) fn refresh_ai_connector(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // With the preview on, the menu bar item toggles the companion.
-        crate::menu_bar::set_companion(self.ai_setting().preview, cx);
+        crate::shelf::menu_bar::set_companion(self.ai_setting().preview, cx);
         self.refresh_hotkey(cx);
         if self.ai_preview_wanted(cx) {
             self.start_ai_connector(window, cx);
@@ -157,10 +157,10 @@ impl Workspace {
     /// its save not landed yet (#1220), counts as off.
     pub(crate) fn refresh_hotkey(&mut self, cx: &mut Context<Self>) {
         let setting = self.ai_setting();
-        let item = self.menu_bar_setting() && crate::menu_bar::keeps_running(cx);
+        let item = self.menu_bar_setting() && crate::shelf::menu_bar::keeps_running(cx);
         let wanted =
             (self.ai_preview_wanted(cx) && !setting.hotkey_off && item).then_some(setting.hotkey);
-        let failed = crate::companion::hotkey::set(wanted, cx);
+        let failed = crate::ai::companion::hotkey::set(wanted, cx);
         self.settings
             .update(cx, |panel, cx| panel.hotkey_failed(failed, cx));
     }
@@ -170,7 +170,7 @@ impl Workspace {
     pub(super) fn stop_ai_connector(&mut self, cx: &mut Context<Self>) {
         self.settings
             .update(cx, |panel, cx| panel.ai_connector_failed(None, cx));
-        crate::companion::hotkey::set(None, cx);
+        crate::ai::companion::hotkey::set(None, cx);
         self.settings
             .update(cx, |panel, cx| panel.hotkey_failed(None, cx));
         if self.ai_connector.take().is_some() {
@@ -195,7 +195,7 @@ impl Workspace {
     ) -> bool {
         // A picker that ended since the last poll may have been up when a
         // delivery in this batch arrived: that one waits on the badge too.
-        let ended = crate::native_picker::ended(cx);
+        let ended = crate::app::native_picker::ended(cx);
         let picker_was_up = ended != self.pickers_ended;
         self.pickers_ended = ended;
         let Some(running) = &self.ai_connector else {
@@ -204,17 +204,17 @@ impl Workspace {
         let mut activity = false;
         for event in running.events() {
             match event {
-                ai_connector::Event::Asked { app } => self.ai_app_asked(app, window, cx),
-                ai_connector::Event::Activity { document } => {
+                crate::ai::connector::Event::Asked { app } => self.ai_app_asked(app, window, cx),
+                crate::ai::connector::Event::Activity { document } => {
                     activity = true;
                     // Ready since, it is read: the companion's request is
                     // answered.
                     if (self.ai.review_ask()).is_some_and(|ask| ask.document == document) {
                         self.ai.read(&document);
-                        crate::menu_bar::companion_changed(cx);
+                        crate::shelf::menu_bar::companion_changed(cx);
                     }
                 }
-                ai_connector::Event::Delivered {
+                crate::ai::connector::Event::Delivered {
                     app,
                     reply,
                     document,
@@ -222,7 +222,7 @@ impl Workspace {
                     activity = true;
                     self.ai_delivered(&app, reply, document, picker_was_up, window, cx);
                 }
-                ai_connector::Event::NeedsReview {
+                crate::ai::connector::Event::NeedsReview {
                     app,
                     document,
                     label,
@@ -253,7 +253,7 @@ impl Workspace {
             Asked::NoProject(app) => {
                 self.notices.post(format!(
                     "{} asked for documents. Make a Project to share it with AI apps.",
-                    ai_connector::display_name(&app)
+                    crate::ai::connector::display_name(&app)
                 ));
                 cx.notify();
             }
@@ -272,7 +272,7 @@ impl Workspace {
             Ok(()) => {
                 self.ai.shared();
                 self.scan_on_entry(cx);
-                crate::menu_bar::companion_changed(cx);
+                crate::shelf::menu_bar::companion_changed(cx);
                 true
             }
             Err(error) => {
@@ -293,7 +293,7 @@ impl Workspace {
         self.ai.sharing_stopped();
         // A later Stop wins over an Ask still waiting for its move.
         self.ai_ask_cancelled();
-        crate::menu_bar::companion_changed(cx);
+        crate::shelf::menu_bar::companion_changed(cx);
         cx.notify();
     }
 
@@ -303,7 +303,7 @@ impl Workspace {
             && running.connector.ai_project().as_deref() == Some(id)
         {
             running.connector.stop_sharing();
-            crate::menu_bar::companion_changed(cx);
+            crate::shelf::menu_bar::companion_changed(cx);
         }
         self.ai.forget(id);
     }
@@ -551,7 +551,7 @@ impl Workspace {
         let p = theme.pdf_style();
         let title = format!(
             "{} asked for documents",
-            ai_connector::display_name(&prompt.app)
+            crate::ai::connector::display_name(&prompt.app)
         );
         let rows = (prompt.choices.iter().enumerate()).filter_map(|(index, id)| {
             let project = self.projects.project(id)?;
@@ -830,7 +830,7 @@ pub(super) fn activity_line(
     replies: &HashMap<String, String>,
     now: u64,
 ) -> ActivityLine {
-    let app = ai_connector::display_name(&entry.app);
+    let app = crate::ai::connector::display_name(&entry.app);
     let quoted = |title: &String| format!("\u{201c}{title}\u{201d}");
     let document = |id: &str| documents.get(id).map(quoted);
     let age = super::home::age(entry.at, now);

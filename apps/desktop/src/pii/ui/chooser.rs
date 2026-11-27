@@ -132,8 +132,10 @@ impl DocumentView {
                                             })
                                         }
                                         .unwrap_or_else(|| "Field no longer available".into());
-                                        let tooltip =
-                                            crate::style::tooltip(label.clone(), this.theme.get());
+                                        let tooltip = crate::ui::style::tooltip(
+                                            label.clone(),
+                                            this.theme.get(),
+                                        );
                                         ui::control(
                                             gpui::SharedString::from(format!("field-{id}")),
                                             label,

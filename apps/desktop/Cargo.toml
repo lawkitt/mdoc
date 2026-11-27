@@ -24,11 +24,11 @@ ureq = { version = "3.4", default-features = false, features = ["rustls", "platf
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 # Settings › AI connector keeps the order of Claude Desktop's config when it
-# adds or removes its entry (src/ai_connector/setup.rs).
+# adds or removes its entry (src/ai/connector/setup.rs).
 serde_json = { version = "1", features = ["preserve_order"] }
 # ...and edits ChatGPT's (Codex's) config.toml keeping its comments and layout.
 toml_edit = "0.25"
-# Update check (src/updater.rs, ADR 0038): release tags compared by SemVer.
+# Update check (src/app/updater.rs, ADR 0038): release tags compared by SemVer.
 semver = "1"
 # canonicalize without Windows verbatim (`\\?\`) prefixes in user-visible paths.
 dunce = "1"
@@ -45,7 +45,7 @@ mdoc-store = { path = "../../crates/mdoc-store" }
 # Documents live in the Vault and save themselves (ADR 0125).
 mdoc-vault = { path = "../../crates/mdoc-vault" }
 # The AI connector (ADR 0126): the service, and the owner-only listener
-# the `mdoc-mcp` shim calls (src/ai_connector.rs).
+# the `mdoc-mcp` shim calls (src/ai/connector.rs).
 mdoc-connector = { path = "../../crates/mdoc-connector" }
 mdoc-mcp = { path = "../../crates/mdoc-mcp" }
 mdoc-import = { path = "../../crates/mdoc-import" }
@@ -62,27 +62,27 @@ zeroize = "1"
 qrcode = { version = "0.14", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# The quit question (src/system_quit.rs) and the menu bar shelf
-# (src/menu_bar.rs).
+# The quit question (src/app/system_quit.rs) and the menu bar shelf
+# (src/shelf/menu_bar.rs).
 gpui_macos = { package = "gpui-pre-macos", version = "=0.3.12" }
-# The companion window's AppKit calls and its probe (src/companion/): its
+# The companion window's AppKit calls and its probe (src/ai/companion/): its
 # sharing type and key status, which GPUI has no call for. Both are in the
 # lockfile already, through gpui-pre-macos.
 objc2 = "0.6"
 raw-window-handle = "0.6"
-# The companion's system-wide hotkey (src/companion/hotkey.rs, ADR 0128).
+# The companion's system-wide hotkey (src/ai/companion/hotkey.rs, ADR 0128).
 # macOS only: the Windows companion is not built yet.
 global-hotkey = "0.10.0"
 
 [target.'cfg(windows)'.dependencies]
 # The headless renderer.
 gpui_windows = { package = "gpui-pre-windows", version = "=0.3.12" }
-# The companion window's HWND (src/companion/windows.rs); in the lockfile
+# The companion window's HWND (src/ai/companion/windows.rs); in the lockfile
 # already, through GPUI.
 raw-window-handle = "0.6"
-# Single-instance launch (src/single_instance.rs) uses the pipe, session and
-# foreground features; src/crash.rs sets the error mode (Diagnostics_Debug);
-# the tray icon (src/tray/) and the companion's probe use Shell, Gdi,
+# Single-instance launch (src/app/single_instance.rs) uses the pipe, session and
+# foreground features; src/app/crash.rs sets the error mode (Diagnostics_Debug);
+# the tray icon (src/shelf/tray/) and the companion's probe use Shell, Gdi,
 # LibraryLoader and KeyboardAndMouse.
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",

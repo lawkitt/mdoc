@@ -106,7 +106,7 @@ fn copy_markdown_button_uses_active_tab_without_editor_focus(cx: &mut TestAppCon
 
 #[gpui::test]
 fn toolbar_settings_opens_and_closes_without_editor_focus(cx: &mut TestAppContext) {
-    cx.update(settings_ui::bind_keys);
+    cx.update(crate::settings::bind_keys);
     let (tabs, cx) = boot(cx, Session::default());
     // Keep the direct-click targets visible with the model attribution rows.
     // Scrolling keyboard reach is covered separately; below we resize small
@@ -133,7 +133,10 @@ fn toolbar_settings_opens_and_closes_without_editor_focus(cx: &mut TestAppContex
             panel.read(cx).details,
             Some(settings::Model::Pii(settings::PiiModel::Fp16))
         );
-        assert_eq!(panel.read(cx).category(), settings_ui::Category::Detection);
+        assert_eq!(
+            panel.read(cx).category(),
+            crate::settings::Category::Detection
+        );
     });
     cx.simulate_resize(size(px(640.), px(480.)));
     let dialog = cx.debug_bounds("settings-dialog").unwrap();
@@ -142,7 +145,7 @@ fn toolbar_settings_opens_and_closes_without_editor_focus(cx: &mut TestAppContex
     // The close control stays in the corner at the minimum viewport.
     let bounds = cx.debug_bounds("settings-close").unwrap();
     assert!(bounds.top() >= px(0.) && bounds.bottom() <= px(480.));
-    cx.dispatch_action(settings_ui::CloseSettings);
+    cx.dispatch_action(crate::settings::CloseSettings);
     cx.run_until_parked();
     cx.update(|window, cx| {
         assert!(!panel.read(cx).open);
@@ -217,7 +220,7 @@ fn toolbar_theme_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn settings_theme_choice_updates_sidebar_and_saved_session(cx: &mut TestAppContext) {
-    cx.update(settings_ui::bind_keys);
+    cx.update(crate::settings::bind_keys);
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     let dir = tempfile::tempdir().unwrap();
@@ -259,7 +262,7 @@ fn settings_theme_choice_updates_sidebar_and_saved_session(cx: &mut TestAppConte
         let saved = session_store::load(&path).unwrap();
         assert_eq!(saved.theme_choice, choice);
     }
-    cx.dispatch_action(settings_ui::CloseSettings);
+    cx.dispatch_action(crate::settings::CloseSettings);
     cx.run_until_parked();
     let saved = session_store::load(&path).unwrap();
     tabs.update_in(cx, |tabs, window, cx| {
@@ -272,7 +275,7 @@ fn settings_theme_choice_updates_sidebar_and_saved_session(cx: &mut TestAppConte
 
 #[gpui::test]
 fn settings_theme_tracks_sidebar_cycle_and_updates_while_mounted(cx: &mut TestAppContext) {
-    cx.update(settings_ui::bind_keys);
+    cx.update(crate::settings::bind_keys);
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     for selected in [
@@ -283,7 +286,7 @@ fn settings_theme_tracks_sidebar_cycle_and_updates_while_mounted(cx: &mut TestAp
         click_toolbar(cx, "theme-toggle");
         click_toolbar(cx, "Settings");
         assert!(cx.debug_bounds(selected).is_some(), "{selected}");
-        cx.dispatch_action(settings_ui::CloseSettings);
+        cx.dispatch_action(crate::settings::CloseSettings);
         cx.run_until_parked();
     }
     click_toolbar(cx, "Settings");
@@ -298,7 +301,7 @@ fn settings_theme_tracks_sidebar_cycle_and_updates_while_mounted(cx: &mut TestAp
 fn settings_theme_segments_follow_category_and_activate_with_enter_and_space(
     cx: &mut TestAppContext,
 ) {
-    cx.update(settings_ui::bind_keys);
+    cx.update(crate::settings::bind_keys);
     let (tabs, cx) = boot_home(
         cx,
         Session {
@@ -503,10 +506,10 @@ fn paired_preview_hides_reopens_and_failed_replacement_preserves_attachment(
 #[gpui::test]
 fn every_menu_item_reaches_a_handler_in_a_document(cx: &mut TestAppContext) {
     let (_tabs, cx) = boot(cx, Session::default());
-    cx.update(|_, cx| crate::menus::install(cx));
+    cx.update(|_, cx| crate::commands::menus::install(cx));
     cx.simulate_input("alpha beta");
     cx.run_until_parked();
-    for (name, action) in crate::menus::items() {
+    for (name, action) in crate::commands::menus::items() {
         // In the window's focus path, or app-wide (Hide, Minimize).
         let available = cx.update(|window, cx| {
             window.is_action_available(action.as_ref(), cx)
@@ -520,7 +523,7 @@ fn every_menu_item_reaches_a_handler_in_a_document(cx: &mut TestAppContext) {
 /// opening a file again is Open…, an import (#1091 Decisions 6 and 7).
 #[test]
 fn the_file_menu_has_no_open_recent() {
-    let names: Vec<_> = crate::menus::items()
+    let names: Vec<_> = crate::commands::menus::items()
         .into_iter()
         .map(|(name, _)| name)
         .collect();
@@ -881,7 +884,7 @@ fn markdown_scrollbar_drags_without_changing_preview_scroll(cx: &mut TestAppCont
 
 #[gpui::test]
 fn settings_keyboard_traversal_stays_in_dialog_and_restores_opener(cx: &mut TestAppContext) {
-    cx.update(settings_ui::bind_keys);
+    cx.update(crate::settings::bind_keys);
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(640.), px(480.)));
     expand_sidebar(&tabs, cx);
@@ -896,7 +899,10 @@ fn settings_keyboard_traversal_stays_in_dialog_and_restores_opener(cx: &mut Test
         cx.simulate_keystrokes("tab");
         cx.update(|window, cx| {
             assert!(gpui::Focusable::focus_handle(panel.read(cx), cx).contains_focused(window, cx));
-            assert_eq!(panel.read(cx).category(), settings_ui::Category::General);
+            assert_eq!(
+                panel.read(cx).category(),
+                crate::settings::Category::General
+            );
         });
     }
     cx.simulate_keystrokes("shift-tab escape");
@@ -908,20 +914,20 @@ fn settings_keyboard_traversal_stays_in_dialog_and_restores_opener(cx: &mut Test
 
 #[gpui::test]
 fn settings_categories_use_one_tab_stop_and_arrow_keys(cx: &mut TestAppContext) {
-    cx.update(settings_ui::bind_keys);
+    cx.update(crate::settings::bind_keys);
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     click_toolbar(cx, "Settings");
     let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
     let category_focus = cx.update(|window, cx| window.focused(cx).unwrap());
     for category in [
-        settings_ui::Category::Detection,
-        settings_ui::Category::Recognition,
-        settings_ui::Category::Spelling,
-        settings_ui::Category::Vault,
-        settings_ui::Category::AiConnector,
-        settings_ui::Category::About,
-        settings_ui::Category::General,
+        crate::settings::Category::Detection,
+        crate::settings::Category::Recognition,
+        crate::settings::Category::Spelling,
+        crate::settings::Category::Vault,
+        crate::settings::Category::AiConnector,
+        crate::settings::Category::About,
+        crate::settings::Category::General,
     ] {
         key(cx, "down");
         cx.update(|window, cx| {
@@ -930,7 +936,7 @@ fn settings_categories_use_one_tab_stop_and_arrow_keys(cx: &mut TestAppContext) 
         });
     }
     key(cx, "up");
-    cx.update(|_, cx| assert_eq!(panel.read(cx).category(), settings_ui::Category::About));
+    cx.update(|_, cx| assert_eq!(panel.read(cx).category(), crate::settings::Category::About));
     key(cx, "down");
     key(cx, "shift-tab");
     let close_focus = cx.update(|window, cx| window.focused(cx).unwrap());
@@ -957,8 +963,8 @@ fn settings_model_and_update_deep_links_choose_their_categories(cx: &mut TestApp
         });
         draw(cx);
         let expected = match model {
-            settings::Model::Ocr(_) => settings_ui::Category::Recognition,
-            settings::Model::Pii(_) => settings_ui::Category::Detection,
+            settings::Model::Ocr(_) => crate::settings::Category::Recognition,
+            settings::Model::Pii(_) => crate::settings::Category::Detection,
         };
         cx.update(|_, cx| {
             assert!(panel.read(cx).open);
@@ -966,13 +972,23 @@ fn settings_model_and_update_deep_links_choose_their_categories(cx: &mut TestApp
         });
     }
     panel.update_in(cx, |panel, window, cx| panel.show_updates(window, cx));
-    cx.update(|_, cx| assert_eq!(panel.read(cx).category(), settings_ui::Category::General));
+    cx.update(|_, cx| {
+        assert_eq!(
+            panel.read(cx).category(),
+            crate::settings::Category::General
+        )
+    });
     panel.update_in(cx, |panel, window, cx| {
-        panel.show_category(settings_ui::Category::About, window, cx);
+        panel.show_category(crate::settings::Category::About, window, cx);
         panel.close(window, cx);
         panel.show(window, cx);
     });
-    cx.update(|_, cx| assert_eq!(panel.read(cx).category(), settings_ui::Category::General));
+    cx.update(|_, cx| {
+        assert_eq!(
+            panel.read(cx).category(),
+            crate::settings::Category::General
+        )
+    });
 }
 
 #[gpui::test]
@@ -1111,14 +1127,14 @@ fn spelling_menu_item_switches_the_document(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn dictionary_view_searches_adds_removes_with_undo_and_stays_virtualized(cx: &mut TestAppContext) {
-    cx.update(settings_ui::bind_keys);
+    cx.update(crate::settings::bind_keys);
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
     let shared = cx.update(|_, cx| panel.read(cx).shared.clone());
     let words: std::collections::BTreeSet<String> =
         (0..300).map(|i| format!("word{i:03}")).collect();
-    cx.update(|_, cx| crate::settings_ui::dictionary::set_words(&shared, words, cx));
+    cx.update(|_, cx| crate::settings::dictionary::set_words(&shared, words, cx));
     click_toolbar(cx, "Settings");
     click_toolbar(cx, "settings-category-Spelling");
     let scroll = cx.debug_bounds("settings-scroll").unwrap();
@@ -1176,7 +1192,10 @@ fn dictionary_view_searches_adds_removes_with_undo_and_stays_virtualized(cx: &mu
     cx.update(|_, cx| {
         assert!(panel.read(cx).dictionary.is_none());
         assert!(panel.read(cx).open);
-        assert_eq!(panel.read(cx).category(), settings_ui::Category::Spelling);
+        assert_eq!(
+            panel.read(cx).category(),
+            crate::settings::Category::Spelling
+        );
     });
     draw(cx);
     assert!(cx.debug_bounds("manage-dictionary").is_some());
@@ -1590,7 +1609,7 @@ fn command_palette_routes_every_settings_category(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
     let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
     let labels = tabs.read_with(cx, |tabs, cx| tabs.palette_section("Go to", cx));
-    for category in settings_ui::Category::ALL {
+    for category in crate::settings::Category::ALL {
         assert!(labels.contains(&format!("Settings › {}", category.label())));
         cx.simulate_keystrokes("secondary-k");
         cx.simulate_input(&format!("settings {}", category.label()));
@@ -1955,7 +1974,7 @@ fn pii_download_retains_card_focus(cx: &mut TestAppContext) {
 /// it.
 #[gpui::test]
 fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContext) {
-    use crate::{shortcuts::tip, workspace::navigation_ui::Back};
+    use crate::{commands::shortcuts::tip, workspace::navigation_ui::Back};
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     draw(cx);
@@ -2025,7 +2044,7 @@ fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContex
 #[gpui::test]
 fn turning_automatic_checks_off_stops_the_launch_check(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
-    let fetches = || crate::updater::TEST_FETCHES.load(std::sync::atomic::Ordering::SeqCst);
+    let fetches = || crate::app::updater::TEST_FETCHES.load(std::sync::atomic::Ordering::SeqCst);
     for (automatic, sent) in [(false, 0), (true, 1)] {
         tabs.update(cx, |tabs, cx| {
             let mut preferences = tabs.preferences.borrow().snapshot().unwrap_or_default();

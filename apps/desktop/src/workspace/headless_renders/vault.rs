@@ -177,7 +177,7 @@ pub(super) fn unavailable_home(d: &mut Driver) -> Result<()> {
 /// nudge, and Home asking for the recovery key, empty and refused. The key
 /// is the injected test key; the Vault is open again after.
 pub(super) fn recovery_key(d: &mut Driver) -> Result<()> {
-    use crate::settings_ui::Category;
+    use crate::settings::Category;
     d.change(|w, window, cx| {
         w.use_key_store(std::sync::Arc::new(std::sync::Mutex::new(
             super::super::recovery_key::InjectedKey {

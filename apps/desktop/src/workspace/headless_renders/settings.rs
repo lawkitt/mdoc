@@ -1,7 +1,7 @@
 //! Settings categories, categories to detect, the user-wide lists and the
 //! Spelling dictionary.
 use super::{Driver, Result};
-use crate::settings_ui::{Category, Status};
+use crate::settings::{Category, Status};
 
 pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     // show_settings activates native windows. Call the panel's state flow

@@ -12,7 +12,7 @@ use super::ai_project::{
     shared_lease, window_active,
 };
 use super::*;
-use crate::{companion::CompanionView, menu_bar, shelf_ui::ShelfView};
+use crate::{ai::companion::CompanionView, shelf::menu_bar, shelf::shelf_ui::ShelfView};
 use mdoc_mcp::wire::{Answer, Call, Done, Kind};
 use mdoc_pii::{Category::Person, restore::ExportedIdentity};
 use mdoc_store::document_id::VaultId as VaultIdOf;
@@ -142,7 +142,7 @@ fn the_preview_decides_between_the_shelf_and_the_companion(cx: &mut TestAppConte
 #[test]
 fn the_companion_window_never_asks_for_focus() {
     let options =
-        crate::companion::window_options(gpui::Bounds::default(), gpui::DisplayId::new(1));
+        crate::ai::companion::window_options(gpui::Bounds::default(), gpui::DisplayId::new(1));
     assert!(!options.focus);
     assert_eq!(options.kind, gpui::WindowKind::PopUp);
     assert!(!options.is_movable);

@@ -20,14 +20,14 @@ fn key_store(key: Option<[u8; 32]>) -> Arc<Mutex<InjectedKey>> {
     }))
 }
 
-fn panel(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Entity<settings_ui::Panel> {
+fn panel(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Entity<crate::settings::Panel> {
     cx.update(|_, cx| tabs.read(cx).settings.clone())
 }
 
 fn show_vault_settings(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
     let panel = panel(tabs, cx);
     panel.update_in(cx, |panel, window, cx| {
-        panel.show_category(settings_ui::Category::Vault, window, cx)
+        panel.show_category(crate::settings::Category::Vault, window, cx)
     });
     draw(cx);
 }
@@ -72,7 +72,7 @@ fn settings_vault_shows_the_recovery_key_and_its_qr_and_forgets_them(cx: &mut Te
     cx.update(|_, cx| assert_eq!(panel.read(cx).recovery_key_shown(), None));
     click(cx, "recovery-key-show");
     panel.update_in(cx, |panel, window, cx| {
-        panel.show_category(settings_ui::Category::About, window, cx)
+        panel.show_category(crate::settings::Category::About, window, cx)
     });
     cx.update(|_, cx| assert_eq!(panel.read(cx).recovery_key_shown(), None));
     show_vault_settings(&tabs, cx);
@@ -181,7 +181,7 @@ fn the_nudges_show_opens_settings_with_the_key_and_retires_it(cx: &mut TestAppCo
     cx.update(|_, cx| {
         let panel = panel.read(cx);
         assert!(panel.open);
-        assert_eq!(panel.category(), settings_ui::Category::Vault);
+        assert_eq!(panel.category(), crate::settings::Category::Vault);
         assert!(panel.recovery_key_shown().is_some());
         assert!(!tabs.read(cx).recovery_nudge());
     });

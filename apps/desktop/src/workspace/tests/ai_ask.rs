@@ -8,7 +8,6 @@ use super::ai_project::{
     Fixture, boot_fixture, call, fixture, open_member, record_notes, set_preview, shared, show_page,
 };
 use super::*;
-use crate::ai_ask;
 use mdoc_mcp::wire::{Answer, Call, Done, Kind};
 use mdoc_store::settings::AskWith;
 
@@ -85,8 +84,8 @@ fn notice(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<String
 /// entry scan may change it since).
 fn asked_about(cx: &mut VisualTestContext, with: AskWith, doc_id: &str) {
     let url = opened(cx).expect("the app opens");
-    let start = ai_ask::link(with, "Read \u{201c}").unwrap();
-    let end = crate::ai_links::percent_encoded(&format!(
+    let start = crate::ai::ask::link(with, "Read \u{201c}").unwrap();
+    let end = crate::ai::links::percent_encoded(&format!(
         "\u{201d} in mdoc (doc_id {doc_id}). My question: "
     ));
     assert!(url.starts_with(&start) && url.ends_with(&end), "{url}");
@@ -114,7 +113,7 @@ fn ask_claude_shares_the_documents_project_and_names_it_by_label(cx: &mut TestAp
         more.headed
     );
     let url = opened(cx).expect("Claude opens");
-    assert_eq!(url, crate::ai_links::claude(&prompt));
+    assert_eq!(url, crate::ai::links::claude(&prompt));
     for private in ["Maria", "Lopez", "rents"] {
         assert!(!url.contains(private), "{url}");
     }
@@ -165,7 +164,7 @@ fn the_last_choice_is_remembered(cx: &mut TestAppContext) {
     assert_eq!(shared(&tabs, cx), Some(fixture.lease.clone()));
     assert_eq!(
         opened(cx),
-        Some(crate::ai_links::chatgpt(ai_ask::PROJECT_PROMPT))
+        Some(crate::ai::links::chatgpt(crate::ai::ask::PROJECT_PROMPT))
     );
 }
 
@@ -223,7 +222,7 @@ fn copy_for_ai_from_ask_copies_and_shares_nothing(cx: &mut TestAppContext) {
     assert_eq!(shared(&tabs, cx), Some(fixture.estate.clone()));
     assert_eq!(
         opened(cx),
-        Some(crate::ai_links::claude(ai_ask::PROJECT_PROMPT))
+        Some(crate::ai::links::claude(crate::ai::ask::PROJECT_PROMPT))
     );
     assert_eq!(last(&tabs, cx), AskWith::Claude);
 }
@@ -281,13 +280,13 @@ fn ask_on_an_excluded_document_shares_nothing(cx: &mut TestAppContext) {
     click_toolbar(cx, "header-ask");
     assert_eq!(shared(&tabs, cx), None);
     assert_eq!(opened(cx), None);
-    assert_eq!(notice(&tabs, cx).as_deref(), Some(ai_ask::EXCLUDED));
+    assert_eq!(notice(&tabs, cx).as_deref(), Some(crate::ai::ask::EXCLUDED));
     // Unfiled and excluded: no offer to move it either (review of #1237).
     tabs.update(cx, |tabs, _| tabs.notices.dismiss());
     open_member(&tabs, cx, &more.unfiled);
     click_toolbar(cx, "header-ask");
     assert!(!shown(cx, "ask-unfiled"));
-    assert_eq!(notice(&tabs, cx).as_deref(), Some(ai_ask::EXCLUDED));
+    assert_eq!(notice(&tabs, cx).as_deref(), Some(crate::ai::ask::EXCLUDED));
     assert_eq!(shared(&tabs, cx), None);
 }
 
@@ -319,7 +318,7 @@ fn ask_on_a_document_that_needs_review_leads_to_the_review_request(cx: &mut Test
         "Read “Document 1” in mdoc (doc_id {}). My question: ",
         fixture.lease_doc
     );
-    assert_eq!(opened(cx), Some(crate::ai_links::claude(&prompt)));
+    assert_eq!(opened(cx), Some(crate::ai::links::claude(&prompt)));
     let read = call(
         &tabs,
         cx,
@@ -364,7 +363,7 @@ fn asking_in_the_shared_project_keeps_a_reply_under_way(cx: &mut TestAppContext)
     click_toolbar(cx, "project-ask-chatgpt");
     assert_eq!(
         opened(cx),
-        Some(crate::ai_links::chatgpt(ai_ask::PROJECT_PROMPT))
+        Some(crate::ai::links::chatgpt(crate::ai::ask::PROJECT_PROMPT))
     );
     let delivered = call(
         &tabs,

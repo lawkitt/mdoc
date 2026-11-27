@@ -1,5 +1,5 @@
 //! Immutable scan jobs and generation/revision/configuration validation.
-use crate::{document_view::DocumentView, settings_ui};
+use crate::document_view::DocumentView;
 use gpui::Context;
 use mdoc_pii::Category;
 use mdoc_store::{
@@ -283,7 +283,8 @@ impl DocumentView {
                 self.pii.error = None;
                 self.model_panel.update(cx, |panel, cx| {
                     let model = settings::Model::Pii(config.model);
-                    panel.statuses[settings_ui::Panel::index(model)] = settings_ui::Status::Ready;
+                    panel.statuses[crate::settings::Panel::index(model)] =
+                        crate::settings::Status::Ready;
                     cx.notify();
                 });
                 self.pii.scans.push(config);

@@ -81,7 +81,7 @@ impl PanelDrag {
 /// The drag ghost: the dragged original as a compact chip.
 pub(super) struct DragGhost {
     pub label: Arc<str>,
-    pub theme: crate::style::Theme,
+    pub theme: crate::ui::style::Theme,
 }
 impl gpui::Render for DragGhost {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl gpui::IntoElement {
@@ -453,7 +453,7 @@ impl MappingUi {
         self.popup_revision = Some(revision);
     }
     pub fn new(
-        theme: std::rc::Rc<std::cell::Cell<crate::style::Theme>>,
+        theme: std::rc::Rc<std::cell::Cell<crate::ui::style::Theme>>,
         cx: &mut Context<DocumentView>,
     ) -> Self {
         let mut input = |placeholder| {

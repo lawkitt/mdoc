@@ -4,14 +4,14 @@
 use super::home;
 use super::{Tab, Workspace};
 use crate::{
+    commands::shortcuts,
     document_view::{
         CopyMarkdown, DocumentView, ExportMarkdown, OpenSourceReply, Save, ShowNotes, ToggleCompare,
     },
     markdown_search::{SearchInput, SearchInputEvent},
     pii::ui::{CopyForAi, Pseudonymize},
-    shortcuts,
-    style::{self, Theme},
     ui,
+    ui::style::{self, Theme},
     workspace::{
         Close, New, Open, OpenProject, PasteAiResponse, PseudonymizeClipboard, Settings,
         ToggleSidebar, shortcuts_ui::ShowShortcuts,
@@ -49,7 +49,8 @@ pub(crate) const PALETTE: &str = "CommandPalette";
 /// `Workspace` is the window's own, below every deeper one: Notices opens
 /// without focus, so Esc closes it from a source-only tab or Home.
 pub(crate) fn bind_keys(cx: &mut App) {
-    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Shell, cx);
+    let bindings =
+        crate::commands::shortcuts::bindings(crate::commands::shortcuts::Owner::Shell, cx);
     cx.bind_keys(bindings);
     cx.bind_keys([
         KeyBinding::new("up", PaletteUp, Some(PALETTE)),
@@ -127,7 +128,7 @@ enum Command {
     NewProject,
     Home,
     Settings,
-    SettingsCategory(crate::settings_ui::Category),
+    SettingsCategory(crate::settings::Category),
     Shortcuts,
     Theme,
     /// The active document's heading whose line starts at this offset.
@@ -413,7 +414,7 @@ impl Workspace {
         };
         let card = self.update_card(cx);
         // The card carries its own dot; Settings marks an update only without it.
-        let dot = card.is_none() && crate::updater::state(cx).marks_settings();
+        let dot = card.is_none() && crate::app::updater::state(cx).marks_settings();
         div()
             .flex()
             .flex_col()
@@ -470,7 +471,7 @@ impl Workspace {
                     )
                     .child(
                         ui::header_icon("sidebar-help", "Help ↗", ui::Icon::Help, theme, false)
-                            .on_click(|_, _, cx| cx.open_url(crate::menus::HELP_URL)),
+                            .on_click(|_, _, cx| cx.open_url(crate::commands::menus::HELP_URL)),
                     ),
             )
             .child(
@@ -601,7 +602,7 @@ impl Workspace {
     /// it. Theme and Help live in the open sidebar.
     pub(super) fn rail_foot(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
-        let update = crate::updater::state(cx).marks_settings();
+        let update = crate::app::updater::state(cx).marks_settings();
         div()
             .flex()
             .flex_col()
@@ -650,8 +651,8 @@ impl Workspace {
 
     /// A quiet card while an update is on its way.
     fn update_card(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        use crate::updater::BannerKind;
-        let state = crate::updater::state(cx);
+        use crate::app::updater::BannerKind;
+        let state = crate::app::updater::state(cx);
         let banner = state.banner()?;
         if banner.kind == BannerKind::Updated {
             return None;
@@ -746,7 +747,7 @@ impl Workspace {
                         .child("×")
                         .on_click(|_, _, cx| {
                             cx.stop_propagation();
-                            crate::updater::dismiss_banner(cx);
+                            crate::app::updater::dismiss_banner(cx);
                         }),
                 )
                 .on_click(cx.listener(move |this, _, window, cx| match banner.kind {
@@ -867,8 +868,8 @@ impl Workspace {
 
     /// One-time "What's new" after an update.
     fn whats_new(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        use crate::updater::BannerKind;
-        let banner = crate::updater::state(cx).banner()?;
+        use crate::app::updater::BannerKind;
+        let banner = crate::app::updater::state(cx).banner()?;
         if banner.kind != BannerKind::Updated {
             return None;
         }
@@ -891,13 +892,13 @@ impl Workspace {
                 )
                 .child(
                     ui::link_button("whats-new", "What's new", theme, true).on_click(
-                        move |_, _, cx| cx.open_url(&crate::updater::release_url(&version)),
+                        move |_, _, cx| cx.open_url(&crate::app::updater::release_url(&version)),
                     ),
                 )
                 .child(
                     ui::control("dismiss-whats-new", "×", theme, true)
                         .aria_label("Dismiss")
-                        .on_click(|_, _, cx| crate::updater::dismiss_banner(cx)),
+                        .on_click(|_, _, cx| crate::app::updater::dismiss_banner(cx)),
                 )
                 .into_any_element(),
         )
@@ -1661,7 +1662,7 @@ impl Workspace {
             },
         ]);
         rows.extend(
-            crate::settings_ui::Category::ALL
+            crate::settings::Category::ALL
                 .into_iter()
                 .map(|category| Row {
                     section: "Go to",

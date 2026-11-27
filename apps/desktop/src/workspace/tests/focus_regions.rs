@@ -11,7 +11,7 @@ fn app_commands_work_without_control_focus(cx: &mut TestAppContext) {
     for action in [
         Quit.boxed_clone(),
         Settings.boxed_clone(),
-        crate::menus::About.boxed_clone(),
+        crate::commands::menus::About.boxed_clone(),
         New.boxed_clone(),
         Open.boxed_clone(),
         OpenProject.boxed_clone(),
@@ -34,12 +34,12 @@ fn app_commands_work_without_control_focus(cx: &mut TestAppContext) {
         window.blur(cx);
     });
     draw(cx);
-    cx.dispatch_action(crate::menus::About);
+    cx.dispatch_action(crate::commands::menus::About);
     cx.run_until_parked();
     cx.update(|_, cx| {
         let settings = tabs.read(cx).settings.read(cx);
         assert!(settings.open);
-        assert_eq!(settings.category(), settings_ui::Category::About);
+        assert_eq!(settings.category(), crate::settings::Category::About);
     });
 }
 
@@ -63,7 +63,7 @@ fn app_commands_preserve_confirmation_focus(cx: &mut TestAppContext) {
     for action in [
         Quit.boxed_clone(),
         Settings.boxed_clone(),
-        crate::menus::About.boxed_clone(),
+        crate::commands::menus::About.boxed_clone(),
         New.boxed_clone(),
         Open.boxed_clone(),
         OpenProject.boxed_clone(),

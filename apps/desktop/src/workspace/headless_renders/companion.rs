@@ -8,8 +8,8 @@
 //! synthetic names; no status item, panel or blur is involved.
 use super::{Driver, HEIGHT, Result, WIDTH, shelf};
 use crate::{
-    companion::{COMPANION_WIDTH, CompanionView},
-    style::Theme,
+    ai::companion::{COMPANION_WIDTH, CompanionView},
+    ui::style::Theme,
     workspace::{
         CompanionContent, Workspace,
         ai_companion::{
@@ -156,7 +156,7 @@ fn stage(d: &mut Driver, name: &str, content: CompanionContent, hover: Hover) ->
         .downcast::<Workspace>()
         .ok_or("the workspace window")?;
     let theme = d.change(|w, _, _| w.theme_cell())?;
-    let height = crate::companion::height(&content);
+    let height = crate::ai::companion::height(&content);
     let window =
         d.cx.open_window(size(px(WIDTH), px(HEIGHT)), |window, cx| {
             let companion = cx.new(|cx| {

@@ -182,8 +182,8 @@ fn project_menu_moves(cx: &mut TestAppContext, projects: Projects) {
     {
         let dir = tempfile::tempdir().unwrap();
         let (tabs, cx, project) = document_with(cx, dir.path(), projects);
-        cx.update(|_, cx| crate::menus::install(cx));
-        let names: Vec<_> = (crate::menus::items().into_iter())
+        cx.update(|_, cx| crate::commands::menus::install(cx));
+        let names: Vec<_> = (crate::commands::menus::items().into_iter())
             .map(|(name, _)| name.to_string())
             .collect();
         assert!(names.iter().any(|n| n == "Move to Project…"), "{names:?}");

@@ -1,6 +1,6 @@
 //! Searchable replacement overview with inline occurrence context.
 use super::{DropTarget, MappingAction, PanelDrag, PanelFilter, PanelMenu, checklist::Tick};
-use crate::{document_view::DocumentView, pii::ui::APPLIED_ID, settings_ui, style, ui};
+use crate::{document_view::DocumentView, pii::ui::APPLIED_ID, ui, ui::style};
 use gpui::{
     AnyElement, App, Context, Hsla, SharedString, Window, div, prelude::*, px, uniform_list,
 };
@@ -30,15 +30,18 @@ impl SetupCopy {
         let note = match model {
             Some(m) if update => format!(
                 "{} · {} MB runtime update",
-                crate::models::short_name(m),
+                crate::app::models::short_name(m),
                 mdoc_import::model_download::megabytes(pending.total())
             ),
             Some(m) if pending.total() > 0 => format!(
                 "{} · {}, once",
-                crate::models::short_name(m),
+                crate::app::models::short_name(m),
                 pending.download_label()
             ),
-            Some(m) => format!("{} · runs on this computer", crate::models::short_name(m)),
+            Some(m) => format!(
+                "{} · runs on this computer",
+                crate::app::models::short_name(m)
+            ),
             None => String::new(),
         };
         if update {
@@ -429,7 +432,7 @@ impl DocumentView {
         let cancelling = panel.cancelling();
         let needs_setup = model.is_none_or(|m| panel.needs_setup(m));
         let pending = model.map_or_else(Default::default, |m| {
-            panel.pending[settings_ui::Panel::index(m)]
+            panel.pending[crate::settings::Panel::index(m)]
         });
         let idle = panel.working.is_none() && !mdoc_import::model_work::busy();
         let error = self.pii.error.clone();
@@ -455,7 +458,7 @@ impl DocumentView {
             ))
             .child(
                 ui::card_actions().child(
-                    settings_ui::control("cancel-pii-setup", "Cancel", theme, !cancelling)
+                    crate::settings::control("cancel-pii-setup", "Cancel", theme, !cancelling)
                         .track_focus(&self.card_focus.clone().tab_stop(!cancelling))
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "cancel-pii-setup".into())
@@ -492,7 +495,7 @@ impl DocumentView {
                             )),
                         )
                         .child(
-                            settings_ui::control("pii-setup-cancel", "Cancel", theme, true)
+                            crate::settings::control("pii-setup-cancel", "Cancel", theme, true)
                                 .when(cfg!(test), |v| {
                                     v.debug_selector(|| "pii-setup-cancel".into())
                                 })
@@ -659,7 +662,9 @@ impl DocumentView {
             filter != PanelFilter::All,
         )
         // No tooltip over its own open menu.
-        .when(!open, |v| v.tooltip(crate::style::tooltip(label, theme)))
+        .when(!open, |v| {
+            v.tooltip(crate::ui::style::tooltip(label, theme))
+        })
         .track_focus(&self.pii.mapping.filter_focus)
         .when(cfg!(test), |v| {
             v.debug_selector(|| "replacement-filter".into())

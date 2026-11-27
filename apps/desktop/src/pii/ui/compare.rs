@@ -3,7 +3,7 @@
 //! together. Live: it follows every change to the applied replacements, with
 //! the editor's replacement motion.
 use super::{APPLIED_ID, CopyFrom};
-use crate::{document_view::DocumentView, style, ui};
+use crate::{document_view::DocumentView, ui, ui::style};
 use gpui::{
     AnyElement, AppContext, Context, Entity, FocusHandle, Focusable, Hsla, Pixels, SharedString,
     Subscription, Window, div, prelude::*, px,
@@ -234,7 +234,7 @@ impl DocumentView {
             let view = cx.weak_entity();
             let editor = cx.new(|cx| {
                 let mut editor = mdoc_editor::EditorState::new(window, cx);
-                editor.set_markdown_style(crate::style::markdown_style(theme), cx);
+                editor.set_markdown_style(crate::ui::style::markdown_style(theme), cx);
                 editor.set_read_only(true, cx);
                 editor.set_autoscroll(scroll.clone());
                 super::check_hand_copies(&mut editor, view, from);
@@ -270,7 +270,7 @@ impl DocumentView {
         let reply_scroll = gpui::ScrollHandle::new();
         let reply = cx.new(|cx| {
             let mut editor = mdoc_editor::EditorState::new(window, cx);
-            editor.set_markdown_style(crate::style::markdown_style(theme), cx);
+            editor.set_markdown_style(crate::ui::style::markdown_style(theme), cx);
             editor.set_read_only(true, cx);
             editor.set_autoscroll(reply_scroll.clone());
             // The restored reply holds originals.
@@ -638,7 +638,7 @@ impl DocumentView {
         let right_ghosts: Vec<_> = ghosts.into_iter().map(|(_, r)| fill(r, blue)).collect();
         let (original, current) = (state.original.clone(), state.current.clone());
         original.update(cx, |editor, cx| {
-            editor.set_markdown_style(crate::style::markdown_style(theme), cx);
+            editor.set_markdown_style(crate::ui::style::markdown_style(theme), cx);
             if editor.text() != before {
                 editor.set_text(before.clone(), cx);
             }
@@ -657,7 +657,7 @@ impl DocumentView {
             }
         });
         current.update(cx, |editor, cx| {
-            editor.set_markdown_style(crate::style::markdown_style(theme), cx);
+            editor.set_markdown_style(crate::ui::style::markdown_style(theme), cx);
             if editor.text() != text {
                 editor.set_text(text, cx);
             }
@@ -709,7 +709,7 @@ impl DocumentView {
         let text = self.reply.restored().text.clone();
         let marks = self.reply_annotations();
         state.reply.clone().update(cx, |editor, cx| {
-            editor.set_markdown_style(crate::style::markdown_style(theme), cx);
+            editor.set_markdown_style(crate::ui::style::markdown_style(theme), cx);
             if editor.text() != text {
                 editor.set_text(text, cx);
             }
@@ -732,7 +732,7 @@ impl DocumentView {
             .clone()
             .update(cx, |editor, cx| editor.reveal_offset(offset, cx));
         if !cx.reduce_motion() {
-            let red = crate::style::markdown_style(self.theme.get()).alert_caution;
+            let red = crate::ui::style::markdown_style(self.theme.get()).alert_caution;
             let id = super::restore::UNRESOLVED_ID | offset as u64;
             state.reply.clone().update(cx, |editor, cx| {
                 let strong = (Hsla { a: 0.45, ..red }, Hsla { a: 0.95, ..red });
@@ -885,7 +885,7 @@ impl DocumentView {
                 })
                 .when(switchable, |v| {
                     v.cursor_pointer()
-                        .tooltip(crate::style::tooltip("Switch column".into(), theme))
+                        .tooltip(crate::ui::style::tooltip("Switch column".into(), theme))
                         .on_click(cx.listener(|this, _, _, cx| {
                             if let Some(state) = this.compare.as_mut() {
                                 state.original_only = !state.original_only;

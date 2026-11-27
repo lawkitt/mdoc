@@ -8,7 +8,8 @@ use super::{
 };
 use crate::{
     markdown_search::{SearchInput, SearchInputEvent},
-    style, ui,
+    ui,
+    ui::style,
 };
 use gpui::{
     AnyElement, Context, Entity, FocusHandle, Focusable, PathPromptOptions, SharedString,
@@ -485,7 +486,7 @@ impl Workspace {
         let Some(name) = name else {
             return;
         };
-        let paths = crate::native_picker::paths(
+        let paths = crate::app::native_picker::paths(
             cx,
             PathPromptOptions {
                 files: true,

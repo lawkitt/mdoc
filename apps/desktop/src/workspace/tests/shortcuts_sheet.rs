@@ -1,7 +1,7 @@
 //! The keyboard shortcuts sheet: opened by `?` outside text
 //! fields, ⌘/ (Ctrl+/) everywhere and the palette; every table row drawn.
 use super::*;
-use crate::{shortcuts, workspace::shortcuts_ui};
+use crate::{commands::shortcuts, workspace::shortcuts_ui};
 
 fn sheet_open(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
     tabs.read_with(cx, |tabs, _| tabs.shell.shortcuts.is_some())
@@ -210,7 +210,7 @@ fn settings_shortcuts_row_opens_sheet_and_restores_row_focus(cx: &mut TestAppCon
     cx.update(|window, cx| {
         let panel = tabs.read(cx).settings.read(cx);
         assert!(panel.open);
-        assert_eq!(panel.category(), settings_ui::Category::General);
+        assert_eq!(panel.category(), crate::settings::Category::General);
         assert_eq!(window.focused(cx), Some(row_focus));
     });
 }

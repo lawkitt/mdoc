@@ -1,9 +1,9 @@
 use crate::{
     comparison::{self, Config, Input, ResultRecord},
     markdown_search,
-    settings_ui::{self, control},
-    style::{self, Theme},
+    settings::control,
     ui,
+    ui::style::{self, Theme},
     workspace::{self, Close, Quit, Settings},
 };
 use gpui::{App, Context, Entity, FocusHandle, Focusable, Window, actions, div, prelude::*, px};
@@ -25,7 +25,8 @@ use std::{
 actions!(model_comparison, [CloseComparison]);
 
 pub fn bind_keys(cx: &mut App) {
-    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Comparison, cx);
+    let bindings =
+        crate::commands::shortcuts::bindings(crate::commands::shortcuts::Owner::Comparison, cx);
     cx.bind_keys(bindings);
 }
 
@@ -47,7 +48,7 @@ pub struct View {
     theme: Rc<Cell<Theme>>,
     focus: FocusHandle,
     owner: gpui::WeakEntity<workspace::Workspace>,
-    panel: Entity<settings_ui::Panel>,
+    panel: Entity<crate::settings::Panel>,
     sources: Vec<PathBuf>,
 }
 impl Drop for View {
@@ -61,7 +62,7 @@ impl View {
         defaults: Preferences,
         theme: Rc<Cell<Theme>>,
         owner: gpui::WeakEntity<workspace::Workspace>,
-        panel: Entity<settings_ui::Panel>,
+        panel: Entity<crate::settings::Panel>,
         sources: Vec<PathBuf>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -180,7 +181,7 @@ impl View {
             let index = Model::ALL.iter().position(|m| *m == model).unwrap();
             if !matches!(
                 self.panel.read(cx).statuses[index],
-                settings_ui::Status::Ready
+                crate::settings::Status::Ready
             ) {
                 self.error = Some(format!(
                     "{} is not ready. Download/repair it in Settings first.",
@@ -276,7 +277,7 @@ impl View {
             .and_then(|p| p.parent())
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
-        let prompt = crate::native_picker::new_path(
+        let prompt = crate::app::native_picker::new_path(
             cx,
             &directory,
             Some(if markdown {
@@ -433,7 +434,7 @@ impl Render for View {
                                 let available = !matches!(
                                     self.panel.read(cx).statuses
                                         [Model::ALL.iter().position(|m| *m == model).unwrap()],
-                                    settings_ui::Status::Unavailable(_)
+                                    crate::settings::Status::Unavailable(_)
                                 );
                                 control(
                                     (
@@ -688,7 +689,7 @@ mod tests {
         cx.run_until_parked();
         let shared = Store::in_memory();
         let panel = cx.new(|cx| {
-            settings_ui::Panel::new(shared.clone(), Rc::new(Cell::new(Theme::default())), cx)
+            crate::settings::Panel::new(shared.clone(), Rc::new(Cell::new(Theme::default())), cx)
         });
         let defaults = shared.borrow().snapshot().unwrap();
         let input = Input::Markdown(Arc::new("Alice@example.invalid".into()));

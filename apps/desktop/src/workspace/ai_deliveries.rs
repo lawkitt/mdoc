@@ -18,7 +18,7 @@
 //! holds ids only. GPUI posts it (`App::show_system_notification`); tests
 //! and headless renders inject a [`Notifier`] that records instead.
 use super::{Workspace, ai_project::Arrived};
-use crate::{ai_connector, ui};
+use crate::ui;
 use gpui::{AnyElement, App, Context, SharedString, Window, div, prelude::*, px};
 use mdoc_store::document_id::VaultId;
 use std::{rc::Rc, time::Instant};
@@ -44,7 +44,7 @@ impl Note {
     /// request's AI label.
     pub(super) fn of(item: &Arrived, app: &str, label: &str) -> Self {
         // A product's name, never the client's own free text.
-        let app = ai_connector::product_name(app).unwrap_or("An AI app");
+        let app = crate::ai::connector::product_name(app).unwrap_or("An AI app");
         let (title, body) = match item {
             Arrived::Reply(_) => (
                 format!("{app} sent a reply"),
@@ -177,13 +177,13 @@ impl Workspace {
         if self.ai.arrived(item.clone(), Instant::now()) {
             self.notify_os(&Note::of(&item, app, ""), cx);
         }
-        crate::menu_bar::ai_arrived(true, cx);
+        crate::shelf::menu_bar::ai_arrived(true, cx);
         // A dialog, sheet or file picker up keeps it on the badge: nothing
         // moves under it. The switch must be on as saved and as Settings
         // shows it, so it is off at once and on only once saved.
         let open = self.ai_setting().open_deliveries && self.settings.read(cx).opens_deliveries();
         if open && !picker_was_up && !self.modal_up(window, cx) {
-            crate::menu_bar::reveal_window(window, cx);
+            crate::shelf::menu_bar::reveal_window(window, cx);
             self.open_arrived(&item, window, cx);
         }
         cx.notify();
@@ -219,7 +219,7 @@ impl Workspace {
         if new {
             self.notify_os(&Note::of(&item, app, label), cx);
         }
-        crate::menu_bar::ai_arrived(new, cx);
+        crate::shelf::menu_bar::ai_arrived(new, cx);
         cx.notify();
     }
 
@@ -235,7 +235,7 @@ impl Workspace {
         if !self.ai_connector_on() {
             return;
         }
-        crate::menu_bar::reveal_window(window, cx);
+        crate::shelf::menu_bar::reveal_window(window, cx);
         // A dialog or sheet up answers first; it stays on the badge.
         if !self.modal_up(window, cx) {
             self.open_arrived(item, window, cx);
@@ -278,7 +278,7 @@ impl Workspace {
             }
         }
         // Opened: the companion drops its request.
-        crate::menu_bar::companion_changed(cx);
+        crate::shelf::menu_bar::companion_changed(cx);
         cx.notify();
     }
 
@@ -308,7 +308,7 @@ impl Workspace {
     /// A dialog, sheet, system file picker or Settings is up: nothing
     /// navigates under it.
     pub(super) fn modal_up(&self, window: &Window, cx: &App) -> bool {
-        self.drawn_modal_up(window, cx) || crate::native_picker::up(cx)
+        self.drawn_modal_up(window, cx) || crate::app::native_picker::up(cx)
     }
 
     /// A dialog, sheet or Settings that mdoc draws is up. A system file

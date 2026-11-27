@@ -23,7 +23,7 @@ Local changes, marked `mdoc patch`:
   `set_should_terminate_handler` (Now, Cancel, or Later, answered by
   `reply_to_should_terminate`); all three are exported from `gpui_macos.rs`.
   Without a handler it terminates now, as upstream. mdoc sets it in
-  `src/system_quit.rs`, so a quit from the Dock, an Apple Event or logout
+  `src/app/system_quit.rs`, so a quit from the Dock, an Apple Event or logout
   asks about unsaved work like ⌘Q (ADR 0071).
 - `status_item.rs` (new), exported from `gpui_macos.rs`: `set_status_item`
   shows one `NSStatusItem` whose button draws a `StatusImage` (the app's
@@ -32,7 +32,7 @@ Local changes, marked `mdoc patch`:
   the button's display and bounds (top-left origin) so a
   `WindowKind::PopUp` window can open under it. `window.rs`'s
   `display_id_for_screen` is `pub(crate)` for it. mdoc uses them in
-  `src/menu_bar.rs` for the menu bar shelf (ADR 0084).
+  `src/shelf/menu_bar.rs` for the menu bar shelf (ADR 0084).
 - `text_drag.rs` (included into `window.rs`): `start_text_and_file_drag` starts an outbound drag from a
   window's last left mouse down carrying one `NSPasteboardItem` with both
   plain text and a file URL (upstream's `start_external_drag` carries files
@@ -64,7 +64,7 @@ Local changes, marked `mdoc patch`:
   once that redraw is past, drawing the new size on GPUI's display tick.
   Debug builds assert they run on the main thread and that AppKit accepts
   the policy. mdoc's tests cover the rules that call them
-  (`src/menu_bar.rs`); the native effect is a GUI check.
+  (`src/shelf/menu_bar.rs`); the native effect is a GUI check.
 - `pasteboard.rs`, exported from `gpui_macos.rs`: a string written with the
   metadata `CONCEALED_CLIPBOARD_METADATA` is written for this Mac only
   (`prepareForNewContentsWithOptions:` with

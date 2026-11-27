@@ -5,7 +5,6 @@ use super::{Driver, HEIGHT, Result, WIDTH};
 use crate::{
     document_view::DocumentView,
     pii::ui::{APPLIED_ID, PiiApplyAll, PiiClosePopup},
-    settings_ui,
 };
 use gpui::{Entity, Focusable};
 use mdoc_import::model_download::Pending;
@@ -143,7 +142,7 @@ pub(super) fn scenes(
 /// release's ONNX Runtime (0.4.0-rc.3): an update of the runtime's size.
 /// Only the panel's measured sizes change; no file is written.
 fn runtime_update(d: &mut Driver, view: &Entity<DocumentView>) -> Result<()> {
-    let index = settings_ui::Panel::index(settings::Model::Pii(settings::PiiModel::Fp16));
+    let index = crate::settings::Panel::index(settings::Model::Pii(settings::PiiModel::Fp16));
     let measured = d.change(|_, _, cx| {
         view.update(cx, |v, cx| {
             v.model_panel.update(cx, |panel, cx| {

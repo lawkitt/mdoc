@@ -119,7 +119,7 @@ impl DocumentView {
             ADD_TO_DICTIONARY => {
                 let mut words = (*self.preferences.borrow().words.words).clone();
                 words.insert(word.clone());
-                if !crate::settings_ui::dictionary::set_words(&self.preferences, words, cx) {
+                if !crate::settings::dictionary::set_words(&self.preferences, words, cx) {
                     cx.notify();
                     return;
                 }
@@ -348,7 +348,7 @@ impl DocumentView {
 mod scheduling_tests {
     use super::*;
     use crate::document_view::tests::boot;
-    use crate::style::Theme;
+    use crate::ui::style::Theme;
 
     #[gpui::test]
     fn typing_captures_only_one_snapshot_after_the_debounce(cx: &mut gpui::TestAppContext) {

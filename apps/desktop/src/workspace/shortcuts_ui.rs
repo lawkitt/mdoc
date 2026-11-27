@@ -4,8 +4,8 @@
 //! where it was.
 use super::Workspace;
 use crate::{
+    commands::shortcuts::{self, Group},
     markdown_search::{SearchInput, SearchInputEvent},
-    shortcuts::{self, Group},
     ui,
 };
 use gpui::{
@@ -266,7 +266,7 @@ impl Workspace {
                             // restrictions on document commands.
                             .when(
                                 self.settings.read(cx).open,
-                                crate::settings_ui::block_document_commands,
+                                crate::settings::block_document_commands,
                             )
                             .on_action(cx.listener(|this, _: &CloseShortcuts, window, cx| {
                                 this.close_shortcuts(window, cx)

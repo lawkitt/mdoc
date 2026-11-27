@@ -4,7 +4,7 @@
 //! read-only and their text never enters the Markdown. The rail is the page
 //! view's overlay ([`gpui_pdf::PageOverlay`]), so it scrolls with the pages;
 //! the passages' tints are its marks ([`gpui_pdf::PageMark`]).
-use crate::style::Theme;
+use crate::ui::style::Theme;
 use gpui::{
     AnyElement, App, Context, Entity, FocusHandle, KeyDownEvent, Subscription, WeakEntity, Window,
     actions, div, prelude::*, px,

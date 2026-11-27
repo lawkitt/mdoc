@@ -3,8 +3,8 @@
 //! the consent card for Add to Claude Desktop and to ChatGPT. The apps' folders are fixtures in the render's own profile,
 //! never the real ones.
 use super::{Driver, Result};
-use crate::ai_connector::setup::{Host, Places, SHIM};
-use crate::settings_ui::Category;
+use crate::ai::connector::setup::{Host, Places, SHIM};
+use crate::settings::Category;
 
 pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     let root = mdoc_store::app_paths::data_local_dir()
@@ -57,7 +57,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     d.change(|w, _, cx| {
         w.settings.update(cx, |p, cx| {
             let held = std::io::Error::from(std::io::ErrorKind::AddrInUse);
-            p.ai_connector_failed(Some(crate::ai_connector::failed_start(&held)), cx)
+            p.ai_connector_failed(Some(crate::ai::connector::failed_start(&held)), cx)
         });
     })?;
     d.capture("settings-ai-connector-failed")?;
@@ -93,7 +93,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
 }
 
 fn hotkey_scenes(d: &mut Driver) -> Result<()> {
-    use crate::companion::hotkey::Refused;
+    use crate::ai::companion::hotkey::Refused;
     use mdoc_store::settings::Hotkey;
     d.change(|w, _, cx| w.settings.update(cx, |p, cx| p.record_hotkey(cx)))?;
     d.capture("settings-ai-hotkey-recording")?;

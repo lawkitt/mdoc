@@ -132,10 +132,10 @@ fn pii_model(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, ready: bool) 
     });
     panel.update(cx, |panel, cx| {
         panel.pending.fill(Default::default());
-        panel.statuses[settings_ui::Panel::index(model)] = if ready {
-            settings_ui::Status::Ready
+        panel.statuses[crate::settings::Panel::index(model)] = if ready {
+            crate::settings::Status::Ready
         } else {
-            settings_ui::Status::Missing
+            crate::settings::Status::Missing
         };
         cx.notify();
     });
@@ -372,7 +372,7 @@ fn a_document_entering_the_ai_project_is_scanned_not_replaced(cx: &mut TestAppCo
         (tabs.settings.clone(), settings::Model::Pii(config.model))
     });
     panel.update(cx, |_, cx| {
-        cx.emit(settings_ui::Event::Finished(model, Ok(None)))
+        cx.emit(crate::settings::Event::Finished(model, Ok(None)))
     });
     cx.run_until_parked();
     assert!(
@@ -928,7 +928,7 @@ fn the_settings_switch_opens_deliveries_only_while_on(cx: &mut TestAppContext) {
     let flip = |cx: &mut VisualTestContext| {
         tabs.update_in(cx, |tabs, window, cx| {
             tabs.settings.update(cx, |panel, cx| {
-                panel.show_category(settings_ui::Category::AiConnector, window, cx)
+                panel.show_category(crate::settings::Category::AiConnector, window, cx)
             })
         });
         draw(cx);

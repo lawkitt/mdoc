@@ -284,7 +284,7 @@ impl Workspace {
                 }
                 if self.quit_flow.abandon() {
                     Self::quit_cancelled(cx);
-                    crate::menu_bar::reveal_if_hidden(window, cx);
+                    crate::shelf::menu_bar::reveal_if_hidden(window, cx);
                 }
                 let name = (tab.and_then(|tab| self.tabs.get(tab)?.view().cloned()))
                     .map(|view| view.read(cx).display_name());
@@ -674,7 +674,7 @@ impl Workspace {
         }
         if self.quit_flow.abandon() {
             Self::quit_cancelled(cx);
-            crate::menu_bar::reveal_if_hidden(window, cx);
+            crate::shelf::menu_bar::reveal_if_hidden(window, cx);
         }
         if let Target::Project(id) = target {
             // Written again by the next write of it, or the next quit.

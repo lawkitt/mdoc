@@ -6,7 +6,7 @@ use super::{
 use crate::{
     document_view::DocumentView,
     pii::ui::{APPLIED_ID, KEPT_ID, PiiClosePopup, PiiConfirm, Popup},
-    style,
+    ui::style,
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Focusable, Hsla, Pixels, SharedString,
@@ -16,7 +16,7 @@ use mdoc_pii::Category;
 use std::{ops::Range, sync::Arc, time::Duration};
 
 /// The quiet button look: a thin border, regular weight.
-fn secondary(v: crate::ui::Control, theme: crate::style::Theme) -> crate::ui::Control {
+fn secondary(v: crate::ui::Control, theme: crate::ui::style::Theme) -> crate::ui::Control {
     v.px_3()
         .py_1()
         .rounded_md()
@@ -465,7 +465,7 @@ impl DocumentView {
                                     }),
                             )
                             .child("Replace")
-                            .tooltip(crate::style::tooltip(
+                            .tooltip(crate::ui::style::tooltip(
                                 if kept {
                                     "Tick to replace again (Space)".to_string()
                                 } else {
@@ -502,7 +502,7 @@ impl DocumentView {
                                         .truncate()
                                         .text_color(palette.header_muted)
                                         .child(original.to_string())
-                                        .tooltip(crate::style::tooltip(
+                                        .tooltip(crate::ui::style::tooltip(
                                             original.to_string(),
                                             theme,
                                         )),
@@ -526,7 +526,7 @@ impl DocumentView {
                                         .truncate()
                                         .text_color(palette.header_muted)
                                         .child(alias.clone())
-                                        .tooltip(crate::style::tooltip(
+                                        .tooltip(crate::ui::style::tooltip(
                                             format!(
                                                 "Kept as the original; tick Replace to use {alias}"
                                             ),
@@ -640,7 +640,7 @@ impl DocumentView {
                                 v.child(
                                     self.popup_control("direct-prev", "‹", true, cx)
                                         .aria_label("Previous mention")
-                                        .tooltip(crate::style::tooltip(
+                                        .tooltip(crate::ui::style::tooltip(
                                             format!("Previous mention of {alias} (←)"),
                                             theme,
                                         ))
@@ -676,7 +676,7 @@ impl DocumentView {
                                 .child(
                                     self.popup_control("direct-next", "›", true, cx)
                                         .aria_label("Next mention")
-                                        .tooltip(crate::style::tooltip(
+                                        .tooltip(crate::ui::style::tooltip(
                                             format!("Next mention of {alias} (→)"),
                                             theme,
                                         ))
@@ -1036,7 +1036,7 @@ impl DocumentView {
             .text_color(accent)
             .font_weight(gpui::FontWeight::MEDIUM)
             .hover(move |s| s.border_color(palette.border))
-            .tooltip(crate::style::tooltip("Rename alias".into(), theme))
+            .tooltip(crate::ui::style::tooltip("Rename alias".into(), theme))
             .child(mapping.alias.clone())
             // A pencil on hover marks the alias as editable.
             .child(
@@ -1353,7 +1353,7 @@ impl DocumentView {
                             .text_color(palette.header_muted)
                             .child(count.to_string())
                     }))
-                    .tooltip(crate::style::tooltip(tip, theme))
+                    .tooltip(crate::ui::style::tooltip(tip, theme))
                     .when(on, |v| {
                         v.bg(palette.placeholder_bg)
                             .text_color(palette.header_fg)

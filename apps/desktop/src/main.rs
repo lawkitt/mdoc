@@ -3,24 +3,17 @@
     all(target_os = "windows", not(debug_assertions)),
     windows_subsystem = "windows"
 )]
-mod ai_ask;
-mod ai_connector;
-mod ai_links;
+mod ai;
+mod app;
+mod commands;
 mod comment_rail;
-mod companion;
 mod comparison;
 mod comparison_ui;
-mod confirm_dialog;
-mod crash;
 mod document_view;
 #[cfg(test)]
 mod exits;
 mod images;
 mod markdown_search;
-mod menu_bar;
-mod menus;
-mod models;
-mod native_picker;
 mod pdf_comments;
 #[cfg(test)]
 mod perf_tests;
@@ -29,21 +22,12 @@ mod preview;
 mod refusal;
 mod restored_clipboard;
 mod search_session;
-mod self_test;
-mod settings_ui;
+mod settings;
 mod shelf;
-mod shelf_ui;
-mod shortcuts;
-mod single_instance;
 mod spelling;
-mod style;
-#[cfg(any(target_os = "macos", test))]
-mod system_quit;
 #[cfg(test)]
 mod test_support;
-mod tray;
 mod ui;
-mod updater;
 mod workspace;
 
 use document_view::bind_markdown_search_keys;
@@ -66,13 +50,13 @@ fn set_inference_device() {
 fn main() {
     // First, so no crash in any mode reaches Windows Error Reporting.
     #[cfg(windows)]
-    crash::keep_out_of_windows_error_reporting();
+    app::crash::keep_out_of_windows_error_reporting();
     set_inference_device();
     let args = std::env::args_os().collect::<Vec<_>>();
     // Debug builds: the error mode set above, for tests/windows_error_reporting.rs.
     #[cfg(all(windows, debug_assertions))]
     if args.get(1).is_some_and(|arg| arg == "--mdoc-error-mode") {
-        println!("{:#x}", crash::error_mode());
+        println!("{:#x}", app::crash::error_mode());
         return;
     }
     if args.get(1).is_some_and(|arg| arg == "--headless-renders") {
@@ -122,7 +106,7 @@ fn main() {
     {
         std::process::exit(conversion_worker::run_worker(&args[2..]));
     }
-    // The companion window's native check (src/companion/probe.rs, and
+    // The companion window's native check (src/ai/companion/probe.rs, and
     // probe_windows.rs on Windows).
     #[cfg(all(any(target_os = "macos", windows), debug_assertions, not(test)))]
     if args
@@ -130,21 +114,21 @@ fn main() {
         .is_some_and(|arg| arg == "--mdoc-companion-probe")
     {
         #[cfg(target_os = "macos")]
-        companion::probe::run();
+        ai::companion::probe::run();
         #[cfg(windows)]
-        companion::probe_windows::run();
+        ai::companion::probe_windows::run();
     }
-    // The companion hotkey's native check (src/companion/hotkey_probe.rs).
+    // The companion hotkey's native check (src/ai/companion/hotkey_probe.rs).
     #[cfg(all(target_os = "macos", debug_assertions, not(test)))]
     if args.get(1).is_some_and(|arg| arg == "--mdoc-hotkey-probe") {
-        companion::hotkey_probe::run();
+        ai::companion::hotkey_probe::run();
     }
     if args.get(1).is_some_and(|arg| arg == "--mdoc-self-test") {
         let (Some(pdf), Some(expected)) = (args.get(2), args.get(3)) else {
             eprintln!("usage: mdoc --mdoc-self-test <pdf> <expected.txt>");
             std::process::exit(2);
         };
-        match self_test::run(std::path::Path::new(pdf), std::path::Path::new(expected)) {
+        match app::self_test::run(std::path::Path::new(pdf), std::path::Path::new(expected)) {
             Ok(()) => println!("mdoc self-test passed"),
             Err(error) => {
                 eprintln!("mdoc self-test failed: {error}");
@@ -155,7 +139,7 @@ fn main() {
     }
     // `just smoke-update`: update this copy in place, headless.
     if args.get(1).is_some_and(|arg| arg == "--mdoc-self-update") {
-        match updater::self_update() {
+        match app::updater::self_update() {
             Ok(message) => println!("{message}"),
             Err(error) => {
                 eprintln!("mdoc self-update failed: {error}");
@@ -176,13 +160,13 @@ fn main() {
         .collect();
     // Windows: a second launch hands its paths to the running mdoc; one for
     // the connector leaves it alone.
-    let single_instance::Launch::Primary(later_launches) =
-        single_instance::claim(&initial, for_connector)
+    let app::single_instance::Launch::Primary(later_launches) =
+        app::single_instance::claim(&initial, for_connector)
     else {
         return;
     };
     // The app itself, not its worker modes, records panics.
-    crash::install();
+    app::crash::install();
     // Documents other than PDFs convert in a supervised worker, so a
     // converter crash ends an import, not the app (#925 decision 10).
     if let Ok(executable) = std::env::current_exe() {
@@ -209,22 +193,22 @@ fn main() {
         }
     });
     // Launching mdoc again while its window is hidden shows it.
-    application.on_reopen(|cx| menu_bar::reveal(cx, |_, _, _| {}));
+    application.on_reopen(|cx| shelf::menu_bar::reveal(cx, |_, _, _| {}));
     // macOS: a quit from the Dock, an Apple Event or logout asks first.
     #[cfg(target_os = "macos")]
     let quit_gate = {
-        let gate = system_quit::QuitGate::new(gpui_macos::reply_to_should_terminate);
-        system_quit::install(&gate, open_context.clone());
+        let gate = app::system_quit::QuitGate::new(gpui_macos::reply_to_should_terminate);
+        app::system_quit::install(&gate, open_context.clone());
         gate
     };
     application.run(move |cx: &mut App| {
         cx.on_app_quit(|cx| {
             mdoc_import::model_work::shutdown();
             // Shelf drags' temporary exports live until quit.
-            shelf_ui::clear_exports(cx);
+            shelf::shelf_ui::clear_exports(cx);
             // Blocking on purpose: GPUI waits only briefly for async quit
             // work, and a staged update must be swapped in before exit.
-            updater::apply_at_quit(cx);
+            app::updater::apply_at_quit(cx);
             // Blocking too: a conversion worker must not outlive the app.
             conversion_worker::shutdown_workers();
             let executor = cx.background_executor().clone();
@@ -239,10 +223,10 @@ fn main() {
         .detach();
         #[cfg(target_os = "macos")]
         cx.set_global(quit_gate.clone());
-        updater::init(cx);
+        app::updater::init(cx);
         bind_all_keys(cx);
         workspace::bind_app_actions(cx);
-        menus::install(cx);
+        commands::menus::install(cx);
         let bounds = Bounds::centered(None, size(px(1100.), px(760.)), cx);
         let handle = cx
             .open_window(
@@ -255,8 +239,8 @@ fn main() {
                         title: Some("mdoc".into()),
                         appears_transparent: true,
                         traffic_light_position: Some(gpui::point(
-                            px(style::TRAFFIC_LIGHT_X),
-                            px(style::TRAFFIC_LIGHT_Y),
+                            px(ui::style::TRAFFIC_LIGHT_X),
+                            px(ui::style::TRAFFIC_LIGHT_Y),
                         )),
                     }),
                     window_decorations: Some(gpui::WindowDecorations::Client),
@@ -293,8 +277,8 @@ fn main() {
                 )
             })
             .unwrap_or_default();
-        menu_bar::install(handle, menu_bar, note_shown, cx);
-        menu_bar::set_companion(companion, cx);
+        shelf::menu_bar::install(handle, menu_bar, note_shown, cx);
+        shelf::menu_bar::set_companion(companion, cx);
         let _ = handle.update(cx, |workspace, _, cx| workspace.refresh_hotkey(cx));
         *open_context.borrow_mut() = Some((handle, cx.to_async()));
         if let Some(launches) = later_launches {
@@ -307,7 +291,7 @@ fn main() {
                     while let Ok(paths) = launches.try_recv() {
                         let _ = handle.update(cx, |workspace, window, cx| {
                             // Shown first if hidden in the tray.
-                            menu_bar::reveal_window(window, cx);
+                            shelf::menu_bar::reveal_window(window, cx);
                             workspace.open_paths(paths, window, cx)
                         });
                     }
@@ -323,15 +307,15 @@ fn main() {
                 .iter()
                 .any(|window| window.downcast::<workspace::Workspace>().is_some());
             if !workspace_open {
-                menu_bar::close_shelf(cx);
-                menu_bar::close_companion(cx);
+                shelf::menu_bar::close_shelf(cx);
+                shelf::menu_bar::close_companion(cx);
                 // A system quit waiting on the quit flow terminates now.
                 #[cfg(target_os = "macos")]
                 if quit_gate.last_window_closed() {
                     return;
                 }
                 // Restart now: relaunch after the swap at quit.
-                if updater::restart_requested(cx) {
+                if app::updater::restart_requested(cx) {
                     cx.restart();
                 } else {
                     cx.quit();
@@ -366,7 +350,7 @@ fn open_paths_from_os(
 /// Window-wide shortcuts: files, tabs, zoom and spelling, from the
 /// shortcuts table.
 pub(crate) fn bind_app_keys(cx: &mut App) {
-    let bindings = shortcuts::bindings(shortcuts::Owner::App, cx);
+    let bindings = commands::shortcuts::bindings(commands::shortcuts::Owner::App, cx);
     cx.bind_keys(bindings);
 }
 
@@ -374,25 +358,25 @@ pub(crate) fn bind_app_keys(cx: &mut App) {
 /// equally deep bindings the later one wins (so the find fields' ⌘↩ beats
 /// the global Apply all).
 pub(crate) fn bind_all_keys(cx: &mut App) {
-    shortcuts::bind_crate(
+    commands::shortcuts::bind_crate(
         cx,
-        shortcuts::Owner::Editor,
+        commands::shortcuts::Owner::Editor,
         mdoc_editor::key_bindings(cfg!(target_os = "macos")),
     );
     markdown_search::bind_keys(cx);
     pii::ui::bind_keys(cx);
     workspace::bind_project_keys(cx);
-    shelf_ui::bind_keys(cx);
+    shelf::shelf_ui::bind_keys(cx);
     workspace::bind_shell_keys(cx);
-    settings_ui::bind_keys(cx);
+    settings::bind_keys(cx);
     ui::bind_keys(cx);
-    shortcuts::bind_crate(
+    commands::shortcuts::bind_crate(
         cx,
-        shortcuts::Owner::Pdf,
+        commands::shortcuts::Owner::Pdf,
         gpui_pdf::key_bindings(cfg!(target_os = "macos")),
     );
     comparison_ui::bind_keys(cx);
     bind_markdown_search_keys(cx);
     bind_app_keys(cx);
-    confirm_dialog::bind_keys(cx);
+    ui::confirm_dialog::bind_keys(cx);
 }

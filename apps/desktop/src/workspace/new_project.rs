@@ -208,7 +208,7 @@ impl Workspace {
                             .on_action(|_: &Settings, _, _| {})
                             .on_action(|_: &OpenPalette, _, _| {})
                             .on_action(|_: &ShowShortcuts, _, _| {})
-                            .on_action(|_: &crate::menus::About, _, _| {})
+                            .on_action(|_: &crate::commands::menus::About, _, _| {})
                             .on_action(|_: &SwitchDocument, _, _| {})
                             .on_action(|_: &SwitchDocumentBack, _, _| {})
                             .on_action(|_: &ToggleSidebar, _, _| {})

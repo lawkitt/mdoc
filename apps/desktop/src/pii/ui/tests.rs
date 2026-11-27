@@ -2,8 +2,7 @@ use super::*;
 use crate::{
     document_view::{CopyMarkdown, DocumentView},
     pii::ui::{PiiAddCandidate, PiiApplyAll, PiiConfirm, Pseudonymize},
-    settings_ui,
-    style::Theme,
+    ui::style::Theme,
 };
 use gpui::{App, Context, Entity, Focusable, Window, px};
 use mdoc_pii::{Category, Review};
@@ -630,7 +629,7 @@ fn missing_model_asks_first_and_resumes_only_after_this_setup(cx: &mut gpui::Tes
         let label = format!(
             "{}: {}",
             model.name(),
-            crate::models::attribution_label(model)
+            crate::app::models::attribution_label(model)
         );
         let bounds = cx
             .debug_bounds(Box::leak(label.into_boxed_str()))
@@ -651,8 +650,8 @@ fn missing_model_asks_first_and_resumes_only_after_this_setup(cx: &mut gpui::Tes
     // A download finished elsewhere (Settings) never scans by itself.
     panel.update(cx, |panel, cx| {
         panel.pending.fill(Default::default());
-        panel.statuses[settings_ui::Panel::index(fp16)] = settings_ui::Status::Ready;
-        cx.emit(settings_ui::Event::Finished(fp16, Ok(None)));
+        panel.statuses[crate::settings::Panel::index(fp16)] = crate::settings::Status::Ready;
+        cx.emit(crate::settings::Event::Finished(fp16, Ok(None)));
     });
     app.read_with(cx, |app, _| {
         assert!(app.pii.setup);
@@ -662,7 +661,7 @@ fn missing_model_asks_first_and_resumes_only_after_this_setup(cx: &mut gpui::Tes
     // Failure keeps the card with the error for Retry.
     app.update_in(cx, |app, window, cx| app.watch_pii_setup(fp16, window, cx));
     panel.update(cx, |_, cx| {
-        cx.emit(settings_ui::Event::Finished(
+        cx.emit(crate::settings::Event::Finished(
             fp16,
             Err("Download cancelled.".into()),
         ))
@@ -675,7 +674,7 @@ fn missing_model_asks_first_and_resumes_only_after_this_setup(cx: &mut gpui::Tes
     // Download & scan resumes this document once.
     app.update_in(cx, |app, window, cx| app.watch_pii_setup(fp16, window, cx));
     panel.update(cx, |_, cx| {
-        cx.emit(settings_ui::Event::Finished(fp16, Ok(None)))
+        cx.emit(crate::settings::Event::Finished(fp16, Ok(None)))
     });
     app.read_with(cx, |app, _| {
         assert!(!app.pii.setup);

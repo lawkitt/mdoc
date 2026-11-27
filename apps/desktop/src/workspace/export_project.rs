@@ -45,7 +45,7 @@ impl Workspace {
                 return;
             }
         };
-        let folder = crate::native_picker::paths(
+        let folder = crate::app::native_picker::paths(
             cx,
             PathPromptOptions {
                 files: false,

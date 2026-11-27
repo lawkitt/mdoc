@@ -8,9 +8,9 @@
 //! its blur) is involved.
 use super::{Driver, HEIGHT, Result, WIDTH};
 use crate::{
+    shelf::shelf_ui::{NOTE_HEIGHT, NOTE_WIDTH, NoteView, ShelfContent, ShelfView},
     shelf::{OpenTab, ShelfDocument, StoredDocument},
-    shelf_ui::{NOTE_HEIGHT, NOTE_WIDTH, NoteView, ShelfContent, ShelfView},
-    style::Theme,
+    ui::style::Theme,
     workspace::{ClipboardSource, ProjectLink, Workspace},
 };
 use gpui::{AnyView, App, Entity, Render, Window, div, prelude::*, px, size};
@@ -37,8 +37,8 @@ impl Stage {
         let Some(shelf) = &self.shelf else {
             return json!({
                 "shelf_note": true,
-                "title": crate::shelf_ui::NOTE_TITLE,
-                "text": crate::shelf_ui::NOTE_TEXT,
+                "title": crate::shelf::shelf_ui::NOTE_TITLE,
+                "text": crate::shelf::shelf_ui::NOTE_TEXT,
             });
         };
         let shelf = shelf.read(cx);
@@ -408,7 +408,7 @@ fn shelf_refused(d: &mut Driver, name: &str, content: ShelfContent, row: usize) 
     stage(
         d,
         name,
-        (crate::menu_bar::SHELF_WIDTH, height),
+        (crate::shelf::menu_bar::SHELF_WIDTH, height),
         None,
         move |workspace, _, window, cx| {
             let shelf = cx.new(|cx| ShelfView::new(workspace, content, window, cx));
@@ -429,7 +429,7 @@ fn shelf_hovering(
     stage(
         d,
         name,
-        (crate::menu_bar::SHELF_WIDTH, height),
+        (crate::shelf::menu_bar::SHELF_WIDTH, height),
         hover,
         move |workspace, _, window, cx| {
             let shelf = cx.new(|cx| {
