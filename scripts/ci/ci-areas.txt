@@ -25,7 +25,7 @@
 #            the shared scripts lib.sh, tools.env and setup.sh with what it
 #            runs). The table itself is core.
 #   desktop  ci/macos and ci/windows (lint, test, and on macOS the mobile
-#            cargo check), and hosted clippy and test: src/, tests/,
+#            cargo check), and hosted clippy and test: apps/desktop/,
 #            vendor/, build/, resources/, .github/ and every script not
 #            listed here (the desktop scripts: release, packaging, smoke
 #            tests and the suites of those).

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/release/verify-version.sh <tag>
 # Fails unless <tag> is v<version> for the version in Cargo.toml and
-# resources/Info.plist. The release workflow runs this before building.
+# apps/desktop/resources/Info.plist. The release workflow runs this before building.
 source "$(dirname "$0")/../lib.sh"
 
 tag=${1:?usage: verify-version.sh <tag>}
@@ -9,7 +9,7 @@ expected="v$(version)"
 [ "$tag" = "$expected" ] || die "tag $tag does not match Cargo.toml ($expected); make releases with \`just release\`"
 
 for key in CFBundleShortVersionString CFBundleVersion; do
-  plist=$(awk -v k="<key>$key</key>" 'found { gsub(/.*<string>|<\/string>.*/, ""); print; exit } index($0, k) { found = 1 }' resources/Info.plist)
+  plist=$(awk -v k="<key>$key</key>" 'found { gsub(/.*<string>|<\/string>.*/, ""); print; exit } index($0, k) { found = 1 }' apps/desktop/resources/Info.plist)
   [ "v$plist" = "$expected" ] || die "Info.plist $key is $plist, expected ${expected#v}"
 done
 

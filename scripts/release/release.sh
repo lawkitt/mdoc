@@ -130,7 +130,7 @@ if [ "$stable" = 1 ]; then
   mv CHANGELOG.md.tmp CHANGELOG.md
 fi
 
-git add Cargo.toml Cargo.lock resources/Info.plist CHANGELOG.md
+git add Cargo.toml Cargo.lock apps/desktop/resources/Info.plist CHANGELOG.md
 git commit --quiet -m "release: $tag"
 git tag -a "$tag" -m "mdoc $tag"
 echo "created release commit and tag $tag"

@@ -102,7 +102,7 @@ module's header says what it owns.
 - A document reaches the window only through `TabEvent`. Actions live with
   the feature that handles them. Boundary easements were declined
   ([#895](https://github.com/lawkitt/mdoc/issues/895)).
-- A user-facing key binding is a row in `src/shortcuts.rs`; plumbing keys
+- A user-facing key binding is a row in `apps/desktop/src/shortcuts.rs`; plumbing keys
   (Tab in a control group, moving in a menu, caret basics) stay with the
   feature.
 - mdoc is an application: code the binary cannot reach is dead unless a

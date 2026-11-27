@@ -30,7 +30,7 @@ step() { # config step iter command...
 }
 
 configure() {
-  git checkout -q -- Cargo.toml src crates
+  git checkout -q -- Cargo.toml apps/desktop/src crates
   case $1 in
     default) ;;
     unpacked|packed) cat >> Cargo.toml <<EOF
@@ -49,7 +49,7 @@ EOF
 
 # Each cycle changes a real function body. `mdoc_edit` touches the binary
 # crate only; `editor_edit` touches mdoc-editor, which mdoc then rebuilds against.
-mdoc_edit() { perl -pi -e 's/"Just now[^"]*"/"Just now '"$1"'"/' src/recents.rs; }
+mdoc_edit() { perl -pi -e 's/"Just now[^"]*"/"Just now '"$1"'"/' apps/desktop/src/recents.rs; }
 editor_edit() {
   perl -0pi -e 's/(fn shape_cell_lines\([^{]*\{)(\n    std::hint::black_box\(\d+\);)?/$1\n    std::hint::black_box('"$1"');/' \
     crates/mdoc-editor/src/tables.rs
@@ -74,4 +74,4 @@ for config in "${configs[@]}"; do
     step "$config" warm-editor-lint "$i" just lint
   done
 done
-git checkout -q -- Cargo.toml src crates
+git checkout -q -- Cargo.toml apps/desktop/src crates

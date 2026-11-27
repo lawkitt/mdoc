@@ -4,7 +4,7 @@
 #   - macOS .icns: the shape at 824 of 1024 px, centred on a transparent
 #     canvas, as Apple's icon grid expects (a full-bleed icon looks oversized
 #     in the Dock and Finder);
-#   - Windows .ico and resources/icons/icon.png: full-bleed;
+#   - Windows .ico and apps/desktop/resources/icons/icon.png: full-bleed;
 #   - iOS AppIcon: 1024 px, opaque, the drawing enlarged so its rounded
 #     corners fall outside the square (iOS applies its own mask);
 #   - macOS menu bar icon: build/menubar.svg (the M alone, black on
@@ -63,7 +63,7 @@ done
 iconutil -c icns "$ICONSET" -o "$TMP/icon.icns"
 
 # Windows multi-resolution .ico, containing PNG images — embedded into
-# the .exe via resources/icon.rc and listed in cargo-packager's icons.
+# the .exe via apps/desktop/resources/icon.rc and listed in cargo-packager's icons.
 python3 - "$TMP" <<'PY'
 import struct
 import sys
@@ -95,12 +95,12 @@ render "$MENUBAR" 18 "$TMP/menubar.png"
 render "$MENUBAR" 36 "$TMP/menubar@2x.png"
 
 # Publish only after every format has been generated successfully.
-mkdir -p build/windows resources/icons
-cp "$TMP/1024.png" resources/icons/icon.png
+mkdir -p build/windows apps/desktop/resources/icons
+cp "$TMP/1024.png" apps/desktop/resources/icons/icon.png
 cp "$TMP/icon.ico" build/windows/icon.ico
-cp "$TMP/icon.ico" resources/icons/icon.ico
-cp "$TMP/icon.icns" resources/icons/icon.icns
-cp "$TMP/menubar.png" "$TMP/menubar@2x.png" resources/icons/
+cp "$TMP/icon.ico" apps/desktop/resources/icons/icon.ico
+cp "$TMP/icon.icns" apps/desktop/resources/icons/icon.icns
+cp "$TMP/menubar.png" "$TMP/menubar@2x.png" apps/desktop/resources/icons/
 cp "$TMP/ios.png" apps/ios/mdoc/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 
-echo "Regenerated: build/windows/icon.ico, resources/icons/icon.{png,ico,icns}, resources/icons/menubar{,@2x}.png, the iOS AppIcon"
+echo "Regenerated: build/windows/icon.ico, apps/desktop/resources/icons/icon.{png,ico,icns}, apps/desktop/resources/icons/menubar{,@2x}.png, the iOS AppIcon"

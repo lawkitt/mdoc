@@ -48,7 +48,7 @@ notarize() {
 
 case "$kind" in
   app)
-    entitlements=resources/entitlements.plist
+    entitlements=apps/desktop/resources/entitlements.plist
     if [ -n "${APPLE_PROVISIONING_PROFILE:-}" ]; then
       [ -f "$APPLE_PROVISIONING_PROFILE" ] || die "$APPLE_PROVISIONING_PROFILE not found"
       team=$(sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p' <<<"$APPLE_SIGNING_IDENTITY")
@@ -65,7 +65,7 @@ case "$kind" in
         die "the provisioning profile does not allow the access group $app_id"
       cp "$APPLE_PROVISIONING_PROFILE" "$target/Contents/embedded.provisionprofile"
       entitlements="$(mktemp -d)/entitlements.plist"
-      cp resources/entitlements.plist "$entitlements"
+      cp apps/desktop/resources/entitlements.plist "$entitlements"
       # PlistBuddy, not plutil: these keys contain dots.
       for add in "com.apple.application-identifier string $app_id" \
         "com.apple.developer.team-identifier string $team" \

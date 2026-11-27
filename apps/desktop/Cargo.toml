@@ -1,0 +1,238 @@
+[package]
+name = "mdoc"
+version.workspace = true
+edition = "2024"
+description = "Prepare legal documents for AI on your own computer."
+license = "GPL-3.0-or-later"
+authors = ["lawkitt"]
+repository = "https://github.com/lawkitt/mdoc"
+publish = false
+
+[features]
+# The entry point and runner are additionally gated by debug_assertions.
+headless-renders = ["mdoc-store/headless-renders", "gpui/test-support", "gpui_platform/test-support", "gpui_windows/test-support"]
+
+[dependencies]
+regex = "1"
+pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "7e35e4daaafee464727a5bab952e9d3859f3cc7f", features = ["ocr"] }
+# App data lives under data_local_dir / cache_dir (settings, session, the
+# Vault and its key, models, updates, crash report); a bump must keep those
+# paths (ADR 0053).
+dirs = "7"
+sha2 = "0.11"
+ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+# Settings › AI connector keeps the order of Claude Desktop's config when it
+# adds or removes its entry (src/ai_connector/setup.rs).
+serde_json = { version = "1", features = ["preserve_order"] }
+# ...and edits ChatGPT's (Codex's) config.toml keeping its comments and layout.
+toml_edit = "0.25"
+# Update check (src/updater.rs, ADR 0038): release tags compared by SemVer.
+semver = "1"
+# canonicalize without Windows verbatim (`\\?\`) prefixes in user-visible paths.
+dunce = "1"
+# Local wall-clock times of decisions in What you did (ADR 0079).
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+gpui = { workspace = true }
+gpui_platform = { workspace = true }
+mdoc-editor = { path = "../../crates/mdoc-editor" }
+# Shelf previews hide Markdown syntax (src/shelf.rs, ADR 0084).
+mdoc-markdown = { path = "../../crates/mdoc-markdown" }
+mdoc-pii = { path = "../../crates/mdoc-pii" }
+mdoc-spell = { path = "../../crates/mdoc-spell" }
+mdoc-store = { path = "../../crates/mdoc-store" }
+# Documents live in the Vault and save themselves (ADR 0125).
+mdoc-vault = { path = "../../crates/mdoc-vault" }
+# The AI connector (ADR 0126): the service, and the owner-only listener
+# the `mdoc-mcp` shim calls (src/ai_connector.rs).
+mdoc-connector = { path = "../../crates/mdoc-connector" }
+mdoc-mcp = { path = "../../crates/mdoc-mcp" }
+mdoc-import = { path = "../../crates/mdoc-import" }
+mdoc-detect = { path = "../../crates/mdoc-detect" }
+gpui-pdf = { path = "../../crates/gpui-pdf" }
+tempfile = "3"
+url = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+unicode-segmentation = "1"
+# The import card's password field wipes what was typed (src/markdown_search.rs).
+zeroize = "1"
+# The recovery key's QR in Settings › Vault, drawn as quads; no image
+# encoders (approved for #1091 Decision 22).
+qrcode = { version = "0.14", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The quit question (src/system_quit.rs) and the menu bar shelf
+# (src/menu_bar.rs).
+gpui_macos = { package = "gpui-pre-macos", version = "=0.3.12" }
+# The companion window's AppKit calls and its probe (src/companion/): its
+# sharing type and key status, which GPUI has no call for. Both are in the
+# lockfile already, through gpui-pre-macos.
+objc2 = "0.6"
+raw-window-handle = "0.6"
+# The companion's system-wide hotkey (src/companion/hotkey.rs, ADR 0128).
+# macOS only: the Windows companion is not built yet.
+global-hotkey = "0.10.0"
+
+[target.'cfg(windows)'.dependencies]
+# The headless renderer.
+gpui_windows = { package = "gpui-pre-windows", version = "=0.3.12" }
+# The companion window's HWND (src/companion/windows.rs); in the lockfile
+# already, through GPUI.
+raw-window-handle = "0.6"
+# Single-instance launch (src/single_instance.rs) uses the pipe, session and
+# foreground features; src/crash.rs sets the error mode (Diagnostics_Debug);
+# the tray icon (src/tray/) and the companion's probe use Shell, Gdi,
+# LibraryLoader and KeyboardAndMouse.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_IO",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Pipes",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+embed-resource = "3"
+
+[lints]
+workspace = true
+
+[package.metadata.packager]
+# Never set appdata-paths: the NSIS uninstaller would delete the Vault key at
+# %LOCALAPPDATA%\mdoc\cases\key.dpapi, making the Vault unreadable.
+product-name = "mdoc"
+identifier = "io.github.lawkitt.mdoc"
+category = "Productivity"
+copyright = "© 2026 packetThrower / Zorite contributors; © 2026 lawkitt / mdoc contributors"
+homepage = "https://github.com/lawkitt/mdoc"
+authors = ["lawkitt", "packetThrower"]
+publisher = "lawkitt"
+description = "Prepare legal documents for AI on your own computer."
+long-description = "Convert PDF, scans and Word documents to Markdown and pseudonymize client details before you paste them into an AI tool."
+before-packaging-command = "cargo build --release -p mdoc -p mdoc-mcp"
+# The AI connector's shim ships beside mdoc (ADR 0126): mdoc-mcp.exe in the
+# install folder, Contents/MacOS/mdoc-mcp in the .app. Settings › AI connector
+# points Claude Desktop at it there, and the shim starts the mdoc beside it.
+binaries = [{ path = "mdoc", main = true }, { path = "mdoc-mcp" }]
+icons = ["resources/icons/icon.icns", "resources/icons/icon.png", "resources/icons/icon.ico"]
+# The DOCX preview's fallback fonts and their licences (crates/mdoc-import/src/
+# docx_preview/fonts.rs): Contents/Resources/fonts on macOS, fonts\ beside
+# mdoc.exe on Windows.
+resources = [{ src = "../../resources/fonts", target = "fonts" }]
+
+[package.metadata.packager.nsis]
+# The template inserts this text between its sections, so it also carries the
+# "Open with" registration and its uninstall section.
+# ONNX Runtime (OCR, pseudonymization) needs the x64 VC++ Redistributable
+# despite mdoc.exe's static CRT. Install it, with its own UAC prompt, only when
+# missing; scripts/desktop/package.sh supplies the signature-checked installer through
+# MDOC_VC_REDIST at compile time (ADR 0037). Failure doesn't stop the install:
+# the app explains how to get the runtime when OCR is first used.
+preinstall-section = '''
+Section VCRedist
+  SetRegView 64
+  ReadRegDWORD $0 HKLM "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" "Installed"
+  ${If} $0 != 1
+    InitPluginsDir
+    File "/oname=$PLUGINSDIR\vc_redist.x64.exe" "$%MDOC_VC_REDIST%"
+    ExecWait '"$PLUGINSDIR\vc_redist.x64.exe" /install /passive /norestart' $1
+    ${If} $1 != 0
+    ${AndIf} $1 != 1638
+    ${AndIf} $1 != 3010
+    ${AndIfNot} ${Silent}
+      MessageBox MB_ICONEXCLAMATION|MB_OK "The Microsoft Visual C++ Redistributable could not be installed (code $1). mdoc will run, but text recognition and pseudonymization need it; mdoc explains how to install it when they are first used."
+    ${EndIf}
+  ${EndIf}
+SectionEnd
+
+; "Open with" for the types mdoc opens (as resources/Info.plist on macOS),
+; never the default app: a ProgID listed under each extension's
+; OpenWithProgids, plus Applications\mdoc.exe. The uninstall section below
+; removes exactly these keys and values.
+!define MDOC_PROGID "io.github.lawkitt.mdoc.document"
+!macro MdocOpenWith EXT
+  WriteRegStr SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "${MDOC_PROGID}" ""
+  WriteRegStr SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe\SupportedTypes" ".${EXT}" ""
+!macroend
+!macro MdocRemoveOpenWith EXT
+  DeleteRegValue SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "${MDOC_PROGID}"
+  DeleteRegKey /ifempty SHCTX "Software\Classes\.${EXT}\OpenWithProgids"
+!macroend
+
+Section OpenWith
+  WriteRegStr SHCTX "Software\Classes\${MDOC_PROGID}" "" "mdoc document"
+  WriteRegStr SHCTX "Software\Classes\${MDOC_PROGID}\DefaultIcon" "" '"$INSTDIR\${MAINBINARYNAME}.exe",0'
+  WriteRegStr SHCTX "Software\Classes\${MDOC_PROGID}\shell\open\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" "%1"'
+  WriteRegStr SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe" "FriendlyAppName" "mdoc"
+  WriteRegStr SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe\shell\open\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" "%1"'
+  !insertmacro MdocOpenWith "md"
+  !insertmacro MdocOpenWith "markdown"
+  !insertmacro MdocOpenWith "mdown"
+  !insertmacro MdocOpenWith "txt"
+  !insertmacro MdocOpenWith "pdf"
+  !insertmacro MdocOpenWith "docx"
+  !insertmacro UPDATEFILEASSOC
+SectionEnd
+
+Section un.OpenWith
+  !insertmacro MdocRemoveOpenWith "md"
+  !insertmacro MdocRemoveOpenWith "markdown"
+  !insertmacro MdocRemoveOpenWith "mdown"
+  !insertmacro MdocRemoveOpenWith "txt"
+  !insertmacro MdocRemoveOpenWith "pdf"
+  !insertmacro MdocRemoveOpenWith "docx"
+  DeleteRegKey SHCTX "Software\Classes\${MDOC_PROGID}"
+  DeleteRegKey SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe"
+  !insertmacro UPDATEFILEASSOC
+  ; The notifications' AppUserModelID, which mdoc (GPUI) registers under the
+  ; user's own key at its first notification, not the installer.
+  DeleteRegKey HKCU "Software\Classes\AppUserModelId\io.github.lawkitt.mdoc"
+SectionEnd
+'''
+
+[package.metadata.packager.macos]
+# Hand-curated Info.plist (single-instance launch, high-DPI, stable bundle id).
+info-plist-path = "resources/Info.plist"
+minimum-system-version = "12.0"
+# Ad-hoc signature (`-`) with the hardened runtime. Release builds are re-signed
+# with the Developer ID and notarized by scripts/desktop/macos-sign.sh (ADR 0039).
+signing-identity = "-"
+# Lets the hardened runtime load the downloaded PDFium and ONNX Runtime
+# libraries (see the plist); scripts/desktop/package.sh checks it is applied.
+entitlements = "resources/entitlements.plist"
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+# Tests never ask the OS for the build's signature or the Vault key: those
+# calls panic (development.md, Tests and OS services; ADR 0095).
+mdoc-store = { path = "../../crates/mdoc-store", features = ["deny-os-services"] }
+# tests/docx_worker.rs inspects the worker's DOCX package.
+roxmltree = "0.21"
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# Locks fixtures for the password card's tests.
+craft-offcrypto = { workspace = true }
+# `exits-suite` lets the exits suite take the AI connector's check out.
+mdoc-connector = { path = "../../crates/mdoc-connector", features = ["exits-suite"] }
+
+# examples/floating_window_spike.rs (Milestone 2 item 4): the spike reaches
+# the GPUI window's HWND and calls the hotkey, tray and capture APIs itself.
+# Example-only, so the shipping build gains no features.
+[target.'cfg(windows)'.dev-dependencies]
+raw-window-handle = "0.6"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
