@@ -1,7 +1,7 @@
 //! What a document says about its own state: the conversion card in the
 //! Markdown pane, the preview pane's status when it has no page, and the
 //! notices above the text.
-use super::{DocumentView, ExtractNative, OcrState, RunOcr, button};
+use super::{DocumentView, ExtractNative, OcrState, RunOcr, view::button};
 use crate::document::text;
 use crate::{
     document::preview::RetryPreview,
