@@ -266,7 +266,7 @@ impl DocumentView {
                 |(index, languages)| {
                     let selected = choice.languages == languages;
                     let label = recognition::label(languages);
-                    let selector = format!("recognize {label}");
+                    let selector = text::recognize_selector(&label);
                     crate::ui::focus_ring(("recognition-language", index), theme)
                         .role(gpui::Role::RadioButton)
                         .aria_label(label.clone())
@@ -341,7 +341,7 @@ impl DocumentView {
                         }),
                     )
                     .child(
-                        ui::link_button("choose-ocr-model", text::CHOOSE_MODEL, theme, true)
+                        ui::link_button("choose-ocr-model", ui::text::CHOOSE_MODEL, theme, true)
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "choose-ocr-model".into())
                             })
