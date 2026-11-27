@@ -89,8 +89,8 @@ routes "core desktop recognition ios android ci" Cargo.lock
 routes "core desktop recognition ios android ci" scripts/lib.sh
 routes "core desktop recognition ios android ci" justfile apps/ios/mdoc/App/MdocApp.swift
 routes "core desktop recognition ios android ci" scripts/ci/ci-areas.txt
-routes desktop src/main.rs
-routes desktop tests/render.rs tests/fixtures/import/a.docx vendor/gpui-pre-macos/src/lib.rs build/windows.rc
+routes desktop apps/desktop/src/main.rs apps/desktop/Cargo.toml apps/desktop/resources/icons/icon.png
+routes desktop apps/desktop/tests/render.rs tests/fixtures/import/a.docx vendor/gpui-pre-macos/src/lib.rs build/windows.rc
 routes "desktop recognition" .github/actions/setup/action.yml .github/workflows/ci-detection.yml scripts/ci/detection-gate.sh
 routes "desktop recognition" resources/pseudonymization-model.json
 routes "desktop recognition" resources/other-input.json crates/mdoc-detect/src/lib.rs
@@ -104,13 +104,13 @@ routes desktop .github/workflows/ci-desktop.yml .github/workflows/queue.yml .git
 routes ios .github/workflows/ci-ios.yml
 routes android .github/workflows/ci-android.yml
 routes "core desktop recognition ios android ci" scripts/ci/ci-areas.sh
-routes "desktop ci" scripts/ci/merge-gate.sh src/main.rs
+routes "desktop ci" scripts/ci/merge-gate.sh apps/desktop/src/main.rs
 routes "ios ci" scripts/ci/merge-gate.sh apps/ios/a.swift
 routes "desktop ios" scripts/ios/mobile-check.sh
 routes "desktop android" scripts/android/install-android-ndk.sh
 routes desktop scripts/ios/test-ios-release.sh scripts/ci/hub-gate.sh scripts/ci/snapshots-fetch.sh scripts/desktop/package.sh
 routes ci scripts/release/ci-apple-credentials.sh scripts/ci/ci-screens.sh
-routes "desktop ios" src/main.rs apps/ios/mdoc/App/MdocApp.swift
+routes "desktop ios" apps/desktop/src/main.rs apps/ios/mdoc/App/MdocApp.swift
 routes "ios android" apps/ios/a.swift apps/android/b.kt
 routes recognition tests/fixtures/recognition/en/claim/x.md
 routes recognition tests/fixtures/recognition/en/claim/x.model.json
@@ -138,7 +138,7 @@ check "known names still route as before" \
 docs_only_of() { printf '%s\0' "$@" | docs_only "$table"; }
 check "docs files are docs only" docs_only_of README.md docs/a.md changes/x.md
 check "fixture Markdown is not" not docs_only_of README.md tests/fixtures/import/a.md
-check "a code file is not" not docs_only_of README.md src/main.rs
+check "a code file is not" not docs_only_of README.md apps/desktop/src/main.rs
 check "no files is not" not docs_only_of
 many=()
 for i in $(seq 1 300); do many+=("docs/$i.md"); done

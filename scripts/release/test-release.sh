@@ -95,13 +95,13 @@ git config user.email 'release-test@example.invalid'
 git config commit.gpgsign false
 git config tag.gpgsign false
 git config core.autocrlf false
-mkdir -p scripts/release resources .github/workflows
+mkdir -p scripts/release apps/desktop/resources .github/workflows
 cp "$root/scripts/lib.sh" scripts/
 cp "$root/scripts/release/"{release.sh,release-ci.sh,set-version.sh} scripts/release/
 cp "$root/.github/workflows/ci.yml" .github/workflows/
-printf '[package]\nname = "mdoc"\nversion = "0.1.0"\nedition = "2021"\n' >Cargo.toml
+printf '[workspace.package]\nversion = "0.1.0"\n' >Cargo.toml
 printf '[[package]]\nname = "mdoc"\nversion = "0.1.0"\n' >Cargo.lock
-printf '<key>CFBundleVersion</key>\n<string>0.1.0</string>\n<key>CFBundleShortVersionString</key>\n<string>0.1.0</string>\n' >resources/Info.plist
+printf '<key>CFBundleVersion</key>\n<string>0.1.0</string>\n<key>CFBundleShortVersionString</key>\n<string>0.1.0</string>\n' >apps/desktop/resources/Info.plist
 printf '## Unreleased\n\n- Test release.\n' >CHANGELOG.md
 printf 'base\n' >code.rs
 commit base
@@ -154,7 +154,7 @@ green
 echo 'ok: merge changes are CI-relevant'
 
 # ci.yml skips the release commit on main; its tag's Release run counts.
-printf '[package]\nname = "mdoc"\nversion = "0.1.1"\nedition = "2021"\n' >Cargo.toml
+printf '[workspace.package]\nversion = "0.1.1"\n' >Cargo.toml
 commit 'release: v0.1.1'
 GH_RUN_SHA=$(git rev-parse HEAD)
 GH_RESULT=skipped
@@ -228,7 +228,7 @@ release_case() {
   [ -z "$(git status --porcelain)" ] || fail 'dirty release tree'
   contains Cargo.toml 'version = "0.2.0-rc.3"'
   contains Cargo.lock 'version = "0.2.0-rc.3"'
-  contains resources/Info.plist '<string>0.2.0-rc.3</string>'
+  contains apps/desktop/resources/Info.plist '<string>0.2.0-rc.3</string>'
   if [ "${EXPECTED_PROMPTS:-0}" = 0 ]; then
     [ ! -e "$PROMPT_LOG" ] || fail 'unexpected prompt'
   else

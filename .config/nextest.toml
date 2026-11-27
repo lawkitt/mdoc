@@ -6,7 +6,7 @@
 #                recognition fixtures
 #   app          the app package's tests (the GPUI workspace tests among
 #                them) except the render test, at most 4 at a time
-#   renders      the render test (tests/headless_renders.rs)
+#   renders      the render test (apps/desktop/tests/headless_renders.rs)
 #   recognition  the recognition fixtures on their snapshots
 #
 # Quarantined tests (.config/quarantine.txt) are left out by scripts/dev/test.sh.
@@ -28,7 +28,7 @@ filter = "package(mdoc) - binary_id(mdoc::headless_renders)"
 test-group = "app"
 
 # The render test has its own hang watchdog (10 min on macOS, 25 on Windows,
-# tests/headless_renders.rs). Nextest kills it one period later, so the
+# apps/desktop/tests/headless_renders.rs). Nextest kills it one period later, so the
 # watchdog's panic, with the child's stderr, reports a hang first.
 [[profile.default.overrides]]
 filter = "binary_id(mdoc::headless_renders)"

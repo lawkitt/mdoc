@@ -9,10 +9,10 @@ die() {
   exit 1
 }
 
-# The [package] version in Cargo.toml — the single source of truth.
+# The [workspace.package] version in Cargo.toml — the single source of truth.
 version() {
   awk '
-    /^\[/ { in_pkg = ($0 == "[package]") }
+    /^\[/ { in_pkg = ($0 == "[workspace.package]") }
     in_pkg && /^version = / { gsub(/"/, "", $3); print $3; exit }
   ' Cargo.toml
 }
