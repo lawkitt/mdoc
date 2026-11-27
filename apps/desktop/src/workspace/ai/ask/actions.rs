@@ -1,16 +1,8 @@
-//! Ask in the window (#1164 Decisions 2, 3 and 22; Milestone 2 item 10),
-//! only while "AI connector (preview)" runs: what the document header's
-//! choice does (`TabEvent::Ask`), and the Project page's Ask button. The
-//! words and links are `crate::ai::ask`'s.
-//!
-//! Ask Claude or Ask ChatGPT shares the Project as part of the click, in
-//! place of any other, then opens the app with a prompt naming the
-//! document by the label the connector gives it. Copy for AI is today's
-//! Copy for AI. Each choice is remembered as `ai_connector.ask`.
-use super::text;
-use crate::ui;
+//! Ask's actions: remembering the choice, asking from a tab or the Project
+//! page, the move an Unfiled document waits for, and opening the app.
 use crate::workspace::Workspace;
-use gpui::{AnyElement, Context, Window, div, prelude::*, px};
+use crate::workspace::ai::text;
+use gpui::{Context, Window};
 use mdoc_store::settings::{self, AskWith};
 
 impl Workspace {
@@ -218,126 +210,6 @@ impl Workspace {
             .any(|summary| summary.id == id && summary.exclude_from_ai)
     }
 
-    // ---- The Project page --------------------------------------------------
-
-    /// The page's Ask split button, while the connector runs.
-    pub(in crate::workspace) fn project_ask_button(
-        &self,
-        project: &str,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        self.ai_connector.as_ref()?;
-        let theme = self.theme.get();
-        let last = crate::ai::ask::on_project_page(self.ask_last());
-        let (ask, menu) = (project.to_string(), project.to_string());
-        let main = self
-            .page_control("project-page-ask", crate::ai::ask::label(last), cx)
-            .on_click(cx.listener(move |this, _, _, cx| this.ask_about_project(&ask, last, cx)));
-        let open = self.project_ui.ask_menu.is_some();
-        let (frame, more) = ui::split_button(
-            main,
-            "project-page-ask-more",
-            text::MORE_WAYS_TO_ASK,
-            open,
-            theme,
-        );
-        Some(
-            frame
-                .child(
-                    more.when(cfg!(test), |v| {
-                        v.debug_selector(|| "project-page-ask-more".into())
-                    })
-                    .on_click(cx.listener(
-                        move |this, event: &gpui::ClickEvent, window, cx| {
-                            this.menu_return = window.focused(cx);
-                            this.project_ui.ask_menu = Some((menu.clone(), event.position()));
-                            window.focus(&this.menu_focus, cx);
-                            cx.notify();
-                        },
-                    )),
-                )
-                .into_any_element(),
-        )
-    }
-
-    /// The page's Ask menu: Ask Claude and Ask in a ChatGPT thread, the last ticked.
-    pub(in crate::workspace) fn project_ask_menu(
-        &self,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let (id, position) = self.project_ui.ask_menu.as_ref()?;
-        self.ai_connector.as_ref()?;
-        // It belongs to the page it was opened over.
-        if self.project_ui.page.as_ref().map(|page| page.id()) != Some(id.as_str()) {
-            return None;
-        }
-        let theme = self.theme.get();
-        let last = crate::ai::ask::on_project_page(self.ask_last());
-        let close = |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
-            this.project_ui.ask_menu = None;
-            if let Some(focus) = this.menu_return.take() {
-                window.focus(&focus, cx);
-            }
-            cx.notify();
-        };
-        let mut menu = ui::panel("project-ask-menu", theme)
-            .when(cfg!(test), |v| {
-                v.debug_selector(|| "project-ask-menu".into())
-            })
-            .track_focus(&self.menu_focus)
-            .key_context("UiPanel UiMenu")
-            .p_1()
-            .rounded_lg()
-            .shadow_lg()
-            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                ui::cycle(window, cx, Some(&this.menu_focus), false);
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                ui::cycle(window, cx, Some(&this.menu_focus), true);
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(move |this, _: &ui::CloseMenu, window, cx| {
-                close(this, window, cx);
-                cx.stop_propagation();
-            }))
-            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                this.project_ui.ask_menu = None;
-                cx.notify();
-            }));
-        for (key, with) in [
-            ("project-ask-claude", AskWith::Claude),
-            ("project-ask-chatgpt", AskWith::ChatGpt),
-        ] {
-            let id = id.clone();
-            menu = menu.child(
-                ui::menu_row(
-                    key,
-                    crate::ai::ask::label(with),
-                    None,
-                    Some(with == last),
-                    theme,
-                    true,
-                )
-                .when(cfg!(test), move |v| v.debug_selector(move || key.into()))
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    close(this, window, cx);
-                    this.ask_about_project(&id, with, cx);
-                })),
-            );
-        }
-        Some(
-            gpui::deferred(
-                gpui::anchored()
-                    .position(*position)
-                    .snap_to_window()
-                    .child(div().mt(px(12.)).child(menu)),
-            )
-            .with_priority(2)
-            .into_any_element(),
-        )
-    }
-
     /// Show Project `project`'s page with its Ask menu open, for renders.
     #[cfg(all(
         debug_assertions,
@@ -360,5 +232,52 @@ impl Workspace {
         self.project_ui.ask_menu = Some((project.to_string(), position));
         window.focus(&self.menu_focus, cx);
         cx.notify();
+    }
+
+    /// The page's "More ways to ask": its menu opens at `position` over
+    /// Project `project`'s page, focused.
+    pub(in crate::workspace) fn show_ask_menu(
+        &mut self,
+        project: String,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.menu_return = window.focused(cx);
+        self.project_ui.ask_menu = Some((project, position));
+        window.focus(&self.menu_focus, cx);
+        cx.notify();
+    }
+
+    /// The Ask menu closes, and focus goes back where it was.
+    pub(in crate::workspace) fn close_ask_menu(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.project_ui.ask_menu = None;
+        if let Some(focus) = self.menu_return.take() {
+            window.focus(&focus, cx);
+        }
+        cx.notify();
+    }
+
+    /// A click outside the Ask menu closes it.
+    pub(in crate::workspace) fn ask_menu_dismissed(&mut self, cx: &mut Context<Self>) {
+        self.project_ui.ask_menu = None;
+        cx.notify();
+    }
+
+    /// The Ask menu's choice `with`, about Project `id`: the menu closes,
+    /// then Ask runs.
+    pub(in crate::workspace) fn ask_from_menu(
+        &mut self,
+        id: &str,
+        with: AskWith,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_ask_menu(window, cx);
+        self.ask_about_project(id, with, cx);
     }
 }

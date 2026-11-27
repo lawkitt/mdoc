@@ -516,7 +516,8 @@ fn the_project_page_lists_ai_activity(cx: &mut TestAppContext) {
             .collect();
         (entries.iter())
             .map(|entry| {
-                crate::workspace::ai::project_ui::activity_line(entry, &documents, &replies, 0).text
+                crate::workspace::ai::project::view::activity_line(entry, &documents, &replies, 0)
+                    .text
             })
             .collect()
     });
