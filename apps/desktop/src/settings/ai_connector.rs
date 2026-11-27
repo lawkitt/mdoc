@@ -7,7 +7,7 @@
 //! Every button that writes shows a consent card first: the file, and the
 //! exact entry added or removed (`crate::ai::connector::setup`). Nothing is
 //! written until its primary button.
-use super::{CloseSettings, Panel};
+use super::{CloseSettings, Panel, text};
 use crate::ai::companion::hotkey::{self, NotAHotkey};
 use crate::ai::connector::setup::{self, Change, Host, Kind, Places, Status};
 use crate::ui;
@@ -275,20 +275,7 @@ impl Panel {
                 self.ai.error = None;
                 self.ai.done = Some((
                     host,
-                    format!(
-                        "{}. Quit and reopen {} to {} mdoc.",
-                        if change.kind == Kind::Remove {
-                            "Removed"
-                        } else {
-                            "Added"
-                        },
-                        host.name(),
-                        if change.kind == Kind::Remove {
-                            "unload"
-                        } else {
-                            "load"
-                        },
-                    ),
+                    text::changed(change.kind == Kind::Remove, host.name()),
                 ));
             }
             Err(refusal) => self.ai.error = Some((host, refusal.message(host))),
@@ -315,13 +302,11 @@ impl Panel {
     pub(super) fn ai_connector_section(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
         let on = self.draft.ai_connector.preview;
         let switch = self.setting_row(
-            "AI connector (preview)",
-            "Lets Claude Desktop or ChatGPT read the Ready documents of a Project you share, \
-             and send its answers back to mdoc. Only pseudonymized text leaves; mdoc restores \
-             the names.",
+            text::AI_CONNECTOR_PREVIEW,
+            text::AI_CONNECTOR_DESCRIPTION,
             self.switch(
                 "ai-connector-preview",
-                "AI connector (preview)",
+                text::AI_CONNECTOR_PREVIEW,
                 on,
                 true,
                 |p| p.ai_connector.preview = !p.ai_connector.preview,
@@ -359,11 +344,11 @@ impl Panel {
                 )
             })
             .child(self.setting_row(
-                "Open deliveries when they arrive",
-                "A reply or document an AI app sends opens in front, unless a dialog is open.",
+                text::OPEN_DELIVERIES,
+                text::OPEN_DELIVERIES_DESCRIPTION,
                 self.switch(
                     "ai-open-deliveries",
-                    "Open deliveries when they arrive",
+                    text::OPEN_DELIVERIES,
                     self.draft.ai_connector.open_deliveries,
                     true,
                     |p| p.ai_connector.open_deliveries = !p.ai_connector.open_deliveries,
@@ -395,7 +380,7 @@ impl Panel {
                             .min_w_0()
                             .text_size(px(11.))
                             .text_color(muted)
-                            .child("Connector program: ")
+                            .child(text::CONNECTOR_PROGRAM)
                             .child(div().font_family(mono).child(
                                 shim.unwrap_or_else(|| {
                                     setup::Refusal::NoShim.message(Host::Claude)
@@ -404,7 +389,7 @@ impl Panel {
                     )
                     .when_some(path, |v, path| {
                         v.child(
-                            self.scrolled_quiet("ai-copy-path", "Copy path", theme, true, cx)
+                            self.scrolled_quiet("ai-copy-path", text::COPY_PATH, theme, true, cx)
                                 .when(cfg!(test), |v| v.debug_selector(|| "ai-copy-path".into()))
                                 .on_click(move |_, _, cx| {
                                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(
@@ -425,13 +410,12 @@ impl Panel {
         let on = !setting.hotkey_off;
         let recording = self.ai.recording.is_some();
         let label = match recording {
-            true => "Type a shortcut…".to_string(),
+            true => text::TYPE_A_SHORTCUT.to_string(),
             false => setting.hotkey.label(),
         };
-        let mut description =
-            "Shows or hides the companion from any app, without leaving it.".to_string();
+        let mut description = text::HOTKEY_DESCRIPTION.to_string();
         if !self.draft.general.menu_bar {
-            description.push_str(" Works while “Show mdoc in the menu bar” is on, in General.");
+            description.push_str(text::HOTKEY_NEEDS_MENU_BAR);
         }
         let caution = style::markdown_style(theme).alert_caution;
         let line = |id: &'static str, text: String, color| {
@@ -448,10 +432,7 @@ impl Panel {
             .when(cfg!(test), |v| {
                 v.debug_selector(|| "ai-hotkey-record".into())
             })
-            .aria_label(format!(
-                "Companion shortcut, {}. Click to record another",
-                setting.hotkey.label()
-            ))
+            .aria_label(text::record_hotkey(setting.hotkey.label()))
             .min_w(px(64.))
             .on_click(cx.listener(move |this, _, _, cx| {
                 if on {
@@ -460,7 +441,7 @@ impl Panel {
             }));
         let switch = self.switch(
             "ai-hotkey",
-            "Companion shortcut",
+            text::COMPANION_SHORTCUT,
             on,
             true,
             |p| p.ai_connector.hotkey_off = !p.ai_connector.hotkey_off,
@@ -470,7 +451,7 @@ impl Panel {
         let hint = match (&self.ai.hotkey_hint, recording) {
             (Some(why), _) => Some((why.clone(), caution)),
             (None, true) => Some((
-                "Press the new shortcut with ⌘, ⌃ or ⌥. Esc cancels.".to_string(),
+                text::PRESS_NEW_SHORTCUT.to_string(),
                 theme.pdf_style().header_muted,
             )),
             (None, false) => None,
@@ -480,7 +461,7 @@ impl Panel {
             .flex_col()
             .child(
                 self.setting_row(
-                    "Companion shortcut",
+                    text::COMPANION_SHORTCUT,
                     description,
                     div()
                         .flex()
@@ -519,16 +500,12 @@ impl Panel {
         let app = host.name();
         let described = match &status {
             Status::NotInstalled => setup::Refusal::NotInstalled.message(host),
-            Status::NotAdded => "Not added.".into(),
+            Status::NotAdded => text::NOT_ADDED.into(),
             Status::Added => match host {
-                Host::Claude => "Added. Quit and reopen Claude Desktop to load it.".into(),
-                Host::ChatGpt => format!(
-                    "Added. Quit and reopen ChatGPT, then in a Work thread ask: “{}” ChatGPT \
-                     asks before it uses each mdoc tool. Codex reads this setting too.",
-                    setup::FIRST_PROMPT
-                ),
+                Host::Claude => text::ADDED_CLAUDE.into(),
+                Host::ChatGpt => text::added_chatgpt(setup::FIRST_PROMPT),
             },
-            Status::Other => "Added, but pointing at another copy of mdoc-mcp.".into(),
+            Status::Other => text::ADDED_OTHER.into(),
             Status::Unreadable(refusal) => {
                 let path = (self.ai.places.as_ref())
                     .and_then(|places| places.config(host))
@@ -544,14 +521,14 @@ impl Panel {
         let mut buttons = div().flex().gap_2().items_center();
         if offer_add {
             let label = if status == Status::Other {
-                "Update…"
+                text::UPDATE_ELLIPSIS
             } else {
-                "Add…"
+                text::ADD_ELLIPSIS
             };
             buttons = buttons.child(
                 self.scrolled_control(add_id, label, theme, can_add, cx)
                     .when(cfg!(test), |v| v.debug_selector(move || add_id.into()))
-                    .aria_label(format!("Add to {app}"))
+                    .aria_label(text::add_to(app))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         if can_add {
                             this.ask_ai_change(host, false, window, cx)
@@ -561,9 +538,9 @@ impl Panel {
         }
         if added {
             buttons = buttons.child(
-                self.scrolled_quiet(remove_id, "Remove…", theme, true, cx)
+                self.scrolled_quiet(remove_id, text::REMOVE_ELLIPSIS, theme, true, cx)
                     .when(cfg!(test), |v| v.debug_selector(move || remove_id.into()))
-                    .aria_label(format!("Remove from {app}"))
+                    .aria_label(text::remove_from(app))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.ask_ai_change(host, true, window, cx)
                     })),
@@ -573,7 +550,7 @@ impl Panel {
         // ChatGPT will): its row says what to ask instead.
         if status == Status::Added && host == Host::Claude {
             buttons = buttons.child(
-                self.scrolled_control(test_id, "Test connection", theme, true, cx)
+                self.scrolled_control(test_id, text::TEST_CONNECTION, theme, true, cx)
                     .when(cfg!(test), |v| v.debug_selector(move || test_id.into()))
                     .on_click(cx.listener(|this, _, _, cx| this.test_ai_connection(cx))),
             );
@@ -610,11 +587,7 @@ impl Panel {
                 |v, (_, done)| v.child(note(done.clone())),
             )
             .when(self.ai.tested && host == Host::Claude, |v| {
-                v.child(note(format!(
-                    "A new chat opened with “{}” filled in. Send it; Claude asks before it uses \
-                     each mdoc tool.",
-                    setup::FIRST_PROMPT
-                )))
+                v.child(note(text::test_opened(setup::FIRST_PROMPT)))
             })
             .into_any_element()
     }
@@ -627,19 +600,19 @@ impl Panel {
         let servers = change.host.servers();
         let (title, says, primary) = match change.kind {
             Kind::Add => (
-                format!("Add mdoc to {app}?"),
-                format!("It adds this entry under {servers}:"),
-                format!("Add to {app}"),
+                text::add_title(app),
+                text::add_says(servers),
+                text::add_to(app),
             ),
             Kind::Replace { .. } => (
-                format!("Update mdoc in {app}?"),
-                format!("It replaces mdoc's entry under {servers} with this one:"),
-                format!("Update {app}"),
+                text::update_title(app),
+                text::update_says(servers),
+                text::update_app(app),
             ),
             Kind::Remove => (
-                format!("Remove mdoc from {app}?"),
-                format!("It removes this entry under {servers}:"),
-                "Remove".to_owned(),
+                text::remove_title(app),
+                text::remove_says(servers),
+                text::REMOVE.to_owned(),
             ),
         };
         let code = |id: &'static str, text: String| {
@@ -662,22 +635,14 @@ impl Panel {
                 }))
         };
         let backup = if change.backs_up() {
-            format!(
-                " mdoc keeps the file as it was beside it, as {}.",
-                change.backup_name()
-            )
+            text::keeps_backup(change.backup_name())
         } else {
             String::new()
         };
         let shared = if change.host == Host::ChatGpt {
-            " Codex reads this file too."
+            text::CODEX_READS_TOO
         } else {
             ""
-        };
-        let reopen = if change.kind == Kind::Remove {
-            "unload"
-        } else {
-            "load"
         };
         let focus = self.ai.focus.clone();
         div()
@@ -704,7 +669,7 @@ impl Panel {
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .child(title),
             )
-            .child(div().child("mdoc will change one file:"))
+            .child(div().child(text::CHANGES_ONE_FILE))
             .child(
                 div()
                     .id("ai-consent-path")
@@ -716,15 +681,21 @@ impl Panel {
                     .child(change.path.display().to_string()),
             )
             .when_some(change.replaced(), |v, old| {
-                v.child(div().child("It takes out this entry:"))
+                v.child(div().child(text::TAKES_OUT_ENTRY))
                     .child(code("ai-consent-old", old))
             })
             .child(div().child(says))
             .child(code("ai-consent-entry", change.shown()))
-            .child(div().text_color(p.header_muted).child(format!(
-                "Everything else in the file stays as it is.{backup}{shared} Quit and reopen \
-                 {app} to {reopen} mdoc."
-            )))
+            .child(
+                div()
+                    .text_color(p.header_muted)
+                    .child(text::everything_else(
+                        &backup,
+                        shared,
+                        app,
+                        change.kind == Kind::Remove,
+                    )),
+            )
             .child(
                 div()
                     .flex()

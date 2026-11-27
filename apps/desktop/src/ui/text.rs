@@ -53,7 +53,6 @@ mod tests {
         "document",
         "main",
         "review",
-        "settings",
         "shelf",
         "workspace",
     ];
