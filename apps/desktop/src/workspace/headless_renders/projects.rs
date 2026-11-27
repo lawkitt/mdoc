@@ -5,7 +5,7 @@
 //! the Project page with its rename, categories and lists, the Keychain
 //! explainer, and the delete question.
 use super::{Driver, Result};
-use crate::workspace::project_page::{Place, Segment};
+use crate::workspace::projects::project_page::{Place, Segment};
 use mdoc_store::settings::AskWith;
 
 /// Moves the fixture document into the fixture Project; returns the

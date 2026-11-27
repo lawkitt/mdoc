@@ -30,19 +30,10 @@ use std::{
     time::Duration,
 };
 
-mod ai_ask_ui;
-mod ai_companion;
-pub(crate) use ai_companion::{CompanionContent, CompanionProposal, ReviewMark, ReviewStep};
-mod ai_deliveries;
-mod ai_project;
-mod ai_project_ui;
-mod autosave;
-mod document_writer;
-mod docx_queue;
-use docx_queue::{DocxEffect, DocxJob};
-mod focus_regions;
-mod folder_sheet;
-mod folder_sheet_ui;
+mod ai;
+pub(crate) use ai::companion::{CompanionContent, CompanionProposal, ReviewMark, ReviewStep};
+mod app_actions;
+pub(crate) use app_actions::bind as bind_app_actions;
 #[cfg(all(
     debug_assertions,
     feature = "headless-renders",
@@ -50,51 +41,35 @@ mod folder_sheet_ui;
 ))]
 pub(crate) mod headless_renders;
 mod home;
-mod intake;
-mod keychain_ui;
-mod navigation;
-use navigation::Arrival;
-mod navigation_ui;
-mod new_project;
 mod notices;
-pub(crate) use navigation_ui::{Back, Forward};
-mod project_page;
+pub(crate) mod palette;
 mod projects;
 pub(crate) use projects::ProjectLink;
-mod export_project;
-mod projects_ui;
-mod quit_flow;
-mod recovery_key;
-mod saved_replies;
-pub(crate) use quit_flow::CloseWatch;
-use quit_flow::QuitEffect;
-pub(crate) use recovery_key::OpenWithRecoveryKey;
-mod session_writer;
-mod shelf_source;
-pub(crate) use shelf_source::{ClipboardNames, ClipboardSource};
-mod shell;
-pub(crate) mod shortcuts_ui;
-use session_writer::SessionEffect;
-mod live_views;
-mod sidebar;
-mod switcher;
-mod switcher_ui;
-mod tree;
-mod tree_ui;
-mod user_lists;
-mod vault_state;
-mod vault_ui;
-use live_views::LiveViewsEffect;
-pub(crate) use projects_ui::{
+pub(crate) use projects::projects_ui::{
     AddProjectName, CancelProjectName, ClearProjectName, ConfirmProjectName,
     bind_keys as bind_project_keys,
 };
+mod replies;
+mod saving;
+pub(crate) use saving::quit_flow::CloseWatch;
+use saving::{
+    docx_queue::{DocxEffect, DocxJob},
+    live_views::LiveViewsEffect,
+    quit_flow::QuitEffect,
+    session_writer::SessionEffect,
+};
+mod shelf_source;
+pub(crate) use shelf_source::{ClipboardNames, ClipboardSource};
+mod shell;
 pub(crate) use shell::{
     CloseNotices, OpenPalette, PALETTE, PaletteClose, ShowHome, bind_keys as bind_shell_keys,
 };
+mod sidebar;
+use sidebar::navigation::Arrival;
+pub(crate) use sidebar::navigation_ui::{Back, Forward};
 use sidebar::{REVEAL_SLIDE, Reveal, SLIDE, SidebarEffect};
-mod app_actions;
-pub(crate) use app_actions::bind as bind_app_actions;
+mod vault;
+pub(crate) use vault::recovery_key::OpenWithRecoveryKey;
 actions!(
     mdoc,
     [
@@ -166,7 +141,7 @@ pub(super) enum TabsEvent {
     Open(Vec<PathBuf>),
 }
 
-/// AI replies to the tab's document (`saved_replies`).
+/// AI replies to the tab's document (`replies`).
 pub(super) enum ReplyEvent {
     /// The reply box's text settled, or Open reply asked for it: save it,
     /// and show it when `open`.
@@ -257,7 +232,7 @@ impl SidebarStatus {
 }
 
 /// A tab is a live view the sidebar lists.
-type Tab = live_views::LiveView<Entity<DocumentView>>;
+type Tab = saving::live_views::LiveView<Entity<DocumentView>>;
 
 /// A drag of the expanded sidebar's edge; the sidebar itself follows it.
 #[derive(Clone)]
@@ -272,14 +247,14 @@ pub(super) struct Workspace {
     focus: gpui::FocusHandle,
     /// F6 regions the workspace owns, and the control last focused in each
     /// region when F6 left it.
-    focus_regions: focus_regions::FocusRegions<gpui::FocusHandle>,
+    focus_regions: sidebar::focus_regions::FocusRegions<gpui::FocusHandle>,
     /// The Open Project list holds focus while open, and gives it back on
     /// close; the notices popover takes Esc.
     pub(super) project_list_focus: gpui::FocusHandle,
     pub(super) project_list_return: Option<gpui::FocusHandle>,
     pub(super) notices_focus: gpui::FocusHandle,
-    tabs: live_views::LiveViews<Entity<DocumentView>>,
-    navigation: navigation::History,
+    tabs: saving::live_views::LiveViews<Entity<DocumentView>>,
+    navigation: sidebar::navigation::History,
     back_focus: gpui::FocusHandle,
     forward_focus: gpui::FocusHandle,
     /// Each shown tab's event and change subscriptions, dropped with it.
@@ -304,12 +279,13 @@ pub(super) struct Workspace {
     menu_return: Option<gpui::FocusHandle>,
     sidebar_scroll: gpui::ScrollHandle,
     /// Each tree row's focus handle, by row.
-    tree_row_focus: std::cell::RefCell<std::collections::HashMap<tree::RowKey, gpui::FocusHandle>>,
+    tree_row_focus:
+        std::cell::RefCell<std::collections::HashMap<sidebar::tree::RowKey, gpui::FocusHandle>>,
     /// The tree's expansion, Show all and Unfiled selection.
-    tree: tree::VaultTree,
+    tree: sidebar::tree::VaultTree,
     /// The recency switcher while ⌃Tab holds it open, its focus, and where
     /// focus returns when it is cancelled.
-    switcher: Option<switcher::Switcher>,
+    switcher: Option<sidebar::switcher::Switcher>,
     switcher_focus: gpui::FocusHandle,
     switcher_return: Option<gpui::FocusHandle>,
     preferences: settings::Shared,
@@ -338,17 +314,17 @@ pub(super) struct Workspace {
     move_row_focus: std::cell::RefCell<std::collections::HashMap<String, gpui::FocusHandle>>,
     move_menu_scroll: gpui::ScrollHandle,
     import_busy: Arc<AtomicBool>,
-    docx_queue: docx_queue::DocxQueue,
-    quit_flow: quit_flow::QuitFlow,
-    session_writer: session_writer::SessionWriter<Session>,
-    project_ui: projects_ui::ProjectsState,
+    docx_queue: saving::docx_queue::DocxQueue,
+    quit_flow: saving::quit_flow::QuitFlow,
+    session_writer: saving::session_writer::SessionWriter<Session>,
+    project_ui: projects::projects_ui::ProjectsState,
     /// The Reply page, when it shows: view state only.
-    reply_page: Option<saved_replies::ReplyPage>,
+    reply_page: Option<replies::ReplyPage>,
     /// Dropped folders' sheets, one at a time.
-    folder_sheets: folder_sheet::FolderSheets,
-    folder_sheet_focus: Option<folder_sheet_ui::SheetFocus>,
+    folder_sheets: projects::folder_sheet::FolderSheets,
+    folder_sheet_focus: Option<projects::folder_sheet_ui::SheetFocus>,
     /// New Project's name question, while it shows.
-    new_project: Option<new_project::NewProjectSheet>,
+    new_project: Option<projects::new_project::NewProjectSheet>,
     new_project_group: gpui::FocusHandle,
     projects: projects::Projects,
     /// Documents a move or a delete is rewriting: their autosaves wait
@@ -373,19 +349,19 @@ pub(super) struct Workspace {
     asked_to_delete: VecDeque<Vec<mdoc_store::document_id::VaultId>>,
     /// Tests only: what each export read, as stored then.
     #[cfg(test)]
-    exports_seen: Vec<export_project::ExportSeen>,
+    exports_seen: Vec<projects::export_project::ExportSeen>,
     /// Moves and deletes in the writer's queue are numbered.
     next_op: u64,
     /// The window, for writes that end after the call that queued them.
     window_handle: gpui::AnyWindowHandle,
     /// The Vault, once the key opened it.
-    vault: vault_state::VaultState,
+    vault: vault::vault_state::VaultState,
     /// The AI connector and its listener, while "AI connector (preview)"
     /// is on and the Vault is open.
     ai_connector: Option<crate::ai::connector::Running>,
     /// What the window knows of the AI project: the Project last viewed,
     /// the share prompt, the activity shown.
-    ai: ai_project::AiProject,
+    ai: ai::project::AiProject,
     /// Hears from the connector while it runs.
     ai_poll: Option<gpui::Task<()>>,
     /// How many system file pickers had ended at the last poll: one ended
@@ -393,14 +369,14 @@ pub(super) struct Workspace {
     pickers_ended: u64,
     /// Where deliveries' and review requests' notifications go: the OS's,
     /// or a recorder in tests and renders.
-    notifier: ai_deliveries::Notifier,
+    notifier: ai::deliveries::Notifier,
     /// An Ask waiting for its Unfiled document's move (item 10).
     ai_ask: crate::ai::ask::Waiting,
     /// Settings › Vault's key, the first-Project nudge and the wrong-key
     /// screen.
-    recovery: recovery_key::Recovery,
+    recovery: vault::recovery_key::Recovery,
     /// Documents' autosaves, one write at a time.
-    document_writer: autosave::Writer,
+    document_writer: saving::autosave::Writer,
     /// Where each imported tab's file was opened from, so opening it again
     /// finds the tab.
     admitted_from: std::collections::HashMap<u64, PathBuf>,
@@ -586,11 +562,14 @@ impl Workspace {
         );
         let mut this = Self {
             focus: cx.focus_handle(),
-            focus_regions: focus_regions::FocusRegions::new(cx.focus_handle(), cx.focus_handle()),
+            focus_regions: sidebar::focus_regions::FocusRegions::new(
+                cx.focus_handle(),
+                cx.focus_handle(),
+            ),
             project_list_focus: cx.focus_handle(),
             project_list_return: None,
             notices_focus: cx.focus_handle(),
-            tabs: live_views::LiveViews::default(),
+            tabs: saving::live_views::LiveViews::default(),
             navigation: Default::default(),
             back_focus: cx.focus_handle().tab_stop(true),
             forward_focus: cx.focus_handle().tab_stop(true),
@@ -639,9 +618,9 @@ impl Workspace {
             move_row_focus: Default::default(),
             move_menu_scroll: Default::default(),
             import_busy: Arc::new(AtomicBool::new(false)),
-            docx_queue: docx_queue::DocxQueue::default(),
-            quit_flow: quit_flow::QuitFlow::default(),
-            session_writer: session_writer::SessionWriter::new(None),
+            docx_queue: saving::docx_queue::DocxQueue::default(),
+            quit_flow: saving::quit_flow::QuitFlow::default(),
+            session_writer: saving::session_writer::SessionWriter::new(None),
             project_ui: Default::default(),
             reply_page: None,
             folder_sheets: Default::default(),
@@ -1633,7 +1612,8 @@ impl Workspace {
             let mut files = Vec::new();
             let mut folders = Vec::new();
             for path in paths {
-                if let Some(folder) = folder_sheet::DroppedFolder::read(&path, supported) {
+                if let Some(folder) = projects::folder_sheet::DroppedFolder::read(&path, supported)
+                {
                     folders.push(folder);
                 } else {
                     let ok = supported(&path);
@@ -1653,7 +1633,7 @@ impl Workspace {
                 }
                 this.finish_open(paths, project.clone(), window, cx);
                 for folder in folders {
-                    let pending = folder_sheet::Pending {
+                    let pending = projects::folder_sheet::Pending {
                         folder,
                         project: project.clone(),
                     };
@@ -1979,7 +1959,7 @@ impl Workspace {
         self.docx_queue.forget(id);
         // The tab that takes a closed tab's page takes its stop too; it is
         // no new stop when the closed tab wasn't the current one.
-        let gone = navigation::Stop::Tab(id);
+        let gone = sidebar::navigation::Stop::Tab(id);
         let arrival = if self.navigation.current() == Some(&gone) {
             Arrival::Replace
         } else {
@@ -2090,8 +2070,8 @@ impl Workspace {
     fn queue_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.quit_flow.settle();
         self.queue_write(
-            document_writer::Target::Quit,
-            autosave::Write::Quit,
+            saving::document_writer::Target::Quit,
+            saving::autosave::Write::Quit,
             window,
             cx,
         );
@@ -2124,15 +2104,15 @@ impl Workspace {
     /// summaries are written, and the window closes, so no keystroke can
     /// land between what is written and the close. Anything that can't be
     /// written cancels the quit, its edit still in its tab.
-    fn run_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) -> autosave::Ran {
+    fn run_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) -> saving::autosave::Ran {
         // Cancelled while it waited: a job before it failed.
         if !self.quit_flow.finishing() {
-            return autosave::Ran::Ended;
+            return saving::autosave::Ran::Ended;
         }
         // A tab list write still running would land after this one.
         if self.session_writer.writing() {
             self.quit_waits_for_session = true;
-            return autosave::Ran::Holds;
+            return saving::autosave::Ran::Holds;
         }
         let ids: Vec<u64> = self.tabs.iter().map(|tab| tab.id()).collect();
         for view in self.tabs.iter().filter_map(|tab| tab.view().cloned()) {
@@ -2148,11 +2128,11 @@ impl Workspace {
                         name.unwrap_or_default()
                     ));
                     self.quit_failed(window, cx);
-                    return autosave::Ran::Ended;
+                    return saving::autosave::Ran::Ended;
                 }
                 // Its notes or its reply failed, and said so.
                 if !self.quit_flow.finishing() {
-                    return autosave::Ran::Ended;
+                    return saving::autosave::Ran::Ended;
                 }
             }
             let projects: Vec<String> = (self.projects.summaries().into_iter())
@@ -2161,7 +2141,7 @@ impl Workspace {
                     self.project_ui.is_unwritten(id)
                         || self
                             .document_writer
-                            .has(&document_writer::Target::Project(id.clone()))
+                            .has(&saving::document_writer::Target::Project(id.clone()))
                 })
                 .collect();
             for id in projects {
@@ -2173,7 +2153,7 @@ impl Workspace {
                         "Could not save the Project \u{201c}{name}\u{201d}: {error}"
                     ));
                     self.quit_failed(window, cx);
-                    return autosave::Ran::Ended;
+                    return saving::autosave::Ran::Ended;
                 }
                 self.project_ui.take_unwritten(&id);
             }
@@ -2190,7 +2170,7 @@ impl Workspace {
                 Err(error) => {
                     self.session_writer.failed();
                     self.session_failed(error.to_string(), window, cx);
-                    return autosave::Ran::Ended;
+                    return saving::autosave::Ran::Ended;
                 }
             }
         }
@@ -2202,7 +2182,7 @@ impl Workspace {
         }
         self.close_window(window, cx);
         // The window is gone: nothing after the last job runs.
-        autosave::Ran::Holds
+        saving::autosave::Ran::Holds
     }
 
     /// The quit's writes of tab `id`: its document (made now if new), its
@@ -2230,7 +2210,7 @@ impl Workspace {
             self.run_notes_save(&document, window, cx);
         }
         if self.quit_flow.finishing() && view.read(cx).reply.unsaved().is_some() {
-            let save = saved_replies::ReplySave::Box {
+            let save = replies::ReplySave::Box {
                 tab: id,
                 open: false,
             };
@@ -2382,7 +2362,7 @@ impl Workspace {
                 // A quit waiting at the head for this write goes on.
                 if !this.session_writer.writing()
                     && std::mem::take(&mut this.quit_waits_for_session)
-                    && this.run_quit(window, cx) == autosave::Ran::Ended
+                    && this.run_quit(window, cx) == saving::autosave::Ran::Ended
                 {
                     this.advance_writer(window, cx);
                 }
@@ -3154,7 +3134,7 @@ fn load_from_vault(
         .document(id.as_str())
         .map_err(|error| format!("Could not open the document. {error}"))?;
     let original = (stored.original.as_ref()).filter(|original| {
-        intake::needs_conversion(std::path::Path::new(&original.info.file_name))
+        saving::intake::needs_conversion(std::path::Path::new(&original.info.file_name))
     });
     // A source that doesn't open leaves its saved text and review to show,
     // with the error where the Source would be; only a document with
@@ -3433,11 +3413,11 @@ impl Render for Workspace {
             .on_action(
                 cx.listener(|this, _: &shell::ShowHome, window, cx| this.show_home(window, cx)),
             )
-            .on_action(
-                cx.listener(|this, _: &shortcuts_ui::ShowShortcuts, window, cx| {
+            .on_action(cx.listener(
+                |this, _: &palette::shortcuts_ui::ShowShortcuts, window, cx| {
                     this.toggle_shortcuts(window, cx)
-                }),
-            )
+                },
+            ))
             .on_action(cx.listener(|this, _: &shell::PasteAsNewTab, window, cx| {
                 this.paste_as_new_tab(window, cx)
             }))
@@ -3789,8 +3769,8 @@ impl Workspace {
             .cycle(&regions, current, backwards, || self.sidebar_landing(cx));
         match effect {
             None => {}
-            Some(focus_regions::FocusEffect::Focus(target)) => window.focus(&target, cx),
-            Some(focus_regions::FocusEffect::Enter { region, last }) => {
+            Some(sidebar::focus_regions::FocusEffect::Focus(target)) => window.focus(&target, cx),
+            Some(sidebar::focus_regions::FocusEffect::Enter { region, last }) => {
                 if let Some(last) =
                     last.filter(|focus| self.region_holds(&region, focus, window, cx))
                 {
@@ -3939,8 +3919,8 @@ impl Workspace {
         let regions = self.regions(cx);
         ui::cycle(window, cx, None, backwards);
         let to = self.region_index(&regions, window, cx);
-        if let Some(focus_regions::FocusEffect::Focus(editor)) =
-            focus_regions::FocusRegions::tab_into_editor(&regions, from, to, backwards)
+        if let Some(sidebar::focus_regions::FocusEffect::Focus(editor)) =
+            sidebar::focus_regions::FocusRegions::tab_into_editor(&regions, from, to, backwards)
         {
             window.focus(&editor, cx);
         }

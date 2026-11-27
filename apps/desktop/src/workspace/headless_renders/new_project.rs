@@ -59,7 +59,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
             .map_err(|e| e.to_string())?;
         w.projects.remove(&id);
         w.navigation
-            .forget(&crate::workspace::navigation::Stop::Project(id));
+            .forget(&crate::workspace::sidebar::navigation::Stop::Project(id));
         w.activate(shown, window, cx);
         Ok(())
     })??;

@@ -290,9 +290,9 @@ fn keyboard_reveals_the_shown_row_in_a_long_collapsed_tree(cx: &mut TestAppConte
     let rows = cx.update(|_, cx| tabs.read(cx).tree_keys());
     let [
         ..,
-        tree::RowKey::Document(above),
-        tree::RowKey::Document(bottom),
-        tree::RowKey::ShowAll,
+        crate::workspace::sidebar::tree::RowKey::Document(above),
+        crate::workspace::sidebar::tree::RowKey::Document(bottom),
+        crate::workspace::sidebar::tree::RowKey::ShowAll,
     ] = &rows[..]
     else {
         panic!("Unfiled's last rows before Show fewer: {rows:?}")
@@ -573,7 +573,7 @@ fn the_refusal_shows_above_a_long_tree(cx: &mut TestAppContext) {
     });
     draw(cx);
     let first = cx.update(|_, cx| tabs.read(cx).tree_keys())[0].clone();
-    let tree::RowKey::Document(first) = first else {
+    let crate::workspace::sidebar::tree::RowKey::Document(first) = first else {
         panic!("Unfiled's first row")
     };
     let selector: &'static str = Box::leak(format!("tree-document-{first}").into_boxed_str());

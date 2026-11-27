@@ -24,7 +24,7 @@ use crate::{
     review as pii,
     shelf::shelf_ui,
     ui::confirm_dialog,
-    workspace::{self, shortcuts_ui},
+    workspace::{self, palette::shortcuts_ui},
 };
 use gpui::{Action, KeyBinding, KeyBindingContextPredicate};
 

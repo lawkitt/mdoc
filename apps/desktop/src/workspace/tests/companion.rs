@@ -897,7 +897,7 @@ fn the_next_cards_proposals_wait_for_the_pointer(cx: &mut TestAppContext) {
 /// stop it.
 #[gpui::test]
 fn replace_all_outlasts_eviction_and_a_newer_request(cx: &mut TestAppContext) {
-    use crate::workspace::live_views::LIMIT;
+    use crate::workspace::saving::live_views::LIMIT;
     crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, _notes) = shared_lease(cx, &fixture);

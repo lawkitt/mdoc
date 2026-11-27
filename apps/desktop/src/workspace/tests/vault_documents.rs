@@ -119,7 +119,7 @@ fn no_key_store_leaves_documents_unavailable_and_adds_nothing(cx: &mut TestAppCo
     let (session, _) = vault_with_lease(dir.path());
     let (tabs, cx) = boot_home_with(cx, session, |tabs, window, cx| {
         tabs.vault_opened(
-            super::super::vault_state::Opening::Key(KeyError::NoKeyStore),
+            crate::workspace::vault::vault_state::Opening::Key(KeyError::NoKeyStore),
             window,
             cx,
         )

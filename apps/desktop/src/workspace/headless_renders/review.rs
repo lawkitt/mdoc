@@ -57,7 +57,7 @@ pub(super) fn scenes(
             .active_tab()
             .and_then(|tab| w.live_document(tab, cx))
             .expect("the reviewed document");
-        let key = super::super::tree::RowKey::Document(document.as_str().to_string());
+        let key = crate::workspace::sidebar::tree::RowKey::Document(document.as_str().to_string());
         w.tree_focus(&key, cx)
     })?;
     d.focus_pair("sidebar-row", sidebar)?;

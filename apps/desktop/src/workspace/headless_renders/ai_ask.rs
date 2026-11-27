@@ -4,7 +4,7 @@
 //! Ask menu. Nothing is chosen, so nothing is shared and no link opens. It
 //! leaves the setting off and the window as it found it.
 use super::{Driver, Result};
-use crate::workspace::project_page::Place;
+use crate::workspace::projects::project_page::Place;
 use mdoc_store::settings::AskWith;
 
 fn preview(d: &mut Driver, on: bool) -> Result<()> {

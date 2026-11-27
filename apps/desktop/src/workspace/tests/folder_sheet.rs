@@ -3,7 +3,7 @@
 //! folder opens at most 20 new tabs.
 use super::*;
 use crate::workspace::ShowHome;
-use crate::workspace::folder_sheet::{CAP, CAP_NOTE, Status};
+use crate::workspace::projects::folder_sheet::{CAP, CAP_NOTE, Status};
 use gpui::Action;
 
 /// A folder `name` in `dir` holding Markdown files `files`.

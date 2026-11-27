@@ -337,13 +337,21 @@ fn the_tree_moves_with_arrows_and_folds_projects(cx: &mut TestAppContext) {
     draw(cx);
     // Projects ▸ "a" (collapsed), then Unfiled: b and c, newest first.
     let rows = cx.update(|_, cx| tabs.read(cx).tree_keys());
-    assert_eq!(rows[0], tree::RowKey::Project(project.clone()));
-    let (b, c) = if rows[1] == tree::RowKey::Document(document_of(&tabs, b, cx)) {
+    assert_eq!(
+        rows[0],
+        crate::workspace::sidebar::tree::RowKey::Project(project.clone())
+    );
+    let (b, c) = if rows[1]
+        == crate::workspace::sidebar::tree::RowKey::Document(document_of(&tabs, b, cx))
+    {
         (b, c)
     } else {
         (c, b)
     };
-    assert_eq!(rows[2], tree::RowKey::Document(document_of(&tabs, c, cx)));
+    assert_eq!(
+        rows[2],
+        crate::workspace::sidebar::tree::RowKey::Document(document_of(&tabs, c, cx))
+    );
     let focus = tree_row_focus(&tabs, c, cx);
     cx.update(|window, cx| window.focus(&focus, cx));
     draw(cx);
@@ -351,7 +359,10 @@ fn the_tree_moves_with_arrows_and_folds_projects(cx: &mut TestAppContext) {
     assert!(tab_row_focused(&tabs, b, cx));
     key(cx, "up");
     let project_row = tabs.update(cx, |w, cx| {
-        w.tree_focus(&tree::RowKey::Project(project.clone()), cx)
+        w.tree_focus(
+            &crate::workspace::sidebar::tree::RowKey::Project(project.clone()),
+            cx,
+        )
     });
     assert!(cx.update(|window, _| project_row.is_focused(window)));
     key(cx, "up");
@@ -433,7 +444,11 @@ fn tab_leaves_the_tree_from_any_row(cx: &mut TestAppContext) {
         .iter()
         .map(|key| {
             *ids.iter()
-                .find(|id| *key == tree::RowKey::Document(document_of(&tabs, **id, cx)))
+                .find(|id| {
+                    *key == crate::workspace::sidebar::tree::RowKey::Document(document_of(
+                        &tabs, **id, cx,
+                    ))
+                })
                 .unwrap()
         })
         .collect();
@@ -704,7 +719,10 @@ fn sidebar_project_actions_and_categories_work_without_a_pointer(cx: &mut TestAp
     tabs.update(cx, |tabs, cx| tabs.dismiss_toast(cx));
     draw(cx);
     let row = tabs.update(cx, |w, cx| {
-        w.tree_focus(&tree::RowKey::Project(project_id.clone()), cx)
+        w.tree_focus(
+            &crate::workspace::sidebar::tree::RowKey::Project(project_id.clone()),
+            cx,
+        )
     });
     cx.update(|window, cx| window.focus(&row, cx));
     key(cx, "shift-f10");

@@ -1,6 +1,6 @@
 //! Actual destination, keyboard and pointer dispatch.
 use super::*;
-use crate::workspace::navigation::{Arrival, Stop};
+use crate::workspace::sidebar::navigation::{Arrival, Stop};
 
 fn back_key() -> &'static str {
     if cfg!(target_os = "macos") {

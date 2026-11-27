@@ -1974,7 +1974,7 @@ fn pii_download_retains_card_focus(cx: &mut TestAppContext) {
 /// it.
 #[gpui::test]
 fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContext) {
-    use crate::{commands::shortcuts::tip, workspace::navigation_ui::Back};
+    use crate::{commands::shortcuts::tip, workspace::sidebar::navigation_ui::Back};
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     draw(cx);

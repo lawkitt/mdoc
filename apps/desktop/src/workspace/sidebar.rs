@@ -5,6 +5,14 @@
 //! rules run without a window; the workspace view renders it and carries out
 //! the returned effects (timers, focus).
 
+pub(super) mod focus_regions;
+pub(super) mod navigation;
+pub(super) mod navigation_ui;
+pub(super) mod switcher;
+pub(super) mod switcher_ui;
+pub(super) mod tree;
+pub(super) mod tree_ui;
+
 use std::time::{Duration, Instant};
 
 /// How long a collapse or expand slides.

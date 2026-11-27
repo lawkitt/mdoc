@@ -23,7 +23,7 @@ use crate::{
         ExportProject, Import, MoveToNewProject, MoveToProject, New, NewProject, Open, OpenPalette,
         OpenProject, PasteAiResponse, ProjectCategories, PseudonymizeClipboard, Quit,
         RenameProject, RestoreClipboard, Settings, ShowHome, SwitchDocument, SwitchDocumentBack,
-        ToggleSidebar, shortcuts_ui::ShowShortcuts,
+        ToggleSidebar, palette::shortcuts_ui::ShowShortcuts,
     },
 };
 use gpui::{App, Menu, MenuItem, OsAction, SharedString, SystemMenuType, actions};

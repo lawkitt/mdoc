@@ -8,9 +8,9 @@
 //! it.
 use super::{Driver, Result};
 use crate::workspace::{
-    ai_deliveries::Notifier,
-    ai_project::Arrived,
-    project_page::{Place, Segment},
+    ai::deliveries::Notifier,
+    ai::project::Arrived,
+    projects::project_page::{Place, Segment},
 };
 use mdoc_mcp::wire::{self, Answer, Call, Kind, Request};
 

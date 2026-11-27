@@ -3,7 +3,9 @@
 //! Vault's outbound check passes; and its Projects' names for the
 //! clipboard rows.
 
-use super::{ProjectLink, Workspace, document_writer::Target, navigation::Arrival};
+use super::{
+    ProjectLink, Workspace, saving::document_writer::Target, sidebar::navigation::Arrival,
+};
 use crate::{
     document::DocumentView,
     review::refusal::{Refusal, Step},
@@ -124,7 +126,7 @@ impl Workspace {
             || self.moving.contains(&document)
             || self.write_pending_for(id, cx)
             || view.saved_review() != view.session.document.review
-            || super::autosave::ready_unwritten(view, cx)
+            || super::saving::autosave::ready_unwritten(view, cx)
             || (view.project.link()).is_some_and(|link| self.project_unwritten(&link.id, cx));
         if unwritten {
             return None;

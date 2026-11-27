@@ -12,7 +12,7 @@ use crate::{
     ui::style::Theme,
     workspace::{
         CompanionContent, Workspace,
-        ai_companion::{
+        ai::companion::{
             CompanionDocument, CompanionProject, CompanionProposal, CompanionReply,
             CompanionReview, ReviewStep,
         },
