@@ -100,14 +100,11 @@ pub fn setup_progress(
 ) -> gpui::Div {
     let (received, total) = state.overall();
     let label = if cancelling {
-        "Cancelling…".to_owned()
+        super::text::CANCELLING.to_owned()
     } else if state.downloading() {
-        format!(
-            "Downloading {}%",
-            (received * 100).checked_div(total).unwrap_or(0)
-        )
+        super::text::downloading((received * 100).checked_div(total).unwrap_or(0))
     } else if state.phase.is_empty() {
-        "Preparing…".to_owned()
+        super::text::PREPARING.to_owned()
     } else {
         format!("{}…", state.phase.trim_end_matches('…'))
     };
@@ -128,10 +125,9 @@ pub fn setup_progress(
                             .flex_shrink_0()
                             .text_size(px(11.))
                             .text_color(theme.pdf_style().header_muted)
-                            .child(format!(
-                                "{} / {} MB",
+                            .child(super::text::megabytes_of(
                                 received / 1_000_000,
-                                mdoc_import::model_download::megabytes(total)
+                                mdoc_import::model_download::megabytes(total),
                             )),
                     )
                 }),

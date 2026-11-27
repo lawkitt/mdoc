@@ -742,15 +742,19 @@ impl Panel {
                         ),
                     )
                     .child(
-                        self.scrolled_quiet("ai-consent-cancel", "Cancel", theme, true, cx)
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "ai-consent-cancel".into())
-                            })
-                            .on_click(
-                                cx.listener(|this, _, window, cx| {
-                                    this.cancel_ai_change(window, cx)
-                                }),
-                            ),
+                        self.scrolled_quiet(
+                            "ai-consent-cancel",
+                            crate::ui::text::CANCEL,
+                            theme,
+                            true,
+                            cx,
+                        )
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "ai-consent-cancel".into())
+                        })
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.cancel_ai_change(window, cx)),
+                        ),
                     ),
             )
             .into_any_element()

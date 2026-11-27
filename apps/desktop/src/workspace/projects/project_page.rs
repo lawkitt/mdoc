@@ -311,7 +311,7 @@ impl Workspace {
     ) {
         let (id, alias) = (id.to_string(), alias.to_string());
         let answer = window.prompt(gpui::PromptLevel::Warning, &format!("Forget identity “{alias}”?"),
-            Some("Its originals are forgotten from this Project and its documents. Document text is untouched. This cannot be undone."), &["Forget Identity", "Cancel"], cx);
+            Some("Its originals are forgotten from this Project and its documents. Document text is untouched. This cannot be undone."), &["Forget Identity", crate::ui::text::CANCEL], cx);
         cx.spawn_in(window, async move |this, cx| {
             if answer.await.ok() == Some(0) {
                 let _ = this.update_in(cx, |this, window, cx| {

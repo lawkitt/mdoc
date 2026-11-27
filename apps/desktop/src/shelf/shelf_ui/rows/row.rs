@@ -439,7 +439,11 @@ impl ShelfRows {
                                     .text_color(theme.applied_text()),
                             )
                         })
-                        .child(if copied { "Copied" } else { "Copy for AI" })
+                        .child(if copied {
+                            crate::ui::text::COPIED
+                        } else {
+                            "Copy for AI"
+                        })
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             this.copy(index, window, cx);

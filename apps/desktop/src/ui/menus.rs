@@ -35,7 +35,7 @@ pub fn menu_row_because(
         .role(gpui::Role::MenuItem)
         .aria_label(label.clone())
         .when_some(reason.clone(), |v, reason| {
-            v.aria_description(format!("Unavailable. {reason}"))
+            v.aria_description(super::text::unavailable(reason))
         })
         .key_context("UiControl")
         .tab_index(0)

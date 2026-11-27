@@ -390,7 +390,7 @@ impl Render for View {
                             }),
                         ),
                     )
-                    .child(control("close-comparison", "Close", theme, true).on_click(
+                    .child(control("close-comparison", crate::ui::text::CLOSE, theme, true).on_click(
                         cx.listener(|this, _, window, _| {
                             this.cancel.store(true, Ordering::Relaxed);
                             window.remove_window();
@@ -537,7 +537,7 @@ impl Render for View {
                             .on_click(cx.listener(|this, _, _, cx| this.run(vec![0, 1], cx))),
                     )
                     .child(
-                        control("cancel-comparison", "Cancel", theme, self.running).on_click(
+                        control("cancel-comparison", crate::ui::text::CANCEL, theme, self.running).on_click(
                             cx.listener(|this, _, _, cx| {
                                 if this.running {
                                     this.cancel.store(true, Ordering::Relaxed);

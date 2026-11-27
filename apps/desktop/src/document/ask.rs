@@ -326,13 +326,17 @@ impl DocumentView {
                 ui::card_actions()
                     .justify_end()
                     .child(
-                        ui::action_control("ask-unfiled-cancel", "Cancel", theme, true, false)
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "ask-unfiled-cancel".into())
-                            })
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.close_ask(window, cx)),
-                            ),
+                        ui::action_control(
+                            "ask-unfiled-cancel",
+                            crate::ui::text::CANCEL,
+                            theme,
+                            true,
+                            false,
+                        )
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "ask-unfiled-cancel".into())
+                        })
+                        .on_click(cx.listener(|this, _, window, cx| this.close_ask(window, cx))),
                     )
                     .child(
                         match &shared {

@@ -13,7 +13,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
                 settings::Model::Pii(settings::PiiModel::Fp16).name()
             ),
             Some("Shared runtimes and documents are retained."),
-            &["Remove", "Cancel"],
+            &["Remove", crate::ui::text::CANCEL],
             cx,
         ));
     })

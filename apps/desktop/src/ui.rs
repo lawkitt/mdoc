@@ -8,6 +8,7 @@ mod cards;
 pub(crate) mod confirm_dialog;
 mod menus;
 pub(crate) mod style;
+pub(crate) mod text;
 mod title_bar;
 
 use crate::ui::style::Theme;
@@ -117,7 +118,7 @@ pub fn live_text(
 
 /// What a screen reader says for a "4/6" position: "Mention 4 of 6".
 pub fn position_announcement(noun: &str, position: usize, total: usize) -> String {
-    format!("{noun} {position} of {total}")
+    text::position_of(noun, position, total)
 }
 
 /// Real byte counts only: the caller must not pass stale counts from a

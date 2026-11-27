@@ -80,18 +80,18 @@ pub fn project_color(hue: u32, theme: Theme) -> Hsla {
 
 pub fn theme_label(choice: ThemeChoice) -> &'static str {
     match choice {
-        ThemeChoice::System => "Theme: System",
-        ThemeChoice::Light => "Theme: Light",
-        ThemeChoice::Dark => "Theme: Dark",
+        ThemeChoice::System => super::text::THEME_SYSTEM,
+        ThemeChoice::Light => super::text::THEME_LIGHT,
+        ThemeChoice::Dark => super::text::THEME_DARK,
     }
 }
 
 /// The palette row that cycles the theme names the choice it switches to.
 pub fn theme_switch_label(next: ThemeChoice) -> &'static str {
     match next {
-        ThemeChoice::System => "Switch to system theme",
-        ThemeChoice::Light => "Switch to light theme",
-        ThemeChoice::Dark => "Switch to dark theme",
+        ThemeChoice::System => super::text::SWITCH_TO_SYSTEM_THEME,
+        ThemeChoice::Light => super::text::SWITCH_TO_LIGHT_THEME,
+        ThemeChoice::Dark => super::text::SWITCH_TO_DARK_THEME,
     }
 }
 
