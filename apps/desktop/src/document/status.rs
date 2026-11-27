@@ -343,7 +343,7 @@ impl DocumentView {
                         }),
                     )
                     .child(
-                        ui::link_button("choose-ocr-model", "Choose model…", theme, true)
+                        ui::link_button("choose-ocr-model", ui::text::CHOOSE_MODEL, theme, true)
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "choose-ocr-model".into())
                             })

@@ -125,10 +125,9 @@ pub fn setup_progress(
                             .flex_shrink_0()
                             .text_size(px(11.))
                             .text_color(theme.pdf_style().header_muted)
-                            .child(format!(
-                                "{} / {} MB",
+                            .child(super::text::megabytes_of(
                                 received / 1_000_000,
-                                mdoc_import::model_download::megabytes(total)
+                                mdoc_import::model_download::megabytes(total),
                             )),
                     )
                 }),

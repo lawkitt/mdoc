@@ -25,11 +25,7 @@ pub fn notice_bell(title: &crate::ui::style::TitleBar, theme: Theme) -> Option<A
             .child(
                 header_menu_icon(
                     "header-notices",
-                    if count == 1 {
-                        "1 notice".to_string()
-                    } else {
-                        format!("{count} notices")
-                    },
+                    super::text::notices(count),
                     Icon::Bell,
                     theme,
                     open,
