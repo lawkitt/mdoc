@@ -2134,3 +2134,96 @@ fn a_move_numbers_against_a_members_name_still_waiting_for_its_fold(cx: &mut Tes
         "Boris Ivanov signed for Clara Novak."
     );
 }
+
+/// The window holds Project `id`, lists it in the tree, or shows its page.
+fn project_left_anywhere(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: &str) -> bool {
+    draw(cx);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        tabs.projects.project(id).is_some()
+            || tabs
+                .tree_keys()
+                .contains(&tree::RowKey::Project(id.to_string()))
+            || (tabs.project_ui.page.as_ref()).is_some_and(|page| page.id() == id)
+    })
+}
+
+/// #1337: Undo of Share's Move to New Project takes the new Project away
+/// from the window as well as the Vault: no row, no page.
+#[gpui::test]
+fn undo_after_share_move_to_new_project_forgets_the_project(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, view, id) = share_move_to_new_project(cx, dir.path());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let undo = cx.debug_bounds("move-toast-undo").unwrap();
+    cx.simulate_click(undo.center(), Default::default());
+    cx.run_until_parked();
+    assert_eq!(stored(&tabs, cx, tab).project, None);
+    assert!(vault(&tabs, cx).project(&id).is_err());
+    assert!(!project_left_anywhere(&tabs, cx, &id));
+    cx.update(|_, cx| assert!(view.read(cx).project.link().is_none()));
+    // Still gone once everything has settled.
+    settle(cx);
+    assert!(!project_left_anywhere(&tabs, cx, &id));
+}
+
+/// #1337: the sidebar menu's Move to New Project of a document not in view
+/// opens the new Project's page; Undo leaves that page for the document,
+/// now Unfiled, and the tree no longer lists the Project.
+#[gpui::test]
+fn undo_after_the_sidebar_menus_move_to_new_project_leaves_its_page(cx: &mut TestAppContext) {
+    cx.update(crate::bind_all_keys);
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    cx.update(|window, _| window.activate_window());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_home(window, cx));
+    // The row's menu, as a right-click opens it.
+    expand_sidebar(&tabs, cx);
+    let row: &'static str =
+        Box::leak(format!("tree-document-{}", document.as_str()).into_boxed_str());
+    let row = cx.debug_bounds(row).expect("the document's row").center();
+    cx.simulate_mouse_down(row, gpui::MouseButton::Right, Default::default());
+    cx.simulate_mouse_up(row, gpui::MouseButton::Right, Default::default());
+    cx.run_until_parked();
+    click_toolbar(cx, "context-new-project");
+    cx.run_until_parked();
+    let id = project_of_tab(&tabs, cx, tab).expect("it moved into a new Project");
+    cx.update(|_, cx| {
+        let page = (tabs.read(cx).project_ui.page.as_ref()).map(|page| page.id().to_string());
+        assert_eq!(page.as_deref(), Some(id.as_str()));
+    });
+    draw(cx);
+    let undo = cx.debug_bounds("move-toast-undo").unwrap();
+    cx.simulate_click(undo.center(), Default::default());
+    cx.run_until_parked();
+    assert_eq!(stored(&tabs, cx, tab).project, None);
+    assert!(!project_left_anywhere(&tabs, cx, &id));
+    // The document shows, where it is now.
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert_eq!(tabs.tabs.active(), tab);
+        assert!(!tabs.showing_overview(cx));
+    });
+}
+
+/// #1337: an import into a Project gone since it began says so in words,
+/// never with the Project's id.
+#[gpui::test]
+fn an_import_into_a_missing_project_says_so_in_words(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let path = dir.path().join("letter.md");
+    std::fs::write(&path, "A short letter.").unwrap();
+    let missing = "443fea869bdb1288f6de83421fdf7073".to_string();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths_into(vec![path], Some(missing.clone()), window, cx)
+    });
+    cx.run_until_parked();
+    let notice = cx.update(|_, cx| tabs.read(cx).notices.message().map(str::to_string));
+    assert_eq!(
+        notice.as_deref(),
+        Some("Could not import: letter.md (Its Project no longer exists.)")
+    );
+}
