@@ -2658,7 +2658,7 @@ fn a_proposed_wording_offers_no_category_menu(cx: &mut gpui::TestAppContext) {
 
 #[test]
 fn a_long_scan_counts_its_windows_once_it_knows_them() {
-    use super::render::scan_stage;
+    use super::view::scan_stage;
     // Before the source is split, and for one window, stages run on a timer.
     for count in [(0, 0), (0, 1), (1, 1)] {
         let stage = scan_stage(0.5, count);
