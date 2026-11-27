@@ -2178,10 +2178,16 @@ fn undo_after_the_sidebar_menus_move_to_new_project_leaves_its_page(cx: &mut Tes
     cx.update(|window, _| window.activate_window());
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let document = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.show_home(window, cx);
-        tabs.move_document_to_new_project(document, window, cx);
-    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_home(window, cx));
+    // The row's menu, as a right-click opens it.
+    expand_sidebar(&tabs, cx);
+    let row: &'static str =
+        Box::leak(format!("tree-document-{}", document.as_str()).into_boxed_str());
+    let row = cx.debug_bounds(row).expect("the document's row").center();
+    cx.simulate_mouse_down(row, gpui::MouseButton::Right, Default::default());
+    cx.simulate_mouse_up(row, gpui::MouseButton::Right, Default::default());
+    cx.run_until_parked();
+    click_toolbar(cx, "context-new-project");
     cx.run_until_parked();
     let id = project_of_tab(&tabs, cx, tab).expect("it moved into a new Project");
     cx.update(|_, cx| {

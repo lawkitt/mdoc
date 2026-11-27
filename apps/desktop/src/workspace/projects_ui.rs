@@ -855,8 +855,10 @@ impl Workspace {
             cx.notify();
             return Ran::Ended;
         }
-        // The Project an Undo deleted with the move.
+        // The Project an Undo deleted with the move, and whether its page
+        // shows.
         let mut gone = None;
+        let mut leave_page = false;
         let (result, moving, made) = match op {
             Op::Move { to } => (
                 self.write_now(&vault, &[from.clone(), to.clone()])
@@ -894,20 +896,16 @@ impl Workspace {
                     .write_now(&vault, &[from.clone(), undo.project.clone()])
                     .and_then(|()| vault.undo_move(&undo));
                 // A Project the move made goes with the undo, once empty:
-                // from the window too, its page left for the document's
-                // tab, else Home (#1337).
+                // from the window too (#1337). A delete that failed after
+                // its record went counts as done.
                 if result.is_ok()
                     && let Some(made) = &made
                     && vault.documents_in(Some(made)).is_empty()
-                    && vault.delete_project(made, ProjectDocuments::Delete).is_ok()
+                    && (vault.delete_project(made, ProjectDocuments::Delete).is_ok()
+                        || matches!(vault.project(made), Err(VaultError::NotFound { .. })))
                 {
-                    if (self.project_ui.page.as_ref()).is_some_and(|page| page.id() == made) {
-                        let arrival = super::navigation::Arrival::Replace;
-                        match tab {
-                            Some(tab) => self.activate_as(tab, arrival, window, cx),
-                            None => self.show_home_as(arrival, window, cx),
-                        }
-                    }
+                    leave_page =
+                        (self.project_ui.page.as_ref()).is_some_and(|page| page.id() == made);
                     self.project_gone(made, cx);
                     gone = Some(made.clone());
                 }
@@ -964,6 +962,23 @@ impl Workspace {
                     }
                     None => {
                         self.moving.remove(&document);
+                    }
+                }
+                // The deleted Project's page gives way to the document's tab,
+                // else Home, taking its Back/Forward stop. After the reload
+                // started, so a tab not loaded yet loads once; a dialog or the
+                // switcher keeps the keyboard (#1337).
+                if leave_page {
+                    let keep = (self.dialog_up(window) || self.switcher.is_some())
+                        .then(|| window.focused(cx))
+                        .flatten();
+                    let arrival = super::navigation::Arrival::Replace;
+                    match tab {
+                        Some(tab) => self.activate_as(tab, arrival, window, cx),
+                        None => self.show_home_as(arrival, window, cx),
+                    }
+                    if let Some(keep) = keep {
+                        window.focus(&keep, cx);
                     }
                 }
                 if !self.reloading.contains_key(&document) {
