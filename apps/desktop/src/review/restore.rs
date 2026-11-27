@@ -1,6 +1,6 @@
 //! The AI return journey: Copy for AI adds a placeholder notice; Paste AI
 //! Response saves the reply to the Vault and shows it restored on its Reply
-//! page (`workspace::saved_replies`); the clipboard actions.
+//! page (`workspace::replies`); the clipboard actions.
 use crate::{
     document::{DocumentView, Inspector},
     review::refusal::{Refusal, Step},
