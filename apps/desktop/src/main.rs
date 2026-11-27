@@ -6,31 +6,20 @@
 mod ai;
 mod app;
 mod commands;
-mod comment_rail;
-mod comparison;
-mod comparison_ui;
-mod document_view;
+mod document;
 #[cfg(test)]
 mod exits;
-mod images;
-mod markdown_search;
-mod pdf_comments;
 #[cfg(test)]
 mod perf_tests;
-mod pii;
-mod preview;
-mod refusal;
-mod restored_clipboard;
-mod search_session;
+mod review;
 mod settings;
 mod shelf;
-mod spelling;
 #[cfg(test)]
 mod test_support;
 mod ui;
 mod workspace;
 
-use document_view::bind_markdown_search_keys;
+use document::bind_markdown_search_keys;
 use gpui::{App, Bounds, WindowBounds, WindowOptions, prelude::*, px, size};
 use mdoc_import::{conversion_worker, docx_preview};
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
@@ -95,7 +84,9 @@ fn main() {
                 .get(2)
                 .is_some_and(|arg| arg == docx_preview::SHOW_HIDDEN_ARG),
         };
-        if docx_preview::run_worker_reporting(preview::read_comment_marks, options).is_err() {
+        if docx_preview::run_worker_reporting(document::preview::read_comment_marks, options)
+            .is_err()
+        {
             std::process::exit(1);
         }
         return;
@@ -363,8 +354,8 @@ pub(crate) fn bind_all_keys(cx: &mut App) {
         commands::shortcuts::Owner::Editor,
         mdoc_editor::key_bindings(cfg!(target_os = "macos")),
     );
-    markdown_search::bind_keys(cx);
-    pii::ui::bind_keys(cx);
+    document::markdown_search::bind_keys(cx);
+    review::bind_keys(cx);
     workspace::bind_project_keys(cx);
     shelf::shelf_ui::bind_keys(cx);
     workspace::bind_shell_keys(cx);
@@ -375,7 +366,7 @@ pub(crate) fn bind_all_keys(cx: &mut App) {
         commands::shortcuts::Owner::Pdf,
         gpui_pdf::key_bindings(cfg!(target_os = "macos")),
     );
-    comparison_ui::bind_keys(cx);
+    document::comparison_ui::bind_keys(cx);
     bind_markdown_search_keys(cx);
     bind_app_keys(cx);
     ui::confirm_dialog::bind_keys(cx);

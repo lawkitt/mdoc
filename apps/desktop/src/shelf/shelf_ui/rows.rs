@@ -17,7 +17,7 @@ mod row;
 pub(crate) use row::row_label;
 
 use crate::{
-    refusal::Step,
+    review::refusal::Step,
     shelf::{self, ShelfDocument, ShelfExports},
     ui::style::Theme,
     workspace::Workspace,

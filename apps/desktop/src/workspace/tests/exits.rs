@@ -65,8 +65,8 @@ use super::*;
 use crate::{
     ai::companion::CompanionView,
     exits::{Gate, take_out},
-    pii::ui::CopyForAi,
-    refusal::Step,
+    review::CopyForAi,
+    review::refusal::Step,
     shelf::shelf_ui::ShelfView,
     shelf::{Readiness, ShelfKey},
 };
@@ -488,7 +488,7 @@ impl Fixture<'_> {
                 written(cx);
             }
             Scenario::NewNameTyped => {
-                *crate::pii::ui::TEST_SCAN.lock().unwrap() = Some(dana);
+                *crate::review::TEST_SCAN.lock().unwrap() = Some(dana);
                 append(&tabs, cx, self.letter, &self.document, " Dana Rowe signed.");
             }
             Scenario::MappedNameAsWritten => {
@@ -644,7 +644,7 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Handed {
                 if !view.replacements_open() {
                     view.toggle_replacements_panel(window, cx);
                 }
-                view.inspector = crate::document_view::Inspector::Share;
+                view.inspector = crate::document::Inspector::Share;
                 view.copy_refusal = None;
                 cx.notify();
             });
@@ -654,7 +654,7 @@ fn hand_out(via: Via, fixture: &mut Fixture<'_>) -> Handed {
                 let view = view.read(cx);
                 // A step that opens the review hands nothing out.
                 let reviewing = view.replacements_open()
-                    && view.inspector == crate::document_view::Inspector::Review;
+                    && view.inspector == crate::document::Inspector::Review;
                 view.copy_refusal.is_some() || reviewing || clipboard_of(cx) != BEFORE
             });
             if !reached {

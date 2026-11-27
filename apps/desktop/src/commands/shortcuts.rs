@@ -16,11 +16,13 @@
 
 use crate::{
     commands::menus,
-    comparison_ui, document_view, markdown_search,
-    pii::ui as pii,
-    search_session as find,
+    document,
+    document::comparison_ui,
+    document::markdown_search,
+    document::search_session as find,
+    document::spelling,
+    review as pii,
     shelf::shelf_ui,
-    spelling,
     ui::confirm_dialog,
     workspace::{self, shortcuts_ui},
 };
@@ -55,7 +57,7 @@ impl Group {
 pub enum Owner {
     /// `mdoc_editor`'s keys, through [`bind_crate`].
     Editor,
-    /// Text fields (`markdown_search::bind_keys`).
+    /// Text fields (`document::markdown_search::bind_keys`).
     TextField,
     Pii,
     Projects,
@@ -386,17 +388,12 @@ pub static SHORTCUTS: &[Shortcut] = &[
     row(
         Everywhere,
         "Save",
-        &[on!(App, None, &["mod-s"], document_view::Save)],
+        &[on!(App, None, &["mod-s"], document::Save)],
     ),
     row(
         Everywhere,
         "Export Markdown…",
-        &[on!(
-            App,
-            None,
-            &["mod-shift-s"],
-            document_view::ExportMarkdown
-        )],
+        &[on!(App, None, &["mod-shift-s"], document::ExportMarkdown)],
     ),
     row(
         Everywhere,
@@ -556,7 +553,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     row(
         Everywhere,
         "Zoom in",
-        &[on!(App, None, &["mod-="], document_view::ZoomIn).also(&[
+        &[on!(App, None, &["mod-="], document::ZoomIn).also(&[
             "mod-+",
             "mod-shift-=",
             "mod-shift-+",
@@ -565,17 +562,17 @@ pub static SHORTCUTS: &[Shortcut] = &[
     row(
         Everywhere,
         "Zoom out",
-        &[on!(App, None, &["mod--"], document_view::ZoomOut)],
+        &[on!(App, None, &["mod--"], document::ZoomOut)],
     ),
     row(
         Everywhere,
         "Actual size",
-        &[on!(App, None, &["mod-0"], document_view::ZoomReset)],
+        &[on!(App, None, &["mod-0"], document::ZoomReset)],
     ),
     row(
         Everywhere,
         "Side by side",
-        &[on!(App, None, &["mod-\\"], document_view::ToggleCompare)],
+        &[on!(App, None, &["mod-\\"], document::ToggleCompare)],
     ),
     row(
         Everywhere,
@@ -596,12 +593,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     row(
         Everywhere,
         "Copy Markdown",
-        &[on!(
-            App,
-            None,
-            &["mod-shift-m"],
-            document_view::CopyMarkdown
-        )],
+        &[on!(App, None, &["mod-shift-m"], document::CopyMarkdown)],
     ),
     row(
         Everywhere,
@@ -1218,7 +1210,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
             App,
             Some("PdfView"),
             &["alt-down"],
-            crate::comment_rail::NextComment
+            crate::document::comment_rail::NextComment
         )],
     ),
     row(
@@ -1228,7 +1220,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
             App,
             Some("PdfView"),
             &["alt-up"],
-            crate::comment_rail::PreviousComment
+            crate::document::comment_rail::PreviousComment
         )],
     ),
     row(

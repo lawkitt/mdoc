@@ -1,14 +1,14 @@
 use super::*;
 use crate::{
     bind_app_keys,
-    document_view::{
+    document::markdown_search,
+    document::preview::RetryPreview,
+    document::search_session::FindMarkdown,
+    document::{
         DocumentView, ExportMarkdown, OcrState, Save, TogglePreview, ZoomIn, ZoomReset,
         bind_markdown_search_keys,
     },
-    markdown_search,
-    pii::ui::{PiiApplyAll, Pseudonymize},
-    preview::RetryPreview,
-    search_session::FindMarkdown,
+    review::{PiiApplyAll, Pseudonymize},
     ui,
     ui::style::{self, Theme},
     workspace::{

@@ -111,7 +111,7 @@ fn shortcuts_work_right_after_share_move_to_new_project(cx: &mut TestAppContext)
     cx.update(|_, cx| crate::bind_app_keys(cx));
     let view = active(&tabs, cx);
     view.update_in(cx, |view, window, cx| {
-        view.inspector = crate::document_view::Inspector::Share;
+        view.inspector = crate::document::Inspector::Share;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }
@@ -150,7 +150,7 @@ fn share_move_to_new_project<'a>(
     cx.update(|window, _| window.activate_window());
     let view = active(&tabs, cx);
     view.update_in(cx, |view, window, cx| {
-        view.inspector = crate::document_view::Inspector::Share;
+        view.inspector = crate::document::Inspector::Share;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }
@@ -169,7 +169,10 @@ fn share_move_to_new_project<'a>(
 fn name_field(
     tabs: &Entity<Workspace>,
     cx: &mut VisualTestContext,
-) -> Option<(String, Entity<crate::markdown_search::SearchInput>)> {
+) -> Option<(
+    String,
+    Entity<crate::document::markdown_search::SearchInput>,
+)> {
     cx.update(|_, cx| tabs.read(cx).project_ui.renaming.clone())
 }
 
@@ -818,7 +821,7 @@ fn clipboard_names_and_project_categories_follow_the_tab(cx: &mut TestAppContext
             Some("Call PERSON_1 at ORG_1 today.")
         );
         // Aliases only: a normal copy.
-        assert!(!crate::restored_clipboard::is_restored(
+        assert!(!crate::review::restored_clipboard::is_restored(
             &cx.read_from_clipboard().unwrap()
         ));
         assert!((view.read(cx).clipboard_notice.text().unwrap()).contains("Replaced 2 names"));
@@ -894,7 +897,7 @@ fn restore_clipboard_and_the_copy_keys_work_from_the_document(cx: &mut TestAppCo
     );
     let restored = |cx: &mut VisualTestContext| {
         cx.update(|_, cx| {
-            crate::restored_clipboard::is_restored(&cx.read_from_clipboard().unwrap())
+            crate::review::restored_clipboard::is_restored(&cx.read_from_clipboard().unwrap())
         })
     };
     assert!(restored(cx));
@@ -942,7 +945,7 @@ fn restore_clipboard_and_the_copy_keys_work_from_the_document(cx: &mut TestAppCo
 /// edit, a copy or its × clears it sooner.
 #[gpui::test]
 fn the_clipboard_notice_times_out_or_clears_on_the_next_action(cx: &mut TestAppContext) {
-    use crate::pii::ui::restore::CLIPBOARD_NOTICE_TIMEOUT;
+    use crate::review::restore::CLIPBOARD_NOTICE_TIMEOUT;
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let view = active(&tabs, cx);
@@ -985,7 +988,7 @@ fn the_clipboard_notice_times_out_or_clears_on_the_next_action(cx: &mut TestAppC
     // So does a copy, which replaces the clipboard the notice describes.
     pseudonymize(cx);
     view.update_in(cx, |view, window, cx| {
-        view.copy_markdown(&crate::document_view::CopyMarkdown, window, cx)
+        view.copy_markdown(&crate::document::CopyMarkdown, window, cx)
     });
     gone(cx);
 
@@ -1003,7 +1006,7 @@ fn the_clipboard_notice_times_out_or_clears_on_the_next_action(cx: &mut TestAppC
 /// Open the replacements panel of `view` and draw it.
 fn show_panel(view: &Entity<DocumentView>, cx: &mut VisualTestContext) {
     view.update_in(cx, |view, window, cx| {
-        view.inspector = crate::document_view::Inspector::Review;
+        view.inspector = crate::document::Inspector::Review;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }

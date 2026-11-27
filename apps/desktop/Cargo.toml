@@ -55,7 +55,7 @@ tempfile = "3"
 url = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 unicode-segmentation = "1"
-# The import card's password field wipes what was typed (src/markdown_search.rs).
+# The import card's password field wipes what was typed (src/document/markdown_search.rs).
 zeroize = "1"
 # The recovery key's QR in Settings › Vault, drawn as quads; no image
 # encoders (approved for #1091 Decision 22).

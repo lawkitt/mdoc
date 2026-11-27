@@ -14,7 +14,7 @@ use super::{
     shortcuts_ui::ShowShortcuts,
 };
 use crate::{
-    markdown_search::{SearchInput, SearchInputEvent},
+    document::markdown_search::{SearchInput, SearchInputEvent},
     ui,
 };
 use gpui::{AnyElement, Context, Entity, FocusHandle, Focusable, Window, div, prelude::*, px};

@@ -9,7 +9,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     let preview = mdoc_import::docx_preview::render_in_process(
         &mdoc_import::docx_preview::read_source(&source).map_err(|e| e.to_string())?,
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        crate::preview::read_comment_marks,
+        crate::document::preview::read_comment_marks,
         Default::default(),
         None,
     )

@@ -2,7 +2,7 @@
 //! Inspector's Notes tab empty and filled, the Reply page's Promote, and the
 //! promoted document with its "From AI reply".
 use super::{Driver, Result};
-use crate::document_view::{DocumentView, Inspector};
+use crate::document::{DocumentView, Inspector};
 use gpui::Entity;
 
 /// The fixture document's Notes tab, empty, then with notes; Review again

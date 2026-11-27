@@ -846,7 +846,7 @@ fn the_document_waits_out_the_reveal_slide_and_redraws_after(cx: &mut TestAppCon
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
     collapse(&tabs, cx);
-    let renders = || crate::document_view::RENDERS.with(|renders| renders.get());
+    let renders = || crate::document::RENDERS.with(|renders| renders.get());
     // A frame as GPUI draws one, without `refresh`, which skips every cache.
     let frame = |cx: &mut VisualTestContext| {
         cx.update(|window, cx| window.draw(cx).clear(cx));

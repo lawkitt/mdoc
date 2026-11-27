@@ -15,7 +15,7 @@ fn render(options: RenderOptions) -> Result<(PathBuf, docx_preview::DocxPreview)
     let preview = docx_preview::render_in_process(
         &docx_preview::read_source(&source).map_err(|e| e.to_string())?,
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        crate::preview::read_comment_marks,
+        crate::document::preview::read_comment_marks,
         options,
         None,
     )
@@ -25,8 +25,8 @@ fn render(options: RenderOptions) -> Result<(PathBuf, docx_preview::DocxPreview)
 
 fn rail(
     d: &mut Driver,
-    view: &Entity<crate::document_view::DocumentView>,
-) -> Result<Entity<crate::comment_rail::CommentRail>> {
+    view: &Entity<crate::document::DocumentView>,
+) -> Result<Entity<crate::document::comment_rail::CommentRail>> {
     d.change(|_, _, cx| {
         view.read(cx)
             .preview

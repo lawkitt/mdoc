@@ -1,7 +1,7 @@
 //! Restore in place: the Share panel's AI reply box, the Reply
 //! view, and the reply saved to the Vault.
 use super::*;
-use crate::pii::ui::CompareMode;
+use crate::review::CompareMode;
 use mdoc_pii::{Category, restore::ExportedIdentity};
 
 /// Open the Inspector's Share tab and draw it, so the reply box exists.
@@ -10,7 +10,7 @@ fn open_share(view: &Entity<DocumentView>, cx: &mut VisualTestContext) {
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }
-        view.inspector = crate::document_view::Inspector::Share;
+        view.inspector = crate::document::Inspector::Share;
         cx.notify();
     });
     draw(cx);
@@ -140,7 +140,7 @@ fn captured_replies_restore_completely_in_the_reply_view(cx: &mut TestAppContext
 fn the_reply_box_restores_at_once_and_open_reply_shows_it_saved(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
-    cx.update(|_, cx| crate::pii::ui::bind_keys(cx));
+    cx.update(|_, cx| crate::review::bind_keys(cx));
     let source = active(&tabs, cx);
     open_share(&source, cx);
     cx.update(|window, cx| window.focus(&source.read(cx).replacements_focus(), cx));
@@ -258,11 +258,11 @@ fn the_reply_box_restores_at_once_and_open_reply_shows_it_saved(cx: &mut TestApp
         let item = cx.read_from_clipboard().unwrap();
         assert_eq!(item.text().unwrap(), restored);
         // Restored text is concealed and transient, in the Reply view too.
-        assert!(crate::restored_clipboard::is_restored(&item));
+        assert!(crate::review::restored_clipboard::is_restored(&item));
         let compare = source.read(cx).compare.as_ref().unwrap();
         assert_eq!(
             compare.reply_editor().read(cx).copy_metadata(),
-            Some(crate::restored_clipboard::TAG)
+            Some(crate::review::restored_clipboard::TAG)
         );
     });
 
@@ -534,7 +534,7 @@ fn the_reply_box_is_one_tab_stop(cx: &mut TestAppContext) {
 fn typing_in_the_reply_box_stays_out_of_the_replacements_list(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
-    cx.update(|_, cx| crate::pii::ui::bind_keys(cx));
+    cx.update(|_, cx| crate::review::bind_keys(cx));
     let view = active(&tabs, cx);
     open_share(&view, cx);
     let state = |cx: &mut VisualTestContext| {

@@ -132,7 +132,7 @@ fn move_menus(d: &mut Driver, project: &str) -> Result<()> {
     let share = |d: &mut Driver, name: &str| -> Result<()> {
         d.change(|_, window, cx| {
             view.update(cx, |view, cx| {
-                view.inspector = crate::document_view::Inspector::Share;
+                view.inspector = crate::document::Inspector::Share;
                 if !view.replacements_open() {
                     view.toggle_replacements_panel(window, cx);
                 }

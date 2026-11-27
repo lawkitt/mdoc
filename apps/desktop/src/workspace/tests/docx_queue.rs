@@ -60,7 +60,7 @@ fn a_closed_tab_s_docx_job_ending_frees_the_worker(cx: &mut TestAppContext) {
         view.update(cx, |view, cx| {
             let docx = cx
                 .background_executor()
-                .spawn(async { crate::document_view::Background::Docx { generation: 4 } });
+                .spawn(async { crate::document::Background::Docx { generation: 4 } });
             view.keep_background(docx);
         });
         tabs.remove(id, window, cx);
@@ -129,7 +129,7 @@ fn a_docx_source_notes_its_approximate_preview_without_a_notice(cx: &mut TestApp
         assert_eq!(pdf.display_name(), Some("Source · comments.docx"));
         assert_eq!(
             pdf.source_note().map(|note| note.as_ref()),
-            Some(crate::preview::DOCX_NOTE)
+            Some(crate::document::preview::DOCX_NOTE)
         );
     });
     assert!(cx.debug_bounds("header-notices").is_none());

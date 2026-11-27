@@ -35,7 +35,7 @@ Local changes:
   `CanIncludeInClipboardHistory` (DWORD 0) and `CanUploadToCloudClipboard`
   (DWORD 0), so Win+V history, cloud clipboard sync and clipboard monitors
   skip it. Every other copy is unchanged. mdoc tags restored text with it
-  (`src/restored_clipboard.rs`; recognition grill 2026-11-01, round 3).
+  (`src/review/restored_clipboard.rs`; recognition grill 2026-11-01, round 3).
 
 Only the save dialog title and concealed clipboard text run in the normal product application. The
 headless app entry point and runner also require debug assertions and the

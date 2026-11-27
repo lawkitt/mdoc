@@ -276,7 +276,7 @@ fn closing_a_tab_saves_the_reply_in_its_box(cx: &mut TestAppContext) {
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }
-        view.inspector = crate::document_view::Inspector::Share;
+        view.inspector = crate::document::Inspector::Share;
         cx.notify();
     });
     draw(cx);
@@ -305,7 +305,7 @@ fn a_reply_deleted_from_its_page_is_not_saved_again_by_its_box(cx: &mut TestAppC
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let view = active(&tabs, cx);
     view.update_in(cx, |view, window, cx| {
-        view.inspector = crate::document_view::Inspector::Share;
+        view.inspector = crate::document::Inspector::Share;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }
@@ -422,7 +422,7 @@ fn a_reply_page_shows_its_reply_edited_in_the_box(cx: &mut TestAppContext) {
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let view = active(&tabs, cx);
     view.update_in(cx, |view, window, cx| {
-        view.inspector = crate::document_view::Inspector::Share;
+        view.inspector = crate::document::Inspector::Share;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }

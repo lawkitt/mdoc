@@ -3,7 +3,7 @@
 //! never leave for an AI; a saved reply's page makes a new document of it,
 //! opens it and keeps the reply.
 use super::*;
-use crate::{document_view::Inspector, workspace::PasteAiResponse};
+use crate::{document::Inspector, workspace::PasteAiResponse};
 use mdoc_pii::Category::{Organization, Person};
 use mdoc_store::document_id::VaultId;
 

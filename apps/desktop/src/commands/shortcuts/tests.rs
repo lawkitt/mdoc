@@ -310,10 +310,7 @@ fn the_palette_and_hints_read_keys_from_the_table() {
         ("Ctrl+Shift+C", "Ctrl+Shift+M")
     };
     assert_eq!(label(&pii::CopyForAi).as_deref(), Some(for_ai));
-    assert_eq!(
-        label(&document_view::CopyMarkdown).as_deref(),
-        Some(markdown)
-    );
+    assert_eq!(label(&document::CopyMarkdown).as_deref(), Some(markdown));
     // Restore Clipboard has none.
     assert_eq!(label(&workspace::RestoreClipboard), None);
     // A tooltip names its key, or only its label when there is none.

@@ -404,7 +404,7 @@ impl ShelfView {
     pub(crate) fn run_step(
         &mut self,
         index: usize,
-        step: crate::refusal::Step,
+        step: crate::review::refusal::Step,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -583,7 +583,7 @@ impl ShelfView {
                 ClipboardRow::Restore => {
                     let restored = shelf::restore_clipboard(&text, names);
                     if restored.text != text {
-                        cx.write_to_clipboard(crate::restored_clipboard::item(
+                        cx.write_to_clipboard(crate::review::restored_clipboard::item(
                             restored.text.clone(),
                         ));
                     }

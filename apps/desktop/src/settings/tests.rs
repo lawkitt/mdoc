@@ -643,7 +643,7 @@ fn update_choices_save_immediately_and_an_update_offers_its_release(cx: &mut Tes
 fn numbers_commit_on_enter_and_blur_and_reject_invalid_values(cx: &mut TestAppContext) {
     cx.update(bind_keys);
     cx.update(ui::bind_keys);
-    cx.update(crate::markdown_search::bind_keys);
+    cx.update(crate::document::markdown_search::bind_keys);
     let shared = Store::in_memory();
     let (panel, cx) = cx
         .add_window_view(|_, cx| Panel::new(shared.clone(), Rc::new(Cell::new(Theme::Light)), cx));

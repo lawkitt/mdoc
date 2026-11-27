@@ -21,7 +21,7 @@ use super::{
     autosave::Write,
     document_writer::Target,
 };
-use crate::{document_view::DocumentView, shelf::ShelfDocument};
+use crate::{document::DocumentView, shelf::ShelfDocument};
 use gpui::{App, Context, Window};
 use mdoc_pii::{Review, restore::RestoreMap};
 use mdoc_store::document_id::{DocumentId, VaultId};

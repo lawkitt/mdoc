@@ -1,6 +1,6 @@
 //! Home, the document's first open, Back/Forward and the tab menu.
 use super::{Driver, Result};
-use crate::document_view::DocumentView;
+use crate::document::DocumentView;
 use gpui::{Entity, px};
 use std::path::Path;
 

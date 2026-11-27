@@ -580,7 +580,7 @@ fn a_closed_tab_s_import_ending_starts_the_conversion_waiting_for_it(cx: &mut Te
         view.update(cx, |view, cx| {
             let import = cx.background_executor().spawn(async move {
                 drop(permit);
-                crate::document_view::Background::Import
+                crate::document::Background::Import
             });
             view.keep_background(import);
         });
@@ -719,7 +719,7 @@ fn a_locked_docx_asks_for_its_password_and_imports_unlocked(cx: &mut TestAppCont
         let view = view.read(cx);
         assert_eq!(
             view.import.password_prompt(),
-            Some(crate::document_view::PasswordPrompt::Asking)
+            Some(crate::document::PasswordPrompt::Asking)
         );
         assert!(view.lifecycle.source_only() && view.error.is_none());
         assert!(!tabs.read(cx).import_busy.load(Ordering::Relaxed));
@@ -730,7 +730,7 @@ fn a_locked_docx_asks_for_its_password_and_imports_unlocked(cx: &mut TestAppCont
     cx.update(|_, cx| {
         assert_eq!(
             view.read(cx).preview.password(),
-            Some(crate::preview::OriginalPassword::Asking)
+            Some(crate::document::preview::OriginalPassword::Asking)
         )
     });
     assert!(cx.debug_bounds("original-password-card").is_none());
@@ -750,7 +750,7 @@ fn a_locked_docx_asks_for_its_password_and_imports_unlocked(cx: &mut TestAppCont
     cx.update(|_, cx| {
         assert_eq!(
             view.read(cx).import.password_prompt(),
-            Some(crate::document_view::PasswordPrompt::Wrong)
+            Some(crate::document::PasswordPrompt::Wrong)
         );
         assert_eq!(
             field.read(cx).value(),
@@ -954,7 +954,7 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
         // The Original asks again.
         assert_eq!(
             view.preview.password(),
-            Some(crate::preview::OriginalPassword::Asking)
+            Some(crate::document::preview::OriginalPassword::Asking)
         );
         assert!(view.preview.pdf().is_none());
     });
@@ -975,7 +975,7 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
         let view = view.read(cx);
         assert_eq!(
             view.preview.password(),
-            Some(crate::preview::OriginalPassword::Wrong)
+            Some(crate::document::preview::OriginalPassword::Wrong)
         );
         assert!(view.import.unlock().is_none());
         assert_eq!(
@@ -1083,7 +1083,7 @@ fn a_locked_pdf_asks_for_its_password_and_opens_its_original_in_memory(cx: &mut 
     }
     assert_eq!(
         cx.update(|_, cx| view.read(cx).import.password_prompt()),
-        Some(crate::document_view::PasswordPrompt::Asking)
+        Some(crate::document::PasswordPrompt::Asking)
     );
     let unlock = |password: &str, cx: &mut gpui::VisualTestContext| {
         draw(cx);
@@ -1101,7 +1101,7 @@ fn a_locked_pdf_asks_for_its_password_and_opens_its_original_in_memory(cx: &mut 
         let view = view.read(cx);
         assert_eq!(
             view.import.password_prompt(),
-            Some(crate::document_view::PasswordPrompt::Wrong)
+            Some(crate::document::PasswordPrompt::Wrong)
         );
         assert!(view.import.unlock().is_none());
     });
@@ -1203,7 +1203,7 @@ fn a_reopened_locked_pdf_s_original_asks_for_its_password(cx: &mut TestAppContex
     draw(cx);
     assert_eq!(
         cx.update(|_, cx| view.read(cx).preview.password()),
-        Some(crate::preview::OriginalPassword::Asking)
+        Some(crate::document::preview::OriginalPassword::Asking)
     );
     assert!(cx.debug_bounds("original-password-card").is_some());
     let unlock = |password: &str, cx: &mut gpui::VisualTestContext| {
@@ -1218,7 +1218,7 @@ fn a_reopened_locked_pdf_s_original_asks_for_its_password(cx: &mut TestAppContex
         let view = view.read(cx);
         assert_eq!(
             view.preview.password(),
-            Some(crate::preview::OriginalPassword::Wrong)
+            Some(crate::document::preview::OriginalPassword::Wrong)
         );
         assert!(view.import.unlock().is_none());
     });
@@ -1493,7 +1493,7 @@ fn a_restored_locked_pdf_tab_asks_again_on_its_original(cx: &mut TestAppContext)
         assert!(view.import.unlock().is_none(), "no password");
         assert_eq!(
             view.preview.password(),
-            Some(crate::preview::OriginalPassword::Asking)
+            Some(crate::document::preview::OriginalPassword::Asking)
         );
     });
     let field = cx.update(|_, cx| view.read(cx).original_password_field.clone());

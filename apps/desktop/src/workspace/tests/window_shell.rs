@@ -39,7 +39,7 @@ fn copy_for_ai_before_a_scan_offers_find_names(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         assert_eq!(
             view.read(cx).copy_step(cx),
-            Some(crate::refusal::Step::FindNames)
+            Some(crate::review::refusal::Step::FindNames)
         );
     });
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("kept".into()));
@@ -51,7 +51,7 @@ fn copy_for_ai_before_a_scan_offers_find_names(cx: &mut TestAppContext) {
             Some("kept")
         );
         let refusal = view.read(cx).copy_refusal.clone().expect("refused");
-        assert_eq!(refusal.step, Some(crate::refusal::Step::FindNames));
+        assert_eq!(refusal.step, Some(crate::review::refusal::Step::FindNames));
     });
 }
 
@@ -188,7 +188,7 @@ fn plus_keys_zoom_in_like_the_zoom_button(cx: &mut TestAppContext) {
         cx.run_until_parked();
         let next = cx.update(|_, cx| view.read(cx).zoom);
         assert!(
-            (next - zoom - crate::document_view::ZOOM_STEP).abs() < 1e-4,
+            (next - zoom - crate::document::ZOOM_STEP).abs() < 1e-4,
             "{keys}: {zoom} -> {next}"
         );
         zoom = next;
@@ -442,7 +442,7 @@ fn preview_find_composes_japanese(cx: &mut TestAppContext) {
     let mut field = None;
     let (pdf, cx) = cx.add_window_view(|_, cx| {
         let mut pdf = PdfView::new(path, Rc::new(Default::default), Rc::new(|| 1.), cx);
-        field = Some(crate::preview::attach_search_field(&mut pdf, cx));
+        field = Some(crate::document::preview::attach_search_field(&mut pdf, cx));
         pdf
     });
     let field = field.unwrap();
@@ -1281,7 +1281,7 @@ fn ai_reply_round_trip_saves_the_reply_and_shows_it_restored(cx: &mut TestAppCon
     cx.update(|_, cx| {
         let item = cx.read_from_clipboard().unwrap();
         assert_eq!(item.text().unwrap(), restored);
-        assert!(crate::restored_clipboard::is_restored(&item));
+        assert!(crate::review::restored_clipboard::is_restored(&item));
     });
     // Next unrecognized walks the unknown token.
     click_toolbar(cx, "reply-page-next");
@@ -1665,7 +1665,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let plain_view = active(&tabs, cx);
     plain_view.update_in(cx, |view, window, cx| {
-        view.inspector = crate::document_view::Inspector::Review;
+        view.inspector = crate::document::Inspector::Review;
         if !view.replacements_open() {
             view.toggle_replacements_panel(window, cx);
         }
@@ -1723,7 +1723,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
                 "applied_panel" => view.apply_all_pii(&PiiApplyAll, window, cx),
                 _ => view.toggle_compare(window, cx),
             }
-            view.inspector = crate::document_view::Inspector::Review;
+            view.inspector = crate::document::Inspector::Review;
             if !view.replacements_open() {
                 view.toggle_replacements_panel(window, cx);
             }
@@ -1760,7 +1760,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
             }
             assert_eq!(view.compare.is_some(), phase == "before_after");
             assert!(
-                view.inspector != crate::document_view::Inspector::Share,
+                view.inspector != crate::document::Inspector::Share,
                 "measure the Review tab, not the post-Apply Share tab"
             );
         });
@@ -1819,7 +1819,7 @@ fn expand_and_collapse_all_identities(cx: &mut TestAppContext) {
             view.toggle_replacements_panel(window, cx);
         }
         // Apply all leaves the inspector on Share; the list is on Review.
-        view.inspector = crate::document_view::Inspector::Review;
+        view.inspector = crate::document::Inspector::Review;
         cx.notify();
     });
     cx.run_until_parked();
@@ -2035,7 +2035,7 @@ fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContex
     hover(cx, "Pseudonymize");
     shown(
         cx,
-        tip("Find names to replace", &crate::pii::ui::Pseudonymize),
+        tip("Find names to replace", &crate::review::Pseudonymize),
     );
 }
 

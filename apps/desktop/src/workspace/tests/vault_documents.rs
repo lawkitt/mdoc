@@ -279,7 +279,7 @@ fn save_writes_at_once(cx: &mut TestAppContext) {
     let (_tabs, cx) = boot_on(cx, dir.path(), session);
     cx.update(|_, cx| crate::bind_app_keys(cx));
     cx.simulate_input("Now ");
-    cx.dispatch_action(crate::document_view::Save);
+    cx.dispatch_action(crate::document::Save);
     cx.run_until_parked();
     let id = documents(dir.path())[0].id.clone();
     assert!(
@@ -310,7 +310,7 @@ fn a_review_comes_back_after_a_restart_and_its_mapping_asks_nothing(cx: &mut Tes
         view.pii.set_reviewing(true);
         view.review_changed(cx);
         view.toggle_replacements_panel(window, cx);
-        view.apply_all_pii(&crate::pii::ui::PiiApplyAll, window, cx);
+        view.apply_all_pii(&crate::review::PiiApplyAll, window, cx);
     });
     wait(cx, 1000);
     let text = view.read_with(cx, |view, cx| view.editor.read(cx).text().to_string());
@@ -540,7 +540,7 @@ fn open_existing_leaves_the_last_folder_where_the_import_was(cx: &mut TestAppCon
     assert_eq!(documents(dir.path()).len(), 1);
     cx.dispatch_action(New);
     cx.run_until_parked();
-    cx.dispatch_action(crate::document_view::ExportMarkdown);
+    cx.dispatch_action(crate::document::ExportMarkdown);
     cx.run_until_parked();
     let mut start = None;
     cx.simulate_new_path_selection(|directory| {

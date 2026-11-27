@@ -5,9 +5,9 @@
 //! (`workspace::tests::exits`).
 use super::*;
 use crate::{
-    document_view::Inspector,
-    pii::ui::CopyForAi,
-    refusal::{Refusal, Step},
+    document::Inspector,
+    review::CopyForAi,
+    review::refusal::{Refusal, Step},
     shelf::{Readiness, ShelfKey},
 };
 use mdoc_pii::{Category::Person, restore::ExportedIdentity};
@@ -292,7 +292,7 @@ fn a_kept_name_offers_review(cx: &mut TestAppContext) {
     let (shown, expected) = kept(cx);
     assert_eq!(shown, Some(expected));
     view.update_in(cx, |view, window, cx| {
-        view.close_pii_popup(&crate::pii::ui::PiiClosePopup, window, cx)
+        view.close_pii_popup(&crate::review::PiiClosePopup, window, cx)
     });
     show_share(&view, cx);
     click_toolbar(cx, "share-copy-for-ai");

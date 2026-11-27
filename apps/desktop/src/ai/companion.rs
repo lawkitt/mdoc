@@ -505,7 +505,7 @@ impl CompanionView {
     fn open_row(
         &mut self,
         index: usize,
-        step: Option<crate::refusal::Step>,
+        step: Option<crate::review::refusal::Step>,
         cx: &mut Context<Self>,
     ) {
         let Some(document) = self.rows.read(cx).documents().get(index) else {
@@ -533,7 +533,7 @@ impl CompanionView {
         let Some(text) = text else {
             return;
         };
-        cx.write_to_clipboard(crate::restored_clipboard::item(text));
+        cx.write_to_clipboard(crate::review::restored_clipboard::item(text));
         self.copied = Some(cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(COPIED_FOR).await;
             let _ = this.update(cx, |this, cx| {

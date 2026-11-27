@@ -616,7 +616,7 @@ mod contrast_tests {
                 marks.push((name.as_str(), *color, page));
             }
             // Applied aliases in the editor sit on their own blue tint, at
-            // rest (16%) and active (34%), as `pii::ui` paints them.
+            // rest (16%) and active (34%), as `review` paints them.
             let tint = |a: f32| {
                 over(
                     Hsla {

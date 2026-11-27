@@ -488,7 +488,7 @@ fn parsed(preview: &DocxPreview) -> Arc<gpui_pdf::Document> {
     gpui_pdf::parse(gpui_pdf::PdfData::from(Arc::new(preview.pdf.clone()))).unwrap()
 }
 
-/// The app's comment-mark reader (`preview::read_comment_marks`), for the
+/// The app's comment-mark reader (`document::preview::read_comment_marks`), for the
 /// renders in process.
 fn marks(pdf: &SharedBytes) -> Result<Vec<LinkMark>, String> {
     let doc = gpui_pdf::parse(gpui_pdf::PdfData::from(Arc::new(pdf.clone())))

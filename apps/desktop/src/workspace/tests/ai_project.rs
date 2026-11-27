@@ -312,7 +312,7 @@ fn stop_sharing_clears_the_share(cx: &mut TestAppContext) {
 /// as Pseudonymize scans, and nothing is replaced by itself.
 #[gpui::test]
 fn a_document_entering_the_ai_project_is_scanned_not_replaced(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx) = boot_fixture(cx, &fixture);
     set_preview(&tabs, cx, true);
@@ -440,7 +440,7 @@ fn a_document_entering_the_ai_project_is_scanned_not_replaced(cx: &mut TestAppCo
         tabs.share_with_ai(&fixture.estate.clone(), cx)
     });
     assert!(scanning(cx, elsewhere));
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// Done when: the Project page lists AI activity, reads and deliveries,
@@ -670,7 +670,7 @@ pub(super) fn review_open(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) 
         let view = tabs.read(cx).active_view();
         view.is_some_and(|view| {
             let view = view.read(cx);
-            view.replacements_open() && view.inspector == crate::document_view::Inspector::Review
+            view.replacements_open() && view.inspector == crate::document::Inspector::Review
         })
     })
 }
@@ -736,7 +736,7 @@ fn a_delivered_reply_notifies_and_its_click_opens_the_reply_page(cx: &mut TestAp
 /// review, from the badge as from the notification.
 #[gpui::test]
 fn a_delivered_document_opens_for_review(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, notes) = shared_lease(cx, &fixture);
     let (_, document) = deliver(&tabs, cx, &fixture, Kind::Document);
@@ -770,7 +770,7 @@ fn a_delivered_document_opens_for_review(cx: &mut TestAppContext) {
         Some(document.as_str())
     );
     assert!(review_open(&tabs, cx), "it opens for review once loaded");
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// Done when: a request for a document that needs review notifies by its
@@ -778,7 +778,7 @@ fn a_delivered_document_opens_for_review(cx: &mut TestAppContext) {
 /// nothing opens by itself.
 #[gpui::test]
 fn a_review_request_notifies_once_and_opens_the_review(cx: &mut TestAppContext) {
-    crate::document_view::DocumentView::hold_scans(true);
+    crate::document::DocumentView::hold_scans(true);
     let fixture = fixture();
     let (tabs, cx, notes) = shared_lease(cx, &fixture);
     cx.update(|_, cx| {
@@ -846,7 +846,7 @@ fn a_review_request_notifies_once_and_opens_the_review(cx: &mut TestAppContext) 
     wait(cx, 300);
     assert_eq!(notes.borrow().len(), 2);
     assert!(cx.debug_bounds("ai-badge").is_none());
-    crate::document_view::DocumentView::hold_scans(false);
+    crate::document::DocumentView::hold_scans(false);
 }
 
 /// Done when: with "Open deliveries when they arrive" on, a delivery opens

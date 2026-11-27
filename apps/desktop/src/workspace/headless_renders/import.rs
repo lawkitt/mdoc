@@ -15,7 +15,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
             v.lifecycle.show_source();
             v.preview.show_failure(
                 source,
-                crate::preview::docx_message(&mdoc_import::docx_preview::PreviewError::Package(
+                crate::document::preview::docx_message(&mdoc_import::docx_preview::PreviewError::Package(
                     "invalid ZIP".into(),
                 ))
                 .to_string(),
@@ -48,7 +48,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
             v.lifecycle.show_source();
             v.import.show_ocr_fixture(v.session.generation);
             v.resume_import(window, cx);
-            v.ocr_state = crate::document_view::OcrState::Missing;
+            v.ocr_state = crate::document::OcrState::Missing;
             cx.notify();
         });
     })?;
@@ -105,7 +105,7 @@ fn locked_original(d: &mut Driver) -> Result<()> {
     let preview = mdoc_import::docx_preview::render_in_process(
         &imported.source,
         Arc::new(AtomicBool::new(false)),
-        crate::preview::read_comment_marks,
+        crate::document::preview::read_comment_marks,
         Default::default(),
         None,
     )
@@ -117,7 +117,7 @@ fn locked_original(d: &mut Driver) -> Result<()> {
         w.new_tab(window, cx);
         w.active_view().unwrap().update(cx, |v, cx| {
             v.proceed(
-                crate::document_view::Next::Import(Box::new(imported)),
+                crate::document::Next::Import(Box::new(imported)),
                 window,
                 cx,
             );
@@ -168,7 +168,7 @@ fn comments_note(d: &mut Driver) -> Result<()> {
     let Err(failure) = mdoc_import::docx_preview::render_in_process(
         &imported.source,
         Arc::new(AtomicBool::new(false)),
-        crate::preview::read_comment_marks,
+        crate::document::preview::read_comment_marks,
         Default::default(),
         None,
     ) else {
@@ -181,12 +181,14 @@ fn comments_note(d: &mut Driver) -> Result<()> {
         w.new_tab(window, cx);
         w.active_view().unwrap().update(cx, |v, cx| {
             v.proceed(
-                crate::document_view::Next::Import(Box::new(imported)),
+                crate::document::Next::Import(Box::new(imported)),
                 window,
                 cx,
             );
-            v.preview
-                .show_failure(source, crate::preview::docx_message(&failure).to_string());
+            v.preview.show_failure(
+                source,
+                crate::document::preview::docx_message(&failure).to_string(),
+            );
             cx.notify();
         });
     })?;
@@ -212,7 +214,7 @@ fn hidden_text_note(d: &mut Driver) -> Result<()> {
         w.new_tab(window, cx);
         w.active_view().unwrap().update(cx, |v, cx| {
             v.proceed(
-                crate::document_view::Next::Import(Box::new(imported)),
+                crate::document::Next::Import(Box::new(imported)),
                 window,
                 cx,
             );
@@ -267,7 +269,7 @@ fn photo(d: &mut Driver) -> Result<()> {
             w.active_view().unwrap().update(cx, |v, cx| {
                 v.preview.set_split(0.5);
                 v.proceed(
-                    crate::document_view::Next::Import(Box::new(imported)),
+                    crate::document::Next::Import(Box::new(imported)),
                     window,
                     cx,
                 );
@@ -315,7 +317,7 @@ fn fax(d: &mut Driver) -> Result<()> {
         view.update(cx, |v, cx| {
             v.preview.set_split(0.5);
             v.proceed(
-                crate::document_view::Next::Import(Box::new(imported)),
+                crate::document::Next::Import(Box::new(imported)),
                 window,
                 cx,
             );
@@ -370,7 +372,7 @@ fn heic(d: &mut Driver) -> Result<()> {
         w.active_view().unwrap().update(cx, |v, cx| {
             v.preview.set_split(0.5);
             v.proceed(
-                crate::document_view::Next::Import(Box::new(imported)),
+                crate::document::Next::Import(Box::new(imported)),
                 window,
                 cx,
             );

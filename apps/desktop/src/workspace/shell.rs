@@ -5,11 +5,11 @@ use super::home;
 use super::{Tab, Workspace};
 use crate::{
     commands::shortcuts,
-    document_view::{
+    document::markdown_search::{SearchInput, SearchInputEvent},
+    document::{
         CopyMarkdown, DocumentView, ExportMarkdown, OpenSourceReply, Save, ShowNotes, ToggleCompare,
     },
-    markdown_search::{SearchInput, SearchInputEvent},
-    pii::ui::{CopyForAi, Pseudonymize},
+    review::{CopyForAi, Pseudonymize},
     ui,
     ui::style::{self, Theme},
     workspace::{

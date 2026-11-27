@@ -73,7 +73,7 @@ Local changes, marked `mdoc patch`:
   `org.nspasteboard.ConcealedType` and `org.nspasteboard.TransientType`
   (nspasteboard.org), so clipboard managers skip it.
   Every other copy is unchanged. mdoc tags restored text with it
-  (`src/restored_clipboard.rs`; recognition grill 2026-11-01, round 3).
+  (`src/review/restored_clipboard.rs`; recognition grill 2026-11-01, round 3).
 - `presence.rs`'s `set_dock_visible` calls AppKit directly, not GPUI
   0.3.12's `App::set_activation_policy`: GPUI treats an Accessory app as
   headless (`graphical_environment` is then `None`), which mdoc's hidden
