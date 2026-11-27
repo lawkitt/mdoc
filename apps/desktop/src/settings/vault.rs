@@ -3,7 +3,7 @@
 //! the documents. The window reads the key only when Show is clicked; the
 //! panel holds it in memory while the page shows and wipes it when the
 //! page goes. mdoc never writes it to a file, a log or the clipboard.
-use super::{Event, Panel};
+use super::{Event, Panel, text};
 use crate::ui::style::{self, Theme};
 use gpui::{AnyElement, Context, Hsla, div, prelude::*, px};
 use zeroize::Zeroizing;
@@ -69,7 +69,7 @@ impl Panel {
         let muted = p.header_muted;
         let shown = self.recovery.shown.as_ref();
         let button = if shown.is_some() {
-            self.scrolled_quiet("recovery-key-hide", "Hide", theme, true, cx)
+            self.scrolled_quiet("recovery-key-hide", text::HIDE, theme, true, cx)
                 .when(cfg!(test), |v| {
                     v.debug_selector(|| "recovery-key-hide".into())
                 })
@@ -78,18 +78,21 @@ impl Panel {
                     cx.notify();
                 }))
         } else {
-            self.scrolled_control("recovery-key-show", "Show Recovery Key", theme, true, cx)
-                .when(cfg!(test), |v| {
-                    v.debug_selector(|| "recovery-key-show".into())
-                })
-                .on_click(cx.listener(|_, _, _, cx| cx.emit(Event::ShowRecoveryKey)))
+            self.scrolled_control(
+                "recovery-key-show",
+                text::SHOW_RECOVERY_KEY,
+                theme,
+                true,
+                cx,
+            )
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "recovery-key-show".into())
+            })
+            .on_click(cx.listener(|_, _, _, cx| cx.emit(Event::ShowRecoveryKey)))
         };
         let mut section = div().flex().flex_col().child(self.setting_row(
-            "Recovery key",
-            "Opens your documents if this computer's key is lost, for example after \
-             reinstalling the system or on a new computer. Write it down or scan the QR code, \
-             and keep it somewhere safe: anyone with it and a copy of your documents can read \
-             them.",
+            text::RECOVERY_KEY,
+            text::RECOVERY_KEY_DESCRIPTION,
             button,
             theme,
         ));
@@ -117,10 +120,13 @@ impl Panel {
             );
         }
         section
-            .child(div().py_3().text_size(px(11.)).text_color(muted).child(
-                "mdoc never saves the recovery key. With it, a copy of the vault folder \
-                         opens on another computer: mdoc asks for the key there.",
-            ))
+            .child(
+                div()
+                    .py_3()
+                    .text_size(px(11.))
+                    .text_color(muted)
+                    .child(text::RECOVERY_KEY_NOTE),
+            )
             .into_any_element()
     }
 }
@@ -133,7 +139,7 @@ fn key_text(shown: &Shown, theme: Theme) -> AnyElement {
     div()
         .id("recovery-key-text")
         .role(gpui::Role::Label)
-        .aria_label("Recovery key")
+        .aria_label(text::RECOVERY_KEY)
         .flex()
         .flex_wrap()
         .gap_x_3()
@@ -156,7 +162,7 @@ fn qr(shown: &Shown) -> AnyElement {
     div()
         .id("recovery-key-qr")
         .role(gpui::Role::Image)
-        .aria_label("QR code of the recovery key")
+        .aria_label(text::RECOVERY_QR)
         .flex_shrink_0()
         .w(side)
         .h(side)
@@ -200,7 +206,7 @@ fn qr(shown: &Shown) -> AnyElement {
 fn shown(key: &[u8; 32]) -> Result<Shown, String> {
     let text = Zeroizing::new(mdoc_vault::recovery::format(key));
     let code = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::M)
-        .map_err(|e| format!("The QR code could not be made: {e}"))?;
+        .map_err(text::qr_failed)?;
     let width = code.width();
     let modules = Zeroizing::new(
         code.to_colors()

@@ -2,7 +2,7 @@
 //! edited by hand: add a typed wording, remove one. They are kept in the
 //! Vault under the OS-held key, never in `settings.json`, so the window
 //! loads and saves them; while the Vault is locked they wait too.
-use super::{Event, Panel};
+use super::{Event, Panel, text};
 use crate::{document::markdown_search::SearchInput, ui, ui::style::Theme};
 use gpui::{AnyElement, Context, Entity, Focusable, actions, div, prelude::*, px};
 use mdoc_store::lists::Lists;
@@ -30,8 +30,8 @@ impl UserListsUi {
         };
         Self {
             lists: None,
-            always: input("Add a wording to always replace", cx),
-            never: input("Add a wording to never replace", cx),
+            always: input(text::ADD_ALWAYS_WORDING, cx),
+            never: input(text::ADD_NEVER_WORDING, cx),
         }
     }
 }
@@ -138,11 +138,13 @@ impl Panel {
             .py_3()
             .border_b_1()
             .border_color(p.border)
-            .child(div().text_size(px(13.)).child("Always and never replace"))
-            .child(div().text_size(px(11.)).text_color(p.header_muted).child(
-                "Scans in every document propose these wordings, or never do. A Project's own \
-                 lists, from what you keep and mark in it, come first.",
-            ));
+            .child(div().text_size(px(13.)).child(text::ALWAYS_AND_NEVER))
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(p.header_muted)
+                    .child(text::LISTS_DESCRIPTION),
+            );
         let Some(lists) = &self.user_lists.lists else {
             return section
                 .child(
@@ -155,12 +157,10 @@ impl Panel {
                                 .flex_1()
                                 .text_size(px(12.))
                                 .text_color(p.header_muted)
-                                .child(
-                                    "Your lists are kept with your documents, which are locked.",
-                                ),
+                                .child(text::LISTS_LOCKED),
                         )
                         .child(
-                            self.scrolled_quiet("user-lists-unlock", "Unlock…", theme, true, cx)
+                            self.scrolled_quiet("user-lists-unlock", text::UNLOCK, theme, true, cx)
                                 .when(cfg!(test), |v| {
                                     v.debug_selector(|| "user-lists-unlock".into())
                                 })
@@ -183,17 +183,19 @@ impl Panel {
                     .text_size(px(12.))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .child(if always {
-                        "Always replace"
+                        text::ALWAYS_REPLACE
                     } else {
-                        "Never replace"
+                        text::NEVER_REPLACE
                     }),
             );
             if entries.is_empty() {
-                column = column.child(div().text_size(px(12.)).text_color(p.header_muted).child(if always {
-                    "No wordings yet."
-                } else {
-                    "No wordings yet. Courts and public bodies are left as they are unless you add them to Always."
-                }));
+                column = column.child(div().text_size(px(12.)).text_color(p.header_muted).child(
+                    if always {
+                        text::NO_WORDINGS
+                    } else {
+                        text::NO_NEVER_WORDINGS
+                    },
+                ));
             }
             for (index, (wording, category)) in entries.into_iter().enumerate() {
                 let id = format!("user-{list}-remove-{index}");
@@ -220,12 +222,12 @@ impl Panel {
                         .child(
                             self.scrolled_quiet(
                                 gpui::SharedString::from(id.clone()),
-                                "Remove",
+                                text::REMOVE,
                                 theme,
                                 true,
                                 cx,
                             )
-                            .aria_label(format!("Remove “{wording}”"))
+                            .aria_label(text::remove_wording(&wording))
                             .when(cfg!(test), move |v| v.debug_selector(move || id.clone()))
                             .on_click(cx.listener(
                                 move |this, _, _, cx| {
@@ -263,15 +265,15 @@ impl Panel {
                         .child(
                             self.scrolled_quiet(
                                 gpui::SharedString::from(add_id.clone()),
-                                "Add",
+                                text::ADD,
                                 theme,
                                 true,
                                 cx,
                             )
                             .aria_label(if always {
-                                "Add to Always replace"
+                                text::ADD_TO_ALWAYS
                             } else {
-                                "Add to Never replace"
+                                text::ADD_TO_NEVER
                             })
                             .when(cfg!(test), move |v| {
                                 v.debug_selector(move || add_id.clone())

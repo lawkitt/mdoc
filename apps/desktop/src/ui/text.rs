@@ -76,14 +76,7 @@ mod tests {
 
     /// Owner folders (and root files) not checked for sentences yet. An owner
     /// item that gives its folder a `text.rs` deletes its line here.
-    const EXEMPT: &[&str] = &[
-        "commands",
-        "document",
-        "main",
-        "review",
-        "settings",
-        "workspace",
-    ];
+    const EXEMPT: &[&str] = &["commands", "document", "main", "review", "workspace"];
 
     /// Test-only files at the crate root, never checked.
     const TEST_FILES: &[&str] = &["exits.rs", "perf_tests.rs", "test_support.rs"];
