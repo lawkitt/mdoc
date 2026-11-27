@@ -48,7 +48,7 @@ pub(in crate::workspace) enum Write {
     /// The user-wide lists, as Settings last changed them.
     UserLists(mdoc_store::lists::Lists),
     /// A dropped folder's new Project, for the sheet that asked.
-    FolderProject(crate::workspace::projects::folder_sheet_ui::FolderProject),
+    FolderProject(crate::workspace::projects::folder_sheet::FolderProject),
     /// New Project: an empty Project, then its page.
     NewProject(crate::workspace::projects::new_project::NewProjectJob),
     /// The last job: every editor, the Projects and the session are
@@ -562,7 +562,7 @@ impl Workspace {
                 },
                 Job::Project(project) => {
                     match vault.update_project(&project.id, |stored| {
-                        crate::workspace::projects::projects_ui::keep_fields(stored, &project)
+                        crate::workspace::projects::keep_fields(stored, &project)
                     }) {
                         Ok(_) | Err(mdoc_vault::VaultError::NotFound { .. }) => Ok(Wrote::Project),
                         Err(error) => Err(Failed {
@@ -940,7 +940,7 @@ fn vault_save(
 fn write_captured(vault: &mdoc_vault::Vault, captured: &Captured) -> Result<(), String> {
     if let Some(project) = &captured.project {
         match vault.update_project(&project.id, |stored| {
-            crate::workspace::projects::projects_ui::keep_fields(stored, project)
+            crate::workspace::projects::keep_fields(stored, project)
         }) {
             Ok(_) | Err(mdoc_vault::VaultError::NotFound { .. }) => {}
             Err(error) => return Err(error.to_string()),
@@ -977,7 +977,7 @@ fn save_vault(vault: &mdoc_vault::Vault, id: &VaultId, save: &Save) -> Result<()
             }
             // In a Project its names are the Project's.
             if document.project.is_none() {
-                crate::workspace::projects::projects_ui::fold(
+                crate::workspace::projects::fold(
                     &mut document.mapping,
                     &save.names.identities,
                     &save.names.kept,

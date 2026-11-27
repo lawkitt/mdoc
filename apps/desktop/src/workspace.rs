@@ -44,7 +44,7 @@ mod notices;
 pub(crate) mod palette;
 mod projects;
 pub(crate) use projects::ProjectLink;
-pub(crate) use projects::projects_ui::{
+pub(crate) use projects::{
     AddProjectName, CancelProjectName, ClearProjectName, ConfirmProjectName,
     bind_keys as bind_project_keys,
 };
@@ -310,12 +310,12 @@ pub(super) struct Workspace {
     docx_queue: saving::docx_queue::DocxQueue,
     quit_flow: saving::quit_flow::QuitFlow,
     session_writer: saving::session_writer::SessionWriter<Session>,
-    project_ui: projects::projects_ui::ProjectsState,
+    project_ui: projects::ProjectsState,
     /// The Reply page, when it shows: view state only.
     reply_page: Option<replies::ReplyPage>,
     /// Dropped folders' sheets, one at a time.
     folder_sheets: projects::folder_sheet::FolderSheets,
-    folder_sheet_focus: Option<projects::folder_sheet_ui::SheetFocus>,
+    folder_sheet_focus: Option<projects::folder_sheet::SheetFocus>,
     /// New Project's name question, while it shows.
     new_project: Option<projects::new_project::NewProjectSheet>,
     new_project_group: gpui::FocusHandle,
