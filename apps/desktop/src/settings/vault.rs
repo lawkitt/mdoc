@@ -52,6 +52,12 @@ impl Panel {
         cx.notify();
     }
 
+    /// Hide: the key goes.
+    fn hide_recovery_key(&mut self, cx: &mut Context<Self>) {
+        self.recovery.forget();
+        cx.notify();
+    }
+
     /// Tests: the recovery key on show, as written.
     #[cfg(test)]
     pub(crate) fn recovery_key_shown(&self) -> Option<String> {
@@ -73,10 +79,7 @@ impl Panel {
                 .when(cfg!(test), |v| {
                     v.debug_selector(|| "recovery-key-hide".into())
                 })
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.recovery.forget();
-                    cx.notify();
-                }))
+                .on_click(cx.listener(|this, _, _, cx| this.hide_recovery_key(cx)))
         } else {
             self.scrolled_control(
                 "recovery-key-show",
