@@ -4,6 +4,14 @@
 //! Generic over the focus handle, so its
 //! rules run without a window; the workspace view renders it and carries out
 //! the returned effects (timers, focus).
+use crate::ui::{self, style, style::Theme};
+use crate::workspace::{
+    New, RAIL_WIDTH, RESIZE_GRIP, REVEAL_DELAY, REVEAL_GRACE, ToggleSidebar, Workspace,
+    activate_for_drop, shell,
+};
+use gpui::prelude::*;
+use gpui::{Animation, AnimationExt, AnyElement, App, Context, Window, div, px};
+use mdoc_import::import;
 
 pub(super) mod focus_regions;
 pub(super) mod navigation;
@@ -463,6 +471,689 @@ fn clamp_width(width: f32) -> f32 {
         width.clamp(MIN_WIDTH, MAX_WIDTH)
     } else {
         DEFAULT_WIDTH
+    }
+}
+
+/// A drag of the expanded sidebar's edge; the sidebar itself follows it.
+#[derive(Clone)]
+pub(in crate::workspace) struct SidebarResize;
+
+impl Render for SidebarResize {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        gpui::Empty
+    }
+}
+
+/// A tab name that fits by losing its middle, never its extension, so
+/// names with a shared start still differ. Drawn whole, so the
+/// slack a cut leaves falls after the extension rather than before it.
+pub(in crate::workspace) fn middle_truncated(name: &str) -> gpui::Div {
+    let name = gpui::SharedString::from(name.to_string());
+    div()
+        .w_full()
+        .relative()
+        .overflow_hidden()
+        // A line's height for the row; the canvas draws the name over it.
+        .child("\u{200b}")
+        .child(
+            gpui::canvas(
+                move |bounds, window, _| {
+                    let style = window.text_style();
+                    let size = style.font_size.to_pixels(window.rem_size());
+                    let shape = |text: gpui::SharedString, window: &mut Window| {
+                        let run = style.to_run(text.len());
+                        window.text_system().shape_line(text, size, &[run], None)
+                    };
+                    let (stem, extension) = split_extension(&name);
+                    let whole = shape(name.clone(), window);
+                    if whole.width() <= bounds.size.width {
+                        return whole;
+                    }
+                    let stem_line = shape(stem.to_string().into(), window);
+                    let tail = shape(format!("\u{2026}{extension}").into(), window);
+                    let room = (bounds.size.width - tail.width()) / px(1.);
+                    let (front, back) = middle_cut(
+                        stem,
+                        |index| stem_line.x_for_index(index) / px(1.),
+                        stem_line.width() / px(1.),
+                        room,
+                    );
+                    let cut = format!("{}\u{2026}{}{extension}", &stem[..front], &stem[back..]);
+                    shape(cut.into(), window)
+                },
+                |bounds, line, window, cx| {
+                    line.paint(
+                        bounds.origin,
+                        bounds.size.height,
+                        gpui::TextAlign::Left,
+                        None,
+                        window,
+                        cx,
+                    )
+                    .ok();
+                },
+            )
+            .absolute()
+            .inset_0(),
+        )
+}
+
+/// Where to cut `stem`, whose characters start at `x` and which is `width`
+/// wide, to fit `room`: its start gets up to two thirds, its end whatever
+/// the start left, at character boundaries. Returns the start's end and the
+/// end's start.
+pub(in crate::workspace) fn middle_cut(
+    stem: &str,
+    x: impl Fn(usize) -> f32,
+    width: f32,
+    room: f32,
+) -> (usize, usize) {
+    let room = room.max(0.);
+    let front = stem
+        .char_indices()
+        .map(|(index, _)| index)
+        .chain([stem.len()])
+        .take_while(|&index| x(index) <= room * 2. / 3.)
+        .last()
+        .unwrap_or(0);
+    let left = room - x(front);
+    let back = stem[front..]
+        .char_indices()
+        .map(|(index, _)| front + index)
+        .chain([stem.len()])
+        .find(|&index| width - x(index) <= left)
+        .unwrap_or(stem.len());
+    (front, back)
+}
+
+/// A name's stem and its extension with the dot: a short final part
+/// without spaces after a dot that does not start the name.
+pub(in crate::workspace) fn split_extension(name: &str) -> (&str, &str) {
+    match name.rfind('.') {
+        Some(dot)
+            if dot > 0
+                && dot + 1 < name.len()
+                && name.len() - dot <= 6
+                && !name[dot..].contains(char::is_whitespace) =>
+        {
+            name.split_at(dot)
+        }
+        _ => (name, ""),
+    }
+}
+
+/// A small mark on a sidebar tab for work done in it (OCR, pseudonymization).
+pub(in crate::workspace) fn tab_badge(icon: ui::Icon, color: gpui::Hsla) -> gpui::Svg {
+    gpui::svg()
+        .data(icon.data())
+        .size(px(12.))
+        .flex_shrink_0()
+        .text_color(color)
+}
+
+pub(in crate::workspace) fn sidebar_toggle(
+    focus: &gpui::FocusHandle,
+    expanded: bool,
+    theme: Theme,
+) -> ui::Control {
+    let label = if expanded {
+        "Collapse sidebar"
+    } else {
+        "Expand sidebar"
+    };
+    // Quiet, like every other rail and title-bar icon.
+    ui::header_icon_untipped("sidebar-toggle", label, ui::Icon::Sidebar, theme, false)
+        .tooltip(style::tooltip(
+            crate::commands::shortcuts::tip(label, &ToggleSidebar),
+            theme,
+        ))
+        .size(px(32.))
+        .track_focus(focus)
+        .when(cfg!(test), |v| v.debug_selector(|| "sidebar-toggle".into()))
+        .on_click(|_, window, cx| window.dispatch_action(Box::new(ToggleSidebar), cx))
+}
+
+/// Whether a file drag holds anything mdoc opens (by extension, or a folder).
+pub(in crate::workspace) fn openable_drag(paths: &gpui::ExternalPaths) -> bool {
+    paths.paths().iter().any(|path| import::droppable(path))
+}
+
+/// The sidebar takes only drags it can open; others fall through untouched.
+pub(in crate::workspace) fn can_drop_files(
+    drag: &dyn std::any::Any,
+    _: &mut Window,
+    _: &mut App,
+) -> bool {
+    drag.downcast_ref::<gpui::ExternalPaths>()
+        .is_none_or(openable_drag)
+}
+
+impl Workspace {
+    /// Track the pointer over the collapsed rail or its reveal.
+    pub(in crate::workspace) fn hover_sidebar(
+        &mut self,
+        panel: bool,
+        hovered: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let effect = self.sidebar.hover(panel, hovered);
+        self.carry_out_sidebar(effect, window, cx);
+    }
+
+    pub(in crate::workspace) fn carry_out_sidebar(
+        &mut self,
+        effect: Option<SidebarEffect>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match effect {
+            None => {}
+            Some(SidebarEffect::Repaint) => cx.notify(),
+            Some(SidebarEffect::EndSlide) => {
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(SLIDE + Duration::from_millis(16))
+                        .await;
+                    let _ = this.update(cx, |_, cx| cx.notify());
+                })
+                .detach();
+            }
+            Some(SidebarEffect::Schedule { open, ticket }) => {
+                let delay = if open { REVEAL_DELAY } else { REVEAL_GRACE };
+                cx.spawn_in(window, async move |this, cx| {
+                    cx.background_executor().timer(delay).await;
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        if !this.sidebar.fire(open, ticket) {
+                            return;
+                        }
+                        if open {
+                            this.show_reveal(false, cx);
+                        } else if this.reveal_held(window, cx) {
+                            let effect = this.sidebar.schedule(false);
+                            this.carry_out_sidebar(Some(effect), window, cx);
+                        } else {
+                            let focused = this.reveal_focus.contains_focused(window, cx);
+                            this.dismiss_reveal(window, cx);
+                            if focused {
+                                this.focus_active(window, cx);
+                            }
+                        }
+                    });
+                })
+                .detach();
+            }
+            Some(SidebarEffect::FinishHiding(generation)) => {
+                cx.spawn_in(window, async move |this, cx| {
+                    cx.background_executor().timer(REVEAL_SLIDE).await;
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        let effect = this.sidebar.finish_hiding(generation);
+                        this.carry_out_sidebar(effect, window, cx);
+                    });
+                })
+                .detach();
+                cx.notify();
+            }
+        }
+    }
+
+    /// A tab's or a Project's context menu is open. The sidebar then shows no
+    /// tooltips (#310): GPUI keeps a shown tooltip while the pointer rests
+    /// on it, draws it over the menu, and shows a new one when the pointer
+    /// slips off the menu onto a row. Rendering a control without its
+    /// tooltip is GPUI's one way to dismiss it.
+    pub(crate) fn context_menu_open(&self) -> bool {
+        self.document_menu.is_some() || self.project_ui.header_menu.is_some()
+    }
+
+    /// A context menu, drag, the pointer, or keyboard focus keeps the reveal open.
+    pub(in crate::workspace) fn reveal_held(&self, window: &Window, cx: &App) -> bool {
+        self.document_menu.is_some()
+            || cx.has_active_drag()
+            || self
+                .sidebar
+                .holds(|| self.reveal_focus.contains_focused(window, cx))
+    }
+
+    pub(in crate::workspace) fn show_reveal(&mut self, keyboard: bool, cx: &mut Context<Self>) {
+        self.sidebar.show(keyboard);
+        cx.notify();
+    }
+
+    /// A reveal slide that started ends after `REVEAL_SLIDE` with a repaint,
+    /// so the document beside it is drawn afresh, uncached.
+    pub(in crate::workspace) fn end_reveal_slide_later(&mut self, cx: &mut Context<Self>) {
+        let Some(generation) = self.sidebar.reveal_slide_to_schedule() else {
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(REVEAL_SLIDE).await;
+            let _ = this.update(cx, |this, cx| {
+                if this.sidebar.end_reveal_slide(generation) {
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Slide the reveal back; it unmounts once the animation has finished.
+    pub(in crate::workspace) fn dismiss_reveal(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let effect = self.sidebar.dismiss(cx.reduce_motion());
+        self.carry_out_sidebar(effect, window, cx);
+    }
+
+    /// Keyboard focus on a rail control reveals the full list at once and moves
+    /// focus to the matching control there; focus leaving the reveal closes it.
+    pub(in crate::workspace) fn reveal_for_keyboard(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.sidebar.visible() {
+            return;
+        }
+        let may_open = self
+            .sidebar
+            .keyboard_may_open(|focus| focus.is_focused(window));
+        let focused = [
+            (&self.rail_toggle_focus, &self.panel_toggle_focus),
+            (&self.rail_new_focus, &self.panel_new_focus),
+            (&self.rail_home_focus, &self.panel_home_focus),
+        ]
+        .into_iter()
+        .find(|(rail, _)| rail.is_focused(window))
+        .map(|(rail, panel)| (rail.clone(), panel.clone()));
+        match focused {
+            Some((rail, panel)) if may_open && window.last_input_was_keyboard() => {
+                self.sidebar.open_for_keyboard(rail);
+                cx.notify();
+                window.defer(cx, move |window, cx| window.focus(&panel, cx));
+            }
+            None if self.sidebar.keyboard_reveal() && !self.reveal_held(window, cx) => {
+                self.dismiss_reveal(window, cx);
+            }
+            _ => {}
+        }
+    }
+
+    pub(in crate::workspace) fn clear_file_drag(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let effect = self.sidebar.clear_drag();
+        self.carry_out_sidebar(effect, window, cx);
+        cx.notify();
+    }
+
+    /// Import OS files dropped on the tree or the rail into Unfiled.
+    pub(in crate::workspace) fn drop_files(
+        &mut self,
+        paths: &gpui::ExternalPaths,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.clear_file_drag(window, cx);
+        // A drop from Finder leaves mdoc in the background; what it opens
+        // (a dialog among them) needs the keyboard.
+        activate_for_drop(window, cx);
+        if !self.quit_flow.quitting() {
+            self.open_paths(paths.paths().to_vec(), window, cx);
+        }
+    }
+
+    /// OS files dropped on a Project header: they are imported into that
+    /// Project, and a folder among them offers Add to it.
+    pub(in crate::workspace) fn drop_on_project(
+        &mut self,
+        paths: &gpui::ExternalPaths,
+        project: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.clear_file_drag(window, cx);
+        activate_for_drop(window, cx);
+        if !self.quit_flow.quitting() {
+            let paths = paths.paths().to_vec();
+            self.open_paths_into(paths, Some(project.to_string()), window, cx);
+        }
+    }
+
+    pub(in crate::workspace) fn sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let expanded = self.sidebar.visible();
+        let revealed = !expanded && self.sidebar.reveal() != Reveal::Hidden;
+        let panel_width = self.sidebar.width();
+        let menu_open = self.context_menu_open();
+        let rows = self.tree_view(cx);
+        let sliding = self.sidebar.sliding(std::time::Instant::now()) && !cx.reduce_motion();
+        let collapsing = sliding && !expanded && !revealed;
+        let mut panel = (expanded || revealed || collapsing).then(|| {
+            div()
+                .id("sidebar-panel")
+                .w(px(panel_width - 1.))
+                .h_full()
+                .flex()
+                .flex_col()
+                .on_drag_move(cx.listener(
+                    |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, window, cx| {
+                        let over = event.bounds.contains(&event.event.position);
+                        let refused = over && !openable_drag(event.drag(cx));
+                        let effect = this.sidebar.drag_over_list(over, refused);
+                        this.carry_out_sidebar(effect, window, cx);
+                    },
+                ))
+                .can_drop(can_drop_files)
+                .on_drop(
+                    cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
+                        this.drop_files(paths, window, cx)
+                    }),
+                )
+                .child(
+                    self.sidebar_top(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(sidebar_toggle(&self.panel_toggle_focus, expanded, theme))
+                            .when(expanded || revealed, |v| {
+                                v.child(self.navigation_buttons(cx))
+                            })
+                            .into_any_element(),
+                    ),
+                )
+                .child(self.sidebar_nav(cx))
+                // Above the scrolling list, so it shows however long it is.
+                .when(self.sidebar.drop_refused(), |v| {
+                    v.child(
+                        div()
+                            .when(cfg!(test), |v| v.debug_selector(|| "drop-refused".into()))
+                            .px_4()
+                            .py_1()
+                            .text_color(style::markdown_style(theme).alert_caution)
+                            .child("These files can't be opened"),
+                    )
+                })
+                .child(
+                    div()
+                        .id("sidebar-tree")
+                        .role(gpui::Role::Tree)
+                        .aria_label("Projects and documents")
+                        .track_scroll(&self.sidebar_scroll)
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .px_2()
+                        .pb_1()
+                        .children(rows),
+                )
+                .child(self.sidebar_foot(cx))
+        });
+        let content = if expanded {
+            // Expanding: the list is revealed inside its final width, so the
+            // content beside it is laid out once, not on every frame.
+            let list = div().size_full().children(panel.take());
+            if sliding {
+                div()
+                    .size_full()
+                    .child(
+                        div()
+                            .h_full()
+                            .overflow_hidden()
+                            .child(div().w(px(panel_width)).h_full().child(list))
+                            .with_animation(
+                                ("sidebar-open", self.sidebar.generation()),
+                                Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
+                                move |v, delta| {
+                                    v.w(px(RAIL_WIDTH + (panel_width - RAIL_WIDTH) * delta))
+                                },
+                            ),
+                    )
+                    .into_any_element()
+            } else {
+                list.into_any_element()
+            }
+        } else {
+            div()
+                .w(px(RAIL_WIDTH - 1.))
+                .h_full()
+                .flex()
+                .flex_col()
+                // The rail starts below the title row, which holds the traffic
+                // lights, the expand toggle and the document header.
+                .child(ui::title_drag(
+                    div()
+                        .flex_shrink_0()
+                        .h(px(style::CARD_MARGIN + style::HEADER_HEIGHT)),
+                    self.title.armed.clone(),
+                ))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(px(2.))
+                        .pb_2()
+                        .flex_shrink_0()
+                        .child(
+                            ui::header_icon(
+                                "rail-search",
+                                "Search or run an action",
+                                ui::Icon::Search,
+                                theme,
+                                false,
+                            )
+                            .on_click(|_, window, cx| {
+                                window.dispatch_action(Box::new(shell::OpenPalette), cx)
+                            }),
+                        )
+                        .child(
+                            ui::header_icon(
+                                "rail-home",
+                                "Home",
+                                ui::Icon::Home,
+                                theme,
+                                self.showing_home(cx),
+                            )
+                            .track_focus(&self.rail_home_focus.clone().tab_stop(!revealed))
+                            .when(cfg!(test), |v| v.debug_selector(|| "rail-home".into()))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.show_home(window, cx)),
+                            ),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .flex_1()
+                        .min_h_0()
+                        .child(
+                            ui::header_icon_untipped(
+                                "sidebar-new-collapsed",
+                                "New document",
+                                ui::Icon::Plus,
+                                theme,
+                                false,
+                            )
+                            .when(!menu_open, |v| {
+                                v.tooltip(style::tooltip(
+                                    crate::commands::shortcuts::tip("New document", &New),
+                                    theme,
+                                ))
+                            })
+                            .track_focus(&self.rail_new_focus.clone().tab_stop(!revealed))
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "sidebar-new-collapsed".into())
+                            })
+                            .size(px(32.))
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(New), cx)),
+                        ),
+                )
+                .child(self.rail_foot(cx))
+                .into_any_element()
+        };
+        let width = |open: bool| if open { panel_width } else { RAIL_WIDTH };
+        let mut sidebar = div()
+            .id("sidebar")
+            .track_focus(self.focus_regions.sidebar())
+            .key_context("SidebarRegion")
+            .relative()
+            .w(px(width(expanded)))
+            .flex_shrink_0()
+            .h_full()
+            .text_size(px(13.))
+            // Keep the collapsed title controls in the sidebar's focus region
+            // and before its list in Tab order. Deferred painting leaves them
+            // above the adjacent content card without clipping to the rail.
+            .when(!expanded && !revealed, |v| {
+                v.child(gpui::deferred(
+                    div()
+                        .id("collapsed-title-controls")
+                        .tab_index(-1)
+                        .tab_group()
+                        .tab_stop(false)
+                        .absolute()
+                        .left(px(style::TRAFFIC_LIGHT_INSET))
+                        .top(px(style::CARD_MARGIN + (style::HEADER_HEIGHT - 32.) / 2.))
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(sidebar_toggle(&self.rail_toggle_focus, false, theme))
+                        .child(self.navigation_buttons(cx)),
+                ))
+            })
+            .child(div().size_full().overflow_hidden().child(content))
+            // The expanded sidebar's edge drags its width; the
+            // grip straddles the gap beside the content card.
+            .when(expanded && !sliding, |v| {
+                v.child(
+                    div()
+                        .id("sidebar-resize")
+                        .when(cfg!(test), |v| v.debug_selector(|| "sidebar-resize".into()))
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .right(px(-RESIZE_GRIP))
+                        .w(px(2. * RESIZE_GRIP))
+                        .cursor_col_resize()
+                        .on_drag(SidebarResize, |drag, _, _, cx| {
+                            cx.stop_propagation();
+                            cx.new(|_| drag.clone())
+                        }),
+                )
+                .on_drag_move(cx.listener(
+                    |this, event: &gpui::DragMoveEvent<SidebarResize>, _, cx| {
+                        if !this.sidebar.resizing() {
+                            this.sidebar.begin_resize();
+                        }
+                        let width = (event.event.position.x - event.bounds.left()) / px(1.);
+                        if this.sidebar.resize_to(width) {
+                            cx.notify();
+                        }
+                    },
+                ))
+            })
+            .when(!expanded, |v| {
+                v.on_hover(cx.listener(|this, hovered: &bool, window, cx| {
+                    this.hover_sidebar(false, *hovered, window, cx)
+                }))
+                .on_drag_move(cx.listener(
+                    |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, window, cx| {
+                        let over = event.bounds.contains(&event.event.position);
+                        let effect = this.sidebar.drag_over_rail(over);
+                        this.carry_out_sidebar(effect, window, cx);
+                    },
+                ))
+                .can_drop(can_drop_files)
+                .on_drop(cx.listener(
+                    |this, paths: &gpui::ExternalPaths, window, cx| {
+                        this.drop_files(paths, window, cx)
+                    },
+                ))
+            });
+        if revealed && let Some(panel) = panel.take() {
+            let (from, to) = if self.sidebar.reveal() == Reveal::Shown {
+                (RAIL_WIDTH, panel_width)
+            } else {
+                (panel_width, RAIL_WIDTH)
+            };
+            sidebar = sidebar.child(gpui::deferred(
+                div()
+                    .id("sidebar-reveal")
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .h_full()
+                    .w(px(to))
+                    .when(cfg!(test), |v| v.debug_selector(|| "sidebar-reveal".into()))
+                    .key_context("UiPanel UiMenu")
+                    .track_focus(&self.reveal_focus)
+                    // Ahead of the editor in tab order, as the rail it covers.
+                    .tab_index(-1)
+                    .tab_group()
+                    .tab_stop(false)
+                    .occlude()
+                    .overflow_hidden()
+                    .bg(theme.sidebar_bg())
+                    .rounded_r_lg()
+                    .shadow_lg()
+                    .on_hover(cx.listener(|this, hovered: &bool, window, cx| {
+                        this.hover_sidebar(true, *hovered, window, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+                        match this.sidebar.opener().cloned() {
+                            Some(focus) => {
+                                window.focus(&focus, cx);
+                                this.sidebar.escape_to(focus);
+                            }
+                            None => this.focus_active(window, cx),
+                        }
+                        this.dismiss_reveal(window, cx);
+                    }))
+                    .child(panel)
+                    .with_animation(
+                        ("sidebar-reveal", self.sidebar.reveal_generation()),
+                        Animation::new(REVEAL_SLIDE).with_easing(gpui::ease_out_quint()),
+                        move |v, delta| v.w(px(from + (to - from) * delta)),
+                    ),
+            ));
+        }
+        // Collapsing: the content already has its final width; the full list
+        // narrows over it to the rail, drawn above the card.
+        if collapsing && let Some(list) = panel.take() {
+            sidebar = sidebar.child(gpui::deferred(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .h_full()
+                    .overflow_hidden()
+                    .bg(theme.sidebar_bg())
+                    .child(div().w(px(panel_width)).h_full().child(list))
+                    .with_animation(
+                        ("sidebar-close", self.sidebar.generation()),
+                        Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
+                        move |v, delta| v.w(px(panel_width - (panel_width - RAIL_WIDTH) * delta)),
+                    ),
+            ));
+        }
+        sidebar.into_any_element()
+    }
+
+    /// The sidebar's edge drag ended: keep the width it left in settings.
+    pub(in crate::workspace) fn end_sidebar_resize(&mut self, cx: &mut Context<Self>) {
+        if let Some(width) = self.sidebar.end_resize() {
+            // Kept for this window when the save fails; the error is logged.
+            let _ = self.update_general(move |general| general.sidebar_width = Some(width), cx);
+        }
+        cx.notify();
     }
 }
 

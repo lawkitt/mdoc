@@ -4,9 +4,13 @@
 //! its bytes kept as its Source Original. A file the Vault already holds
 //! asks once, for every such file in the open, whether to open the existing
 //! document or import it again.
+use crate::document::OcrState;
+use crate::workspace::projects;
 use crate::workspace::{TabRecord, Workspace};
 use gpui::{Context, PromptLevel, Window};
+use mdoc_import::import;
 use mdoc_store::document_id::{DocumentId, VaultId};
+use mdoc_store::{document, session_store};
 use mdoc_vault::{DocumentOrigin, NewDocument, OriginalInfo, SourceKind};
 use std::path::{Path, PathBuf};
 
@@ -526,5 +530,231 @@ fn import_error(error: &mdoc_vault::VaultError) -> String {
             ..
         } => "Its Project no longer exists.".into(),
         error => error.to_string(),
+    }
+}
+
+impl Workspace {
+    #[cfg(test)]
+    pub fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_paths(vec![path], window, cx);
+    }
+
+    pub fn open_paths(&mut self, paths: Vec<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_paths_into(paths, None, window, cx);
+    }
+
+    /// Open what arrived while a confirm dialog was up, once it is answered.
+    pub(in crate::workspace) fn open_after_prompt(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.awaiting_prompt {
+            return;
+        }
+        self.awaiting_prompt = true;
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(100))
+                    .await;
+                let open = this.update_in(cx, |this, window, cx| {
+                    if this.dialog_up(window) {
+                        return false;
+                    }
+                    this.awaiting_prompt = false;
+                    for (paths, project) in std::mem::take(&mut this.pending_open) {
+                        this.open_paths_into(paths, project, window, cx);
+                    }
+                    true
+                });
+                if open.unwrap_or(true) {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Open paths. Plain files open at once; each folder among them shows
+    /// its sheet in turn, offering to add to `project` when it was dropped on
+    /// that Project's row.
+    pub(in crate::workspace) fn open_paths_into(
+        &mut self,
+        paths: Vec<PathBuf>,
+        project: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.ready {
+            self.pending_open.push((paths, project));
+            return;
+        }
+        if self.intake_refused(window, cx) {
+            return;
+        }
+        // Opening activates a tab and takes focus; a confirm dialog keeps it
+        // until answered, and the paths open after. Checked before
+        // quitting, so a cancelled quit still opens them.
+        if self.dialog_up(window) {
+            self.pending_open.push((paths, project));
+            self.open_after_prompt(window, cx);
+            return;
+        }
+        if !self.quit_flow.may_quit() {
+            return;
+        }
+        let requested = paths.clone();
+        let task = cx.background_executor().spawn(async move {
+            let supported = |path: &std::path::Path| {
+                !path.is_dir() && (document::is_markdown(path) || import::supported_source(path))
+            };
+            let mut files = Vec::new();
+            let mut folders = Vec::new();
+            for path in paths {
+                if let Some(folder) = projects::folder_sheet::DroppedFolder::read(&path, supported)
+                {
+                    folders.push(folder);
+                } else {
+                    let ok = supported(&path);
+                    files.push((session_store::identity(&path), ok));
+                }
+            }
+            (files, folders)
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let (paths, folders) = task.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                // A dialog that came up while the paths resolved keeps focus.
+                if this.dialog_up(window) {
+                    this.pending_open.push((requested, project));
+                    this.open_after_prompt(window, cx);
+                    return;
+                }
+                this.finish_open(paths, project.clone(), window, cx);
+                for folder in folders {
+                    let pending = projects::folder_sheet::Pending {
+                        folder,
+                        project: project.clone(),
+                    };
+                    this.queue_folder(pending, window, cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Open `paths`, supported or not, as Vault documents: Unfiled, or in
+    /// Project `project`. A file open already, unchanged, comes to the
+    /// front.
+    pub(in crate::workspace) fn finish_open(
+        &mut self,
+        paths: Vec<(PathBuf, bool)>,
+        project: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.quit_flow.may_quit() || self.vault.vault().is_none() {
+            return;
+        }
+        let (supported, unsupported): (Vec<_>, Vec<_>) =
+            paths.into_iter().partition(|(_, supported)| *supported);
+        self.post_unsupported(unsupported.into_iter().map(|(path, _)| path));
+        // Each is hashed first: a file open in a tab comes to the front only
+        // while its bytes are the ones that tab imported (`intake`).
+        let paths = supported.into_iter().map(|(path, _)| path).collect();
+        self.admit(paths, project, window, cx);
+        cx.notify();
+    }
+
+    /// Unsupported files are skipped, by name: the notice is no place for
+    /// the full path.
+    pub(in crate::workspace) fn post_unsupported(
+        &mut self,
+        paths: impl IntoIterator<Item = PathBuf>,
+    ) {
+        let names: Vec<_> = paths
+            .into_iter()
+            .map(|path| {
+                path.file_name()
+                    .unwrap_or(path.as_os_str())
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        if !names.is_empty() {
+            self.notices
+                .post(format!("Unsupported files skipped: {}", names.join(", ")));
+        }
+    }
+
+    /// Activate `first`, newly opened, and drop the placeholder tabs it
+    /// replaces.
+    pub(in crate::workspace) fn show_opened(
+        &mut self,
+        first: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        {
+            let disposable: Vec<_> = self
+                .tabs
+                .iter()
+                .filter(|tab| {
+                    tab.id() != first
+                        && tab.view().map_or(tab.record().blank_disposable, |view| {
+                            let view = view.read(cx);
+                            view.lifecycle.blank_disposable()
+                                && view.editor.read(cx).text().is_empty()
+                                && view.preview.source().is_none()
+                        })
+                })
+                .map(|tab| tab.id())
+                .collect();
+            self.activate(first, window, cx);
+            for id in disposable {
+                self.remove(id, window, cx);
+            }
+        }
+    }
+
+    pub fn refresh_import(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.resolving_close() || self.quit_flow.finishing() {
+            return;
+        }
+        for tab in &self.tabs {
+            if let Some(view) = tab.view() {
+                view.update(cx, |view, cx| {
+                    view.try_auto_convert(window, cx);
+                    cx.notify();
+                });
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn set_ocr(&mut self, state: OcrState, cx: &mut Context<Self>) {
+        self.ocr_state = state.clone();
+        for tab in &self.tabs {
+            if let Some(view) = tab.view() {
+                view.update(cx, |view, cx| {
+                    view.ocr_state = state.clone();
+                    cx.notify();
+                });
+            }
+        }
+        cx.notify();
+    }
+
+    /// Files opened from Finder or another app: a window hidden by the
+    /// menu bar item shows them.
+    pub(crate) fn open_paths_from_os(
+        &mut self,
+        paths: Vec<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        crate::shelf::menu_bar::reveal_if_hidden(window, cx);
+        self.open_paths(paths, window, cx);
     }
 }

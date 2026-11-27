@@ -3,6 +3,9 @@
 //! it. Generic over the focus handle, so the order rules run without a
 //! window; the workspace view says which region holds focus and carries out
 //! the returned effect.
+use crate::ui;
+use crate::workspace::{Workspace, sidebar, sidebar::Reveal};
+use gpui::{App, Context, Window};
 
 /// Where focus goes, for the workspace view to carry out.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,6 +140,211 @@ impl<H: Clone + PartialEq> FocusRegions<H> {
     #[cfg(test)]
     pub(in crate::workspace) fn forget(&mut self) {
         self.last.clear();
+    }
+}
+
+impl Workspace {
+    /// The window's F6 regions in order, each with whether it is a single
+    /// focus target (the editor) rather than a group of controls.
+    pub(in crate::workspace) fn regions(&self, cx: &App) -> Vec<(gpui::FocusHandle, bool)> {
+        let home = self.showing_overview(cx);
+        let document = self
+            .active_view()
+            .filter(|_| !home)
+            .map(|view| view.read(cx).focus_regions(cx))
+            .unwrap_or_default();
+        self.focus_regions.order(home, document)
+    }
+
+    /// F6 / Shift+F6: leave the focused region for the next one, landing on
+    /// the control last focused there, else its first control.
+    pub(crate) fn cycle_region(&mut self, backwards: bool, window: &mut Window, cx: &mut App) {
+        // Modal surfaces keep focus until closed.
+        if self.settings.read(cx).open
+            || self.project_ui.list_open
+            || self.project_ui.explainer
+            || self.folder_sheets.open()
+            || self.new_project.is_some()
+            || self.shell.palette.is_some()
+            || self.shell.shortcuts.is_some()
+        {
+            return;
+        }
+        let regions = self.regions(cx);
+        let current = self.note_region_focus(window, cx);
+        let effect = self
+            .focus_regions
+            .cycle(&regions, current, backwards, || self.sidebar_landing(cx));
+        match effect {
+            None => {}
+            Some(sidebar::focus_regions::FocusEffect::Focus(target)) => window.focus(&target, cx),
+            Some(sidebar::focus_regions::FocusEffect::Enter { region, last }) => {
+                if let Some(last) =
+                    last.filter(|focus| self.region_holds(&region, focus, window, cx))
+                {
+                    // The tree's one Tab stop follows the row it lands on,
+                    // so Tab leaves the tree from there.
+                    if region == *self.focus_regions.sidebar() {
+                        self.tree.set_cursor(None);
+                    }
+                    window.focus(&last, cx);
+                } else if region == *self.focus_regions.sidebar() && !self.sidebar.visible() {
+                    // The deferred title/reveal group precedes the sidebar
+                    // container in window Tab order. Enter its first control
+                    // explicitly, so Shift+Tab leaves from the region's edge.
+                    let toggle = if self.sidebar.reveal() == Reveal::Hidden {
+                        &self.rail_toggle_focus
+                    } else {
+                        &self.panel_toggle_focus
+                    };
+                    window.focus(toggle, cx);
+                } else {
+                    window.focus(&region, cx);
+                    ui::cycle(window, cx, Some(&region), false);
+                    if !region.contains_focused(window, cx) {
+                        window.focus(&region, cx);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Where F6 enters the sidebar, in the layout drawn now: on the collapsed
+    /// rail its Home row, which opens the reveal; in the expanded tree (or
+    /// the rail's open reveal) Home's row on Home, else the tree's selected
+    /// row.
+    pub(in crate::workspace) fn sidebar_landing(&self, cx: &mut App) -> Option<gpui::FocusHandle> {
+        let list = self.sidebar.visible() || self.sidebar.reveal() == Reveal::Shown;
+        if !list {
+            return Some(self.rail_home_focus.clone());
+        }
+        if self.showing_home(cx) {
+            return Some(self.panel_home_focus.clone());
+        }
+        self.tree_landing(cx)
+    }
+
+    /// The region holding focus. Comments sit inside the preview: the
+    /// innermost wins. The document's notices strip and view switcher count
+    /// as its toolbar.
+    pub(in crate::workspace) fn region_index(
+        &self,
+        regions: &[(gpui::FocusHandle, bool)],
+        window: &Window,
+        cx: &App,
+    ) -> Option<usize> {
+        regions
+            .iter()
+            .rposition(|(region, _)| region.contains_focused(window, cx))
+            .or_else(|| {
+                let view = self.active_view().filter(|_| !self.showing_overview(cx))?;
+                let view = view.read(cx);
+                view.toolbar_members()
+                    .iter()
+                    .any(|member| member.contains_focused(window, cx))
+                    .then(|| {
+                        regions
+                            .iter()
+                            .position(|(region, _)| *region == view.toolbar_region)
+                    })
+                    .flatten()
+            })
+    }
+
+    /// Whether `focus` sits in `region`, counting the document's toolbar
+    /// members as its toolbar.
+    pub(in crate::workspace) fn region_holds(
+        &self,
+        region: &gpui::FocusHandle,
+        focus: &gpui::FocusHandle,
+        window: &Window,
+        cx: &App,
+    ) -> bool {
+        region.contains(focus, window)
+            || self.active_view().is_some_and(|view| {
+                let view = view.read(cx);
+                view.toolbar_region == *region
+                    && view
+                        .toolbar_members()
+                        .iter()
+                        .any(|member| member.contains(focus, window))
+            })
+    }
+
+    /// Remember the focused control as its region's last; returns that
+    /// region's index. Comments sit inside the preview: the innermost wins.
+    pub(in crate::workspace) fn note_region_focus(
+        &mut self,
+        window: &Window,
+        cx: &App,
+    ) -> Option<usize> {
+        let regions = self.regions(cx);
+        let current = self.region_index(&regions, window, cx);
+        if let (Some(i), Some(focused)) = (current, window.focused(cx)) {
+            self.focus_regions.note(&regions[i].0, &focused);
+        }
+        current
+    }
+
+    /// Esc in the sidebar or toolbar: close the More menu or the notices
+    /// first, otherwise return to the editor.
+    pub(in crate::workspace) fn escape_to_editor(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.title.notices_open.get() {
+            self.title.notices_open.set(false);
+            cx.notify();
+            return;
+        }
+        // In the tree, Esc first clears Unfiled's selection.
+        if self.focus_regions.sidebar().contains_focused(window, cx)
+            && self.clear_tree_selection(cx)
+        {
+            return;
+        }
+        if let Some(view) = self.active_view().filter(|_| !self.showing_overview(cx))
+            && view.read(cx).more_open
+        {
+            view.update(cx, |view, cx| view.close_more(window, cx));
+            return;
+        }
+        self.note_region_focus(window, cx);
+        if !self.showing_overview(cx) {
+            self.focus_active(window, cx);
+        }
+    }
+
+    /// Tab / Shift+Tab outside the editor, menus and dialogs.
+    /// With no control focused on Home it enters Home's controls. Otherwise
+    /// focus follows window order, except that the editor, which is no Tab
+    /// stop, is entered rather than skipped: Tab past the toolbar's last
+    /// control, and Shift+Tab back from the region after it.
+    pub(in crate::workspace) fn tab_from_window(
+        &mut self,
+        backwards: bool,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let from = self.note_region_focus(window, cx);
+        if self.focus.is_focused(window) && self.showing_overview(cx) {
+            let home = self.focus_regions.home().clone();
+            window.focus(&home, cx);
+            ui::cycle(window, cx, Some(&home), backwards);
+            if home.contains_focused(window, cx) {
+                return;
+            }
+            window.focus(&self.focus, cx);
+        }
+        let regions = self.regions(cx);
+        ui::cycle(window, cx, None, backwards);
+        let to = self.region_index(&regions, window, cx);
+        if let Some(sidebar::focus_regions::FocusEffect::Focus(editor)) =
+            sidebar::focus_regions::FocusRegions::tab_into_editor(&regions, from, to, backwards)
+        {
+            window.focus(&editor, cx);
+        }
     }
 }
 

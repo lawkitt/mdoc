@@ -1,6 +1,10 @@
 //! The workspace's notices: one session message and the last run's
 //! crash report. They wait behind the header's bell with the Vault's
 //! banner, which the Vault state owns.
+use crate::ui::{self, style};
+use crate::workspace::{Workspace, notices};
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, Window, div, px};
 
 /// What the workspace view carries out for a notices transition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,6 +115,195 @@ impl Notices {
         };
         self.opening = opening;
         (shown, effect)
+    }
+}
+
+impl Workspace {
+    /// The launch-time update check, unless the user turned it off.
+    pub(crate) fn check_for_updates_at_launch(&self, cx: &mut Context<Self>) {
+        let updates = self
+            .preferences
+            .borrow()
+            .snapshot()
+            .unwrap_or_default()
+            .updates;
+        if updates.check_automatically {
+            crate::app::updater::spawn_check(updates.include_prereleases, true, cx);
+        }
+    }
+
+    /// "mdoc had a problem last time it ran", with the exact report before
+    /// anything leaves the Mac. Send and Copy also discard it.
+    pub(in crate::workspace) fn crash_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (report, open) = self
+            .notices
+            .crash()
+            .map(|(report, open)| (report.to_owned(), open))?;
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let accent = style::markdown_style(theme).alert_warning;
+        let done = |this: &mut Self, cx: &mut Context<Self>| {
+            if let Some(effect) = this.notices.finish_crash() {
+                this.carry_out_notices(effect);
+            }
+            cx.notify();
+        };
+        let action = |id: &'static str, label: &'static str| {
+            ui::control(id, label, theme, true)
+                .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
+                .text_size(px(12.))
+        };
+        let send_report = report.clone();
+        let copy_report = report.clone();
+        Some(
+            div()
+                .id("crash-bar")
+                .when(cfg!(test), |v| v.debug_selector(|| "crash-bar".into()))
+                .flex()
+                .flex_col()
+                .gap_1()
+                .px_3()
+                .py_1()
+                .text_size(px(12.))
+                .bg(gpui::Hsla { a: 0.07, ..accent })
+                .border_b_0()
+                .border_color(palette.border)
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .text_color(palette.header_fg)
+                                .child("mdoc had a problem last time it ran."),
+                        )
+                        .when(!open, |v| {
+                            v.child(action("crash-preview", "See what would be sent").on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    this.notices.preview_crash();
+                                    cx.notify();
+                                }),
+                            ))
+                        })
+                        .when(open, |v| {
+                            v.child(
+                                action("crash-send", "Send…")
+                                    .tooltip(style::tooltip(
+                                        "Opens a new GitHub issue with this report for you to check and submit."
+                                            .into(),
+                                        theme,
+                                    ))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.open_url(&crate::app::crash::issue_url(&send_report));
+                                        done(this, cx);
+                                    })),
+                            )
+                            .child(action("crash-copy", "Copy").on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                        copy_report.clone(),
+                                    ));
+                                    done(this, cx);
+                                },
+                            )))
+                        })
+                        .child(
+                            action("crash-dismiss", "Dismiss")
+                                .on_click(cx.listener(move |this, _, _, cx| done(this, cx))),
+                        ),
+                )
+                .when(open, |v| {
+                    v.child(
+                        div()
+                            .id("crash-report")
+                            .when(cfg!(test), |v| v.debug_selector(|| "crash-report".into()))
+                            .max_h(px(220.))
+                            .overflow_y_scroll()
+                            .p_2()
+                            .rounded_md()
+                            .bg(palette.bg)
+                            .border_1()
+                            .border_color(palette.border)
+                            .font_family("Menlo")
+                            .text_size(px(11.))
+                            .text_color(palette.header_muted)
+                            .child(report),
+                    )
+                })
+                .into_any_element(),
+        )
+    }
+
+    /// Restart now: the ordinary quit — unsaved-change prompts,
+    /// session save — swaps the staged update in, then mdoc relaunches.
+    pub(crate) fn restart_to_update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        crate::app::updater::request_restart(cx);
+        self.settings
+            .update(cx, |panel, cx| panel.close(window, cx));
+        self.quit(window, cx);
+        // Quitting can't start now (a prompt is open): don't relaunch later.
+        if self.quit_flow.may_quit() {
+            crate::app::updater::cancel_restart(cx);
+        }
+    }
+
+    /// Carry out what a notices transition asks for.
+    pub(in crate::workspace) fn carry_out_notices(&mut self, effect: notices::NoticesEffect) {
+        match effect {
+            notices::NoticesEffect::DiscardCrashReport => crate::app::crash::discard(),
+            notices::NoticesEffect::OpenBell => self.title.notices_open.set(true),
+            notices::NoticesEffect::CloseBell => self.title.notices_open.set(false),
+        }
+    }
+
+    pub(in crate::workspace) fn notice_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        self.notices.message().map(str::to_owned).map(|notice| {
+            let palette = self.theme.get().pdf_style();
+            let accent = style::markdown_style(self.theme.get()).alert_warning;
+            div()
+                .flex()
+                .flex_col()
+                .text_size(px(12.))
+                .bg(gpui::Hsla { a: 0.07, ..accent })
+                .border_b_0()
+                .border_color(palette.border)
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .py_1()
+                        .child(div().text_color(accent).child("ⓘ"))
+                        .child(div().flex_1().min_w_0().child(notice))
+                        .child(
+                            crate::ui::focus_ring("dismiss-session-notice", self.theme.get())
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "dismiss-session-notice".into())
+                                })
+                                .flex_shrink_0()
+                                .role(gpui::Role::Button)
+                                .aria_label("Dismiss notice")
+                                .key_context("UiControl")
+                                .tab_index(0)
+                                .aria_label("Dismiss notice")
+                                .px_2()
+                                .py_1()
+                                .rounded_md()
+                                .cursor_pointer()
+                                .hover(|v| v.bg(palette.placeholder_bg))
+                                .child("×")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.notices.dismiss();
+                                    cx.notify();
+                                })),
+                        ),
+                )
+                .into_any_element()
+        })
     }
 }
 

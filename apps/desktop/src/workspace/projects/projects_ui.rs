@@ -2103,3 +2103,26 @@ fn count_renumbered(text: &str, names: &[ExportedIdentity], aliases: &[Option<St
         .filter(|index| aliases[*index].is_some())
         .count()
 }
+
+impl Workspace {
+    /// A load of `document` ends, done or with its tab gone. When it is a
+    /// move's reload (its `generation`, not an older load's), and the last
+    /// of its job's reloads, the next job may read the view once it holds
+    /// the moved text.
+    pub(in crate::workspace) fn move_reload_ended(
+        &mut self,
+        document: &mdoc_store::document_id::VaultId,
+        generation: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.reloading.get(document) != Some(&generation) {
+            return;
+        }
+        self.reloading.remove(document);
+        self.moving.remove(document);
+        if self.reloading.is_empty() && std::mem::take(&mut self.reloads_hold_writer) {
+            cx.defer_in(window, |this, window, cx| this.advance_writer(window, cx));
+        }
+    }
+}

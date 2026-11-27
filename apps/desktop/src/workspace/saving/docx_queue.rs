@@ -2,6 +2,8 @@
 //! queue their jobs, one runs at a time, and cancelled jobs or jobs of
 //! closed tabs are skipped. The workspace view hands the next job to its
 //! document, which runs it and reports back.
+use crate::workspace::Workspace;
+use gpui::{Context, Window};
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -77,6 +79,33 @@ impl DocxQueue {
     #[cfg(test)]
     pub(in crate::workspace) fn occupy(&mut self, id: u64, generation: u64) {
         self.running = Some((id, generation));
+    }
+}
+
+impl Workspace {
+    pub(in crate::workspace) fn pump_docx(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let tabs = &self.tabs;
+        let effect = self
+            .docx_queue
+            .next(|id| tabs.get(id).is_some_and(|tab| tab.view().is_some()));
+        if let Some(DocxEffect::Run(job)) = effect
+            && let Some(view) = self.tabs.get(job.id).and_then(|tab| tab.view().cloned())
+        {
+            view.update(cx, |view, cx| {
+                view.run_docx(job.path, job.generation, job.cancel, window, cx)
+            });
+        }
+    }
+
+    pub(in crate::workspace) fn docx_finished(
+        &mut self,
+        id: u64,
+        generation: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.docx_queue.finished(id, generation);
+        self.pump_docx(window, cx);
     }
 }
 
