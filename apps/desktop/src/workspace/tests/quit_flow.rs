@@ -1,6 +1,7 @@
 //! Quitting: documents are written, then the session, then the window
 //! closes (`QuitFlow`).
 use super::*;
+use mdoc_store::settings;
 use std::cell::RefCell;
 
 #[gpui::test]

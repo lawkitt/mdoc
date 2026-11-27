@@ -228,7 +228,7 @@ fn the_strip_says_when_nothing_needs_review(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn the_palette_finds_documents_by_title_and_project_name(cx: &mut TestAppContext) {
-    cx.update(shell::bind_keys);
+    cx.update(crate::workspace::shell::bind_keys);
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(900.)));
@@ -455,7 +455,7 @@ fn the_strip_says_nothing_needs_review_beside_reply_cards(cx: &mut TestAppContex
 /// Moving through a long result list keeps the selected row in view.
 #[gpui::test]
 fn the_palette_scrolls_to_the_selected_row(cx: &mut TestAppContext) {
-    cx.update(shell::bind_keys);
+    cx.update(crate::workspace::shell::bind_keys);
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(900.)));
     let vault = vault(&tabs, cx);

@@ -1,6 +1,8 @@
 //! The Vault: opening a file it already holds, Home when there is no key
 //! store to keep documents with, and the recovery key: Settings › Vault,
 //! the first-Project nudge and the wrong-key screen.
+pub(super) mod cut_over;
+pub(super) mod old_cases;
 use super::{Driver, Result, Workspace};
 use std::path::{Path, PathBuf};
 

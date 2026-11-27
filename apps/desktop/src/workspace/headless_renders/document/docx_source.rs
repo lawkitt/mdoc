@@ -1,0 +1,26 @@
+//! The DOCX Source pane of the Russian demo: its ruble signs draw as ₽, not
+//! as empty boxes, where the substituted fonts lack them (#305).
+use crate::workspace::headless_renders::{Driver, Result};
+use std::{path::PathBuf, sync::Arc};
+
+pub(in crate::workspace::headless_renders) fn scenes(d: &mut Driver) -> Result<()> {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/product-media/Соглашение об урегулировании.docx");
+    let preview = mdoc_import::docx_preview::render_in_process(
+        &mdoc_import::docx_preview::read_source(&source).map_err(|e| e.to_string())?,
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        crate::document::preview::read_comment_marks,
+        Default::default(),
+        None,
+    )
+    .map_err(|e| e.to_string())?;
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        let view = w.active_view().unwrap();
+        view.update(cx, |v, cx| {
+            v.begin_preview(source.clone());
+            v.load_docx(source, preview, window, cx);
+        });
+    })?;
+    d.capture("docx-source")
+}

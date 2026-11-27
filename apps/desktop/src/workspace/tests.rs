@@ -22,7 +22,7 @@ use mdoc_import::{import_session, ocr, recognition};
 use mdoc_store::session_store::ThemeChoice;
 use mdoc_store::{
     session_store::{self, Session, TabRecord},
-    settings,
+    settings as store_settings,
 };
 use std::{
     path::PathBuf,
@@ -33,47 +33,24 @@ use std::{
     },
 };
 
-mod ai_ask;
-mod ai_connector_setting;
-mod ai_project;
-mod comment_rail;
-mod companion;
-mod companion_hotkey;
-mod decision_history;
-mod default_categories;
-mod document_notes;
-mod docx_queue;
-mod edited_text;
+mod ai;
+mod document;
 mod exits;
-mod export_project;
-mod focus_regions;
-mod folder_sheet;
-mod hand_copies;
 mod home;
-mod import_flow;
-mod menu_bar;
-mod move_into;
-mod navigation;
-mod new_project;
 mod notices;
 mod ordering;
-mod project_page;
+mod palette;
 mod projects;
 mod quit_flow;
-mod recovery_key;
 mod refusals;
-mod restore_in_place;
-mod saved_replies;
-mod session_writer;
+mod replies;
+mod review;
+mod saving;
+mod settings;
 mod shelf;
-mod shortcuts_sheet;
+mod shell;
 mod sidebar;
-mod tab_set;
-mod tray;
-mod user_lists;
-mod vault_documents;
-mod vault_tree;
-mod window_shell;
+mod vault;
 
 /// Boot with `session`; an empty session starts from an Untitled tab rather
 /// than Home, as most tests type into it. See [`boot_home`].
@@ -291,7 +268,7 @@ fn open_notes(
 /// Set up the real card with a synthetic running transfer: no model/network access.
 fn setup_download_card(
     cx: &mut TestAppContext,
-    model: settings::Model,
+    model: store_settings::Model,
 ) -> (
     Entity<Workspace>,
     &'static str,
@@ -303,7 +280,7 @@ fn setup_download_card(
     cx.simulate_resize(size(px(1100.), px(760.)));
     let view = active(&tabs, cx);
     let (primary, cancel) = match model {
-        settings::Model::Ocr(_) => {
+        store_settings::Model::Ocr(_) => {
             view.update(cx, |view, cx| {
                 view.lifecycle.set_source_only(true);
                 view.import.set_source(Some("scan.pdf".into()));
@@ -313,7 +290,7 @@ fn setup_download_card(
             });
             ("Download & recognize", "cancel-ocr-setup")
         }
-        settings::Model::Pii(_) => {
+        store_settings::Model::Pii(_) => {
             cx.simulate_input("Alice needs review");
             cx.dispatch_action(Pseudonymize);
             cx.run_until_parked();
@@ -325,7 +302,7 @@ fn setup_download_card(
     (tabs, primary, cancel, cx)
 }
 
-fn download_retains_card_focus(cx: &mut TestAppContext, model: settings::Model) {
+fn download_retains_card_focus(cx: &mut TestAppContext, model: store_settings::Model) {
     let (tabs, primary, cancel, cx) = setup_download_card(cx, model);
     // Mouse-down focuses Download without invoking its network-backed click.
     let position = cx.debug_bounds(primary).unwrap().center();
@@ -349,7 +326,7 @@ fn download_retains_card_focus(cx: &mut TestAppContext, model: settings::Model) 
     cx.update(|_, cx| assert!(panel.read(cx).cancelling()));
 }
 
-fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
+fn quit_during_setup_download(cx: &mut TestAppContext, model: store_settings::Model) {
     let (tabs, _, cancel, cx) = setup_download_card(cx, model);
     let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
     let setup_tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
@@ -409,7 +386,7 @@ fn open_scan(
 fn recognition(
     view: &Entity<DocumentView>,
     cx: &mut VisualTestContext,
-) -> (Vec<recognition::Language>, String, settings::OcrModel) {
+) -> (Vec<recognition::Language>, String, store_settings::OcrModel) {
     cx.update(|_, cx| {
         let view = view.read(cx);
         let choice = view.recognition_choice();

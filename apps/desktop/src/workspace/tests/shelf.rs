@@ -1,6 +1,8 @@
 //! The menu bar shelf's list and handoff: what it lists from the
 //! window's tabs and the Vault, and that nothing leaves it unless the
 //! Vault's outbound check finds it ready.
+pub(super) mod menu_bar;
+pub(super) mod tray;
 use super::*;
 use crate::shelf::{Readiness, ShelfExports, ShelfKey};
 use mdoc_pii::Category::{Organization, Person};

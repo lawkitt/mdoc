@@ -1,5 +1,6 @@
 //! Settings categories, categories to detect, the user-wide lists and the
 //! Spelling dictionary.
+pub(super) mod ai_connector;
 use super::{Driver, Result};
 use crate::settings::{Category, Status};
 

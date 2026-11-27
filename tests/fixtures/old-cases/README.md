@@ -7,6 +7,6 @@ case id.
 
 Builds with the Vault no longer open saved cases, and never touch the old
 cases folder (#1091 Decision 2). The headless runner
-(`src/workspace/headless_renders/old_cases.rs`) puts this file in its
+(`src/workspace/headless_renders/vault/old_cases.rs`) puts this file in its
 sandbox profile's old cases folder and fails if any code path changes it.
 Never regenerate it.

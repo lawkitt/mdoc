@@ -4,6 +4,8 @@
 //! the Project page's three segments and its ⋯ menu,
 //! the Project page with its rename, categories and lists, the Keychain
 //! explainer, and the delete question.
+pub(super) mod folder_sheet;
+pub(super) mod new_project;
 use super::{Driver, Result};
 use crate::workspace::projects::project_page::{Place, Segment};
 use mdoc_store::settings::AskWith;

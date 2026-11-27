@@ -1,6 +1,11 @@
 //! Projects across tabs: a move into a new or existing Project, out to
 //! Unfiled and back with Undo, members following each other, deleting a
 //! Project, and what the Vault and the session keep (`Projects`).
+pub(super) mod export_project;
+pub(super) mod folder_sheet;
+pub(super) mod move_into;
+pub(super) mod new_project;
+pub(super) mod project_page;
 use super::*;
 
 /// The document a tab shows, as the Vault stores it now.
