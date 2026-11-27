@@ -333,7 +333,12 @@ fn run_step(vault: &Vault, step: usize) -> Result<(), VaultError> {
             vault.create_document(new(Some(find_project("Alpha")), "Brief", "one"))?;
         }
         2 => {
-            vault.update_document(&find_document("Brief"), |d| d.markdown = "two".into())?;
+            // The title is in the summary, so the step writes the manifest
+            // in every run, not only when `updated` crosses a second.
+            vault.update_document(&find_document("Brief"), |d| {
+                d.title = "Brief v2".into();
+                d.markdown = "two".into();
+            })?;
         }
         3 => {
             vault.update_project(&find_project("Alpha"), |p| p.name = "Alpha LLP".into())?;
@@ -341,7 +346,7 @@ fn run_step(vault: &Vault, step: usize) -> Result<(), VaultError> {
         4 => {
             vault.create_document(new(None, "Notes", "three"))?;
         }
-        5 => vault.delete_document(&find_document("Brief"))?,
+        5 => vault.delete_document(&find_document("Brief v2"))?,
         _ => unreachable!(),
     }
     vault.flush()
@@ -405,12 +410,14 @@ fn a_crash_between_two_writes_loses_nothing() {
                             Err(other) => panic!("{other}"),
                         }
                     }
-                    assert!(
-                        matches!(
+                    // A crashed handle writes nothing more. Probed only after
+                    // a crash: in a run with none, the hook is still armed.
+                    if crashed.is_some() {
+                        assert!(matches!(
                             vault.create_project(NewProject::default()),
                             Err(VaultError::Crashed)
-                        ) || crashed.is_none()
-                    );
+                        ));
+                    }
                     crashed
                 }
             };
