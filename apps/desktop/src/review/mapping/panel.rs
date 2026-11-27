@@ -514,13 +514,20 @@ impl DocumentView {
                             )),
                         )
                         .child(
-                            ui::link_button("choose-pii-model", "Choose model…", theme, true)
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "choose-pii-model".into())
-                                })
-                                .on_click(cx.listener(|this, _, window, cx| {
+                            ui::link_button(
+                                "choose-pii-model",
+                                ui::text::CHOOSE_MODEL,
+                                theme,
+                                true,
+                            )
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "choose-pii-model".into())
+                            })
+                            .on_click(
+                                cx.listener(|this, _, window, cx| {
                                     this.show_pii_settings(window, cx)
-                                })),
+                                }),
+                            ),
                         ),
                 )
         };

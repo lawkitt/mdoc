@@ -80,9 +80,9 @@ pub fn project_color(hue: u32, theme: Theme) -> Hsla {
 
 pub fn theme_label(choice: ThemeChoice) -> &'static str {
     match choice {
-        ThemeChoice::System => "Theme: System",
-        ThemeChoice::Light => "Theme: Light",
-        ThemeChoice::Dark => "Theme: Dark",
+        ThemeChoice::System => super::text::THEME_SYSTEM,
+        ThemeChoice::Light => super::text::THEME_LIGHT,
+        ThemeChoice::Dark => super::text::THEME_DARK,
     }
 }
 
