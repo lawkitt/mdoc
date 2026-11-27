@@ -15,6 +15,7 @@
 //! it, and Replace all runs that tab's Replace all, opening the tab
 //! behind the others if need be; its save decides Ready, as any save
 //! does. Whatever else is left is decided in mdoc.
+use super::text;
 use crate::workspace::{
     Workspace,
     ai::project::{Arrived, Replace},
@@ -171,14 +172,14 @@ fn state(state: mdoc_connector::State) -> (bool, String) {
     use crate::shelf::Readiness as Row;
     use mdoc_connector::Readiness;
     match state {
-        mdoc_connector::State::Ready => (true, "Ready".into()),
+        mdoc_connector::State::Ready => (true, text::READY.into()),
         mdoc_connector::State::NeedsReview(readiness) => {
             let row = match readiness {
                 Readiness::NamesNotReplaced(n) => Row::NamesNotReplaced(n),
                 Readiness::ChangedSinceReview => Row::ChangedSinceReview,
                 Readiness::Ready | Readiness::NotReviewed => Row::NotReviewed,
             };
-            (false, format!("Needs review · {}", row.label()))
+            (false, text::needs_review(row.label()))
         }
     }
 }

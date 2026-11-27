@@ -17,6 +17,7 @@
 //! asked for: never a title, a restored name or document text. Its tag
 //! holds ids only. GPUI posts it (`App::show_system_notification`); tests
 //! and headless renders inject a [`Notifier`] that records instead.
+use super::text;
 use crate::ui;
 use crate::workspace::{Workspace, ai::project::Arrived};
 use gpui::{AnyElement, App, Context, SharedString, Window, div, prelude::*, px};
@@ -44,25 +45,18 @@ impl Note {
     /// request's AI label.
     pub(in crate::workspace) fn of(item: &Arrived, app: &str, label: &str) -> Self {
         // A product's name, never the client's own free text.
-        let app = crate::ai::connector::product_name(app).unwrap_or("An AI app");
+        let app = crate::ai::connector::product_name(app).unwrap_or(text::AN_AI_APP);
         let (title, body) = match item {
-            Arrived::Reply(_) => (
-                format!("{app} sent a reply"),
-                "Open it in mdoc to read it with the names restored.".to_string(),
-            ),
-            Arrived::Document(_) => (
-                format!("{app} sent a document"),
-                "Open it in mdoc to review it.".to_string(),
-            ),
+            Arrived::Reply(_) => (text::sent_a_reply(app), text::OPEN_TO_READ.to_string()),
+            Arrived::Document(_) => (text::sent_a_document(app), text::OPEN_TO_REVIEW.to_string()),
             Arrived::Review(_) => {
                 let label: String = (label.chars())
                     .map(|c| if c.is_control() { ' ' } else { c })
                     .take(LABEL_CHARS)
                     .collect();
                 (
-                    format!("{app} asked for \u{201c}{}\u{201d}", label.trim()),
-                    "It needs review before AI apps can read it. Open it in mdoc to review it."
-                        .to_string(),
+                    text::asked_for(app, label.trim()),
+                    text::NEEDS_REVIEW_FIRST.to_string(),
                 )
             }
         };
@@ -257,7 +251,7 @@ impl Workspace {
             Arrived::Reply(id) => {
                 self.ai.seen(Some(id), None);
                 if vault.reply(id).is_err() {
-                    self.notices.post("That AI reply was deleted.".to_string());
+                    self.notices.post(text::REPLY_DELETED.to_string());
                 } else {
                     self.open_reply(id, window, cx);
                 }
@@ -273,7 +267,7 @@ impl Workspace {
                         let tab = self.tabs.active();
                         self.review_if_asked(tab, window, cx);
                     }
-                    None => self.notices.post("That document was deleted.".to_string()),
+                    None => self.notices.post(text::DOCUMENT_DELETED.to_string()),
                 }
             }
         }
@@ -341,7 +335,7 @@ impl Workspace {
             ui::focus_ring("ai-badge", theme)
                 .when(cfg!(test), |v| v.debug_selector(|| "ai-badge".into()))
                 .role(gpui::Role::Button)
-                .aria_label(format!("{count} new from AI apps, open the newest"))
+                .aria_label(text::new_from_ai_apps(count))
                 .key_context("UiControl")
                 .tab_index(0)
                 .tab_stop(true)
@@ -355,7 +349,7 @@ impl Workspace {
                 .text_color(theme.badge_fg())
                 .text_size(px(10.))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
-                .child(format!("{count} new"))
+                .child(text::new_count(count))
                 .on_click(cx.listener(|this, _, window, cx| this.open_newest(window, cx)))
                 .into_any_element(),
         )

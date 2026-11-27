@@ -5,3 +5,4 @@ pub(super) mod companion;
 pub(super) mod deliveries;
 pub(super) mod project;
 pub(super) mod project_ui;
+mod text;

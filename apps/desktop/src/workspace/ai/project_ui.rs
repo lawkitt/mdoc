@@ -16,6 +16,7 @@
 //!
 //! The share lives in the connector, in memory only; nothing here writes
 //! the Vault.
+use super::text;
 use crate::workspace::{
     Workspace, ai::project::Asked, projects::project_page::Place, sidebar::navigation::Stop,
 };
@@ -264,9 +265,8 @@ impl Workspace {
         match self.ai.asked(app, &projects, std::time::Instant::now()) {
             Asked::Prompt => cx.notify(),
             Asked::NoProject(app) => {
-                self.notices.post(format!(
-                    "{} asked for documents. Make a Project to share it with AI apps.",
-                    crate::ai::connector::display_name(&app)
+                self.notices.post(text::asked_with_no_project(
+                    crate::ai::connector::display_name(&app),
                 ));
                 cx.notify();
             }
@@ -293,8 +293,7 @@ impl Workspace {
                 true
             }
             Err(error) => {
-                self.notices
-                    .post(format!("Could not share the Project with AI apps. {error}"));
+                self.notices.post(text::could_not_share(error));
                 false
             }
         };
@@ -418,7 +417,7 @@ impl Workspace {
             .id("ai-project")
             .when(cfg!(test), |v| v.debug_selector(|| "ai-project".into()))
             .role(gpui::Role::Group)
-            .aria_label("Shared with AI apps")
+            .aria_label(text::SHARED_WITH_AI_APPS)
             .flex()
             .flex_col()
             .gap(px(2.))
@@ -439,7 +438,7 @@ impl Workspace {
                             .text_size(px(10.))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(p.header_muted)
-                            .child("SHARED WITH AI APPS"),
+                            .child(text::SHARED_WITH_AI_APPS_HEADING),
                     )
                     .children(self.ai_badge(cx)),
             );
@@ -458,7 +457,7 @@ impl Workspace {
                                 .when(cfg!(test), |v| {
                                     v.debug_selector(|| "ai-project-open".into())
                                 })
-                                .aria_label(format!("Open {}", project.name))
+                                .aria_label(text::open_project(&project.name))
                                 .flex()
                                 .items_center()
                                 .gap_2()
@@ -471,7 +470,7 @@ impl Workspace {
                                 })),
                         )
                         .child(
-                            ui::link_button("ai-stop-sharing", "Stop sharing", theme, true)
+                            ui::link_button("ai-stop-sharing", text::STOP_SHARING, theme, true)
                                 .when(cfg!(test), |v| {
                                     v.debug_selector(|| "ai-stop-sharing".into())
                                 })
@@ -489,7 +488,7 @@ impl Workspace {
                     .pb_1()
                     .text_size(px(12.))
                     .text_color(p.header_muted)
-                    .child("No Project shared"),
+                    .child(text::NO_PROJECT_SHARED),
             ),
         };
         Some(card.into_any_element())
@@ -504,14 +503,14 @@ impl Workspace {
             .ai_shared()
             .and_then(|id| self.projects.project(&id).cloned());
         let label = match &shared {
-            Some(project) => format!("Shared with AI apps: {}", project.name),
-            None => "No Project shared with AI apps".to_string(),
+            Some(project) => text::shared_with_ai_apps(&project.name),
+            None => text::NO_PROJECT_SHARED_WITH_AI_APPS.to_string(),
         };
         let open = shared.as_ref().map(|project| project.id.clone());
         let badge = self.ai_rail_badge();
         let label = match self.ai.unseen().len() {
             0 => label,
-            count => format!("{label}. {count} new, open the newest"),
+            count => text::with_new(label, count),
         };
         let counts = badge.is_some();
         Some(
@@ -567,10 +566,7 @@ impl Workspace {
         }
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let title = format!(
-            "{} asked for documents",
-            crate::ai::connector::display_name(&prompt.app)
-        );
+        let title = text::asked_for_documents(crate::ai::connector::display_name(&prompt.app));
         let rows = (prompt.choices.iter().enumerate()).filter_map(|(index, id)| {
             let project = self.projects.project(id)?;
             let selected = index == prompt.chosen;
@@ -634,16 +630,12 @@ impl Workspace {
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .child(title),
             )
-            .child(ui::card_text(
-                "Share a Project with AI apps? They read only its Ready documents, \
-                 pseudonymized.",
-                theme,
-            ))
+            .child(ui::card_text(text::SHARE_A_PROJECT, theme))
             .child(
                 div()
                     .id("ai-share-choices")
                     .role(gpui::Role::RadioGroup)
-                    .aria_label("Project to share")
+                    .aria_label(text::PROJECT_TO_SHARE)
                     .flex()
                     .flex_col()
                     .gap(px(2.))
@@ -669,7 +661,7 @@ impl Workspace {
                         })),
                     )
                     .child(
-                        ui::primary_button("ai-share", "Share", theme, true)
+                        ui::primary_button("ai-share", text::SHARE, theme, true)
                             .when(cfg!(test), |v| v.debug_selector(|| "ai-share".into()))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 if let Some(project) = this.ai.take_choice() {
@@ -714,10 +706,10 @@ impl Workspace {
                         .border_1()
                         .border_color(accent)
                         .text_color(accent)
-                        .child("Shared with AI apps"),
+                        .child(text::SHARED_WITH_AI_APPS),
                 )
                 .child(
-                    self.page_control("project-page-stop-sharing", "Stop sharing", cx)
+                    self.page_control("project-page-stop-sharing", text::STOP_SHARING, cx)
                         .text_color(accent)
                         .on_click(cx.listener(|this, _, _, cx| this.stop_sharing_with_ai(cx))),
                 )
@@ -746,7 +738,7 @@ impl Workspace {
             Some(Err(error)) => {
                 return list
                     .child(ui::card_error(
-                        format!("The AI activity can't be read. {error}"),
+                        text::activity_unreadable(error),
                         self.theme.get(),
                     ))
                     .into_any_element();
@@ -760,7 +752,7 @@ impl Workspace {
                         .py_2()
                         .text_size(px(12.))
                         .text_color(p.header_muted)
-                        .child("No AI app has read this Project yet."),
+                        .child(text::NO_ACTIVITY),
                 )
                 .into_any_element();
         }
@@ -821,10 +813,7 @@ impl Workspace {
                     .py_2()
                     .text_size(px(12.))
                     .text_color(p.header_muted)
-                    .child(format!(
-                        "Showing the newest {ACTIVITY_SHOWN} of {}.",
-                        entries.len()
-                    )),
+                    .child(text::showing_newest(ACTIVITY_SHOWN, entries.len())),
             );
         }
         list.into_any_element()
@@ -856,19 +845,20 @@ pub(in crate::workspace) fn activity_line(
     now: u64,
 ) -> ActivityLine {
     let app = crate::ai::connector::display_name(&entry.app);
-    let quoted = |title: &String| format!("\u{201c}{title}\u{201d}");
+    let quoted = |title: &String| text::quoted(title);
     let document = |id: &str| documents.get(id).map(quoted);
     let age = crate::workspace::home::age(entry.at, now);
     match &entry.event {
         AiEvent::Read { document: id, part } => {
             let title = document(id);
-            let part = part
-                .map(|part| format!(" · part {part}"))
-                .unwrap_or_default();
+            let part = part.map(text::part).unwrap_or_default();
             ActivityLine {
-                text: format!(
-                    "{app} read {}{part}",
-                    title.clone().unwrap_or_else(|| "a deleted document".into())
+                text: text::read(
+                    &app,
+                    title
+                        .clone()
+                        .unwrap_or_else(|| text::A_DELETED_DOCUMENT.into()),
+                    part,
                 ),
                 detail: age,
                 opens: title.map(|_| Opens::Document(id.clone())),
@@ -882,27 +872,24 @@ pub(in crate::workspace) fn activity_line(
             let (text, opens) = match delivered {
                 Some(id) => match document(id) {
                     Some(title) => (
-                        format!("{app} delivered {title} as a document"),
+                        text::delivered_document(&app, title),
                         Some(Opens::Document(id.clone())),
                     ),
-                    None => (format!("{app} delivered a deleted document"), None::<Opens>),
+                    None => (text::delivered_deleted_document(&app), None::<Opens>),
                 },
                 None => match replies.get(reply) {
                     Some(title) => (
-                        format!("{app} delivered a reply {}", quoted(title)),
+                        text::delivered_reply(&app, quoted(title)),
                         Some(Opens::Reply(reply.clone())),
                     ),
-                    None => (format!("{app} delivered a deleted reply"), None),
+                    None => (text::delivered_deleted_reply(&app), None),
                 },
             };
             let from = match read.as_slice() {
                 [] => None,
                 [first, rest @ ..] => {
-                    let first = document(first).unwrap_or_else(|| "a deleted document".into());
-                    Some(match rest.len() {
-                        0 => format!("from {first}"),
-                        more => format!("from {first} and {more} more"),
-                    })
+                    let first = document(first).unwrap_or_else(|| text::A_DELETED_DOCUMENT.into());
+                    Some(text::from_documents(first, rest.len()))
                 }
             };
             ActivityLine {
@@ -911,7 +898,7 @@ pub(in crate::workspace) fn activity_line(
                     .into_iter()
                     .flatten()
                     .collect::<Vec<_>>()
-                    .join(" · "),
+                    .join(text::SEPARATOR),
                 opens,
             }
         }

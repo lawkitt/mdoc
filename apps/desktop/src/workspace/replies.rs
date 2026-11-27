@@ -19,6 +19,8 @@ use mdoc_pii::restore::{ExportedIdentity, RestoreMap, RestoredText};
 use mdoc_store::document_id::VaultId;
 use mdoc_vault::{Reply, ReplyOwner, SharedFrom, VaultError};
 
+mod text;
+
 /// A reply on its way into the Vault.
 pub(super) enum ReplySave {
     /// The reply in tab `tab`'s box, as the box holds it when the save
@@ -84,12 +86,7 @@ impl ReplyPage {
         let unresolved: std::collections::HashSet<_> = (self.restored.unresolved.iter())
             .filter_map(|range| text.get(range.clone()))
             .collect();
-        let values = self.restored.values;
-        format!(
-            "{values} {} restored · {} unrecognized",
-            if values == 1 { "value" } else { "values" },
-            unresolved.len()
-        )
+        text::restored(self.restored.values, unresolved.len())
     }
 }
 
@@ -109,11 +106,7 @@ impl Workspace {
             // A pasted document becomes one at its first write; the box's
             // reply is saved with the next change after that.
             if open {
-                self.notices.post(
-                    "The AI reply could not be saved: its document is not in mdoc yet. Type in \
-                     it first, then open the reply again."
-                        .to_string(),
-                );
+                self.notices.post(text::NOT_IN_MDOC_OPEN.to_string());
                 cx.notify();
             }
             return;
@@ -133,22 +126,14 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let Some(document) = self.tab_document(tab, cx) else {
-            self.notices.post(
-                "The AI reply could not be saved: its document is not in mdoc yet. Type in it \
-                 first, then paste the reply again."
-                    .to_string(),
-            );
+            self.notices.post(text::NOT_IN_MDOC_PASTE.to_string());
             cx.notify();
             return;
         };
         // Its aliases are the document's as it shows them; a move waiting
         // to run would read them in another mapping.
         if self.moving.contains(&document) {
-            self.notices.post(
-                "The AI reply was not saved: its document is moving. Paste the reply again once \
-                 the move is done."
-                    .to_string(),
-            );
+            self.notices.post(text::MOVING.to_string());
             cx.notify();
             return;
         }
@@ -159,7 +144,7 @@ impl Workspace {
         let save = ReplySave::Pasted {
             tab,
             document,
-            title: format!("Reply to {title}"),
+            title: text::reply_to(title),
             markdown,
         };
         self.next_op += 1;
@@ -198,10 +183,9 @@ impl Workspace {
         if let Some(link) = view.project.link()
             && self.project_ui.is_unwritten(&link.id)
         {
-            return Some("its Project's names are not saved yet");
+            return Some(text::PROJECT_NAMES_UNSAVED);
         }
-        view.unsaved(cx)
-            .then_some("its document's names are not saved yet")
+        view.unsaved(cx).then_some(text::DOCUMENT_NAMES_UNSAVED)
     }
 
     /// Save a reply at the head of the writer's queue, after what its
@@ -228,12 +212,7 @@ impl Workspace {
             let waits =
                 open || self.closing_after_write.contains(&tab) || self.quit_flow.quitting();
             if waits {
-                self.reply_failed(
-                    Some(tab),
-                    format!("its document could not be saved first: {error}"),
-                    window,
-                    cx,
-                );
+                self.reply_failed(Some(tab), text::document_not_saved_first(error), window, cx);
             }
             return;
         }
@@ -254,7 +233,7 @@ impl Workspace {
                     (
                         view.reply.saved_id(),
                         view.reply.unsaved(),
-                        format!("Reply to {stem}"),
+                        text::reply_to(stem),
                     )
                 });
                 let unready = unsaved.as_ref().and_then(|_| self.names_unsaved(tab, cx));
@@ -326,7 +305,7 @@ impl Workspace {
                 let from = SharedFrom::Document(document.as_str().to_string());
                 let id = match self.names_unsaved(tab, cx) {
                     Some(why) => {
-                        self.reply_failed(None, format!("{why}. Paste it again"), window, cx);
+                        self.reply_failed(None, text::paste_it_again(why), window, cx);
                         None
                     }
                     None => match vault.save_shared_reply(&from, title, None, markdown) {
@@ -358,8 +337,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.notices
-            .post(format!("Could not save the AI reply: {why}."));
+        self.notices.post(text::could_not_save(why));
         if let Some(tab) = tab {
             self.closing_after_write.remove(&tab);
         }
@@ -574,10 +552,7 @@ impl Workspace {
             });
             if let Err(error) = written {
                 self.project_ui.mark_unwritten(&project);
-                self.notices.post(format!(
-                    "Could not promote the AI reply: its Project's names could not be saved. \
-                     {error}"
-                ));
+                self.notices.post(text::names_not_saved_for_promote(error));
                 cx.notify();
                 return;
             }
@@ -587,7 +562,7 @@ impl Workspace {
             .promote_reply(id)
             .map_err(|error| error.to_string())
             .and_then(|document| {
-                VaultId::parse(&document.id).ok_or_else(|| "Invalid id.".to_string())
+                VaultId::parse(&document.id).ok_or_else(|| text::INVALID_ID.to_string())
             });
         match promoted {
             Ok(document) => {
@@ -598,8 +573,7 @@ impl Workspace {
                 }
             }
             Err(error) => {
-                self.notices
-                    .post(format!("Could not promote the AI reply: {error}."));
+                self.notices.post(text::could_not_promote(error));
             }
         }
         cx.notify();
@@ -617,12 +591,12 @@ impl Workspace {
         };
         let title = (vault.replies().into_iter())
             .find(|reply| reply.id == id)
-            .map_or_else(|| "this reply".to_string(), |r| format!("“{}”", r.title));
+            .map_or_else(|| text::THIS_REPLY.to_string(), |r| text::quoted(&r.title));
         let answer = window.prompt(
             PromptLevel::Warning,
-            &format!("Delete {title}?"),
-            Some("Its text is deleted from this computer. This cannot be undone."),
-            &["Delete", crate::ui::text::CANCEL],
+            &text::delete_title(title),
+            Some(text::DELETE_DETAIL),
+            &[text::DELETE, crate::ui::text::CANCEL],
             cx,
         );
         let id = id.to_string();
@@ -664,8 +638,7 @@ impl Workspace {
         match vault.delete_reply(id) {
             Ok(()) | Err(VaultError::NotFound { .. }) => {}
             Err(error) => {
-                self.notices
-                    .post(format!("Could not delete the AI reply: {error}"));
+                self.notices.post(text::could_not_delete(error));
                 cx.notify();
                 return;
             }
@@ -763,7 +736,7 @@ impl Workspace {
                 .text_size(px(13.)),
             self.title.armed.clone(),
         )
-        .child("AI reply")
+        .child(text::AI_REPLY)
         .child(div().flex_1())
         .children(ui::notice_bell(&self.title, theme).map(|bell| ui::no_drag(div().child(bell))));
         let header = ui::title_bar(bar, (!detached).then_some(p.border), window, theme);
@@ -772,7 +745,7 @@ impl Workspace {
             Err(error) => div()
                 .p_6()
                 .text_color(p.header_muted)
-                .child(format!("This reply can't be opened: {error}"))
+                .child(text::cant_be_opened(error))
                 .into_any_element(),
         };
         let body = div()
@@ -834,15 +807,15 @@ impl Workspace {
                     .and_then(|summary| summary.project);
                 match project.and_then(|id| self.projects.project(&id)) {
                     Some(project) => Some(project.name.clone()),
-                    None => Some("Unfiled".to_string()),
+                    None => Some(text::UNFILED.to_string()),
                 }
             }
         };
         let meta = [
             place.map(|place| match &reply.owner {
-                ReplyOwner::Project(_) => format!("Project “{place}”"),
-                ReplyOwner::Document(_) if place == "Unfiled" => place,
-                ReplyOwner::Document(_) => format!("Project “{place}”"),
+                ReplyOwner::Project(_) => text::in_project(place),
+                ReplyOwner::Document(_) if place == text::UNFILED => place,
+                ReplyOwner::Document(_) => text::in_project(place),
             }),
             Some({
                 let detail = reply_detail(
@@ -852,13 +825,15 @@ impl Workspace {
                     &titles,
                 );
                 // The place already names the Project.
-                (detail.strip_prefix("From the Project · ")).map_or(detail.clone(), str::to_string)
+                (detail.strip_prefix(text::FROM_THE_PROJECT))
+                    .and_then(|rest| rest.strip_prefix(text::SEPARATOR))
+                    .map_or(detail.clone(), str::to_string)
             }),
         ]
         .into_iter()
         .flatten()
         .collect::<Vec<_>>()
-        .join(" · ");
+        .join(text::SEPARATOR);
         let control = |id: &'static str, label: SharedString, focus: &FocusHandle| {
             ui::reveal_focus(
                 ui::primary_button(id, label, theme, true)
@@ -910,7 +885,7 @@ impl Workspace {
                             if page.copied {
                                 crate::ui::text::COPIED
                             } else {
-                                "Copy reply"
+                                text::COPY_REPLY
                             }
                             .into(),
                             &page.copy_focus,
@@ -921,7 +896,7 @@ impl Workspace {
                         v.child(
                             control(
                                 "reply-page-next",
-                                "Next unrecognized".into(),
+                                text::NEXT_UNRECOGNIZED.into(),
                                 &page.next_focus,
                             )
                             .on_click(
@@ -932,7 +907,7 @@ impl Workspace {
                     .child(
                         control(
                             "reply-page-promote",
-                            "Promote to Document".into(),
+                            text::PROMOTE_TO_DOCUMENT.into(),
                             &page.promote_focus,
                         )
                         .on_click(
@@ -942,7 +917,7 @@ impl Workspace {
                     .child(
                         control(
                             "reply-page-delete",
-                            "Delete reply…".into(),
+                            text::DELETE_REPLY.into(),
                             &page.delete_focus,
                         )
                         .text_color(style::markdown_style(theme).popover_danger)
@@ -1018,8 +993,8 @@ pub(super) fn reply_detail(
     let from = match owner {
         ReplyOwner::Document(document) => titles
             .get(document)
-            .map_or_else(|| "From a document".to_string(), |t| format!("From “{t}”")),
-        ReplyOwner::Project(_) => "From the Project".to_string(),
+            .map_or_else(|| text::FROM_A_DOCUMENT.to_string(), text::from_document),
+        ReplyOwner::Project(_) => text::FROM_THE_PROJECT.to_string(),
     };
     [
         Some(from),
@@ -1029,7 +1004,7 @@ pub(super) fn reply_detail(
     .into_iter()
     .flatten()
     .collect::<Vec<_>>()
-    .join(" · ")
+    .join(text::SEPARATOR)
 }
 
 impl Workspace {

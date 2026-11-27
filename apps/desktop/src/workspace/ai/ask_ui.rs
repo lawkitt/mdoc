@@ -7,6 +7,7 @@
 //! place of any other, then opens the app with a prompt naming the
 //! document by the label the connector gives it. Copy for AI is today's
 //! Copy for AI. Each choice is remembered as `ai_connector.ask`.
+use super::text;
 use crate::ui;
 use crate::workspace::Workspace;
 use gpui::{AnyElement, Context, Window, div, prelude::*, px};
@@ -37,7 +38,7 @@ impl Workspace {
         if let Some(path) = path
             && let Err(error) = settings::save_in_order(&path, &changed, write)
         {
-            eprintln!("mdoc: could not save Ask's choice: {error}");
+            eprintln!("{}", text::ask_choice_not_saved(error));
         }
         self.preferences.borrow_mut().current = Some(changed);
         self.settings.update(cx, |panel, cx| {
@@ -189,8 +190,7 @@ impl Workspace {
                         .find(|row| row.doc_id == document)
                         .map(|row| row.label),
                     Err(error) => {
-                        self.notices
-                            .post(format!("Could not ask about the document. {error}"));
+                        self.notices.post(text::could_not_ask(error));
                         return;
                     }
                 };
@@ -237,7 +237,7 @@ impl Workspace {
         let (frame, more) = ui::split_button(
             main,
             "project-page-ask-more",
-            "More ways to ask",
+            text::MORE_WAYS_TO_ASK,
             open,
             theme,
         );
