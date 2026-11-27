@@ -2,9 +2,10 @@
 # Usage: scripts/dev/test-module-map.sh
 # scripts/dev/module-map.sh on scratch trees: `--check` fails on a module
 # without a `//!` header on its first line and names it, passes a tree where
-# every module has one, and needs none from a tests.rs; the map prints the
-# crate root first, each module just above its children and indented by
-# depth, with its header's first sentence. Bash 3.2 compatible.
+# every module has one, and needs none from a tests.rs but one from each test
+# module under a tests/ folder; the map prints the crate root first, each
+# module just above its children and indented by depth, with its header's
+# first sentence, and leaves the test modules out. Bash 3.2 compatible.
 source "$(dirname "$0")/../lib.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -76,6 +77,18 @@ put two a.rs 'use b;'
 put two z.rs 'use c;'
 expect 1 two --check
 [ "$(grep -c 'no //! header' "$tmp/out")" = 2 ] || fail "not every missing header was named: $(cat "$tmp/out")"
+# A test module under a tests/ folder needs its header.
+tree testdir
+put testdir a.rs '//! Owner a.'
+put testdir a/tests.rs 'mod sub;'
+put testdir a/tests/sub.rs 'use super::*;'
+expect 1 testdir --check
+grep -qF 'apps/desktop/src/a/tests/sub.rs:' "$tmp/out" || fail "a test module without a header passed: $(cat "$tmp/out")"
+# A crate with only its root passes, and its map is the root.
+tree alone
+expect 0 alone --check
+expect 0 alone
+[ "$(cat "$tmp/out")" = 'mdoc: The app.' ] || fail "a root-only map: $(cat "$tmp/out")"
 # A Windows line ending changes nothing.
 tree crlf
 printf '//! Owner a.\r\nuse b;\r\n' >"$tmp/crlf/apps/desktop/src/a.rs"
@@ -91,7 +104,10 @@ put map a/b.rs '//! The b part.
 //! Not this paragraph.'
 put map a_c.rs '//! Beside a.'
 put map z.rs '//! Last: no full stop'
-put map a/tests.rs 'use super::*;'
+put map a/tests.rs 'mod flow;'
+put map a/tests/flow.rs '//! Not in the map.'
+put map a/tests/flow/step.rs '//! Nor this.'
+put map tests/top.rs '//! Nor a tests/ folder at the root.'
 expect 0 map
 printf '%s\n' 'mdoc: The app.' '  a: Owner a, which wraps.' '    b: The b part.' '  a_c: Beside a.' '  z: Last: no full stop' >"$tmp/want"
 diff "$tmp/want" "$tmp/out" >/dev/null || fail "the map: $(diff "$tmp/want" "$tmp/out")"

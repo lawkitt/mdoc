@@ -6,8 +6,9 @@
 # the end of the header's first paragraph. `--check`, run by `just lint`,
 # fails instead on a module whose first line is not a `//!` header with
 # text, naming each one. A module's test-only child, a file named tests.rs,
-# needs none and is left out of the map. Bash 3.2 compatible; BWK awk, mawk
-# and gawk. scripts/dev/test-module-map.sh checks it.
+# needs none; the test modules under a tests/ folder need theirs. The map
+# leaves out both, so it shows the app's own modules. Bash 3.2 compatible;
+# BWK awk, mawk and gawk. scripts/dev/test-module-map.sh checks it.
 # shellcheck source=../lib.sh
 source "$(dirname "$0")/../lib.sh"
 
@@ -28,7 +29,7 @@ src=apps/desktop/src
 files=$(cd "$src" && find . -type f -name '*.rs' ! -name tests.rs | sed -e 's|^\./||' -e 's|\.rs$||' | LC_ALL=C sort)
 [ -n "$files" ] || die "no modules under $src"
 if echo "$files" | grep -qx main; then
-  files=$(echo main && echo "$files" | grep -vx main)
+  files=$(echo main && { echo "$files" | grep -vx main || true; })
 fi
 
 # shellcheck disable=SC2016 # awk fields, not shell ones
@@ -62,7 +63,7 @@ echo "$files" | awk -v src="$src" -v check="$check" '
       missing[++bad] = file
       next
     }
-    if (check) next
+    if (check || $0 ~ /(^|\/)tests\//) next
     depth = split($0, parts, "/")
     name = parts[depth]
     if ($0 == "main") { name = "mdoc"; depth = 0 }
