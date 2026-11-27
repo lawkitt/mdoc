@@ -35,6 +35,7 @@ import io.github.lawkitt.mdoc.core.SourceKind
 import io.github.lawkitt.mdoc.jobs.CancelReason
 import io.github.lawkitt.mdoc.jobs.Jobs
 import io.github.lawkitt.mdoc.storage.MdocStorage
+import io.github.lawkitt.mdoc.ui.onMain
 import java.io.File
 import java.io.FileInputStream
 import java.io.RandomAccessFile
@@ -289,11 +290,11 @@ class HomeViewModel(
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return null
         val taken = state.value.projects.map { it.name }
-        return withContext(Dispatchers.IO) {
-            runCatching { core().documents.createProject(unusedName(trimmed, taken)).id }
-                .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
-                .getOrNull()
-        }.also { refreshNow() }
+        // Written back on the caller's thread, never the read's (#1332).
+        return withContext(Dispatchers.IO) { runCatching { core().documents.createProject(unusedName(trimmed, taken)).id } }
+            .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
+            .getOrNull()
+            .also { refreshNow() }
     }
 
     /** Rename…: a blank name changes nothing. */
@@ -404,8 +405,9 @@ class HomeViewModel(
     fun loadPage(id: ProjectId): Job {
         val load = PageLoad(id)
         synchronized(pageLoad) { pageLoad.set(load) }
-        return viewModelScope.launch(Dispatchers.IO) {
-            val page = runCatching { readPage(id) }.getOrElse { ProjectPageData(id) }
+        return viewModelScope.launch {
+            val page = withContext(Dispatchers.IO) { runCatching { readPage(id) }.getOrElse { ProjectPageData(id) } }
+            // Published on the main thread (#1332).
             synchronized(pageLoad) {
                 if (pageLoad.get() === load) mutable.update { it.copy(page = page) }
             }
@@ -507,8 +509,8 @@ class HomeViewModel(
 
     /** [refresh], done when it returns. */
     suspend fun refreshNow() {
-        withContext(Dispatchers.IO) {
-            val next = runCatching {
+        val next = withContext(Dispatchers.IO) {
+            runCatching {
                 val core = core()
                 val library = core.documents.snapshot()
                 HomeState(
@@ -518,13 +520,14 @@ class HomeViewModel(
                     loaded = true,
                 )
             }.getOrElse { HomeState(loaded = true, error = it.message ?: it.toString()) }
-            mutable.update {
-                next.copy(
-                    adding = it.adding, scanPageCount = it.scanPageCount, refused = it.refused,
-                    pendingDelete = it.pendingDelete, deletedProject = it.deletedProject, repeated = it.repeated, page = it.page,
-                    shownReply = it.shownReply, moved = it.moved, moves = it.moves, failed = it.failed,
-                )
-            }
+        }
+        // Written back on the caller's thread, never the read's (#1332).
+        mutable.update {
+            next.copy(
+                adding = it.adding, scanPageCount = it.scanPageCount, refused = it.refused,
+                pendingDelete = it.pendingDelete, deletedProject = it.deletedProject, repeated = it.repeated, page = it.page,
+                shownReply = it.shownReply, moved = it.moved, moves = it.moves, failed = it.failed,
+            )
         }
         // A Project's page reads its replies and names again: a reply Restore
         // with mdoc saved changes no document.
@@ -613,7 +616,8 @@ class HomeViewModel(
                 refusal = error.message ?: fallbackTitle
             } finally {
                 if (!handedOff) folder?.deleteRecursively()
-                if (refusal != null) mutable.update { it.copy(refused = refusal) }
+                // The screen's state, on the main thread (#1332).
+                if (refusal != null) onMain { mutable.update { it.copy(refused = refusal) } }
             }
         }
     }

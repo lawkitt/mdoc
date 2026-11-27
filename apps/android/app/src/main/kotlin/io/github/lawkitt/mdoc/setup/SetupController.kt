@@ -9,6 +9,7 @@ import io.github.lawkitt.mdoc.jobs.JobKind
 import io.github.lawkitt.mdoc.jobs.JobOutcome
 import io.github.lawkitt.mdoc.jobs.Jobs
 import io.github.lawkitt.mdoc.storage.MdocStorage
+import io.github.lawkitt.mdoc.ui.onMain
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -142,21 +143,23 @@ class SetupController(
         val downloader = ModelDownloader(
             network = { network.wifi ?: if (allowsCellular) network.cellular else null },
             cancelled = { cancelled },
-            waiting = { held -> mutable.update { it.copy(waitingForWiFi = held) } },
+            waiting = { held -> onMain { mutable.update { it.copy(waitingForWiFi = held) } } },
         )
         for (offer in models.snapshot().offers.filter { !it.installed }) {
             val files = models.remainingFiles(offer.id)
             val total = files.sumOf { it.bytes.toLong() }.coerceAtLeast(1)
             var done = 0L
-            mutable.update { it.copy(progress = it.progress + (offer.id to 0f)) }
+            // The download runs on the job's thread; the card reads this on
+            // the main thread (#1332).
+            onMain { mutable.update { it.copy(progress = it.progress + (offer.id to 0f)) } }
             for (file in files) {
                 val part = File(storage().dir(MdocStorage.Area.Downloads), "${offer.id.name}/${file.path}.part")
                 downloader.download(file.url, part) { bytes ->
                     val fraction = (done + bytes).toFloat() / total
-                    mutable.update { it.copy(progress = it.progress + (offer.id to fraction)) }
+                    onMain { mutable.update { it.copy(progress = it.progress + (offer.id to fraction)) } }
                 }
                 if (cancelled) throw AppError.Cancelled()
-                mutable.update { it.copy(installing = true) }
+                onMain { mutable.update { it.copy(installing = true) } }
                 try {
                     models.install(offer.id, file, part)
                 } finally {
@@ -164,7 +167,7 @@ class SetupController(
                     // retry downloads fresh bytes rather than resuming bad ones.
                     part.delete()
                 }
-                mutable.update { it.copy(installing = false) }
+                onMain { mutable.update { it.copy(installing = false) } }
                 done += file.bytes.toLong()
             }
         }

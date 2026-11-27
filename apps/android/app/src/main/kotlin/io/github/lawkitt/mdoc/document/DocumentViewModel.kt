@@ -27,20 +27,19 @@ import io.github.lawkitt.mdoc.jobs.JobKind
 import io.github.lawkitt.mdoc.jobs.JobOutcome
 import io.github.lawkitt.mdoc.jobs.Jobs
 import io.github.lawkitt.mdoc.jobs.RunningJob
+import io.github.lawkitt.mdoc.ui.UiState
+import io.github.lawkitt.mdoc.ui.onMain
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -150,7 +149,8 @@ class DocumentViewModel(
     @Volatile var findsNames: Boolean = detectorTier()
         private set
 
-    private val mutable = MutableStateFlow(
+    /** Written on the main thread only (#1332): work runs off it, its result comes back. */
+    private val mutable = UiState(
         DocumentState(session.snapshot(), replyOffer = savedState.get<String>(REPLY_OFFER)?.let(ReplyOffer::valueOf)),
     )
     val state: StateFlow<DocumentState> = mutable.asStateFlow()
@@ -253,14 +253,13 @@ class DocumentViewModel(
     fun decide(candidate: CandidateId, decision: Decision, scope: Scope, openNext: Boolean = false): Job {
         // Picked on the snapshot shown: refused if a move opened the document again since.
         val seen = mutable.value.snapshot.opened
-        return change {
-            val next = session.decide(candidate, decision, scope, seen)
+        return change({ session.decide(candidate, decision, scope, seen) }) { state, next ->
             val following = if (openNext) nextProposal(next.candidates, candidate) else null
-            mutable.update { it.copy(snapshot = next, reviewing = following) }
+            state.copy(snapshot = next, reviewing = following)
         }
     }
 
-    fun replaceAll() = change { mutable.update { it.copy(snapshot = session.replaceAllPending()) } }
+    fun replaceAll() = change({ session.replaceAllPending() }) { state, next -> state.copy(snapshot = next) }
 
     fun startManualReplace(range: SourceRange, text: String) = mutable.update { it.copy(manual = range to text) }
 
@@ -279,19 +278,17 @@ class DocumentViewModel(
     suspend fun copySelection(range: SourceRange, shown: String, action: SelectionAction): SelectionCopy? {
         // Selected in the snapshot shown: refused if a move opened the document again since.
         val seen = mutable.value.snapshot.opened
-        return withContext(Dispatchers.IO) {
-            runCatching { session.copySelection(range, shown, action, seen) }
-                .onSuccess { copied -> copied.snapshot?.let { next -> mutable.update { it.copy(snapshot = next) } } }
-                .onFailure(::show)
-                .getOrNull()
-        }
+        return withContext(Dispatchers.IO) { runCatching { session.copySelection(range, shown, action, seen) } }
+            .onSuccess { copied -> copied.snapshot?.let { next -> mutable.update { it.copy(snapshot = next) } } }
+            .onFailure(::show)
+            .getOrNull()
     }
 
     fun replaceSelection(category: Category) {
         val (range, _) = mutable.value.manual ?: return
         // Selected in the snapshot shown: refused if a move opened the document again since.
         val seen = mutable.value.snapshot.opened
-        change { mutable.update { it.copy(snapshot = session.addReplacement(range, category, seen), manual = null) } }
+        change({ session.addReplacement(range, category, seen) }) { state, next -> state.copy(snapshot = next, manual = null) }
     }
 
     fun showIdentities(show: Boolean) = mutable.update { it.copy(showsIdentities = show) }
@@ -299,9 +296,8 @@ class DocumentViewModel(
     // Hand-off
 
     /** Copy for AI's text; null when refused, and the refusal's dialog shows with its step. */
-    suspend fun handOff(): HandOff? = withContext(Dispatchers.IO) {
-        runCatching { session.copyForAi() }.onFailure(::refused).getOrNull()
-    }
+    suspend fun handOff(): HandOff? =
+        withContext(Dispatchers.IO) { runCatching { session.copyForAi() } }.onFailure(::refused).getOrNull()
 
     // Refusals in plain words (#1209 decisions 13 and 14)
 
@@ -394,12 +390,13 @@ class DocumentViewModel(
         val snapshot = mutable.value.snapshot
         val open = firstProposal(snapshot) ?: snapshot.candidates.filter { it.state == MentionState.Kept }.minByOrNull { it.range.start }?.id
         if (open != null) return open(open)
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val lined = session.lineUpWithProject()
-                val first = firstProposal(lined)
-                mutable.update { it.copy(snapshot = lined, reviewing = first, showsIdentities = first == null && lined.identities.isNotEmpty()) }
-            }.onFailure { refused(it as? AppError.HandOffRefused ?: AppError.HandOffRefused(HandOffRefusal.Failed)) }
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { session.lineUpWithProject() } }
+                .onSuccess { lined ->
+                    val first = firstProposal(lined)
+                    mutable.update { it.copy(snapshot = lined, reviewing = first, showsIdentities = first == null && lined.identities.isNotEmpty()) }
+                }
+                .onFailure { refused(it as? AppError.HandOffRefused ?: AppError.HandOffRefused(HandOffRefusal.Failed)) }
         }
     }
 
@@ -409,12 +406,10 @@ class DocumentViewModel(
 
     fun showReplySheet(show: Boolean) = mutable.update { it.copy(showsReplySheet = show) }
 
-    fun restoreReply(reply: String) = change {
-        val restored = session.restoreReply(reply)
-        // The answer Ask AI waited for is in, however it came; a restore
-        // that fails keeps the banner.
-        mutable.update { it.copy(snapshot = restored, showsReplySheet = false, showsReply = true) }
-        viewModelScope.launch { offer { null } }
+    // The answer Ask AI waited for is in, however it came; a restore that
+    // fails keeps the banner.
+    fun restoreReply(reply: String) = change({ session.restoreReply(reply) }, then = { offer { null } }) { state, restored ->
+        state.copy(snapshot = restored, showsReplySheet = false, showsReply = true)
     }
 
     // Ask AI (#1164 decision 11, Milestone 2 item 20)
@@ -452,7 +447,7 @@ class DocumentViewModel(
     fun showReply(show: Boolean) = mutable.update { it.copy(showsReply = show) }
 
     /** Remove reply: the one shown, by its id, never a newer one saved meanwhile. */
-    fun clearReply(shown: String) = change { mutable.update { it.copy(snapshot = session.clearReply(shown), showsReply = false) } }
+    fun clearReply(shown: String) = change({ session.clearReply(shown) }) { state, next -> state.copy(snapshot = next, showsReply = false) }
 
     // Notes (#1091 Decision 3)
 
@@ -528,18 +523,21 @@ class DocumentViewModel(
 
     fun dismissError() = mutable.update { it.copy(error = null) }
 
-    fun refresh() = viewModelScope.launch(Dispatchers.IO) {
-        runCatching { session.snapshot() }.onSuccess { snapshot -> mutable.update { it.copy(snapshot = snapshot) } }
+    fun refresh() = viewModelScope.launch {
+        withContext(Dispatchers.IO) { runCatching { session.snapshot() } }
+            .onSuccess { snapshot -> mutable.update { it.copy(snapshot = snapshot) } }
     }
 
     /**
      * Back on screen: a reply Restore with mdoc saved meanwhile comes in,
      * whether or not Home's refresh took it in first.
      */
-    fun resumed() = viewModelScope.launch(Dispatchers.IO) {
-        documents.refresh()
-        findsNames = detectorTier()
-        runCatching { session.snapshot() }.onSuccess { snapshot -> mutable.update { it.copy(snapshot = snapshot) } }
+    fun resumed() = viewModelScope.launch {
+        withContext(Dispatchers.IO) {
+            documents.refresh()
+            findsNames = detectorTier()
+            runCatching { session.snapshot() }
+        }.onSuccess { snapshot -> mutable.update { it.copy(snapshot = snapshot) } }
         // Another document may have changed the Project's names meanwhile.
         checkSaved()
     }
@@ -563,11 +561,21 @@ class DocumentViewModel(
             .onFailure(::show)
     }
 
-    private fun change(work: () -> Unit) = viewModelScope.launch(Dispatchers.IO) {
-        runCatching(work).onFailure(::show)
+    /**
+     * A core call off the main thread, then its result written into the
+     * state on it with [apply] (#1332), then [then]; a failure shows.
+     */
+    private fun <T> change(work: () -> T, then: () -> Unit = {}, apply: (DocumentState, T) -> DocumentState) = viewModelScope.launch {
+        withContext(Dispatchers.IO) { runCatching(work) }
+            .onSuccess { result ->
+                mutable.update { apply(it, result) }
+                then()
+            }
+            .onFailure(::show)
     }
 
-    private fun show(error: Throwable) {
+    /** Why something failed, on the main thread: the notes calls fail on their own thread. */
+    private fun show(error: Throwable) = onMain {
         mutable.update { it.copy(error = error.message ?: error.toString()) }
     }
 
