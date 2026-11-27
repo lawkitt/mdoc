@@ -1,5 +1,6 @@
 //! Lazy local-image decoding, scoped to the currently open Markdown file.
-use gpui::{App, Entity, RenderImage};
+use super::{DocumentView, images};
+use gpui::{App, Context, Entity, RenderImage, Window};
 use mdoc_editor::EditorState;
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc, sync::Arc};
 
@@ -67,4 +68,16 @@ pub fn install(editor: &Entity<EditorState>, directory: PathBuf, cx: &mut App) -
         });
     });
     handle
+}
+
+impl DocumentView {
+    pub(crate) fn replace_images(
+        &mut self,
+        directory: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.images.release(window, cx);
+        self.images = images::install(&self.editor, directory, cx);
+    }
 }

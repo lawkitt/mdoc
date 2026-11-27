@@ -6,12 +6,18 @@
 //! background work and the model setup, and carries out the returned
 //! effects.
 
-use mdoc_import::{
-    import::{ImportError, Imported, Password, Unlock},
-    import_session::{ImportCompletion, ImportPermit, ImportSession},
-    ocr, recognition,
+use super::{Background, DocumentView, Next, OcrState, SetupOcr, import_flow, markdown_search};
+use crate::{
+    ui,
+    workspace::{self, Import},
 };
-use mdoc_store::settings::OcrModel;
+use gpui::{App, Context, Entity, Focusable, Window, div, prelude::*, px};
+use mdoc_import::{
+    import::{self, ImportError, Imported, Password, Unlock},
+    import_session::{ImportCompletion, ImportPermit, ImportSession},
+    model_work, ocr, recognition,
+};
+use mdoc_store::settings::{self, OcrModel};
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -770,6 +776,583 @@ impl ImportFlow {
         self.permit = None;
         self.unlock = None;
         self.finished_unlock = None;
+    }
+}
+
+impl DocumentView {
+    /// The Markdown came from OCR.
+    pub(crate) fn recognized(&self) -> bool {
+        self.session.ocr_configuration.is_some()
+    }
+
+    /// The OCR model chosen in Settings, whose readiness `ocr_state` shares.
+    pub(super) fn settings_ocr_model(&self) -> Option<settings::OcrModel> {
+        self.preferences
+            .borrow()
+            .snapshot()
+            .ok()
+            .map(|p| p.ocr.model)
+    }
+
+    /// This document's recognition languages: the card's pick, else the
+    /// detected default with its reason.
+    pub(crate) fn recognition_choice(&self) -> recognition::Choice {
+        self.import.choice(self.settings_ocr_model())
+    }
+
+    /// The bundle that reads this document's recognition languages.
+    pub(crate) fn recognition_model(&self) -> settings::OcrModel {
+        self.import.model(self.settings_ocr_model())
+    }
+
+    /// Pick recognition languages on the card. The pick holds until the
+    /// document converts; picking the detected list again keeps its
+    /// explanation, frozen so a later Settings change cannot move it.
+    pub(crate) fn pick_recognition(
+        &mut self,
+        languages: Vec<recognition::Language>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.import.busy() || self.ocr_state.busy() {
+            return;
+        }
+        self.import.pick(languages, self.settings_ocr_model());
+        cx.notify();
+    }
+
+    /// The shared state for the Settings model from what Settings already
+    /// knows. Never starts a check: that would take the model slot from a
+    /// run about to resume.
+    fn known_settings_ocr_state(&self, cx: &App) -> OcrState {
+        known_ocr_state(&self.preferences, self.model_panel.read(cx))
+    }
+
+    /// A checked installation of `model`: the shared one for the Settings
+    /// model, else one Settings checked or set up. None after a failure of
+    /// that model, so Retry verifies the installation again.
+    pub(super) fn installed_for(
+        &self,
+        model: settings::OcrModel,
+        cx: &App,
+    ) -> Option<ocr::Installed> {
+        if self.settings_ocr_model() == Some(model) {
+            match &self.ocr_state {
+                OcrState::Ready(installed) if installed.config.model == model => {
+                    return Some(installed.clone());
+                }
+                OcrState::Failed(_) => return None,
+                _ => {}
+            }
+        } else if self.import.ocr_failure().is_some() {
+            return None;
+        }
+        self.model_panel
+            .read(cx)
+            .ocr_installations
+            .iter()
+            .find(|i| i.config.model == model)
+            .cloned()
+    }
+
+    pub(crate) fn import(&mut self, _: &Import, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.lifecycle.source_only()
+            || self.lifecycle.prompting()
+            || self.import.busy()
+            || self.ocr_state.busy()
+            || self.import.slot_busy()
+        {
+            return;
+        }
+        let effect = self.import.convert_by_hand(self.preview.source().cloned());
+        self.carry_out_import(effect, window, cx);
+    }
+
+    /// Convert `path` as Convert would.
+    #[cfg(test)]
+    pub(crate) fn start_import(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.start_import_with(path, false, false, None, window, cx);
+    }
+
+    /// `ready` is the installation a finished setup checked, with the
+    /// configuration captured when it started.
+    fn start_import_with(
+        &mut self,
+        path: PathBuf,
+        skip_ocr: bool,
+        allow_ocr: bool,
+        ready: Option<ocr::Installed>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if allow_ocr && self.ocr_state.busy() {
+            return;
+        }
+        // Settings' resolution and confidence, this document's model.
+        let config = if allow_ocr && !skip_ocr {
+            let snapshot = self.preferences.borrow().snapshot();
+            match snapshot {
+                Ok(p) => Some(settings::OcrConfig {
+                    model: self.recognition_model(),
+                    ..p.ocr
+                }),
+                Err(e) => {
+                    self.error = Some(e.to_string());
+                    cx.notify();
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        let installed = match ready {
+            Some(ready) if allow_ocr && !skip_ocr => Some(ready),
+            _ => config.and_then(|config| {
+                self.installed_for(config.model, cx).map(|mut installed| {
+                    installed.config = config;
+                    installed
+                })
+            }),
+        };
+        if allow_ocr && installed.is_none() {
+            self.error = Some(
+                "Selected OCR model is not ready. Open Settings to download or repair it.".into(),
+            );
+            cx.notify();
+            return;
+        }
+        let effect = self.import.begin(path, installed, skip_ocr);
+        self.carry_out_import(effect, window, cx);
+    }
+
+    pub(crate) fn resume_import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.closing.resolving() {
+            return;
+        }
+        let generation = self.session.generation;
+        let settings_model = self.settings_ocr_model();
+        let Some(effects) = self
+            .import
+            .resume(generation, self.lifecycle.prompting(), |import| {
+                settings_model == Some(import.model(settings_model))
+            })
+        else {
+            return;
+        };
+        self.carry_out_import(effects, window, cx);
+        // The run's password opened the locked PDF the Original asks for,
+        // though the import stopped short (OCR consent, a failed
+        // recognition): the Original opens with it, asking no more.
+        if self.preview.password().is_some()
+            && let Some(path) = self.preview.source().cloned()
+            && self.pdf_password(&path).is_some()
+        {
+            self.open_pdf(path, window, cx);
+        }
+        // A stale completion also clears the busy indicator.
+        cx.notify();
+    }
+
+    fn carry_out_import(
+        &mut self,
+        effects: impl IntoIterator<Item = ImportEffect>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        for effect in effects {
+            match effect {
+                ImportEffect::Convert {
+                    path,
+                    skip_ocr,
+                    allow_ocr,
+                } => self.start_import_with(path, skip_ocr, allow_ocr, None, window, cx),
+                ImportEffect::ConvertWith { path, installed } => {
+                    self.start_import_with(path, false, true, Some(installed), window, cx);
+                }
+                ImportEffect::Run {
+                    path,
+                    mut unlock,
+                    installed,
+                    skip_ocr,
+                    permit,
+                    cancel,
+                } => {
+                    cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::State));
+                    self.error = None;
+                    let generation = self.session.generation;
+                    let task = cx.background_executor().spawn(async move {
+                        // The run takes the tab's unlock (or a typed
+                        // password) and hands back what opens the source
+                        // now; a closed tab's drops with the task.
+                        let result = import::prepare_unlocking(
+                            &path,
+                            &mut unlock,
+                            installed.as_ref(),
+                            skip_ocr,
+                            &cancel,
+                        );
+                        drop(permit);
+                        (result, unlock)
+                    });
+                    let task = cx.spawn_in(window, async move |this, cx| {
+                        let (result, unlock) = task.await;
+                        let _ = this.update_in(cx, |this, window, cx| {
+                            this.import.complete(generation, result, unlock);
+                            this.resume_import(window, cx);
+                            cx.emit(workspace::TabEvent::Import(
+                                workspace::ImportEvent::Finished,
+                            ));
+                        });
+                        Background::Import
+                    });
+                    self.keep_background(task);
+                    cx.notify();
+                }
+                ImportEffect::SetUp => self.begin_ocr_setup(window, cx),
+                ImportEffect::Request(imported) => {
+                    self.request(Next::Import(Box::new(imported)), window, cx);
+                }
+                ImportEffect::SharedOcrReady(installed) => {
+                    self.ocr_state = OcrState::Ready(installed);
+                }
+                ImportEffect::SharedOcrFailed(error) => {
+                    self.ocr_state = OcrState::Failed(error);
+                }
+                ImportEffect::SharedOcrKnown => {
+                    self.ocr_state = self.known_settings_ocr_state(cx);
+                }
+                ImportEffect::SharedOcrChanged => {
+                    cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::Ocr(
+                        self.ocr_state.clone(),
+                    )));
+                }
+                ImportEffect::Error(error) => self.error = Some(error),
+                ImportEffect::FocusCard => self.focus_card = true,
+                ImportEffect::State => {
+                    cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::State));
+                }
+            }
+        }
+    }
+
+    pub(super) fn setup_ocr(&mut self, _: &SetupOcr, window: &mut Window, cx: &mut Context<Self>) {
+        if self.lifecycle.prompting()
+            || self.import.busy()
+            || self.ocr_state.busy()
+            || self.import.slot_busy()
+            || !ocr::SUPPORTED
+        {
+            return;
+        }
+        if self.installed_for(self.recognition_model(), cx).is_some() {
+            return;
+        }
+        self.begin_ocr_setup(window, cx);
+    }
+
+    fn begin_ocr_setup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.ocr_state.busy() {
+            return;
+        }
+        let snapshot = self.preferences.borrow().snapshot();
+        let config = match snapshot {
+            Ok(p) => settings::OcrConfig {
+                model: self.recognition_model(),
+                ..p.ocr
+            },
+            Err(e) => {
+                self.error = Some(e.to_string());
+                cx.notify();
+                return;
+            }
+        };
+        let shared = self.settings_ocr_model() == Some(config.model);
+        self.import.begin_setup();
+        let panel = self.model_panel.clone();
+        // The inline consent continuation remains document-owned. Settings downloads never create one.
+        if self.import.setting_up() {
+            let config = config.clone();
+            let subscription =
+                cx.subscribe_in(&panel, window, move |this, _, event, window, cx| {
+                    if let crate::settings::Event::Finished(settings::Model::Ocr(model), result) =
+                        event
+                        && *model == config.model
+                        && this.import.setting_up()
+                    {
+                        match result {
+                            Ok(Some(installed)) => {
+                                let mut installed = installed.clone();
+                                installed.config = config.clone();
+                                this.finish_ocr_setup(Ok(installed), window, cx);
+                            }
+                            Ok(None) => {}
+                            Err(e) => this.finish_ocr_setup(Err(e.clone()), window, cx),
+                        }
+                    }
+                });
+            self.ocr_setup_subscription = Some(subscription);
+        }
+        let started = panel.update(cx, |panel, cx| {
+            panel.setup(settings::Model::Ocr(config.model), false, cx);
+            panel.working == Some(settings::Model::Ocr(config.model))
+        });
+        if started {
+            self.import.setup_started(config.model, shared);
+            // Another model's setup shows only in this card's progress.
+            if shared {
+                self.ocr_state = OcrState::Installing;
+                cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::Ocr(
+                    self.ocr_state.clone(),
+                )));
+            }
+            cx.notify();
+        } else if self.import.setting_up() {
+            self.finish_ocr_setup(
+                Err("Another model job is running. Retry when it finishes.".into()),
+                window,
+                cx,
+            );
+        }
+    }
+
+    pub(crate) fn finish_ocr_setup(
+        &mut self,
+        result: Result<ocr::Installed, String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let effects =
+            self.import
+                .finish_setup(result, self.session.generation, self.settings_ocr_model());
+        self.carry_out_import(effects, window, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn ocr_action(&mut self, skip: bool, window: &mut Window, cx: &mut Context<Self>) {
+        // Recognizing freezes the languages the card shows, so this is the
+        // model it will use.
+        let installed = self.installed_for(self.recognition_model(), cx).is_some();
+        let model_busy = model_work::busy() || self.model_panel.read(cx).working.is_some();
+        let effect = self.import.consent(
+            skip,
+            self.ocr_state.busy(),
+            self.settings_ocr_model(),
+            self.session.generation,
+            installed,
+            model_busy,
+        );
+        let error = matches!(effect, Some(ImportEffect::Error(_)));
+        self.carry_out_import(effect, window, cx);
+        if error {
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn try_auto_convert(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let effect = self.import.auto_convert(self.preview.source().cloned());
+        self.carry_out_import(effect, window, cx);
+    }
+
+    /// Unlock on the conversion card: the field's text goes to one
+    /// conversion as the document's password and is wiped from the field;
+    /// what it unlocks stays with the tab.
+    fn unlock_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.import.can_unlock() || self.lifecycle.prompting() {
+            return;
+        }
+        let password = self
+            .password_field
+            .update(cx, |field, cx| field.take_secret(cx));
+        if password.is_empty() {
+            return;
+        }
+        let effect = self.import.try_password(import::Password::from(password));
+        self.carry_out_import(effect, window, cx);
+    }
+
+    /// The last conversion ended because Cancel was pressed (#950): a state
+    /// the user chose, so the tab shows no error mark for it.
+    pub(crate) fn conversion_cancelled(&self) -> bool {
+        self.error.as_deref() == Some(&*mdoc_import::import::ImportError::Cancelled.to_string())
+    }
+
+    /// The conversion card for a locked document: its password, asked for
+    /// first or again after a wrong one. Unlocking converts it in memory.
+    pub(super) fn password_card(
+        &mut self,
+        card: gpui::Stateful<gpui::Div>,
+        prompt: import_flow::PasswordPrompt,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let field_focus = self.password_field.read(cx).focus_handle(cx);
+        if std::mem::take(&mut self.focus_card)
+            && (self.focus.contains_focused(window, cx) || window.focused(cx).is_none())
+        {
+            window.defer(cx, move |window, cx| window.focus(&field_focus, cx));
+        }
+        self.password_form(
+            card,
+            "Enter its password to convert it. mdoc unlocks it in memory while this tab is open and never saves the password or an unlocked copy.",
+            prompt == import_flow::PasswordPrompt::Wrong,
+            self.password_field.clone(),
+            ("document-password", "unlock-document"),
+            self.import.can_unlock(),
+            Self::unlock_document,
+            cx,
+        )
+    }
+
+    /// The Original's card for a locked DOCX this tab holds no unlock for,
+    /// a reopened one (#1024 decision 6): its password shows the Original,
+    /// and the unlock stays with the tab. While the conversion card asks for
+    /// the same password, the Original only points to it.
+    pub(super) fn original_password_card(
+        &mut self,
+        password: crate::document::preview::OriginalPassword,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = self.theme.get();
+        if self.lifecycle.source_only() && self.import.password_prompt().is_some() {
+            return div()
+                .id("original-password-pending")
+                .max_w(px(360.))
+                .px_6()
+                .text_center()
+                .text_size(px(14.))
+                .child("Enter the document’s password to show the Original.")
+                .into_any_element();
+        }
+        let field_focus = self.original_password_field.read(cx).focus_handle(cx);
+        if std::mem::take(&mut self.focus_original_card) {
+            window.defer(cx, move |window, cx| window.focus(&field_focus, cx));
+        }
+        let card = ui::state_card("original-password-card", theme)
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "original-password-card".into())
+            })
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(theme.pdf_style().header_muted)
+                    .text_ellipsis()
+                    .child(
+                        self.preview
+                            .source()
+                            .and_then(|path| path.file_name())
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                    ),
+            );
+        div()
+            .w_full()
+            .px_6()
+            .flex()
+            .justify_center()
+            .child(self.password_form(
+                card,
+                "Enter its password to show the Original. mdoc unlocks it in memory while this tab is open and never saves the password or an unlocked copy.",
+                password == crate::document::preview::OriginalPassword::Wrong,
+                self.original_password_field.clone(),
+                ("original-password", "unlock-original"),
+                password != crate::document::preview::OriginalPassword::Unlocking,
+                Self::unlock_original,
+                cx,
+            ))
+            .into_any_element()
+    }
+
+    /// A locked document's password card: `body`, the wrong-password line,
+    /// and `field` with an Unlock button (`ids`); Enter unlocks too.
+    #[allow(clippy::too_many_arguments)]
+    fn password_form(
+        &self,
+        card: gpui::Stateful<gpui::Div>,
+        body: &'static str,
+        wrong: bool,
+        field: Entity<markdown_search::SearchInput>,
+        ids: (&'static str, &'static str),
+        enabled: bool,
+        unlock: fn(&mut Self, &mut Window, &mut Context<Self>),
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = self.theme.get();
+        let (field_id, button_id) = ids;
+        card.child(ui::card_title("This document is password-protected"))
+            .child(ui::card_text(body, theme))
+            .when(wrong, |v| {
+                v.child(ui::card_error(
+                    mdoc_import::import::ImportError::WrongPassword.to_string(),
+                    theme,
+                ))
+            })
+            .child(
+                ui::card_actions()
+                    .flex_nowrap()
+                    .child(
+                        div()
+                            .id(field_id)
+                            .when(cfg!(test), |v| v.debug_selector(move || field_id.into()))
+                            .flex_1()
+                            .min_w_0()
+                            .border_1()
+                            .rounded_md()
+                            .border_color(theme.pdf_style().border)
+                            .bg(theme.pdf_style().bg)
+                            .px_2()
+                            .py_1()
+                            // Enter unlocks, as the button does.
+                            .on_key_down(cx.listener(
+                                move |this, event: &gpui::KeyDownEvent, window, cx| {
+                                    let keystroke = &event.keystroke;
+                                    if keystroke.key == "enter" && !keystroke.modifiers.modified() {
+                                        cx.stop_propagation();
+                                        unlock(this, window, cx);
+                                    }
+                                },
+                            ))
+                            .child(field),
+                    )
+                    .child(
+                        ui::primary_button(button_id, "Unlock", theme, enabled)
+                            .when(cfg!(test), |v| v.debug_selector(move || button_id.into()))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                unlock(this, window, cx);
+                            })),
+                    ),
+            )
+            .into_any_element()
+    }
+}
+
+/// The shared OCR state for the Settings model from what Settings already
+/// knows, without starting a check.
+pub(crate) fn known_ocr_state(
+    preferences: &settings::Shared,
+    panel: &crate::settings::Panel,
+) -> OcrState {
+    let Ok(config) = preferences.borrow().snapshot().map(|p| p.ocr) else {
+        return OcrState::Missing;
+    };
+    if let Some(mut installed) = panel
+        .ocr_installations
+        .iter()
+        .find(|i| i.config.model == config.model)
+        .cloned()
+    {
+        installed.config = config;
+        return OcrState::Ready(installed);
+    }
+    match &panel.statuses[crate::settings::Panel::index(settings::Model::Ocr(config.model))] {
+        crate::settings::Status::Damaged(e) | crate::settings::Status::Unavailable(e) => {
+            OcrState::Failed(e.clone())
+        }
+        _ => OcrState::Missing,
     }
 }
 
