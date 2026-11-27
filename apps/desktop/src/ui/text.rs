@@ -29,9 +29,39 @@ pub(crate) const SWITCH_TO_SYSTEM_THEME: &str = "Switch to system theme";
 pub(crate) const SWITCH_TO_LIGHT_THEME: &str = "Switch to light theme";
 pub(crate) const SWITCH_TO_DARK_THEME: &str = "Switch to dark theme";
 
+/// The link to a model's download, on each card that needs a model.
+pub(crate) const CHOOSE_MODEL: &str = "Choose model…";
+
+/// The theme control's label, by the current choice.
+pub(crate) const THEME_SYSTEM: &str = "Theme: System";
+pub(crate) const THEME_LIGHT: &str = "Theme: Light";
+pub(crate) const THEME_DARK: &str = "Theme: Dark";
+
 /// A download card's progress.
 pub(crate) fn downloading(percent: impl std::fmt::Display) -> String {
     format!("Downloading {percent}%")
+}
+
+/// A download card's size: what has arrived of the whole, in megabytes.
+pub(crate) fn megabytes_of(
+    received: impl std::fmt::Display,
+    total: impl std::fmt::Display,
+) -> String {
+    format!("{received} / {total} MB")
+}
+
+/// The header bell's label: how many notices wait.
+pub(crate) fn notices(count: usize) -> String {
+    if count == 1 {
+        "1 notice".to_string()
+    } else {
+        format!("{count} notices")
+    }
+}
+
+/// What a screen reader says for a "4/6" position: "Mention 4 of 6".
+pub(crate) fn position_of(noun: &str, position: usize, total: usize) -> String {
+    format!("{noun} {position} of {total}")
 }
 
 /// What a screen reader adds to a disabled menu row: why it is off.
@@ -153,14 +183,19 @@ mod tests {
                 while b[i] != b'"' {
                     i += if b[i] == b'\\' { 2 } else { 1 };
                 }
-                literals.push((start, text[start + 1..i].to_string()));
+                literals.push((start, unescape(&text[start + 1..i])));
                 i += 1;
                 mark(&mut code, start, i);
             } else if b[i] == b'\'' {
                 // A char literal; a lifetime has no closing quote nearby.
                 let rest = &text[i + 1..];
                 let len = if let Some(escaped) = rest.strip_prefix('\\') {
-                    escaped.find('\'').map(|n| n + 2)
+                    // Past the escaped char first: '\'' and '\\' hold a quote
+                    // or a backslash of their own.
+                    escaped.chars().next().and_then(|first| {
+                        let first = first.len_utf8();
+                        escaped[first..].find('\'').map(|n| 1 + first + n)
+                    })
                 } else {
                     rest.chars()
                         .next()
@@ -179,6 +214,40 @@ mod tests {
             }
         }
         (literals, code)
+    }
+
+    /// A plain string literal's text as the app shows it: escapes decoded,
+    /// and a line continuation joined.
+    fn unescape(raw: &str) -> String {
+        let mut out = String::new();
+        let mut chars = raw.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c != '\\' {
+                out.push(c);
+                continue;
+            }
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('r') => out.push('\r'),
+                Some('t') => out.push('\t'),
+                Some('0') => out.push('\0'),
+                Some('\n') => while chars.next_if(|c| c.is_whitespace()).is_some() {},
+                Some('x') => {
+                    let hex: String = (0..2).filter_map(|_| chars.next()).collect();
+                    out.extend(u8::from_str_radix(&hex, 16).ok().map(char::from));
+                }
+                Some('u') => {
+                    let hex: String = (chars.by_ref())
+                        .skip_while(|&c| c == '{')
+                        .take_while(|&c| c != '}')
+                        .collect();
+                    out.extend(u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32));
+                }
+                Some(other) => out.push(other),
+                None => {}
+            }
+        }
+        out
     }
 
     /// The byte ranges of `#[cfg(test)]` items: they are not the app's text.
@@ -227,25 +296,35 @@ mod tests {
             })
             .map(|path| {
                 let text = std::fs::read_to_string(&path).unwrap();
-                let (literals, code) = lex(&text);
-                let tests = test_ranges(&text, &code);
-                let kept = (literals.into_iter())
-                    .filter(|(at, _)| !tests.iter().any(|&(a, b)| (a..b).contains(at)))
-                    .map(|(_, literal)| literal)
-                    .collect();
-                (path, kept)
+                (path, kept_literals(&text))
             })
             .collect()
     }
 
-    /// A word of an identifier, such as `UiPanel`: two humps or more.
+    /// A file's string literals outside comments and tests.
+    fn kept_literals(text: &str) -> Vec<String> {
+        let (literals, code) = lex(text);
+        let tests = test_ranges(text, &code);
+        (literals.into_iter())
+            .filter(|(at, _)| !tests.iter().any(|&(a, b)| (a..b).contains(at)))
+            .map(|(_, literal)| literal)
+            .collect()
+    }
+
+    /// A word of an identifier, such as `UiPanel`: two humps or more, in
+    /// lowercase letters (a unit such as MB is a word).
     fn identifier_like(token: &str) -> bool {
         let humps = token.chars().filter(char::is_ascii_uppercase).count();
-        token.chars().all(|c| c.is_ascii_alphanumeric()) && humps >= 2
+        token.chars().all(|c| c.is_ascii_alphanumeric())
+            && humps >= 2
+            && token.chars().any(|c| c.is_ascii_lowercase())
     }
 
     /// Words a user reads as a sentence: a capital first, and a lowercase
-    /// word after a space, closing punctuation or a format placeholder.
+    /// word after a space, closing punctuation or a format placeholder; two
+    /// words or more that close like a sentence, whatever comes first (a
+    /// lowercase name such as mdoc, or a placeholder); a placeholder among
+    /// words, such as "{count} notices"; or a label, such as "Theme: Dark".
     fn is_sentence(literal: &str) -> bool {
         let mut bare = String::new();
         let mut depth = 0;
@@ -263,8 +342,18 @@ mod tests {
         let words: Vec<&str> = (bare.split_whitespace())
             .filter(|w| w.chars().any(char::is_alphabetic))
             .collect();
-        if !first.is_uppercase() || words.iter().all(|w| identifier_like(w)) {
+        if words.iter().all(|w| identifier_like(w)) {
             return false;
+        }
+        let placeholder_among_words = literal.contains('{') && literal.contains(' ');
+        let label = bare.split_once(": ").is_some_and(|(name, value)| {
+            name.chars().any(char::is_alphabetic) && value.chars().any(char::is_alphabetic)
+        });
+        if placeholder_among_words || label {
+            return true;
+        }
+        if !first.is_uppercase() {
+            return words.len() >= 2 && bare.trim_end().ends_with(['.', '!', '?', '…']);
         }
         let lower_word =
             (bare.split(' ').skip(1)).any(|w| w.starts_with(|c: char| c.is_lowercase()));
@@ -358,7 +447,49 @@ mod tests {
         assert!(!is_sentence("UiPanel UiMenu"));
         assert!(!is_sentence("{DIALOG} UiPanel"));
         assert!(!is_sentence("mod-shift-p"));
+        assert!(is_sentence("mdoc could not open this document."));
+        assert!(is_sentence("{count} files could not be opened."));
+        assert!(is_sentence("{count} notices"));
+        assert!(is_sentence("{} / {} MB"));
+        assert!(is_sentence("{noun} {position} of {total}"));
+        assert!(is_sentence("Theme: System"));
+        assert!(!is_sentence("tooltip-{text}"));
+        assert!(!is_sentence("{a}–{b}"));
+        assert!(!is_sentence("https://example.com"));
         assert!(contains_word("No anonymization here", "anonymization"));
         assert!(!contains_word("Match cases", "case"));
+        // An escaped char literal ends at its own quote: what follows is code.
+        for source in ["'\\n';", "'\\\\';", "'\\'';", "'\\u{1f}';"] {
+            let (literals, code) = lex(source);
+            assert!(literals.is_empty() && code[source.len() - 1], "{source}");
+        }
+        // A char literal at the end of the file, or cut short, ends the lexing.
+        for source in ["x = '\\n'", "x = 'a'", "x = '\\", "x = '"] {
+            assert!(lex(source).0.is_empty(), "{source}");
+        }
+        // A multibyte char right after an escaped char literal.
+        let (literals, _) = lex("('\\n', 'é', \"é sentence\")");
+        assert_eq!(literals, [(13, "é sentence".to_string())]);
+    }
+
+    /// The lexer sees what the app shows: a char constant in a test item
+    /// hides nothing after it, and a line continuation joins its words.
+    #[test]
+    fn the_lexer_reads_char_literals_escapes_and_continuations() {
+        let source = concat!(
+            "#[cfg(test)]\n",
+            "const TEST_NEWLINE: char = '\\n';\n",
+            "fn shown() -> &'static str {\n",
+            "    \"Start anonymization\"\n",
+            "}\n",
+            "fn joined() -> &'static str {\n",
+            "    \"setup \\\n        wizard \\u{2014} \\\"quoted\\\"\"\n",
+            "}\n",
+        );
+        assert_eq!(
+            kept_literals(source),
+            ["Start anonymization", "setup wizard \u{2014} \"quoted\""]
+        );
+        assert!(contains_word(&kept_literals(source)[1], "setup wizard"));
     }
 }
