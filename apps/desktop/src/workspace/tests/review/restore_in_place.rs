@@ -812,3 +812,111 @@ fn typing_a_long_reply_keeps_the_caret_in_the_box(cx: &mut TestAppContext) {
         );
     });
 }
+
+#[gpui::test]
+fn ai_reply_round_trip_saves_the_reply_and_shows_it_restored(cx: &mut TestAppContext) {
+    use mdoc_pii::Category;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("contract.md");
+    let source = "Anna Petrova met Northwind Traders Ltd.";
+    std::fs::write(&path, source).unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![path], window, cx)
+    });
+    cx.run_until_parked();
+    let first = active(&tabs, cx);
+    let first_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    first.update_in(cx, |view, window, cx| {
+        view.pii.set_reviewing(true);
+        view.pii
+            .review_mut()
+            .add_manual(source, 0..12, Category::Person)
+            .unwrap();
+        view.pii
+            .review_mut()
+            .add_manual(source, 17..38, Category::Organization)
+            .unwrap();
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+        assert_eq!(view.editor.read(cx).text(), "PERSON_1 met ORG_1.");
+    });
+    cx.run_until_parked();
+
+    // Inspector: Share in the header, Copy for AI in the tab.
+    click_toolbar(cx, "primary-share");
+    click_toolbar(cx, "share-copy-for-ai");
+    cx.update(|_, cx| {
+        let copied = cx.read_from_clipboard().unwrap().text().unwrap();
+        assert!(copied.starts_with("Note: names and other identifying details"));
+        assert!(copied.contains("such as PERSON_1 or ORG_1."));
+        assert!(copied.ends_with("---\n\nPERSON_1 met ORG_1."));
+        assert!(!copied.contains("Anna"), "the notice never names originals");
+    });
+
+    let reply = "**PERSON_1** owes ORG_1; person 1 and PERSON_7 disagree.";
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(reply.into()));
+    more(cx, "more-paste-reply");
+    cx.run_until_parked();
+    let restored =
+        "**Anna Petrova** owes Northwind Traders Ltd; Anna Petrova and PERSON_7 disagree.";
+    cx.update(|_, cx| {
+        let w = tabs.read(cx);
+        assert_eq!(w.tabs.active(), first_id, "no tab is opened");
+        let page = w.reply_page.as_ref().expect("the Reply page shows");
+        assert_eq!(page.restored().text, restored);
+        assert_eq!(page.restored().unresolved.len(), 1);
+        assert_eq!(page.summary(), "2 values restored · 1 unrecognized");
+        assert_eq!(
+            first.read(cx).editor.read(cx).text(),
+            "PERSON_1 met ORG_1.",
+            "the source tab is untouched"
+        );
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("reply-page").is_some());
+    // Saved as received, aliases and all.
+    let saved = vault(&tabs, cx).replies();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(
+        vault(&tabs, cx).reply(&saved[0].id).unwrap().markdown,
+        reply
+    );
+    // Copy reply copies the restored text, marked as restored.
+    click_toolbar(cx, "reply-page-copy");
+    cx.update(|_, cx| {
+        let item = cx.read_from_clipboard().unwrap();
+        assert_eq!(item.text().unwrap(), restored);
+        assert!(crate::review::restored_clipboard::is_restored(&item));
+    });
+    // Next unrecognized walks the unknown token.
+    click_toolbar(cx, "reply-page-next");
+    cx.update(|_, cx| {
+        let range = tabs.read(cx).current_saved_unrecognised().unwrap();
+        assert_eq!(&restored[range], "PERSON_7");
+    });
+    // The session keeps no reply text.
+    cx.update(|_, cx| {
+        let session = tabs.read(cx).snapshot(cx);
+        assert_eq!(session.tabs.len(), 1);
+    });
+}
+
+#[gpui::test]
+fn paste_ai_response_needs_applied_aliases_and_clipboard_text(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let view = active(&tabs, cx);
+    cx.simulate_input("PERSON_1 met ORG_1.");
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1".into()));
+    view.update_in(cx, |view, window, cx| {
+        view.paste_ai_response(&PasteAiResponse, window, cx);
+        assert!(
+            view.error
+                .as_deref()
+                .unwrap()
+                .contains("Apply replacements")
+        );
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 1));
+}

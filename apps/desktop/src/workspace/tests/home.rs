@@ -555,3 +555,220 @@ fn a_pending_proposal_needs_review_after_a_restart(cx: &mut TestAppContext) {
         assert!(tabs.member_needs_review(&summary, cx));
     });
 }
+
+/// Paste text puts the clipboard straight into the new tab (issue #300):
+/// a dispatched Paste reached no editor and left an empty Untitled tab.
+#[gpui::test]
+fn paste_text_fills_the_new_tab(cx: &mut TestAppContext) {
+    cx.update(crate::workspace::bind_keys);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let texts = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        let mut texts = cx.update(|_, cx| {
+            tabs.read(cx)
+                .tabs
+                .iter()
+                .map(|tab| {
+                    tab.view()
+                        .unwrap()
+                        .read(cx)
+                        .editor
+                        .read(cx)
+                        .text()
+                        .to_owned()
+                })
+                .collect::<Vec<_>>()
+        });
+        // Live views are kept by recency; order them by text.
+        texts.sort();
+        texts
+    };
+    // From Home's button, with a Windows line ending to normalize.
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "Two lines
+Вторая строка"
+            .into(),
+    ));
+    click_toolbar(cx, "home-paste");
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| !tabs.read(cx).showing_home(cx)));
+    assert_eq!(
+        texts(&tabs, cx),
+        ["Two lines
+Вторая строка"]
+    );
+    // From the palette over that document: a second tab, the first untouched.
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("Second paste".into()));
+    cx.simulate_keystrokes("secondary-k");
+    cx.simulate_input("paste text as new document");
+    draw(cx);
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert_eq!(
+        texts(&tabs, cx),
+        [
+            "Second paste",
+            "Two lines
+Вторая строка"
+        ]
+    );
+    assert_eq!(
+        active(&tabs, cx).read_with(cx, |view, cx| view.editor.read(cx).text().to_owned()),
+        "Second paste"
+    );
+    // A blank clipboard opens no tab and says why.
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "  
+"
+        .into(),
+    ));
+    tabs.update_in(cx, |tabs, window, cx| tabs.paste_as_new_tab(window, cx));
+    cx.run_until_parked();
+    assert_eq!(texts(&tabs, cx).len(), 2);
+}
+
+#[gpui::test]
+fn home_clipboard_actions_use_the_active_documents_mapping(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let source = active(&tabs, cx);
+    click_toolbar(cx, "sidebar-home");
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("Call Anna Petrova.".into()));
+    click_toolbar(cx, "home-clipboard");
+    cx.update(|_, cx| {
+        assert!(!tabs.read(cx).showing_home(cx));
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("Call PERSON_1.")
+        );
+        assert!(source.read(cx).clipboard_notice.text().is_some());
+    });
+    click_toolbar(cx, "sidebar-home");
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "PERSON_1 owes ORG_1.".into(),
+    ));
+    click_toolbar(cx, "home-restore");
+    cx.update(|_, cx| {
+        let w = tabs.read(cx);
+        assert!(!w.showing_home(cx));
+        let page = w.reply_page.as_ref().expect("the Reply page");
+        assert_eq!(
+            page.restored().text,
+            "Anna Petrova owes Northwind Traders Ltd."
+        );
+    });
+}
+
+#[gpui::test]
+fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
+    let unknown = dir.path().join("unknown.bin");
+    for path in [&a, &b, &unknown] {
+        std::fs::write(path, path.display().to_string()).unwrap();
+    }
+    let (tabs, cx) = boot_home(cx, Session::default());
+    draw(cx);
+    let center = cx.debug_bounds("home-drop").unwrap().center();
+
+    // A drag anywhere over Home lights the drop zone and counts the files.
+    drag_files(cx, std::slice::from_ref(&unknown), center);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, Some(0)));
+    drop_files(cx, center);
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).shell.drop, None);
+        assert_eq!(tabs.read(cx).tabs.len(), 1);
+    });
+
+    drag_files(cx, &[a.clone(), b.clone(), unknown.clone()], center);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, Some(2)));
+    drop_files(cx, center);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
+    cx.update(|_, cx| {
+        assert!(
+            tabs.read(cx)
+                .notices
+                .message()
+                .unwrap()
+                .contains("unknown.bin")
+        );
+    });
+
+    // A document is no Home drop target.
+    assert!(cx.debug_bounds("home-drop").is_none());
+    drag_files(cx, std::slice::from_ref(&b), center);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, None));
+    drop_files(cx, center);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
+}
+
+/// Tooltips name the key that does the same (U16): the sidebar's toggle,
+/// Back and New tab, and the toolbar's Pseudonymize. Home's "Documents stay
+/// on this Mac" explains itself above the note, clear of the buttons beside
+/// it.
+#[gpui::test]
+fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContext) {
+    use crate::{commands::shortcuts::tip, workspace::sidebar::navigation_ui::Back};
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    draw(cx);
+    let hover = |cx: &mut VisualTestContext, id: &'static str| {
+        let at = cx
+            .debug_bounds(id)
+            .unwrap_or_else(|| panic!("{id}"))
+            .center();
+        cx.simulate_mouse_move(at, None, gpui::Modifiers::none());
+        cx.run_until_parked();
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(600));
+        cx.run_until_parked();
+        draw(cx);
+    };
+    let shown = |cx: &mut VisualTestContext, text: String| {
+        let selector: &'static str = Box::leak(format!("tooltip-{text}").into_boxed_str());
+        assert!(cx.debug_bounds(selector).is_some(), "no tooltip “{text}”");
+    };
+
+    // Home's note: the explanation sits above it, right-aligned, and covers
+    // none of the buttons beside it.
+    hover(cx, "empty-page-local");
+    let note = cx.debug_bounds("empty-page-local").unwrap();
+    let machine = if cfg!(target_os = "macos") {
+        "this Mac"
+    } else {
+        "this computer"
+    };
+    let detail = format!(
+        "tooltip-Detection, conversion and Projects run on {machine}. mdoc goes online \
+         only to check for updates and to download models you choose."
+    );
+    let bubble = cx
+        .debug_bounds(Box::leak(detail.into_boxed_str()))
+        .expect("the note explains itself on hover");
+    assert!(bubble.bottom() <= note.top(), "{bubble:?} over {note:?}");
+    assert!((bubble.right() - note.right()).abs() < px(1.));
+    let clipboard = cx.debug_bounds("home-clipboard").unwrap();
+    assert!(
+        !bubble.intersects(&clipboard),
+        "{bubble:?} covers {clipboard:?}"
+    );
+
+    hover(cx, "sidebar-toggle");
+    shown(cx, tip("Collapse sidebar", &ToggleSidebar));
+    hover(cx, "tree-new");
+    shown(cx, tip("New document", &New));
+    // A tab to go back from.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.new_tab(window, cx);
+    });
+    cx.simulate_input("alpha beta");
+    draw(cx);
+    let back = tabs.read_with(cx, |tabs, cx| tabs.navigation_label(true, cx));
+    hover(cx, "workspace-back");
+    shown(cx, tip(back, &Back));
+    hover(cx, "Pseudonymize");
+    shown(
+        cx,
+        tip("Find names to replace", &crate::review::Pseudonymize),
+    );
+}

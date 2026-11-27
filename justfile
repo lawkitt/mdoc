@@ -36,18 +36,23 @@ deny-advisories:
     cargo deny --locked check advisories
 
 # Cargo.lock must match Cargo.toml (ADR 0053); no `#[path]` under apps/desktop/src/ (ADR 0069);
-# no GPUI under the GUI-free crates (ADR 0069); no unexplained fixed delay in the
-# mobile apps' code (ADR 0104); the docs' ceilings, folders and ADR numbers
-# (scripts/dev/docs-lint.sh); then clippy with warnings as errors, and the plain
-# binary (check-bin)
+# a header on every desktop module (scripts/dev/module-map.sh); no GPUI under the
+# GUI-free crates (ADR 0069); no unexplained fixed delay in the mobile apps' code
+# (ADR 0104); the docs' ceilings, folders and ADR numbers (scripts/dev/docs-lint.sh);
+# then clippy with warnings as errors, and the plain binary (check-bin)
 lint:
     cargo metadata --locked --format-version 1 > /dev/null
     scripts/dev/docs-lint.sh
     if grep -rnE --include='*.rs' '#\[path[[:space:]]*=' apps/desktop/src; then echo 'error: #[path] under apps/desktop/src/; use a folder module (ADR 0069)' >&2; exit 1; fi
+    scripts/dev/module-map.sh --check
     scripts/dev/gui-free.sh
     scripts/dev/fixed-delays.sh
     cargo clippy --workspace --all-targets --features headless-renders -- -D warnings
     just check-bin
+
+# The desktop app's module tree, each module with its header's first sentence
+map:
+    scripts/dev/module-map.sh
 
 # The shipped binary alone, as `just package` builds it (#1275): clippy's
 # --all-targets turns on the dev-dependency gpui/test-support for the bin too,

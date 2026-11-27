@@ -1,5 +1,6 @@
-//! The keyboard shortcuts sheet: opened by `?` outside text
-//! fields, ⌘/ (Ctrl+/) everywhere and the palette; every table row drawn.
+//! The palette: the command palette's rows, filter, actions and headings,
+//! and the keyboard shortcuts sheet, opened by `?` outside text fields, ⌘/
+//! (Ctrl+/) everywhere and the palette, with every table row drawn.
 use super::*;
 use crate::{commands::shortcuts, workspace::palette::shortcuts_ui};
 
@@ -244,4 +245,153 @@ fn the_sheet_opens_from_another_window(cx: &mut TestAppContext) {
         .unwrap();
     cx.run_until_parked();
     assert!(sheet_open(&tabs, cx));
+}
+
+#[gpui::test]
+fn command_palette_filters_and_runs_actions(cx: &mut TestAppContext) {
+    cx.update(crate::workspace::bind_keys);
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    draw(cx);
+    // ⌘K opens it from the document.
+    cx.simulate_keystrokes("secondary-k");
+    draw(cx);
+    assert!(cx.debug_bounds("command-palette").is_some());
+    cx.simulate_input("home");
+    draw(cx);
+    cx.simulate_keystrokes("enter");
+    draw(cx);
+    assert!(cx.debug_bounds("command-palette").is_none());
+    assert!(cx.debug_bounds("home").is_some());
+    // From Home, Esc closes it again.
+    cx.simulate_keystrokes("secondary-k");
+    draw(cx);
+    assert!(cx.debug_bounds("command-palette").is_some());
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    assert!(cx.debug_bounds("command-palette").is_none());
+    cx.update(|_, cx| assert!(tabs.read(cx).shell.palette.is_none()));
+    // View actions without a menu bar on Windows are in the palette too.
+    let visible = tabs.read_with(cx, |tabs, _| tabs.sidebar.visible());
+    cx.simulate_keystrokes("secondary-k");
+    draw(cx);
+    cx.simulate_input("toggle sidebar");
+    draw(cx);
+    cx.simulate_keystrokes("enter");
+    draw(cx);
+    tabs.read_with(cx, |tabs, _| assert_eq!(tabs.sidebar.visible(), !visible));
+}
+
+/// The palette's theme row names the theme it switches to (U14), and running
+/// it moves the name on to the next one.
+#[gpui::test]
+fn command_palette_theme_row_names_its_target(cx: &mut TestAppContext) {
+    cx.update(crate::workspace::bind_keys);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    for (now, row, next) in [
+        (
+            ThemeChoice::System,
+            "Switch to light theme",
+            ThemeChoice::Light,
+        ),
+        (
+            ThemeChoice::Light,
+            "Switch to dark theme",
+            ThemeChoice::Dark,
+        ),
+        (
+            ThemeChoice::Dark,
+            "Switch to system theme",
+            ThemeChoice::System,
+        ),
+    ] {
+        tabs.read_with(cx, |tabs, cx| {
+            assert_eq!(tabs.theme_choice, now);
+            let actions = tabs.palette_section("Actions", cx);
+            assert!(actions.iter().any(|label| label == row), "{actions:?}");
+            assert!(
+                !actions
+                    .iter()
+                    .any(|label| label.starts_with("Switch theme"))
+            );
+        });
+        cx.simulate_keystrokes("secondary-k");
+        cx.simulate_input(row);
+        draw(cx);
+        cx.simulate_keystrokes("enter");
+        draw(cx);
+        cx.update(|_, cx| assert_eq!(tabs.read(cx).theme_choice, next));
+    }
+}
+
+#[gpui::test]
+fn command_palette_routes_every_settings_category(cx: &mut TestAppContext) {
+    cx.update(crate::workspace::bind_keys);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
+    let labels = tabs.read_with(cx, |tabs, cx| tabs.palette_section("Go to", cx));
+    for category in crate::settings::Category::ALL {
+        assert!(labels.contains(&format!("Settings › {}", category.label())));
+        cx.simulate_keystrokes("secondary-k");
+        cx.simulate_input(&format!("settings {}", category.label()));
+        draw(cx);
+        cx.simulate_keystrokes("enter");
+        draw(cx);
+        cx.update(|_, cx| {
+            assert!(tabs.read(cx).shell.palette.is_none());
+            assert!(panel.read(cx).open);
+            assert_eq!(panel.read(cx).category(), category);
+        });
+        panel.update_in(cx, |panel, window, cx| panel.close(window, cx));
+        draw(cx);
+    }
+}
+
+/// The palette lists the document's headings; choosing one moves the caret
+/// to its line and scrolls it into view, leaving Undo as it was.
+#[gpui::test]
+fn palette_goes_to_a_heading(cx: &mut TestAppContext) {
+    cx.update(crate::workspace::bind_keys);
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(600.)));
+    let view = active(&tabs, cx);
+    let filler = "Paragraph text.\n\n".repeat(60);
+    let text = format!("# Overview\n\n{filler}## Termination clause\n\n{filler}## Fees\n");
+    view.update_in(cx, |view, _, cx| {
+        view.editor.update(cx, |e, cx| e.set_text(&text, cx));
+        view.editor.update(cx, |e, cx| e.set_cursor(text.len(), cx));
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    draw(cx);
+    // One typed character is the Undo step to keep.
+    cx.simulate_input("x");
+    draw(cx);
+    let rows = cx.update(|_, cx| tabs.read(cx).palette_section("Go to heading", cx));
+    assert_eq!(rows, ["Overview", "Termination clause", "Fees"]);
+    // A narrow window showing Source switches back to the Markdown pane.
+    view.update(cx, |view, _| view.original_selected = true);
+    cx.simulate_keystrokes("secondary-k");
+    draw(cx);
+    cx.simulate_input("termination");
+    draw(cx);
+    cx.simulate_keystrokes("enter");
+    draw(cx);
+    draw(cx);
+    let target = text.find("## Termination").unwrap();
+    assert!(!cx.update(|_, cx| view.read(cx).original_selected));
+    assert!(editor_focused(&tabs, cx));
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.editor.read(cx).cursor(), target);
+        let caret = view.editor.read(cx).caret_bounds().unwrap();
+        let viewport = view.scroll.bounds();
+        assert!(
+            caret.top() >= viewport.top() && caret.bottom() <= viewport.bottom(),
+            "heading {caret:?} outside {viewport:?}"
+        );
+    });
+    // Undo still removes the typed character and nothing else.
+    cx.dispatch_action(mdoc_editor::Undo);
+    draw(cx);
+    cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), text));
 }
