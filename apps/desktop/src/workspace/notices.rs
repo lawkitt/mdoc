@@ -212,7 +212,7 @@ impl Workspace {
                             )))
                         })
                         .child(
-                            action("crash-dismiss", "Dismiss")
+                            action("crash-dismiss", crate::ui::text::DISMISS)
                                 .on_click(cx.listener(move |this, _, _, cx| done(this, cx))),
                         ),
                 )
@@ -514,7 +514,7 @@ impl Workspace {
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "dismiss-update-banner".into())
                         })
-                        .aria_label("Dismiss")
+                        .aria_label(crate::ui::text::DISMISS)
                         .px_1()
                         .rounded_sm()
                         .text_color(p.header_muted)

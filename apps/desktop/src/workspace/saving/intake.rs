@@ -227,7 +227,7 @@ impl Workspace {
             &[
                 gpui::PromptButton::new("Open Existing"),
                 gpui::PromptButton::new("Import Again"),
-                gpui::PromptButton::cancel("Cancel"),
+                gpui::PromptButton::cancel(crate::ui::text::CANCEL),
             ],
             cx,
         );

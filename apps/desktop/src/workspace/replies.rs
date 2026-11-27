@@ -622,7 +622,7 @@ impl Workspace {
             PromptLevel::Warning,
             &format!("Delete {title}?"),
             Some("Its text is deleted from this computer. This cannot be undone."),
-            &["Delete", "Cancel"],
+            &["Delete", crate::ui::text::CANCEL],
             cx,
         );
         let id = id.to_string();
@@ -907,7 +907,12 @@ impl Workspace {
                     .child(
                         control(
                             "reply-page-copy",
-                            if page.copied { "Copied" } else { "Copy reply" }.into(),
+                            if page.copied {
+                                crate::ui::text::COPIED
+                            } else {
+                                "Copy reply"
+                            }
+                            .into(),
                             &page.copy_focus,
                         )
                         .on_click(cx.listener(|this, _, _, cx| this.copy_saved_reply(cx))),

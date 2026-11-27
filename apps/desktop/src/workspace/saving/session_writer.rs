@@ -239,7 +239,7 @@ impl Workspace {
                     "Your documents are saved. Cancel to retry, or quit using the previous \
                      session list.",
                 ),
-                &["Cancel", "Quit without updating session"],
+                &[crate::ui::text::CANCEL, "Quit without updating session"],
                 cx,
             );
             cx.spawn_in(window, async move |this, cx| {

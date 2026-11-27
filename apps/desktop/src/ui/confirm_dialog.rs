@@ -87,7 +87,7 @@ impl ConfirmDialog {
         self.buttons
             .iter()
             .position(|(button, _)| button.is_cancel())
-            .or_else(|| self.position("Cancel"))
+            .or_else(|| self.position(super::text::CANCEL))
             .or(self.buttons.len().checked_sub(1))
     }
 
@@ -187,7 +187,7 @@ impl Render for ConfirmDialog {
                     .key_context(format!("{DIALOG} UiPanel").as_str())
                     // ⌘D / Alt+D: Don't Save, as in the platform's save sheets.
                     .on_action(cx.listener(|this, _: &Discard, _, cx| {
-                        match this.position("Don't Save") {
+                        match this.position(super::text::DONT_SAVE) {
                             Some(index) => this.answer(index, cx),
                             None => cx.propagate(),
                         }
@@ -235,7 +235,10 @@ impl Render for ConfirmDialog {
 
 /// Buttons that drop work: on macOS they sit apart, at the left.
 fn drops_work(label: &str) -> bool {
-    matches!(label, "Don't Save" | "Discard All" | "Close") || label.starts_with("Quit without")
+    matches!(
+        label,
+        super::text::DONT_SAVE | super::text::DISCARD_ALL | super::text::CLOSE
+    ) || label.starts_with(super::text::QUIT_WITHOUT)
 }
 
 /// The platform's button order, as indices into `labels`, whose

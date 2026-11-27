@@ -653,14 +653,20 @@ impl Workspace {
                 ui::card_actions()
                     .justify_end()
                     .child(
-                        ui::action_control("ai-share-not-now", "Not now", theme, true, false)
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "ai-share-not-now".into())
-                            })
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.ai.not_now(std::time::Instant::now());
-                                cx.notify();
-                            })),
+                        ui::action_control(
+                            "ai-share-not-now",
+                            crate::ui::text::NOT_NOW,
+                            theme,
+                            true,
+                            false,
+                        )
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "ai-share-not-now".into())
+                        })
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.ai.not_now(std::time::Instant::now());
+                            cx.notify();
+                        })),
                     )
                     .child(
                         ui::primary_button("ai-share", "Share", theme, true)

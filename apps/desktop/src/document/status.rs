@@ -57,7 +57,7 @@ impl DocumentView {
             let cancelled = self.conversion_cancelled();
             let running = self.import.busy();
             let (title, busy) = if self.import.stopping() {
-                ("Cancelling…", true)
+                (crate::ui::text::CANCELLING, true)
             } else if running {
                 (
                     if self.import.recognizing() {
@@ -94,7 +94,7 @@ impl DocumentView {
                 .when(running && !self.import.stopping(), |v| {
                     v.child(
                         div().flex().child(
-                            ui::control("cancel-conversion", "Cancel", theme, true)
+                            ui::control("cancel-conversion", crate::ui::text::CANCEL, theme, true)
                                 .when(cfg!(test), |v| {
                                     v.debug_selector(|| "cancel-conversion".into())
                                 })
@@ -146,7 +146,7 @@ impl DocumentView {
                 .child(ui::activity(
                     "recognition-activity",
                     if stopping {
-                        "Cancelling…"
+                        crate::ui::text::CANCELLING
                     } else {
                         "Recognizing text…"
                     },
@@ -157,7 +157,7 @@ impl DocumentView {
                 .when(!stopping, |v| {
                     v.child(
                         div().flex().child(
-                            ui::control("cancel-recognition", "Cancel", theme, true)
+                            ui::control("cancel-recognition", crate::ui::text::CANCEL, theme, true)
                                 .when(cfg!(test), |v| {
                                     v.debug_selector(|| "cancel-recognition".into())
                                 })
@@ -177,15 +177,14 @@ impl DocumentView {
                         ui::setup_progress("ocr-setup-progress", state, cancelling, theme)
                             .into_any_element()
                     }
-                    None => {
-                        ui::activity("ocr-setup-progress", "Preparing…", theme).into_any_element()
-                    }
+                    None => ui::activity("ocr-setup-progress", crate::ui::text::PREPARING, theme)
+                        .into_any_element(),
                 })
                 .child(
                     ui::card_actions().child(
                         crate::settings::control(
                             "cancel-ocr-setup",
-                            "Cancel",
+                            crate::ui::text::CANCEL,
                             theme,
                             progress.is_some() && !cancelling,
                         )

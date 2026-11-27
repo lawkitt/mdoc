@@ -1239,7 +1239,7 @@ impl Panel {
             })
             .when(busy, |v| {
                 v.child(
-                    self.scrolled_quiet("updates-cancel", "Cancel", theme, true, cx)
+                    self.scrolled_quiet("updates-cancel", crate::ui::text::CANCEL, theme, true, cx)
                         .when(cfg!(test), |v| v.debug_selector(|| "updates-cancel".into()))
                         .on_click(|_, _, cx| updater::cancel_install(cx)),
                 )
@@ -1423,7 +1423,7 @@ impl Panel {
                         }
                     })))
                 .child(div().flex().flex_shrink_0().items_center().gap_2()
-                    .when(working, |v| v.child(self.scrolled_quiet(("cancel-model", index), "Cancel", theme, !self.cancelling(), cx)
+                    .when(working, |v| v.child(self.scrolled_quiet(("cancel-model", index), crate::ui::text::CANCEL, theme, !self.cancelling(), cx)
                         .on_click(cx.listener(|this, _, _, cx| this.cancel_setup(cx)))))
                     .when(missing && !working, |v| v.child(self.scrolled_control(("download-model", index), download_label, theme, idle && ocr::SUPPORTED, cx)
                         .on_click(cx.listener(move |this, _, _, cx| { if idle && ocr::SUPPORTED { this.setup(model, false, cx); } }))))
@@ -1434,7 +1434,7 @@ impl Panel {
                     .when(!missing && !working && !checking && removable, |v| v.child(self.scrolled_control(("remove-model", index), "Remove…", theme, true, cx)
                         .when(cfg!(test), move |v| v.debug_selector(move || format!("settings-remove-{index}")))
                         .on_click(cx.listener(move |_, _, window, cx| {
-                        let prompt = window.prompt(PromptLevel::Warning, &format!("Remove {} model files?", model.name()), Some("Shared runtimes and documents are retained."), &["Remove", "Cancel"], cx);
+                        let prompt = window.prompt(PromptLevel::Warning, &format!("Remove {} model files?", model.name()), Some("Shared runtimes and documents are retained."), &["Remove", crate::ui::text::CANCEL], cx);
                         cx.spawn(async move |this, cx| { if prompt.await.ok() == Some(0) { let _ = this.update(cx, |this, cx| this.setup(model, true, cx)); } }).detach();
                     }))))
                     .child(self.scrolled_quiet(("model-details", index), if self.details == Some(model) { "Less ↑" } else { "Details ↓" }, theme, true, cx)

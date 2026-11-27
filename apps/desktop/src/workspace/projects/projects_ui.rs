@@ -1263,7 +1263,7 @@ impl Workspace {
             })
             .child(
                 ui::control("move-toast-close", "×", theme, true)
-                    .aria_label("Dismiss")
+                    .aria_label(crate::ui::text::DISMISS)
                     .text_color(palette.header_muted)
                     .on_click(cx.listener(|this, _, _, cx| this.dismiss_toast(cx))),
             );
@@ -1311,7 +1311,7 @@ impl Workspace {
                     "Its names and its AI replies are deleted from this computer. This cannot \
                      be undone.",
                 ),
-                &["Delete", "Cancel"],
+                &["Delete", crate::ui::text::CANCEL],
                 cx,
             )
         } else {
@@ -1331,7 +1331,7 @@ impl Workspace {
                 &[
                     gpui::PromptButton::new("Move to Unfiled"),
                     gpui::PromptButton::new("Delete Documents"),
-                    gpui::PromptButton::cancel("Cancel"),
+                    gpui::PromptButton::cancel(crate::ui::text::CANCEL),
                 ],
                 cx,
             )
