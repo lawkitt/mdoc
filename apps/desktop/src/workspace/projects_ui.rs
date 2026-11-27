@@ -856,6 +856,10 @@ impl Workspace {
             cx.notify();
             return Ran::Ended;
         }
+        // The Project an Undo deleted with the move, and whether its page
+        // shows.
+        let mut gone = None;
+        let mut leave_page = false;
         let (result, moving, made) = match op {
             Op::Move { to } => (
                 self.write_now(&vault, &[from.clone(), to.clone()])
@@ -892,16 +896,19 @@ impl Workspace {
                 let result = self
                     .write_now(&vault, &[from.clone(), undo.project.clone()])
                     .and_then(|()| vault.undo_move(&undo));
-                // A Project the move made goes with the undo, once empty.
+                // A Project the move made goes with the undo, once empty:
+                // from the window too (#1337). A delete that failed after
+                // its record went counts as done.
                 if result.is_ok()
                     && let Some(made) = &made
                     && vault.documents_in(Some(made)).is_empty()
-                    && vault.delete_project(made, ProjectDocuments::Delete).is_ok()
+                    && (vault.delete_project(made, ProjectDocuments::Delete).is_ok()
+                        || matches!(vault.project(made), Err(VaultError::NotFound { .. })))
                 {
-                    self.projects.remove(made);
-                    self.ai_project_gone(made, cx);
-                    self.navigation
-                        .forget(&super::navigation::Stop::Project(made.clone()));
+                    leave_page =
+                        (self.project_ui.page.as_ref()).is_some_and(|page| page.id() == made);
+                    self.project_gone(made, cx);
+                    gone = Some(made.clone());
                 }
                 (result, Moving::Undo, None)
             }
@@ -924,7 +931,7 @@ impl Workspace {
                 let renumbered = before.as_ref().map_or(0, |before| {
                     count_renumbered(&before.markdown, &names, &aliases)
                 });
-                self.took_move(&moved);
+                self.took_move(&moved, gone.as_deref());
                 self.sync_members(&moved, &document, cx);
                 // The Project an Ask waited for: the one made, or the
                 // shared one it moved into (#1312).
@@ -956,6 +963,23 @@ impl Workspace {
                     }
                     None => {
                         self.moving.remove(&document);
+                    }
+                }
+                // The deleted Project's page gives way to the document's tab,
+                // else Home, taking its Back/Forward stop. After the reload
+                // started, so a tab not loaded yet loads once; a dialog or the
+                // switcher keeps the keyboard (#1337).
+                if leave_page {
+                    let keep = (self.dialog_up(window) || self.switcher.is_some())
+                        .then(|| window.focused(cx))
+                        .flatten();
+                    let arrival = super::navigation::Arrival::Replace;
+                    match tab {
+                        Some(tab) => self.activate_as(tab, arrival, window, cx),
+                        None => self.show_home_as(arrival, window, cx),
+                    }
+                    if let Some(keep) = keep {
+                        window.focus(&keep, cx);
                     }
                 }
                 if !self.reloading.contains_key(&document) {
@@ -1051,10 +1075,25 @@ impl Workspace {
     }
 
     /// The Projects a move wrote, in this window.
-    fn took_move(&mut self, moved: &Moved) {
+    /// The Project it left is not taken back when the move deleted it:
+    /// `gone`, the one Undo took with it (#1337).
+    fn took_move(&mut self, moved: &Moved, gone: Option<&str>) {
         for project in moved.project.iter().chain(&moved.left) {
-            self.projects.moved(project.clone());
+            if Some(project.id.as_str()) != gone {
+                self.projects.moved(project.clone());
+            }
         }
+    }
+
+    /// Project `id` was deleted: the window forgets it, its Back/Forward
+    /// stop, its AI share and its row's state. A page showing it is left
+    /// first, by the caller.
+    fn project_gone(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.navigation
+            .forget(&super::navigation::Stop::Project(id.to_string()));
+        self.projects.remove(id);
+        self.ai_project_gone(id, cx);
+        self.tree.forget_project(id);
     }
 
     /// The other open members of the Projects a move wrote take their names
@@ -1422,11 +1461,7 @@ impl Workspace {
                     // Home takes the deleted Project page's stop.
                     self.show_home_as(super::navigation::Arrival::Replace, window, cx);
                 }
-                self.navigation
-                    .forget(&super::navigation::Stop::Project(project_id.clone()));
-                self.projects.remove(&project_id);
-                self.ai_project_gone(&project_id, cx);
-                self.tree.forget_project(&project_id);
+                self.project_gone(&project_id, cx);
                 for (tab, member) in tabs {
                     match documents {
                         ProjectDocuments::MoveToUnfiled => self.reload_tab(tab, member, window, cx),
