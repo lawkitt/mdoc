@@ -52,17 +52,23 @@ mod replies;
 mod saving;
 use saving::docx_queue::DocxJob;
 // The tests read these through `use super::*`.
+use gpui::KeyBinding;
+use palette::Palette;
+use palette::PaletteConfirm;
+use palette::PaletteDown;
+use palette::PaletteUp;
 pub(crate) use saving::quit_flow::CloseWatch;
 #[cfg(test)]
 use sidebar::{REVEAL_SLIDE, Reveal};
+use std::collections::HashMap;
 #[cfg(test)]
 use std::collections::VecDeque;
 mod shelf_source;
+pub(crate) use self::bind_keys as bind_shell_keys;
+pub(crate) use home::ShowHome;
+pub(crate) use notices::CloseNotices;
+pub(crate) use palette::{OpenPalette, PALETTE, PaletteClose};
 pub(crate) use shelf_source::{ClipboardNames, ClipboardSource};
-mod shell;
-pub(crate) use shell::{
-    CloseNotices, OpenPalette, PALETTE, PaletteClose, ShowHome, bind_keys as bind_shell_keys,
-};
 mod sidebar;
 pub(crate) use sidebar::navigation_ui::{Back, Forward};
 mod vault;
@@ -406,7 +412,7 @@ pub(super) struct Workspace {
     live_view_menu: Vec<crate::commands::menus::LiveViewItem>,
     /// Shared with document headers: title-bar inset and drag state.
     title: style::TitleBar,
-    shell: shell::ShellState,
+    shell: ShellState,
     /// The sidebar's Settings row; Settings returns focus here.
     settings_focus: gpui::FocusHandle,
     _appearance: Option<Subscription>,
@@ -662,7 +668,7 @@ impl Workspace {
             window_title: String::new(),
             live_view_menu: Vec::new(),
             title: style::TitleBar::default(),
-            shell: shell::ShellState::new(),
+            shell: ShellState::new(),
             settings_focus: cx.focus_handle().tab_stop(true),
             _appearance: None,
             _checkpoint: None,
@@ -1305,7 +1311,7 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &ui::FocusEditor, window, cx| {
                 this.escape_to_editor(window, cx)
             }))
-            .on_action(cx.listener(|this, _: &shell::CloseNotices, window, cx| {
+            .on_action(cx.listener(|this, _: &notices::CloseNotices, window, cx| {
                 if this.title.notices_open.get() {
                     this.close_notices(window, cx);
                 } else {
@@ -1334,20 +1340,18 @@ impl Render for Workspace {
                 this.tree_extend(1, window, cx)
             }))
             .text_color(palette.header_fg)
+            .on_action(cx.listener(|this, _: &palette::OpenPalette, window, cx| {
+                this.open_palette(window, cx)
+            }))
             .on_action(
-                cx.listener(|this, _: &shell::OpenPalette, window, cx| {
-                    this.open_palette(window, cx)
-                }),
-            )
-            .on_action(
-                cx.listener(|this, _: &shell::ShowHome, window, cx| this.show_home(window, cx)),
+                cx.listener(|this, _: &home::ShowHome, window, cx| this.show_home(window, cx)),
             )
             .on_action(cx.listener(
                 |this, _: &palette::shortcuts_ui::ShowShortcuts, window, cx| {
                     this.toggle_shortcuts(window, cx)
                 },
             ))
-            .on_action(cx.listener(|this, _: &shell::PasteAsNewTab, window, cx| {
+            .on_action(cx.listener(|this, _: &home::PasteAsNewTab, window, cx| {
                 this.paste_as_new_tab(window, cx)
             }))
             .on_action(cx.listener(|this, _: &ToggleNotices, _, cx| {
@@ -1564,6 +1568,98 @@ impl Workspace {
                     .child(div().flex_1().min_h_0().child(content)),
             )
             .into_any_element()
+    }
+}
+
+/// The palette, Home, Notices and the shortcuts sheet from the shortcuts
+/// table; moving inside the palette's list stays here. Esc in
+/// `Workspace` is the window's own, below every deeper one: Notices opens
+/// without focus, so Esc closes it from a source-only tab or Home.
+pub(crate) fn bind_keys(cx: &mut App) {
+    let bindings =
+        crate::commands::shortcuts::bindings(crate::commands::shortcuts::Owner::Shell, cx);
+    cx.bind_keys(bindings);
+    cx.bind_keys([
+        KeyBinding::new("up", PaletteUp, Some(PALETTE)),
+        KeyBinding::new("down", PaletteDown, Some(PALETTE)),
+        KeyBinding::new("enter", PaletteConfirm, Some(PALETTE)),
+    ]);
+    sidebar::switcher_ui::bind_keys(cx);
+}
+
+struct ShellState {
+    pub palette: Option<Palette>,
+    /// The keyboard shortcuts sheet, while open.
+    pub shortcuts: Option<palette::shortcuts_ui::ShortcutsSheet>,
+    /// Files dragged over the window while Home shows: how many are droppable.
+    pub drop: Option<usize>,
+    pub drop_generation: u64,
+    home_scroll: gpui::ScrollHandle,
+    /// Focus for each card of Home's Continue strip, by its document's or
+    /// reply's id, so a reordered strip keeps focus on the same card.
+    pub card_focus: std::cell::RefCell<HashMap<String, gpui::FocusHandle>>,
+    /// The pointer is over Home's "Documents stay on this Mac".
+    pub local_note_hover: bool,
+}
+
+impl ShellState {
+    pub fn new() -> Self {
+        Self {
+            palette: None,
+            shortcuts: None,
+            drop: None,
+            drop_generation: 0,
+            home_scroll: gpui::ScrollHandle::new(),
+            card_focus: Default::default(),
+            local_note_hover: false,
+        }
+    }
+}
+
+impl Workspace {
+    // ---- Theme ------------------------------------------------------------
+
+    /// Resolve the theme choice against the OS appearance and repaint every
+    /// open document when the result changes.
+    fn apply_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let theme = style::resolve(self.theme_choice, window.appearance());
+        self.settings
+            .update(cx, |panel, cx| panel.sync_theme(self.theme_choice, cx));
+        if theme == self.theme.get() {
+            return;
+        }
+        self.theme.set(theme);
+        for tab in &self.tabs {
+            if let Some(view) = tab.view() {
+                view.update(cx, |view, cx| {
+                    view.editor.update(cx, |editor, cx| {
+                        editor.set_markdown_style(style::markdown_style(theme), cx)
+                    });
+                    view.sync_pii_theme(cx);
+                    cx.notify();
+                });
+            }
+        }
+        cx.notify();
+    }
+    /// macOS: the Save panel, its alerts and the menus follow the choice
+    /// too. Called when the choice changes, not from the
+    /// appearance observer: setting the appearance notifies it.
+    fn sync_app_appearance(&self, cx: &App) {
+        #[cfg(target_os = "macos")]
+        cx.set_window_appearance(style::app_appearance(self.theme_choice));
+        #[cfg(not(target_os = "macos"))]
+        let _ = cx;
+    }
+    fn cycle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.select_theme(self.theme_choice.next(), window, cx);
+    }
+    fn select_theme(&mut self, choice: ThemeChoice, window: &mut Window, cx: &mut Context<Self>) {
+        self.theme_choice = choice;
+        self.sync_app_appearance(cx);
+        self.apply_theme(window, cx);
+        self.checkpoint(window, cx);
+        cx.notify();
     }
 }
 

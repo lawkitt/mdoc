@@ -1,8 +1,36 @@
-//! Home's Continue strip and the palette's search over the Vault, both read
-//! from the manifest's summaries in memory: no document record is opened.
-//! GPUI-free.
+//! Home: its view with the drop zone, the quick actions and the Continue
+//! strip, whose rows, like the palette's search over the Vault, are read
+//! from the manifest's summaries in memory, so no document record is opened.
 
+use super::Tab;
+use super::Workspace;
+use super::home;
+use super::palette::key;
+use crate::document::DocumentView;
+use crate::ui;
+use crate::ui::style;
+use crate::ui::style::Theme;
+use crate::workspace::New;
+use crate::workspace::Open;
+use crate::workspace::PasteAiResponse;
+use crate::workspace::PseudonymizeClipboard;
+use gpui::Animation;
+use gpui::AnimationExt;
+use gpui::AnyElement;
+use gpui::App;
+use gpui::Context;
+use gpui::Entity;
+use gpui::Hsla;
+use gpui::Window;
+use gpui::actions;
+use gpui::div;
+use gpui::prelude::*;
+use gpui::px;
+use mdoc_import::import;
+use mdoc_store::document_id::VaultId;
+use mdoc_vault::ReplyOwner;
 use mdoc_vault::{DocumentSummary, ProjectSummary, ReplySummary};
+use std::time::Duration;
 use std::{cmp::Reverse, collections::HashMap};
 
 /// How many cards the Continue strip shows.
@@ -198,6 +226,720 @@ pub(super) fn search(
             .collect(),
         projects: ranked.into_iter().map(|(_, p)| p.clone()).collect(),
     }
+}
+
+actions!(mdoc_shell, [ShowHome, PasteAsNewTab]);
+
+impl Workspace {
+    // ---- Home state -------------------------------------------------------
+
+    /// The hidden blank tab under Home: never edited, never listed.
+    pub(super) fn is_placeholder(&self, tab: &Tab, cx: &App) -> bool {
+        tab.record().blank_disposable
+            && tab.view().is_none_or(|view| {
+                let view = view.read(cx);
+                view.lifecycle.blank_disposable()
+                    && view.preview.source().is_none()
+                    && view.editor.read(cx).text().is_empty()
+            })
+    }
+    pub(super) fn showing_home(&self, cx: &App) -> bool {
+        self.project_ui.page.is_none()
+            && self.reply_page.is_none()
+            && (self.tabs.home()
+                || self
+                    .tabs
+                    .active_tab()
+                    .is_some_and(|tab| self.is_placeholder(tab, cx)))
+    }
+    pub(super) fn showing_overview(&self, cx: &App) -> bool {
+        self.project_ui.page.is_some() || self.reply_page.is_some() || self.showing_home(cx)
+    }
+    pub(super) fn show_home(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_home_as(super::sidebar::navigation::Arrival::Visit, window, cx);
+    }
+    /// Show Home, recording it in Back/Forward as `arrival` says.
+    pub(super) fn show_home_as(
+        &mut self,
+        arrival: super::sidebar::navigation::Arrival,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(old) = self.active_view() {
+            old.update(cx, |view, _| view.pii.dismiss_popup());
+        }
+        self.reply_page = None;
+        self.project_ui.page = None;
+        self.end_rename(true, cx);
+        self.tabs.show_home();
+        self.note_destination(arrival, cx);
+        self.drop_if_empty_new(self.tabs.active(), window, cx);
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+    // ---- Home -----------------------------------------------------------------
+
+    pub(super) fn home_view(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let detached = self.title.detached.get();
+        let bar = ui::title_drag(
+            div()
+                .flex()
+                .items_center()
+                .flex_shrink_0()
+                .h(px(style::HEADER_HEIGHT))
+                .pl(px(16. + self.title.inset.get()))
+                .pr_2()
+                .gap_2()
+                .when(detached, |v| {
+                    v.h(px(style::CARD_MARGIN + style::HEADER_HEIGHT))
+                        .pt(px(style::CARD_MARGIN))
+                })
+                .when(!detached, |v| v.border_b_1().border_color(p.border))
+                .text_size(px(13.)),
+            self.title.armed.clone(),
+        )
+        .child(div().font_weight(gpui::FontWeight::MEDIUM).child("Home"))
+        .child(div().flex_1())
+        .children(ui::notice_bell(&self.title, theme).map(|bell| ui::no_drag(div().child(bell))));
+        let header = ui::title_bar(bar, (!detached).then_some(p.border), window, theme);
+        let banner = self.whats_new(cx);
+        let body = div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .children(banner)
+            .child(
+                div()
+                    .id("home-scroll")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.shell.home_scroll)
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .justify_center()
+                            .px_6()
+                            .pt(px(56.))
+                            .pb(px(48.))
+                            .child(
+                                div()
+                                    .w_full()
+                                    .max_w(px(680.))
+                                    .flex()
+                                    .flex_col()
+                                    .gap_4()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap_1()
+                                            .child(
+                                                div()
+                                                    .text_size(px(26.))
+                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                    .child("Hello"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(px(14.))
+                                                    .text_color(p.header_muted)
+                                                    .child(
+                                                        "What would you like to prepare for AI?",
+                                                    ),
+                                            ),
+                                    )
+                                    .child(self.drop_zone(cx))
+                                    .child(self.home_actions(cx))
+                                    .children(self.home_strip(cx)),
+                            ),
+                    ),
+            );
+        // Collapsed sidebar: the header sits in the title row and Home in its
+        // own card below. The header comes after the body in
+        // element order, shown on top by the reversed column, so Home's
+        // first Tab stop is Open files…, not the header's bell (U25).
+        div()
+            .id("home")
+            .track_focus(self.focus_regions.home())
+            .when(cfg!(test), |v| v.debug_selector(|| "home".into()))
+            .size_full()
+            .flex()
+            .flex_col_reverse()
+            .map(|v| {
+                if detached {
+                    v.child(ui::card_surface(body.ml(px(style::CARD_MARGIN)), theme))
+                } else {
+                    v.child(body)
+                }
+            })
+            .child(header)
+            .into_any_element()
+    }
+    /// One-time "What's new" after an update.
+    fn whats_new(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use crate::app::updater::BannerKind;
+        let banner = crate::app::updater::state(cx).banner()?;
+        if banner.kind != BannerKind::Updated {
+            return None;
+        }
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let version = banner.version.clone();
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .px_4()
+                .py_2()
+                .bg(p.placeholder_bg)
+                .text_size(px(13.))
+                .child(
+                    div()
+                        .flex_1()
+                        .child(format!("mdoc {version} is installed.")),
+                )
+                .child(
+                    ui::link_button("whats-new", "What's new", theme, true).on_click(
+                        move |_, _, cx| cx.open_url(&crate::app::updater::release_url(&version)),
+                    ),
+                )
+                .child(
+                    ui::control("dismiss-whats-new", "×", theme, true)
+                        .aria_label("Dismiss")
+                        .on_click(|_, _, cx| crate::app::updater::dismiss_banner(cx)),
+                )
+                .into_any_element(),
+        )
+    }
+    fn drop_zone(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let accent = theme.search_accent();
+        let active = self.shell.drop.is_some_and(|n| n > 0);
+        let refused = self.shell.drop == Some(0);
+        let ink = if active { accent } else { p.header_muted };
+        let layer = |data: &'static [u8], color: gpui::Hsla| {
+            gpui::svg()
+                .data(data)
+                .absolute()
+                .inset_0()
+                .size_full()
+                .text_color(color)
+        };
+        let illustration = div()
+            .relative()
+            .w(px(160.))
+            .h(px(112.))
+            .child(layer(
+                include_bytes!("../../resources/ui/drop-page.svg"),
+                ink,
+            ))
+            .child(layer(
+                include_bytes!("../../resources/ui/drop-bars.svg"),
+                if active {
+                    accent
+                } else {
+                    Hsla {
+                        a: 0.35,
+                        ..p.header_muted
+                    }
+                },
+            ))
+            .child(layer(
+                include_bytes!("../../resources/ui/drop-disc.svg"),
+                if active { accent } else { p.header_fg },
+            ))
+            .child(layer(
+                include_bytes!("../../resources/ui/drop-lock.svg"),
+                p.bg,
+            ));
+        let illustration = if active {
+            illustration
+                .with_animation(
+                    ("drop-lift", self.shell.drop_generation),
+                    Animation::new(Duration::from_millis(180)).with_easing(gpui::ease_out_quint()),
+                    |v, delta| v.mt(px(-6. * delta)).mb(px(6. * delta)),
+                )
+                .into_any_element()
+        } else {
+            illustration.into_any_element()
+        };
+        // Sealed with another key: the zone asks for the recovery key.
+        if self.vault.wrong_key_root().is_some() {
+            return self.recovery_panel(cx);
+        }
+        // No Vault this run: nothing can be added, and the zone says why.
+        let unavailable = self.vault.unavailable();
+        let title = match self.shell.drop {
+            _ if unavailable.is_some() => "Documents are unavailable".to_string(),
+            Some(0) => "These files can't be opened".to_string(),
+            Some(1) => "Drop to open".to_string(),
+            Some(n) => format!("Drop {n} files"),
+            None => "Drop documents here".to_string(),
+        };
+        div()
+            .id("home-drop")
+            .when(cfg!(test), |v| v.debug_selector(|| "home-drop".into()))
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_2()
+            .pt_6()
+            .pb_5()
+            .rounded_xl()
+            .border_1()
+            .border_dashed()
+            .border_color(Hsla {
+                a: 0.45,
+                ..p.header_muted
+            })
+            .when(active, |v| {
+                v.border_2()
+                    .border_color(accent)
+                    .bg(Hsla { a: 0.05, ..accent })
+            })
+            .when(refused, |v| {
+                v.border_color(style::markdown_style(theme).alert_caution)
+            })
+            .child(illustration)
+            .child(
+                div()
+                    .text_size(px(15.))
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(if active { accent } else { p.header_fg })
+                    .child(title),
+            )
+            .child(
+                ui::filled_button("home-open", "Open files…", theme, unavailable.is_none())
+                    .when(cfg!(test), |v| v.debug_selector(|| "home-open".into()))
+                    .mt_1()
+                    .child(ui::key_hint(key(&Open)))
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(Open), cx)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .text_center()
+                    .px_4()
+                    .text_size(px(12.))
+                    .text_color(p.header_muted)
+                    .map(|v| match unavailable {
+                        Some(why) => v.max_w(px(460.)).child(why.to_owned()),
+                        None => v
+                            .child(mdoc_import::import::supported_formats())
+                            .child("Several at once each become a document in Unfiled"),
+                    }),
+            )
+            .into_any_element()
+    }
+    fn home_actions(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let machine = if cfg!(target_os = "macos") {
+            "this Mac"
+        } else {
+            "this computer"
+        };
+        let detail = format!(
+            "Detection, conversion and Projects run on {machine}. mdoc goes online only \
+             to check for updates and to download models you choose."
+        );
+        let intake = self.vault.unavailable().is_none();
+        div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .child(
+                ui::primary_button("home-new", "New document", theme, intake)
+                    .when(cfg!(test), |v| v.debug_selector(|| "home-new".into()))
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(New), cx)),
+            )
+            .child(
+                ui::primary_button("home-paste", "Paste text", theme, intake)
+                    .when(cfg!(test), |v| v.debug_selector(|| "home-paste".into()))
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAsNewTab), cx)),
+            )
+            .child(
+                ui::primary_button("home-restore", "Paste AI reply", theme, true)
+                    .when(cfg!(test), |v| v.debug_selector(|| "home-restore".into()))
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(PasteAiResponse), cx)
+                    }),
+            )
+            .child(
+                ui::primary_button("home-clipboard", "Pseudonymize clipboard", theme, true)
+                    .when(cfg!(test), |v| v.debug_selector(|| "home-clipboard".into()))
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(PseudonymizeClipboard), cx)
+                    }),
+            )
+            .child(div().flex_1())
+            .child(
+                div()
+                    .id("empty-page-local")
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "empty-page-local".into())
+                    })
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .text_size(px(12.))
+                    .text_color(p.header_muted)
+                    .aria_label(format!("Documents stay on {machine}. {detail}"))
+                    // Above the note, right-aligned with it: a pointer tooltip
+                    // at the window's edge would flip over the buttons beside
+                    // it (U16).
+                    .relative()
+                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                        if this.shell.local_note_hover != *hovered {
+                            this.shell.local_note_hover = *hovered;
+                            cx.notify();
+                        }
+                    }))
+                    .child(
+                        gpui::svg()
+                            .data(include_bytes!("../../resources/ui/lock.svg"))
+                            .size(px(13.))
+                            .text_color(p.header_muted),
+                    )
+                    .child(format!("Documents stay on {machine}"))
+                    .when(self.shell.local_note_hover, |v| {
+                        v.child(
+                            gpui::deferred(
+                                div()
+                                    .absolute()
+                                    .right_0()
+                                    .bottom(gpui::relative(1.))
+                                    .w(px(300.))
+                                    // Clear of the taller buttons in the row.
+                                    .pb(px(10.))
+                                    .flex()
+                                    .justify_end()
+                                    .child(style::tip_body(detail, theme)),
+                            )
+                            .with_priority(1),
+                        )
+                    }),
+            )
+            .into_any_element()
+    }
+    /// Each live view's proposals left, by its Vault document's id.
+    fn live_proposals(&self, cx: &App) -> HashMap<String, usize> {
+        (self.tabs.iter())
+            .filter_map(|tab| {
+                let view = tab.view()?.read(cx);
+                let document = self.live_document(tab, cx)?;
+                Some((document.as_str().to_string(), view.pii.review().remaining()))
+            })
+            .collect()
+    }
+    /// The Continue strip as it stands, with the summaries it was read
+    /// from; `None` while the Vault is closed.
+    pub(super) fn home_strip_now(&self, cx: &App) -> Option<(home::Strip, Vec<DocumentSummary>)> {
+        let vault = self.vault.vault()?;
+        let documents = vault.documents();
+        let strip = home::strip(&documents, &vault.replies(), &self.live_proposals(cx));
+        Some((strip, documents))
+    }
+    /// Continue: documents that need review and saved replies, newest first.
+    fn home_strip(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (strip, documents) = self.home_strip_now(cx)?;
+        if !strip.shown {
+            return None;
+        }
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let projects: HashMap<String, ProjectSummary> = (self.projects.summaries().into_iter())
+            .map(|project| (project.id.clone(), project))
+            .collect();
+        let documents_shown = (strip.cards.iter())
+            .filter(|card| matches!(card, home::Card::Document { .. }))
+            .count();
+        let more = match strip.need_review {
+            0 if !strip.cards.is_empty() => Some("Nothing needs review".to_string()),
+            n if n <= documents_shown => None,
+            1 => Some("1 needs review".to_string()),
+            n => Some(format!("{n} need review")),
+        };
+        let header = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .pt_2()
+            .child(home_label("Continue", theme).pt_0())
+            .child(div().flex_1())
+            .children(more.map(|more| {
+                div()
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "home-strip-more".into())
+                    })
+                    .text_size(px(12.))
+                    .text_color(p.header_muted)
+                    .child(more)
+            }));
+        let strip_box = div()
+            .id("home-strip")
+            .when(cfg!(test), |v| v.debug_selector(|| "home-strip".into()))
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(header);
+        if strip.cards.is_empty() {
+            return Some(
+                strip_box
+                    .child(
+                        div()
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "home-strip-empty".into())
+                            })
+                            .text_size(px(13.))
+                            .text_color(p.header_muted)
+                            .child("Nothing needs review."),
+                    )
+                    .into_any_element(),
+            );
+        }
+        // A document's place: its Project's dot and name, or Unfiled.
+        let place = |project: Option<&str>| -> (Option<Hsla>, String) {
+            match project.and_then(|id| projects.get(id)) {
+                Some(project) => {
+                    let link = super::ProjectLink {
+                        id: project.id.clone(),
+                        name: project.name.clone(),
+                        colour: project.colour,
+                    };
+                    (
+                        Some(style::project_color(link.hue(), theme)),
+                        project.name.clone(),
+                    )
+                }
+                None => (None, "Unfiled".to_string()),
+            }
+        };
+        let now = home::now();
+        let shown = strip.cards.len();
+        let mut row = div().flex().gap_3();
+        for (i, card) in strip.cards.into_iter().enumerate() {
+            let age = home::age(card.at(), now);
+            let (badge, title, (dot, place), status) = match &card {
+                home::Card::Document { summary, proposed } => (
+                    super::sidebar::tree_ui::kind_label(summary),
+                    summary.title.clone(),
+                    place(summary.project.as_deref()),
+                    match proposed {
+                        Some(1) => "1 to review".to_string(),
+                        Some(n) => format!("{n} to review"),
+                        None => "Not reviewed".to_string(),
+                    },
+                ),
+                home::Card::Reply(reply) => {
+                    let project = match &reply.owner {
+                        ReplyOwner::Project(id) => Some(id.as_str()),
+                        ReplyOwner::Document(id) => (documents.iter())
+                            .find(|summary| &summary.id == id)
+                            .and_then(|summary| summary.project.as_deref()),
+                    };
+                    (
+                        "REPLY",
+                        reply.title.clone(),
+                        place(project),
+                        "Saved reply".to_string(),
+                    )
+                }
+            };
+            let label = format!("{title}, {place}, {status}, {age}");
+            let focus = (self.shell.card_focus.borrow_mut())
+                .entry(card.id().to_string())
+                .or_insert_with(|| cx.focus_handle().tab_stop(true))
+                .clone();
+            let view =
+                crate::ui::focus_ring(("home-card", i), theme)
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(move || format!("home-card-{i}"))
+                    })
+                    .role(gpui::Role::Button)
+                    .aria_label(label)
+                    .key_context("UiControl")
+                    .tab_index(0)
+                    .track_focus(&focus)
+                    .flex_1()
+                    .flex_basis(px(0.))
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .p_3()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(p.border)
+                    .text_size(px(13.))
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(p.placeholder_bg))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .text_size(px(10.))
+                                    .text_color(p.header_muted)
+                                    .child(badge),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .child(title),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .text_size(px(12.))
+                            .text_color(p.header_muted)
+                            .children(dot.map(|dot| {
+                                div().size(px(8.)).rounded_full().bg(dot).flex_shrink_0()
+                            }))
+                            .child(div().min_w_0().truncate().child(place)),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(p.header_muted)
+                            .truncate()
+                            .child(format!("{status} · {age}")),
+                    );
+            let view = match card {
+                home::Card::Document { summary, .. } => {
+                    let id = VaultId::parse(&summary.id);
+                    view.on_click(cx.listener(move |this, _, window, cx| {
+                        if let Some(id) = id.clone() {
+                            this.open_vault_document(id, window, cx);
+                        }
+                    }))
+                }
+                home::Card::Reply(reply) => {
+                    let id = reply.id;
+                    view.on_click(
+                        cx.listener(move |this, _, window, cx| this.open_reply(&id, window, cx)),
+                    )
+                }
+            };
+            row = row.child(view);
+        }
+        // Fewer cards keep a card's width.
+        for _ in shown..home::STRIP_CARDS {
+            row = row.child(div().flex_1().flex_basis(px(0.)));
+        }
+        Some(strip_box.child(row).into_any_element())
+    }
+    /// A file drag anywhere over the window while Home shows.
+    pub(super) fn home_drag(
+        &mut self,
+        event: &gpui::DragMoveEvent<gpui::ExternalPaths>,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.showing_overview(cx) {
+            return;
+        }
+        let over = event.bounds.contains(&event.event.position);
+        let count = over.then(|| {
+            event
+                .drag(cx)
+                .paths()
+                .iter()
+                .filter(|path| import::droppable(path))
+                .count()
+        });
+        if self.shell.drop != count {
+            if self.shell.drop.is_none() {
+                self.shell.drop_generation += 1;
+            }
+            self.shell.drop = count;
+            cx.notify();
+        }
+    }
+    pub(super) fn paste_as_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.intake_refused(window, cx) {
+            return;
+        }
+        let item = cx.read_from_clipboard();
+        // A copied file carries its path as text; the editor's Paste skips it.
+        let has_files = item.as_ref().is_some_and(|item| {
+            item.entries()
+                .iter()
+                .any(|entry| matches!(entry, gpui::ClipboardEntry::ExternalPaths(_)))
+        });
+        let Some(text) = item
+            .and_then(|item| item.text())
+            .filter(|text| !has_files && !text.trim().is_empty())
+        else {
+            self.notices.post("The clipboard has no text to paste.");
+            cx.notify();
+            return;
+        };
+        // Straight into the new buffer: a dispatched Paste would arrive before
+        // the new editor holds focus and reach nothing (issue #300).
+        let id = self.new_tab(window, cx);
+        if let Some(view) = self.tabs.get(id).and_then(|tab| tab.view()).cloned() {
+            view.update(cx, |view, cx| {
+                // An ordinary document, not a new one.
+                view.session.pasted = true;
+                view.editor
+                    .update(cx, |editor, cx| editor.insert_pasted(text, window, cx))
+            });
+        }
+    }
+    /// Home's clipboard actions belong to a document; with none open, say so.
+    pub(super) fn clipboard_document(
+        &mut self,
+        action: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Entity<DocumentView>> {
+        let real = self
+            .tabs
+            .active_tab()
+            .is_some_and(|tab| !self.is_placeholder(tab, cx));
+        if !real {
+            // The notice opens even over an earlier one.
+            let effect = self.notices.post_now(format!(
+                "{action} works from a pseudonymized document. Open one, or open a Project, first."
+            ));
+            self.carry_out_notices(effect);
+            cx.notify();
+            return None;
+        }
+        // Leave Home so document-level feedback and any error are visible.
+        if self.showing_overview(cx) {
+            self.activate(self.tabs.active(), window, cx);
+        }
+        self.active_view()
+    }
+}
+
+fn home_label(label: &'static str, theme: Theme) -> gpui::Div {
+    div()
+        .pt_2()
+        .text_size(px(12.))
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .text_color(theme.pdf_style().header_muted)
+        .child(label)
 }
 
 #[cfg(test)]

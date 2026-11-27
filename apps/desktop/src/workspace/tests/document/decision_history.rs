@@ -12,7 +12,7 @@ fn lines(view: &DocumentView, cx: &gpui::App) -> Vec<(String, EntryState)> {
 
 #[gpui::test]
 fn decision_history_palette_opens_the_popover(cx: &mut TestAppContext) {
-    cx.update(crate::workspace::shell::bind_keys);
+    cx.update(crate::workspace::bind_keys);
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     key(cx, "secondary-k");

@@ -113,7 +113,7 @@ fn update_banner_opens_settings_and_dismisses_per_version(cx: &mut TestAppContex
 #[gpui::test]
 fn escape_closes_notices_without_focus_in_an_editor(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
-    cx.update(|_, cx| crate::workspace::shell::bind_keys(cx));
+    cx.update(|_, cx| crate::workspace::bind_keys(cx));
     let view = active(&tabs, cx);
     // A source-only tab focuses its view, Home the window: neither is an
     // editor, and neither is inside Notices.
