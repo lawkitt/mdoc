@@ -2,8 +2,8 @@
 //! injected Vault and key store: Settings › Vault shows it, the bell nudges
 //! once after the first Project, and the wrong-key screen opens a Vault
 //! sealed with another key and keeps that key.
-use super::super::{recovery_key::InjectedKey, vault_state::Opening};
 use super::*;
+use crate::workspace::vault::{recovery_key::InjectedKey, vault_state::Opening};
 use mdoc_store::document_id::{DocumentId, VaultId};
 use mdoc_vault::{DocumentOrigin, NewDocument, SourceKind, Vault, recovery};
 use std::{
@@ -362,7 +362,7 @@ fn the_recovery_key_takes_both_wrong_key_notices_away(cx: &mut TestAppContext) {
         assert!(tabs.vault_banner().is_some());
         assert_eq!(
             tabs.notice_text().as_deref(),
-            Some(super::super::vault_ui::WAITS_FOR_RECOVERY_KEY)
+            Some(crate::workspace::vault::vault_ui::WAITS_FOR_RECOVERY_KEY)
         );
     });
     draw(cx);

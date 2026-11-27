@@ -3,7 +3,7 @@
 //! Copy for AI, the prompt each opens the AI app with, and what waits for
 //! a move. ChatGPT is named for what it opens: a local Work thread, never
 //! one of its chats, which can't call mdoc (#1264 Decision 4).
-//! GPUI-free; the window carries it out (`workspace/ai_ask_ui.rs`).
+//! GPUI-free; the window carries it out (`workspace/ai/ask_ui.rs`).
 //!
 //! - Ask shares the document's Project, in place of any other, as part of
 //!   the click: the share never follows the view.

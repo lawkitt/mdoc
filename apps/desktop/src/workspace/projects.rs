@@ -4,6 +4,13 @@
 //! when its write starts; moves and deletes run through the same writer and
 //! hand back the records they wrote. GPUI-free.
 
+pub(super) mod export_project;
+pub(super) mod folder_sheet;
+pub(super) mod folder_sheet_ui;
+pub(super) mod new_project;
+pub(super) mod project_page;
+pub(super) mod projects_ui;
+
 use mdoc_vault::{Colour, Project, ProjectSummary};
 
 /// What a tab, a reply and the shelf know of a Project.

@@ -3,7 +3,7 @@
 //! all, moves by drag, multi-select delete, the recency switcher, Close back
 //! to Home and the ninth view's eviction (`VaultTree`, `LiveViews`).
 use super::*;
-use crate::workspace::{SwitchDocument, live_views::LIMIT, tree::RowKey};
+use crate::workspace::{SwitchDocument, saving::live_views::LIMIT, sidebar::tree::RowKey};
 
 /// Drag the row at `from` to `to` with the left button.
 fn drag(

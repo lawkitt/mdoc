@@ -347,7 +347,7 @@ fn a_long_project_name_keeps_categories_page_controls_inside_the_card(cx: &mut T
         });
         tabs.show_project_page(
             &id,
-            super::super::project_page::Place::Categories,
+            crate::workspace::projects::project_page::Place::Categories,
             window,
             cx,
         );
@@ -2146,7 +2146,9 @@ fn project_left_anywhere(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, i
         tabs.projects.project(id).is_some()
             || tabs
                 .tree_keys()
-                .contains(&tree::RowKey::Project(id.to_string()))
+                .contains(&crate::workspace::sidebar::tree::RowKey::Project(
+                    id.to_string(),
+                ))
             || (tabs.project_ui.page.as_ref()).is_some_and(|page| page.id() == id)
     })
 }

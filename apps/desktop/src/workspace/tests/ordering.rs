@@ -313,7 +313,7 @@ impl Run<'_> {
 
     /// End the run: questions left are cancelled, everything due runs, and
     /// the window has quit.
-    fn finish(&mut self) -> Vec<crate::workspace::export_project::ExportSeen> {
+    fn finish(&mut self) -> Vec<crate::workspace::projects::export_project::ExportSeen> {
         for _ in 0..4 {
             if !self.open() {
                 break;
@@ -427,7 +427,11 @@ fn interleave(cx: &mut TestAppContext, broken: bool) {
 }
 
 /// What must hold after a run, read from a new handle on the Vault.
-fn check(run: &Run, root: &std::path::Path, seen: &[crate::workspace::export_project::ExportSeen]) {
+fn check(
+    run: &Run,
+    root: &std::path::Path,
+    seen: &[crate::workspace::projects::export_project::ExportSeen],
+) {
     let vault = mdoc_vault::Vault::open(root, &[3; 32]).unwrap();
     let names_of = |document: &mdoc_vault::Document| match &document.project {
         Some(project) => vault.project(project).unwrap().mapping.exported(),
@@ -548,23 +552,23 @@ const NOT_THE_VAULT: &[&str] = &["self", "this", "tabs", "file", "pipe", "out", 
 /// The job bodies, by file under `src/` and function.
 const JOBS: &[(&str, &str)] = &[
     ("workspace.rs", "run_quit"),
-    ("workspace/autosave.rs", "run_notes_save"),
-    ("workspace/autosave.rs", "run_save"),
-    ("workspace/autosave.rs", "write_captured"),
-    ("workspace/autosave.rs", "save_vault"),
-    ("workspace/autosave.rs", "create_tab_now"),
-    ("workspace/projects_ui.rs", "write_now"),
-    ("workspace/projects_ui.rs", "run_op"),
-    ("workspace/projects_ui.rs", "run_delete"),
-    ("workspace/tree_ui.rs", "run_delete_documents"),
-    ("workspace/saved_replies.rs", "run_reply_save"),
-    ("workspace/saved_replies.rs", "run_promote"),
-    ("workspace/saved_replies.rs", "run_delete_reply"),
-    ("workspace/intake.rs", "run_import"),
-    ("workspace/folder_sheet_ui.rs", "run_new_project"),
-    ("workspace/new_project.rs", "run_empty_project"),
-    ("workspace/user_lists.rs", "run_user_lists"),
-    ("workspace/export_project.rs", "run_export"),
+    ("workspace/saving/autosave.rs", "run_notes_save"),
+    ("workspace/saving/autosave.rs", "run_save"),
+    ("workspace/saving/autosave.rs", "write_captured"),
+    ("workspace/saving/autosave.rs", "save_vault"),
+    ("workspace/saving/autosave.rs", "create_tab_now"),
+    ("workspace/projects/projects_ui.rs", "write_now"),
+    ("workspace/projects/projects_ui.rs", "run_op"),
+    ("workspace/projects/projects_ui.rs", "run_delete"),
+    ("workspace/sidebar/tree_ui.rs", "run_delete_documents"),
+    ("workspace/replies.rs", "run_reply_save"),
+    ("workspace/replies.rs", "run_promote"),
+    ("workspace/replies.rs", "run_delete_reply"),
+    ("workspace/saving/intake.rs", "run_import"),
+    ("workspace/projects/folder_sheet_ui.rs", "run_new_project"),
+    ("workspace/projects/new_project.rs", "run_empty_project"),
+    ("workspace/vault/user_lists.rs", "run_user_lists"),
+    ("workspace/projects/export_project.rs", "run_export"),
 ];
 
 /// Every call of a Vault write method in `text`, whatever its receiver is

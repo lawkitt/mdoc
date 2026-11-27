@@ -1,6 +1,6 @@
 //! The Project page: it opens no document, and its actions reach the Vault.
-use super::super::project_page::Segment;
 use super::*;
+use crate::workspace::projects::project_page::Segment;
 use mdoc_vault::Colour;
 
 /// Applied document `contract.md` moved into a new Project; the tab and

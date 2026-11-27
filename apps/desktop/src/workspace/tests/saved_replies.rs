@@ -1,7 +1,9 @@
 //! Saved AI Replies: saved through the Vault, reopened restored by
 //! identity on the Reply page, listed on the Project page and deleted.
 use super::*;
-use crate::workspace::{PasteAiResponse, navigation::Stop, project_page::Segment};
+use crate::workspace::{
+    PasteAiResponse, projects::project_page::Segment, sidebar::navigation::Stop,
+};
 use mdoc_pii::Category::Person;
 use mdoc_vault::ReplyOwner;
 

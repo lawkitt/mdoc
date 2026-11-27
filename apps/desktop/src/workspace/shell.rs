@@ -14,7 +14,7 @@ use crate::{
     ui::style::{self, Theme},
     workspace::{
         Close, New, Open, OpenProject, PasteAiResponse, PseudonymizeClipboard, Settings,
-        ToggleSidebar, shortcuts_ui::ShowShortcuts,
+        ToggleSidebar, palette::shortcuts_ui::ShowShortcuts,
     },
 };
 use gpui::{
@@ -57,13 +57,13 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("down", PaletteDown, Some(PALETTE)),
         KeyBinding::new("enter", PaletteConfirm, Some(PALETTE)),
     ]);
-    super::switcher_ui::bind_keys(cx);
+    super::sidebar::switcher_ui::bind_keys(cx);
 }
 
 pub(super) struct ShellState {
     pub palette: Option<Palette>,
     /// The keyboard shortcuts sheet, while open.
-    pub shortcuts: Option<super::shortcuts_ui::ShortcutsSheet>,
+    pub shortcuts: Option<super::palette::shortcuts_ui::ShortcutsSheet>,
     /// Files dragged over the window while Home shows: how many are droppable.
     pub drop: Option<usize>,
     pub drop_generation: u64,
@@ -291,13 +291,13 @@ impl Workspace {
     }
 
     pub(super) fn show_home(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_home_as(super::navigation::Arrival::Visit, window, cx);
+        self.show_home_as(super::sidebar::navigation::Arrival::Visit, window, cx);
     }
 
     /// Show Home, recording it in Back/Forward as `arrival` says.
     pub(super) fn show_home_as(
         &mut self,
-        arrival: super::navigation::Arrival,
+        arrival: super::sidebar::navigation::Arrival,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -1223,7 +1223,7 @@ impl Workspace {
             let age = home::age(card.at(), now);
             let (badge, title, (dot, place), status) = match &card {
                 home::Card::Document { summary, proposed } => (
-                    super::tree_ui::kind_label(summary),
+                    super::sidebar::tree_ui::kind_label(summary),
                     summary.title.clone(),
                     place(summary.project.as_deref()),
                     match proposed {
@@ -1720,7 +1720,10 @@ impl Workspace {
                 Some(Row {
                     section: "Documents",
                     label: summary.title.clone(),
-                    detail: Some(format!("{place} · {}", super::tree_ui::kind_label(summary))),
+                    detail: Some(format!(
+                        "{place} · {}",
+                        super::sidebar::tree_ui::kind_label(summary)
+                    )),
                     command: Command::Document(VaultId::parse(&summary.id)?),
                 })
             })
@@ -2179,7 +2182,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        use super::project_page::Place;
+        use super::projects::project_page::Place;
         let reply = self.reply_page.as_ref().map(|page| page.id().to_string());
         // The Project shown, else the active document's.
         let project = (self.project_ui.page.as_ref())

@@ -146,7 +146,7 @@ pub(super) fn show_page(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.show_project_page(
             &id,
-            crate::workspace::project_page::Place::Header,
+            crate::workspace::projects::project_page::Place::Header,
             window,
             cx,
         )
@@ -496,7 +496,7 @@ fn the_project_page_lists_ai_activity(cx: &mut TestAppContext) {
             .collect();
         (entries.iter())
             .map(|entry| {
-                crate::workspace::ai_project_ui::activity_line(entry, &documents, &replies, 0).text
+                crate::workspace::ai::project_ui::activity_line(entry, &documents, &replies, 0).text
             })
             .collect()
     });
@@ -514,7 +514,7 @@ fn the_project_page_lists_ai_activity(cx: &mut TestAppContext) {
         let vault = tabs.opened_vault().unwrap();
         let reply = vault.project_replies(&fixture.lease).pop().unwrap();
         assert_eq!(reply.source_app.as_deref(), Some("claude-ai"));
-        crate::workspace::saved_replies::reply_detail(
+        crate::workspace::replies::reply_detail(
             &reply.owner,
             reply.source_app.as_deref(),
             reply.created,
@@ -576,7 +576,7 @@ fn with_the_setting_off_nothing_shows(cx: &mut TestAppContext) {
 
 // ---- Item 9: notifications and where a reply lands -----------------------
 
-use crate::workspace::ai_deliveries::{Note, Notifier};
+use crate::workspace::ai::deliveries::{Note, Notifier};
 use std::{cell::RefCell, rc::Rc};
 
 pub(super) type Notes = Rc<RefCell<Vec<Note>>>;

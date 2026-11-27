@@ -255,7 +255,10 @@ fn tree_row_focus(
 ) -> gpui::FocusHandle {
     let document = document_of(tabs, id, cx);
     tabs.update(cx, |w, cx| {
-        w.tree_focus(&tree::RowKey::Document(document), cx)
+        w.tree_focus(
+            &crate::workspace::sidebar::tree::RowKey::Document(document),
+            cx,
+        )
     })
 }
 

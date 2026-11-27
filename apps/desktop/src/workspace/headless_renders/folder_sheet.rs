@@ -1,6 +1,6 @@
 //! The folder sheet.
 use super::{Driver, Result};
-use crate::workspace::folder_sheet::{DroppedFolder, Pending};
+use crate::workspace::projects::folder_sheet::{DroppedFolder, Pending};
 use std::path::Path;
 
 /// Synthetic folders in the temporary profile: a small one, one over the

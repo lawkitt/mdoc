@@ -101,7 +101,7 @@ fn a_keep_in_one_project_stays_out_of_another(cx: &mut TestAppContext) {
     assert_eq!(store.project(&a).unwrap().lists.never, ["Riverside"]);
     tabs.update_in(cx, |tabs, window, cx| tabs.open_project(&a, window, cx));
     tabs.update(cx, |tabs, cx| {
-        tabs.show_project_segment(crate::workspace::project_page::Segment::Names, cx)
+        tabs.show_project_segment(crate::workspace::projects::project_page::Segment::Names, cx)
     });
     cx.run_until_parked();
     draw(cx);

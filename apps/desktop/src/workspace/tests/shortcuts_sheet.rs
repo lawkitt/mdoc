@@ -1,7 +1,7 @@
 //! The keyboard shortcuts sheet: opened by `?` outside text
 //! fields, ⌘/ (Ctrl+/) everywhere and the palette; every table row drawn.
 use super::*;
-use crate::{commands::shortcuts, workspace::shortcuts_ui};
+use crate::{commands::shortcuts, workspace::palette::shortcuts_ui};
 
 fn sheet_open(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
     tabs.read_with(cx, |tabs, _| tabs.shell.shortcuts.is_some())
