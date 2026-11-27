@@ -7,6 +7,7 @@ import io.github.lawkitt.mdoc.R
 import io.github.lawkitt.mdoc.core.AppError
 import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.JobObserver
+import io.github.lawkitt.mdoc.ui.onMain
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
@@ -89,9 +90,11 @@ class Jobs(private val context: Context) {
     fun <T> start(kind: JobKind, documentId: DocumentId?, work: (JobObserver) -> T): Deferred<JobOutcome<T>>? {
         val job = RunningJob(kind, documentId)
         if (!running.compareAndSet(null, job)) return null
+        // The core reports from the job's thread; the screens read this on
+        // the main thread (#1332).
         val token = Token(
-            onStage = { stage -> running.value = running.value?.copy(stage = stage) },
-            onRemaining = { seconds -> running.value = running.value?.copy(secondsLeft = seconds) },
+            onStage = { stage -> onMain { running.value = running.value?.copy(stage = stage) } },
+            onRemaining = { seconds -> onMain { running.value = running.value?.copy(secondsLeft = seconds) } },
         )
         this.token.set(token)
         if (stopped.value?.documentId == documentId) clearInterrupted()
