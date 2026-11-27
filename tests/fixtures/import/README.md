@@ -81,6 +81,7 @@ pages hold. Run with Python 3 (standard library only):
 | Generator | Fixtures |
 | --- | --- |
 | `gen_hidden_content.py` | `handmade-hidden-content.docx` |
+| `gen_deleted_cell.py` | `handmade-deleted-cell.docx` |
 | `gen_running_header.py` | `handmade-running-header.pdf` |
 | `gen_scanned_running_header.py` | `handmade-scanned-running-header.pdf` |
 | `gen_sparse_page_header.py` | `handmade-sparse-page-header.pdf`, `handmade-scanned-sparse-page-header.pdf` |
@@ -96,4 +97,7 @@ current shared code gives byte-identical fixtures.
 
 `handmade-hidden-content.docx.md` holds no name because the pinned AnyDoc
 reads no comment or property parts and skips `w:del` and `w:moveFrom`,
-with no option to keep them.
+with no option to keep them. `handmade-deleted-cell.docx.md` holds none
+either: since lawkitt/anydoc#13 and #14 the pinned AnyDoc leaves a table
+cell deleted as a tracked change (`w:cellDel`) empty in its place, and
+drops a note only deleted content references (#395).
