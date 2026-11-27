@@ -410,9 +410,10 @@ fn result(answer: Answer) -> Value {
             } else {
                 "a reply"
             };
-            let names = if restored == 1 { "name" } else { "names" };
+            // Values, the Reply page's word and count (#1314).
+            let values = if restored == 1 { "value" } else { "values" };
             let mut out =
-                format!("Delivered to mdoc as {landed}. mdoc restored {restored} {names}.");
+                format!("Delivered to mdoc as {landed}. mdoc restored {restored} {values}.");
             if !unresolved.is_empty() {
                 out.push_str(&format!(
                     " These aliases match no name in the shared Project and stay as written: {}.",

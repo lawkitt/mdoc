@@ -359,8 +359,12 @@ fn a_document_moves_into_a_project_and_back() {
     let stored = vault.store().document(&memo.id).unwrap();
     assert_eq!(stored.markdown, "PERSON_3 met PERSON_1.");
     assert_eq!(stored.review, None);
-    assert!(stored.counts.is_some(), "counted again after the move");
+    assert!(
+        stored.counts.is_none(),
+        "counted from the record until saved"
+    );
     assert_eq!((moved.document.replaced, moved.document.proposed), (2, 0));
+    assert_eq!(moved.document.phase, DocumentPhase::Reviewing, "#1292");
     assert!(vault.unfiled().is_empty());
 
     // The session from before the move refuses to save over it.
@@ -520,6 +524,130 @@ fn a_deleted_projects_documents_move_to_unfiled_or_go() {
         .unwrap();
     assert!(vault.projects().is_empty());
     assert_eq!(vault.documents().len(), 1);
+}
+
+/// Done when (#1292, the maintainer's (2)): a Ready document moved into
+/// another Project, or to Unfiled by deleting its Project, is listed as
+/// not Ready, as the Vault and the document have it: `Reviewing` with
+/// nothing proposed ("Moved · open it to share"). The list said Ready to
+/// share while the document refused. Opened and saved once, with no
+/// rescan (review 3), it is Ready again in both, and the name it kept
+/// leaves as written, not proposed again.
+#[test]
+fn a_moved_ready_document_lists_not_ready_until_its_next_save() {
+    for to_unfiled in [false, true] {
+        let scratch = Scratch::new();
+        let vault = vault(&scratch);
+        let project = vault.create_project("Lease".into()).unwrap();
+        let other = vault.create_project("Other".into()).unwrap();
+        let session = session("Ann Lee met Bob Hart.", "Letter");
+        session
+            .join_project(vault.clone(), project.id.clone())
+            .unwrap();
+        propose(&session, &["Ann Lee", "Bob Hart"]);
+        let text = session.snapshot().unwrap().text;
+        session
+            .replace(at(&text, "Ann Lee", 0), Scope::All)
+            .unwrap();
+        let text = session.snapshot().unwrap().text;
+        session.keep(at(&text, "Bob Hart", 0), Scope::All).unwrap();
+        let id = session.save_into_vault(vault.clone()).unwrap().id;
+        drop(session);
+        let ready = crate::vault::Readiness::Ready;
+        let listed = |vault: &Arc<Vault>| {
+            let all = (vault.documents().into_iter())
+                .find(|d| d.id == id)
+                .unwrap();
+            assert_eq!(all, vault.document(id.clone()).unwrap());
+            all
+        };
+        assert_eq!(listed(&vault).phase, DocumentPhase::Ready);
+        assert_eq!(vault.readiness(id.clone()).unwrap(), ready);
+
+        if to_unfiled {
+            (vault.delete_project(project.id.clone(), ProjectDocuments::MoveToUnfiled)).unwrap();
+            assert_eq!(vault.unfiled(), vec![listed(&vault)]);
+        } else {
+            let moved = (vault.move_document(id.clone(), Some(other.id.clone()))).unwrap();
+            assert_eq!(moved.document, listed(&vault));
+        }
+        let moved = listed(&vault);
+        assert_eq!(
+            (moved.phase, moved.proposed, moved.scanned),
+            (DocumentPhase::Reviewing, 0, true),
+            "the list, Unfiled {to_unfiled}"
+        );
+        assert_eq!(
+            vault.readiness(id.clone()).unwrap(),
+            crate::vault::Readiness::NotReviewed
+        );
+        assert!(vault.text_for_ai(id.clone()).is_err(), "what leaves");
+
+        let (again, opened) = reopened(&vault, &id);
+        assert_eq!(opened.phase, DocumentPhase::Ready, "the document");
+        assert_eq!(opened.text, "PERSON_1 met Bob Hart.");
+        assert_eq!(opened.proposed, 0, "the kept name is not proposed again");
+        assert!(
+            again
+                .save_pending_into_vault(vault.clone())
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(vault.readiness(id.clone()).unwrap(), ready);
+        assert_eq!(listed(&vault).phase, DocumentPhase::Ready);
+        let sent = vault.text_for_ai(id.clone()).unwrap();
+        assert!(
+            sent.contains("PERSON_1 met Bob Hart.") && !sent.contains("Ann Lee"),
+            "{sent}"
+        );
+    }
+}
+
+/// #1292: a moved document whose save does not come out Ready still
+/// refuses. Moved into a Project that knows a name it kept, that name is
+/// proposed there: the list says so, and neither a save nor the outbound
+/// check lets its text leave until the proposal is decided.
+#[test]
+fn a_moved_document_with_a_proposal_left_refuses_after_its_save() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let project = vault.create_project("Lease".into()).unwrap();
+    saved(
+        &vault,
+        Some(&project.id),
+        "Bob Hart sued.",
+        &["Bob Hart"],
+        "Brief",
+    );
+    let session = session("Ann Lee met Bob Hart.", "Memo");
+    propose(&session, &["Ann Lee", "Bob Hart"]);
+    let text = session.snapshot().unwrap().text;
+    session
+        .replace(at(&text, "Ann Lee", 0), Scope::All)
+        .unwrap();
+    let text = session.snapshot().unwrap().text;
+    session.keep(at(&text, "Bob Hart", 0), Scope::All).unwrap();
+    let id = session.save_into_vault(vault.clone()).unwrap().id;
+    drop(session);
+    assert_eq!(
+        vault.readiness(id.clone()).unwrap(),
+        crate::vault::Readiness::Ready
+    );
+
+    let moved = (vault.move_document(id.clone(), Some(project.id.clone()))).unwrap();
+    assert_eq!(
+        (moved.document.phase, moved.document.proposed),
+        (DocumentPhase::Reviewing, 1)
+    );
+    let (again, opened) = reopened(&vault, &id);
+    assert_eq!(opened.proposed, 1, "Bob Hart, known in the Project");
+    again.save_pending_into_vault(vault.clone()).unwrap();
+    assert_ne!(
+        vault.readiness(id.clone()).unwrap(),
+        crate::vault::Readiness::Ready
+    );
+    assert!(vault.text_for_ai(id.clone()).is_err(), "the tap refuses");
+    assert_eq!(vault.document(id).unwrap().phase, DocumentPhase::Reviewing);
 }
 
 /// A new document follows its first line and goes when left empty.

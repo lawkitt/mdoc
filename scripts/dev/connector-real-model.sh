@@ -148,6 +148,8 @@ echo "Starting mdoc on the dev profile…"
 MDOC_DEV_PROFILE=$profile MDOC_DEV_AI_PROJECT=$project \
   "$bin/mdoc" --mdoc-connector-launch </dev/null >"$scratch/mdoc.log" 2>&1 &
 mdoc_pid=$!
+# The profile sits under /tmp, short enough for the socket's usual path;
+# a longer one would move it to a short folder (#1311).
 socket=$profile/data/mdoc/connector/mcp.sock
 for _ in $(seq 120); do
   [ -S "$socket" ] && break

@@ -104,8 +104,11 @@ sealed interface HandOffRefusal {
          * its review, a known name written out, excluded from AI. A saved
          * "not reviewed" while the review is done is, at the detector
          * tier, names marked by hand in a document never scanned: Find
-         * names. Below the floor it is no refusal here: the tap saves again
-         * first (a phone fallen below the floor since), and asks "I checked
+         * names. Scanned, it is a record moved since its last save (#1292):
+         * no refusal here, as the tap saves it again first and the Vault's
+         * own check still decides. Below the floor it is no refusal here:
+         * the tap saves again first (a phone fallen below the floor
+         * since), and asks "I checked
          * the names myself" where the names were not checked (item 48), or
          * says why where that does not help.
          */
@@ -123,7 +126,7 @@ sealed interface HandOffRefusal {
             }
             return when (saved) {
                 null -> null
-                SavedReadiness.NotReviewed -> if (findsNames) NotScanned else null
+                SavedReadiness.NotReviewed -> if (findsNames && !snapshot.scanned) NotScanned else null
                 else -> of(saved)
             }
         }

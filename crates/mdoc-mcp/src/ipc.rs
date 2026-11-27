@@ -104,8 +104,9 @@ impl Drop for Listening {
 }
 
 /// Listen at `endpoint`, owner-only, each connection on its own thread.
-/// Fails when another process holds the endpoint or its folder isn't
-/// this user's alone.
+/// Fails when another process holds the endpoint
+/// (`ErrorKind::AddrInUse`), its folder isn't this user's alone, or a
+/// socket's path would be too long (`ErrorKind::InvalidFilename`, #1311).
 pub fn listen(endpoint: &Endpoint, answer: Handler) -> io::Result<Listening> {
     sys::listen(&endpoint.0, answer).map(|listener| Listening(Some(listener)))
 }

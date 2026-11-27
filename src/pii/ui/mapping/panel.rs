@@ -297,6 +297,19 @@ impl DocumentView {
             .filter(|row| row.visible(&query, self.pii.mapping.filter))
             .count()
     }
+    /// Names still to replace: the list's rows with a pending mention, the
+    /// unit of the Review tab's count (#1314).
+    pub(crate) fn pending_name_count(&self, cx: &App) -> usize {
+        (self.replacement_projection(cx).rows.iter())
+            .filter(|row| row.mentions > row.applied)
+            .count()
+    }
+    /// Names with an applied replacement, in the same unit.
+    pub(crate) fn applied_name_count(&self, cx: &App) -> usize {
+        (self.replacement_projection(cx).rows.iter())
+            .filter(|row| row.applied > 0)
+            .count()
+    }
     pub(super) fn kept_mention_count(&self, cx: &App) -> usize {
         self.replacement_projection(cx).kept
     }
@@ -781,7 +794,8 @@ impl DocumentView {
             .count();
         let kept = self.kept_mention_count(cx);
         let applied = self.pii.review.applied().len();
-        let summary = replacement_summary(busy, pending, applied, kept);
+        let names = self.pending_name_count(cx);
+        let summary = replacement_summary(busy, names, pending, applied, kept);
         let upgrade = self.pii.review.applied().iter().any(|a| {
             self.pii
                 .review
@@ -1141,9 +1155,12 @@ impl DocumentView {
 }
 
 /// The Replacements footer's summary. A running scan has no counts to give
-/// yet, so it says so instead of "Nothing to replace yet" (#309).
+/// yet, so it says so instead of "Nothing to replace yet" (#309). What is
+/// left counts `names`, the Review tab's unit, and its `pending` places
+/// when they differ (#1314).
 pub(super) fn replacement_summary(
     scanning: bool,
+    names: usize,
     pending: usize,
     applied: usize,
     kept: usize,
@@ -1153,7 +1170,7 @@ pub(super) fn replacement_summary(
     }
     let mut parts = Vec::new();
     if pending > 0 {
-        parts.push(format!("{pending} to replace"));
+        parts.push(format!("{} to replace", names_in_places(names, pending)));
     }
     if applied > 0 {
         parts.push(format!("{applied} applied"));
@@ -1165,6 +1182,16 @@ pub(super) fn replacement_summary(
         "Nothing to replace yet".to_string()
     } else {
         parts.join(" · ")
+    }
+}
+
+/// "2 names in 3 places", or "2 names" when each appears once (#1314).
+pub(super) fn names_in_places(names: usize, places: usize) -> String {
+    let unit = if names == 1 { "name" } else { "names" };
+    if places == names {
+        format!("{names} {unit}")
+    } else {
+        format!("{names} {unit} in {places} places")
     }
 }
 

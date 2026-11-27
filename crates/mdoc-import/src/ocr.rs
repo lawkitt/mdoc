@@ -887,15 +887,26 @@ fn install_runtime_with(
         &crate::model_download::Progress,
     ) -> Result<(), crate::model_download::DownloadError>,
 ) -> Result<(), SetupError> {
-    let temporary = tempfile::tempdir_in(root)?;
-    let path = temporary.path().join("runtime.archive");
+    // Another mdoc of this profile may be installing it: its archive is
+    // this one's until installed and removed.
+    let _held =
+        crate::model_download::hold(&root.join(format!("{}.lock", runtime.name)), progress)?;
+    if verify_library(root, runtime).is_ok() {
+        return Ok(());
+    }
     let mut sources = runtime.sources.iter().peekable();
     while let Some(source) = sources.next() {
+        // Named by its digest and kept between tries, so a download that
+        // failed partway resumes (#1288); removed once installed.
+        let sha = source.archive_sha.get(..16).unwrap_or(source.archive_sha);
+        let path = root.join(format!("{}-{sha}.archive", runtime.name));
         match fetch(source.url, source.size, source.archive_sha, &path, progress) {
             Ok(()) => {
                 let file = File::open(&path)?;
                 progress.check()?;
                 extract_runtime(root, runtime, source, &file)?;
+                drop(file);
+                let _ = fs::remove_file(&path);
                 return verify(&root.join(runtime.library), source.library_sha(runtime));
             }
             Err(error) if source_unavailable(&error) => {
@@ -1498,7 +1509,11 @@ mod tests {
             .map(|entry| entry.unwrap().file_name().into_string().unwrap())
             .collect::<Vec<_>>();
         files.sort();
-        assert_eq!(files, ["libonnxruntime.1.32.0.dylib", "licenses"]);
+        // The archive is gone once installed; the install's lock stays, empty.
+        assert_eq!(
+            files,
+            ["libonnxruntime.1.32.0.dylib", "licenses", "onnx.lock"]
+        );
         // Setup's checks accept the NuGet build from now on.
         verify_library(dir.path(), &runtime).unwrap();
         // The planned bundle now counts the larger package.

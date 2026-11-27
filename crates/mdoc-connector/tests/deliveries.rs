@@ -236,6 +236,21 @@ fn a_delivery_naming_a_deleted_or_excluded_document_is_refused() {
     assert!(f.vault.replies().is_empty());
 }
 
+/// #1314: a delivery counts what the Reply page counts, values: an
+/// identity named twice is one.
+#[test]
+fn a_delivery_counts_restored_values_as_the_reply_page_does() {
+    let f = fixture();
+    let (_, letter) = f.shared_with_a_read_letter();
+    let delivered = f
+        .deliver(reply(&[&letter], "PERSON_1 signed. PERSON_1 paid."))
+        .unwrap();
+    let page = f.vault.restore_reply(&delivered.reply).unwrap();
+    assert_eq!(page.restored.len(), 2, "two places");
+    assert_eq!(page.values, 1);
+    assert_eq!(delivered.restored, page.values);
+}
+
 /// Done when: a reply restoring by identity. It is the AI project's
 /// reply, as received, from its app, bound to the identities its aliases
 /// mean now: an alias the Project learns later is not read into it. Its

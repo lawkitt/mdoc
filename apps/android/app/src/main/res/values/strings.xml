@@ -25,6 +25,7 @@
     <string name="status_ready_to_mark">Ready to mark names</string>
     <string name="status_ready_to_share">Ready to share</string>
     <string name="status_to_review">%1$d to review</string>
+    <string name="status_moved_to_share">Moved · open it to share</string>
     <string name="status_not_recognized">Text not recognized yet</string>
     <string name="status_import_not_finished">Import not finished</string>
     <string name="status_nothing_found">Nothing found</string>

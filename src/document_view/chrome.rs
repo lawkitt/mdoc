@@ -22,7 +22,21 @@ enum Primary {
     Share,
 }
 
+/// The header's Apply, counting names as the Review tab does (#1314).
+fn apply_label(names: usize) -> String {
+    format!("Apply {names}")
+}
+
 impl DocumentView {
+    /// The header's Apply label while it shows, for tests.
+    #[cfg(test)]
+    pub(crate) fn apply_label(&self, cx: &App) -> Option<String> {
+        match self.primary(cx) {
+            Primary::Apply(n) => Some(apply_label(n)),
+            _ => None,
+        }
+    }
+
     pub(crate) fn chrome_width(&self, window: &Window) -> f32 {
         let width = f32::from(self.view_bounds.get().size.width);
         if width > 0. {
@@ -152,7 +166,8 @@ impl DocumentView {
         }
         let remaining = self.pii.review().remaining();
         if self.pii.reviewing() && remaining > 0 {
-            return Primary::Apply(remaining);
+            // Names, as the Review tab counts, never the places (#1314).
+            return Primary::Apply(self.pending_name_count(cx));
         }
         // Inspector: sharing lives in the Share tab.
         if self.has_applied_aliases() {
@@ -205,7 +220,7 @@ impl DocumentView {
             Primary::Apply(n) => {
                 // Keep the element's generated focus handle when Apply becomes
                 // Share (and back on Undo), so chrome shortcuts still dispatch.
-                ui::filled_button("primary-action", format!("Apply {n}"), theme, true)
+                ui::filled_button("primary-action", apply_label(n), theme, true)
                     .when(cfg!(test), |v| v.debug_selector(|| "primary-apply".into()))
                     .child(ui::key_hint(format!("{modifier}↩")))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(PiiApplyAll), cx))

@@ -21,6 +21,9 @@ serde_json = "1"
 libc = "0.2"
 # The profile's data folder, as mdoc-store's `app_paths` finds it.
 dirs = "7"
+# Names the short socket folder of a data folder whose usual socket path
+# is too long (#1311): stable, and a script can work it out.
+sha2 = "0.11"
 
 [target.'cfg(windows)'.dependencies]
 # The owner-only named pipe (`ipc/windows.rs`).

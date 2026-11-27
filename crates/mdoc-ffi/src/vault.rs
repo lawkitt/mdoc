@@ -306,15 +306,9 @@ impl Vault {
             ProjectDocuments::MoveToUnfiled => mdoc_vault::ProjectDocuments::MoveToUnfiled,
             ProjectDocuments::Delete => mdoc_vault::ProjectDocuments::Delete,
         };
-        let deleted = self.store.delete_project(&id, documents);
-        // The ones that moved, counted again in Unfiled, even when the
-        // delete stopped part way.
-        for document in self.store.documents_in(None) {
-            if document.counts.is_none() {
-                let _ = self.recount(&document.id);
-            }
-        }
-        Ok(deleted?)
+        // The ones that moved keep no counts until their next save, so lists
+        // read them from their record (`document_info`).
+        Ok(self.store.delete_project(&id, documents)?)
     }
 
     /// Every document, most recently updated first.
@@ -517,25 +511,12 @@ impl Vault {
         document_info(&self.store, summary)
     }
 
-    fn count(&self, id: &str) -> Result<crate::document_session::Counts, CoreError> {
-        count(&self.store, id)
-    }
-
-    /// Record a moved document's counts, which the move cleared, so lists
-    /// read them from the manifest again. The caller holds `writes`.
-    fn recount(&self, id: &str) -> Result<mdoc_vault::Document, CoreError> {
-        let counts = self.count(id)?;
-        Ok(self
-            .store
-            .update_document(id, |document| document.counts = Some(counts.into()))?)
-    }
-
-    /// What a move tells the app; the caller holds `writes`.
+    /// What a move tells the app; the caller holds `writes`. The move
+    /// cleared the document's counts, and they stay cleared until its next
+    /// save: lists read it from its record meanwhile, so they see it is not
+    /// Ready until then (#1292).
     fn moved(&self, moved: Moved) -> Result<DocumentMove, CoreError> {
-        let document = match self.recount(&moved.document.id) {
-            Ok(document) => document,
-            Err(_) => moved.document,
-        };
+        let document = moved.document;
         let mut undo = self.lock_undo();
         undo.count += 1;
         let handle = undo.count;
@@ -608,14 +589,21 @@ fn document_infos(store: &impl Reads, summaries: Vec<DocumentSummary>) -> Vec<Do
 }
 
 /// As lists show it: the counts its last save recorded, or, when none
-/// did, as opening it would count them.
+/// did (a move clears them), as opening it would count them. Such a
+/// record scanned with nothing proposed but no Ready fingerprint (moved
+/// since its last save) is `Reviewing` with nothing proposed, not Ready:
+/// its next save makes it Ready again (#1292).
 fn document_info(store: &impl Reads, summary: DocumentSummary) -> DocumentInfo {
-    let counts: crate::document_session::Counts = match summary.counts {
-        Some(counts) => counts.into(),
+    let (counts, saved_ready): (crate::document_session::Counts, bool) = match summary.counts {
+        Some(counts) => (counts.into(), true),
         None => count(store, &summary.id).unwrap_or_default(),
     };
+    let phase = match DocumentPhase::of(summary.scanned, counts.proposed) {
+        DocumentPhase::Ready if !saved_ready => DocumentPhase::Reviewing,
+        phase => phase,
+    };
     DocumentInfo {
-        phase: DocumentPhase::of(summary.scanned, counts.proposed),
+        phase,
         id: summary.id,
         title: summary.title,
         project_id: summary.project,
@@ -632,16 +620,20 @@ fn document_info(store: &impl Reads, summary: DocumentSummary) -> DocumentInfo {
     }
 }
 
-/// Document `id` as opening it counts it.
-fn count(store: &impl Reads, id: &str) -> Result<crate::document_session::Counts, CoreError> {
+/// Document `id` as opening it counts it, and whether its record was
+/// saved Ready (has a Ready fingerprint).
+fn count(
+    store: &impl Reads,
+    id: &str,
+) -> Result<(crate::document_session::Counts, bool), CoreError> {
     let document = store.document(id)?;
     let project = match &document.project {
         Some(project) => Some(store.project(project)?),
         None => None,
     };
-    Ok(crate::document_session::vault_counts(
-        &document,
-        project.as_ref(),
+    Ok((
+        crate::document_session::vault_counts(&document, project.as_ref()),
+        document.ready_fingerprint.is_some(),
     ))
 }
 
