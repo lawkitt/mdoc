@@ -448,12 +448,6 @@ none of the owner's flags is a field of `Workspace`.
    names. *Blocked by:* item 4. *Done when:* every test and render file is
    named for an owner or a rule, and the same tests and screens run as
    before the move.
-6. **[Desktop] `just map` and the header lint.** *From
-   [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 8.* `just map` prints the
-   module tree with each header's first sentence, so no map is kept by hand
-   and `docs/development.md` gains no words; `just lint` fails on a module
-   with no header, and the five without one get theirs. *Blocked by:* item
-   5. *Done when:* the lint's own test fails on a module without a header.
 7. **[Desktop] The window's main file splits by job.** *From
    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 7.* The functions of its
    2,500-line block move to the owners they serve; what stays is the window
@@ -466,11 +460,6 @@ none of the owner's flags is a field of `Workspace`.
    and foot to the sidebar, the theme and the update card to the owners
    that fit. *Blocked by:* item 7. *Done when:* the shell file is gone or
    its header names one job, and no function body changed.
-9. **[Desktop] The document view's main file splits by job.** *From
-   [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 7.* The same for the document
-   view: each job in its own file under `document/`. *Blocked by:* item 5.
-   *Done when:* the file's header names one job and no function body
-   changed.
 10. **[Desktop] `ui/` is one file per kind.** *From
     [#1319](https://github.com/lawkitt/mdoc/issues/1319), decision 5.* The shared controls part
     into buttons, menus, cards and the title bar, beside the style and the
