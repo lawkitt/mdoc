@@ -183,7 +183,7 @@ fn an_outbound_read_stores_no_copy_of_the_ai_text() {
     let stored = folder.open().document(&letter).unwrap();
     assert_eq!(stored.markdown, "PERSON_1 signed.");
     let record = serde_json::to_string(&stored).unwrap();
-    assert!(!record.contains("Keep every placeholder"), "{record}");
+    assert!(!record.contains("Keep every alias"), "{record}");
     assert!(!record.contains(&sent), "{record}");
 }
 

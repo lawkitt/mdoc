@@ -412,6 +412,7 @@ fun DocumentRow(
         StatusLine.ReadyToFind -> stringResource(R.string.status_ready_to_find)
         StatusLine.ReadyToMark -> stringResource(R.string.status_ready_to_mark)
         is StatusLine.ToReview -> stringResource(R.string.status_to_review, line.count)
+        StatusLine.MovedToShare -> stringResource(R.string.status_moved_to_share)
         StatusLine.ReadyToShare -> stringResource(R.string.status_ready_to_share)
         StatusLine.NothingFound -> stringResource(R.string.status_nothing_found)
     }
@@ -492,7 +493,7 @@ private fun statusIcon(line: StatusLine): ImageVector = when (line) {
     StatusLine.NotRecognized -> Icons.Outlined.Search
     StatusLine.ReadyToFind -> Icons.Outlined.Person
     StatusLine.ReadyToMark -> Icons.Outlined.Edit
-    is StatusLine.ToReview -> Icons.Outlined.Info
+    is StatusLine.ToReview, StatusLine.MovedToShare -> Icons.Outlined.Info
     StatusLine.ReadyToShare, StatusLine.NothingFound -> Icons.Outlined.CheckCircle
 }
 

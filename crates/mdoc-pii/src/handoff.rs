@@ -1,5 +1,5 @@
 //! The text handed to an external AI: Copy for AI is
-//! the Markdown with a note asking the AI to keep placeholders exactly. The
+//! the Markdown with a note asking the AI to keep aliases exactly. The
 //! editor and the shelf build it here, so both copy the same bytes.
 
 /// The note Copy for AI puts before the text. It names aliases only, never
@@ -12,10 +12,10 @@ pub fn ai_notice(examples: &[&str]) -> String {
     };
     format!(
         "Note: names and other identifying details in this document were replaced \
-         with placeholders such as {examples}. Keep every placeholder exactly as \
-         written, with the same capitals, underscore and number. Do not invent new \
-         placeholders or guess the real values; they are restored locally after \
-         your reply.\n\n---\n\n"
+         with aliases such as {examples}. Keep every alias exactly as written, \
+         with the same capitals, underscore and number. Do not invent new aliases \
+         or guess the real values; they are restored locally after your reply.\
+         \n\n---\n\n"
     )
 }
 
@@ -55,6 +55,15 @@ mod tests {
         let copied = for_ai(text, ["PERSON_1", "PERSON_1", "ORG_1", "PERSON_2"]);
         assert!(copied.starts_with("Note: "));
         assert!(copied.contains("such as PERSON_1 or ORG_1."));
+        // "Alias", as everywhere else the app and the connector speak (#1315).
+        assert_eq!(
+            note_for(["PERSON_1"]),
+            "Note: names and other identifying details in this document were \
+             replaced with aliases such as PERSON_1. Keep every alias exactly as \
+             written, with the same capitals, underscore and number. Do not invent \
+             new aliases or guess the real values; they are restored locally after \
+             your reply.\n\n---\n\n"
+        );
         assert!(copied.ends_with(&format!("---\n\n{text}")));
         assert_eq!(for_ai(text, []), text, "no alias, no note");
     }

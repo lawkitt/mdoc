@@ -214,6 +214,8 @@ pub(super) enum ProjectEvent {
     DismissHint(String, String),
     /// Move to New Project, from Share.
     MoveToNew,
+    /// The breadcrumb's Project name field ends: saved, or not (Esc).
+    FinishRename { save: bool },
     /// Restoring or pseudonymizing found no mapping in the tab; a locked
     /// Vault may hold it.
     MappingMissing,
@@ -413,6 +415,9 @@ pub(super) struct Workspace {
     /// A test window's own Vault folder, removed with it.
     #[cfg(test)]
     test_vault_dir: Option<tempfile::TempDir>,
+    /// Tests only: where the connector listens; `None` listens nowhere.
+    #[cfg(test)]
+    pub(super) ai_endpoint: Option<mdoc_mcp::ipc::Endpoint>,
     /// The sidebar's theme pick; `theme` holds what it resolves to.
     theme_choice: ThemeChoice,
     /// The theme button's tooltip reads the choice live.
@@ -666,6 +671,8 @@ impl Workspace {
             staged_vault: None,
             #[cfg(test)]
             test_vault_dir: None,
+            #[cfg(test)]
+            ai_endpoint: None,
             theme_choice: ThemeChoice::default(),
             theme_tip: Rc::default(),
             window_title: String::new(),
@@ -1285,6 +1292,7 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
+                let moved = this.reloading.get(&loading) == Some(&generation);
                 this.move_reload_ended(&loading, generation, window, cx);
                 if !this.tabs.contains(id) {
                     // Its viewing copy may have been made after the tab went.
@@ -1395,6 +1403,10 @@ impl Workspace {
                     cx.notify();
                 });
                 this.attach_project(id, cx);
+                // Move to New Project's reload: its name is ready to edit.
+                if moved {
+                    this.name_moved_project(Some(id), &loading, window, cx);
+                }
                 // Opened from an AI notification: for review.
                 this.review_if_asked(id, window, cx);
                 this.refresh_saved_replies(cx);
@@ -1755,6 +1767,9 @@ impl Workspace {
                 self.dismiss_project_hint(id, from, into, cx)
             }
             TabEvent::Project(ProjectEvent::MoveToNew) => self.move_to_new_project(id, window, cx),
+            TabEvent::Project(ProjectEvent::FinishRename { save }) => {
+                self.finish_rename(*save, window, cx)
+            }
             TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
             TabEvent::Ask { with, move_to_new } => {
                 self.ask_from_tab(id, *with, *move_to_new, window, cx)

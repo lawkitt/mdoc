@@ -1,6 +1,6 @@
 //! New Project: the tree's Projects header with its "+", the Open Project
-//! list's hint with no Projects, the name sheet, and the empty Project's
-//! page it opens.
+//! list's hint with no Projects, the name sheet, the empty Project's page
+//! it opens, and Move to New Project's name field in the header.
 use super::{Driver, Result};
 
 /// Runs with the sidebar open; leaves the Vault's Projects as it found them.
@@ -61,6 +61,58 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         w.navigation
             .forget(&crate::workspace::navigation::Stop::Project(id));
         w.activate(shown, window, cx);
+        Ok(())
+    })??;
+    d.settle()?;
+    move_to_new_project(d, shown)
+}
+
+/// Move to New Project (#1313): an Unfiled document moves at once, and the
+/// new Project's name is ready to edit in the header's breadcrumb, the
+/// document's name selected. Undone after, the document deleted.
+fn move_to_new_project(d: &mut Driver, shown: u64) -> Result<()> {
+    let letter = d.change(|w, window, cx| -> Result<_> {
+        let vault = w.vault.vault().cloned().ok_or("the fixture Vault")?;
+        let letter = vault
+            .create_document(mdoc_vault::NewDocument {
+                project: None,
+                title: "Lease letter".into(),
+                source_kind: mdoc_vault::SourceKind::Markdown,
+                origin: mdoc_vault::DocumentOrigin::Ordinary,
+                markdown: "# Lease letter\n\nThe deposit is returned in full.\n".into(),
+            })
+            .map_err(|e| e.to_string())?;
+        let id = mdoc_store::document_id::VaultId::parse(&letter.id).ok_or("its id")?;
+        w.open_vault_document(id.clone(), window, cx);
+        Ok(id)
+    })??;
+    d.settle()?;
+    d.change(|w, window, cx| {
+        let tab = w.tabs.active();
+        w.move_to_new_project(tab, window, cx);
+    })?;
+    d.settle()?;
+    d.capture("move-to-new-project-name")?;
+    d.change(|w, window, cx| {
+        w.finish_rename(false, window, cx);
+        w.undo_move(window, cx);
+    })?;
+    d.settle()?;
+    d.change(|w, window, cx| -> Result<()> {
+        // Undo's own toast goes too, so later scenes show none.
+        w.dismiss_toast(cx);
+        let tab = w.tabs.active();
+        w.close_tab(tab, window, cx);
+        w.activate(shown, window, cx);
+        Ok(())
+    })??;
+    d.settle()?;
+    d.change(|w, _, cx| -> Result<()> {
+        let vault = w.vault.vault().cloned().ok_or("the fixture Vault")?;
+        vault
+            .delete_document(letter.as_str())
+            .map_err(|e| e.to_string())?;
+        cx.notify();
         Ok(())
     })??;
     d.settle()

@@ -4,7 +4,10 @@ use crate::{
     pii::ui::{CopyForAi, PiiApplyAll},
     spelling::ToggleDocumentSpelling,
     style, ui,
-    workspace::{Close, Import, Open, PasteAiResponse},
+    workspace::{
+        CancelProjectName, Close, ConfirmProjectName, Import, Open, PasteAiResponse, ProjectEvent,
+        TabEvent,
+    },
 };
 use gpui::{App, Context, Focusable, Window, div, prelude::*, px};
 
@@ -19,7 +22,21 @@ enum Primary {
     Share,
 }
 
+/// The header's Apply, counting names as the Review tab does (#1314).
+fn apply_label(names: usize) -> String {
+    format!("Apply {names}")
+}
+
 impl DocumentView {
+    /// The header's Apply label while it shows, for tests.
+    #[cfg(test)]
+    pub(crate) fn apply_label(&self, cx: &App) -> Option<String> {
+        match self.primary(cx) {
+            Primary::Apply(n) => Some(apply_label(n)),
+            _ => None,
+        }
+    }
+
     pub(crate) fn chrome_width(&self, window: &Window) -> f32 {
         let width = f32::from(self.view_bounds.get().size.width);
         if width > 0. {
@@ -149,7 +166,8 @@ impl DocumentView {
         }
         let remaining = self.pii.review().remaining();
         if self.pii.reviewing() && remaining > 0 {
-            return Primary::Apply(remaining);
+            // Names, as the Review tab counts, never the places (#1314).
+            return Primary::Apply(self.pending_name_count(cx));
         }
         // Inspector: sharing lives in the Share tab.
         if self.has_applied_aliases() {
@@ -202,7 +220,7 @@ impl DocumentView {
             Primary::Apply(n) => {
                 // Keep the element's generated focus handle when Apply becomes
                 // Share (and back on Undo), so chrome shortcuts still dispatch.
-                ui::filled_button("primary-action", format!("Apply {n}"), theme, true)
+                ui::filled_button("primary-action", apply_label(n), theme, true)
                     .when(cfg!(test), |v| v.debug_selector(|| "primary-apply".into()))
                     .child(ui::key_hint(format!("{modifier}↩")))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(PiiApplyAll), cx))
@@ -237,6 +255,51 @@ impl DocumentView {
             || self.preview.failed();
         let reviewable = self.can_show_replacements();
         let name = self.display_name();
+        // Right after Move to New Project the Project's name is ready to
+        // edit here (#1313): Enter, Tab or a click away saves, Esc keeps it.
+        let project = self.project.link().cloned().map(|link| {
+            let name = match self.project_name_field.clone() {
+                Some(input) => ui::no_drag(
+                    div()
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "header-project-name".into())
+                        })
+                        .flex()
+                        .flex_shrink(1.)
+                        .min_w(px(80.))
+                        .w(px(200.))
+                        .px_1()
+                        .border_1()
+                        .border_color(p.border)
+                        .rounded_sm()
+                        .bg(p.bg)
+                        .text_color(p.header_fg)
+                        .on_action(cx.listener(|_, _: &ConfirmProjectName, _, cx| {
+                            cx.emit(TabEvent::Project(ProjectEvent::FinishRename { save: true }));
+                            cx.stop_propagation();
+                        }))
+                        .on_action(cx.listener(|_, _: &CancelProjectName, _, cx| {
+                            cx.emit(TabEvent::Project(ProjectEvent::FinishRename {
+                                save: false,
+                            }));
+                            cx.stop_propagation();
+                        }))
+                        .on_mouse_down_out(cx.listener(|_, _, _, cx| {
+                            cx.emit(TabEvent::Project(ProjectEvent::FinishRename { save: true }));
+                        }))
+                        .child(input),
+                )
+                .into_any_element(),
+                None => div()
+                    .flex_shrink(1.)
+                    .min_w(px(24.))
+                    .truncate()
+                    .text_color(p.header_muted)
+                    .child(link.name.clone())
+                    .into_any_element(),
+            };
+            (name, link)
+        });
         let crumb = div()
             .flex()
             .items_center()
@@ -244,7 +307,7 @@ impl DocumentView {
             .min_w_0()
             .flex_shrink(1.)
             .text_size(px(13.))
-            .when_some(self.project.link().cloned(), |v, link| {
+            .when_some(project, |v, (project_name, link)| {
                 v.child(
                     div()
                         .size(px(7.))
@@ -252,14 +315,7 @@ impl DocumentView {
                         .flex_shrink_0()
                         .bg(style::project_color(link.hue(), theme)),
                 )
-                .child(
-                    div()
-                        .flex_shrink(1.)
-                        .min_w(px(24.))
-                        .truncate()
-                        .text_color(p.header_muted)
-                        .child(link.name.clone()),
-                )
+                .child(project_name)
                 .child(
                     gpui::svg()
                         .data(ui::Icon::ChevronRight.data())

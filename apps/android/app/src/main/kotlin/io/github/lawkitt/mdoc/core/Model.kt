@@ -333,6 +333,12 @@ data class DocumentSnapshot(
     val opened: Int = 0,
     /** Promoted from a saved AI reply: the way back to it. */
     val promotedFrom: PromotedFrom? = null,
+    /**
+     * Its names were looked for (the core's `scanned`): a record not saved
+     * Ready since then was moved, and the hand-off's save makes it Ready
+     * again (#1292), where one never scanned waits for Find names.
+     */
+    val scanned: Boolean = false,
 ) {
     val pendingCount: Int get() = candidates.count { it.state == MentionState.Proposed }
     val replacedCount: Int get() = candidates.count { it.state == MentionState.Replaced }

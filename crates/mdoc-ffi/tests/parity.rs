@@ -945,7 +945,7 @@ fn vault_with_project(scratch: &Scratch, names: &[ExportedIdentity]) -> (Arc<Vau
 /// (`tests/fixtures/restore/claude-en`): the document joins a Project in
 /// the Vault holding the reviewed mapping, is saved there and opened again
 /// by id, and Copy for AI and the Vault's outbound text give exactly what
-/// desktop put on the clipboard (`sent.md`). The reply restores to
+/// desktop put on the clipboard (`sent.md`), under today's note. The reply restores to
 /// `expected.md` through the session (desktop's reply box) and through the
 /// Restore extension's `ReplyVault`, before and after it is saved.
 #[test]
@@ -966,7 +966,11 @@ fn the_captured_claude_round_trip_matches_desktop_through_the_vault() {
     // As a scan that finds no other name: Ready needs one.
     session.add_candidates(Vec::new()).unwrap();
     assert_eq!(session.replace_all().unwrap().proposed, 0);
-    let sent = read(&capture.join("sent.md"));
+    // The capture keeps the note it was sent with; Copy for AI gives today's
+    // note (pinned in `mdoc_pii::handoff`) before the same text (#1315).
+    let captured = read(&capture.join("sent.md"));
+    let (_, body) = captured.split_once("\n\n---\n\n").unwrap();
+    let sent = mdoc_pii::handoff::note_for(["REDACTED_1", "ORG_1"]) + body;
     assert_eq!(session.copy_for_ai().unwrap(), sent);
     let saved = session.save_into_vault(vault.clone()).unwrap();
     assert_eq!(saved.project.unwrap().id, project);

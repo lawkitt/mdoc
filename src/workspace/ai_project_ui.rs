@@ -46,6 +46,13 @@ impl Workspace {
         self.ai_setting().preview
     }
 
+    /// "AI connector (preview)" on as saved and as Settings shows it: shown
+    /// off, its save not landed yet, it is off (#1220, #1273). Whatever
+    /// starts the connector or takes the hotkey asks this.
+    pub(super) fn ai_preview_wanted(&self, cx: &App) -> bool {
+        self.ai_setting().preview && !self.settings.read(cx).ai_connector_shown_off()
+    }
+
     /// The connector runs: the setting is on and the Vault is open.
     pub(super) fn ai_connector_on(&self) -> bool {
         self.ai_connector.is_some()
@@ -62,15 +69,22 @@ impl Workspace {
     /// With "AI connector (preview)" on, the connector once the Vault is
     /// open, and the window hears from it. Tests and headless renders get
     /// no listener: they keep to their own Vaults and never take the
-    /// profile's endpoint.
+    /// profile's endpoint, unless a test gives one. Settings showing the
+    /// preview off starts nothing, whatever is saved (#1273).
     pub(super) fn start_ai_connector(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.ai_connector.is_some() {
+        if self.ai_connector.is_some() || !self.ai_preview_wanted(cx) {
             return;
         }
         let Some(vault) = self.vault.vault().cloned() else {
             return;
         };
         let setting = self.ai_setting();
+        #[cfg(test)]
+        if let Some(endpoint) = self.ai_endpoint.clone() {
+            let started = ai_connector::start(vault, &setting, Some(&endpoint));
+            self.ai_started(started, window, cx);
+            return;
+        }
         let started = if cfg!(test) || mdoc_store::app_paths::isolated() {
             Ok(ai_connector::start_unlistened(vault, &setting))
         } else {
@@ -123,13 +137,14 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Settings applied: the connector starts or stops with the setting.
-    /// Stopping it shares nothing.
+    /// Settings applied, or a model check finished: the connector starts
+    /// or stops with the setting as saved and shown (#1273). Stopping it
+    /// shares nothing.
     pub(super) fn refresh_ai_connector(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // With the preview on, the menu bar item toggles the companion.
         crate::menu_bar::set_companion(self.ai_setting().preview, cx);
         self.refresh_hotkey(cx);
-        if self.ai_setting().preview {
+        if self.ai_preview_wanted(cx) {
             self.start_ai_connector(window, cx);
         } else {
             self.stop_ai_connector(cx);
@@ -138,15 +153,13 @@ impl Workspace {
 
     /// The companion's hotkey follows the saved setting: registered only
     /// while the companion can open (the preview and the menu bar item
-    /// on), and Settings shows why it couldn't be. The preview shown off in
-    /// open Settings, its save not landed yet (#1220), counts as off.
+    /// on), and Settings shows why it couldn't be. The preview shown off,
+    /// its save not landed yet (#1220), counts as off.
     pub(crate) fn refresh_hotkey(&mut self, cx: &mut Context<Self>) {
         let setting = self.ai_setting();
-        let panel = self.settings.read(cx);
-        let shown_off = panel.open && !panel.draft.ai_connector.preview;
         let item = self.menu_bar_setting() && crate::menu_bar::keeps_running(cx);
-        let wanted = (setting.preview && !shown_off && !setting.hotkey_off && item)
-            .then_some(setting.hotkey);
+        let wanted =
+            (self.ai_preview_wanted(cx) && !setting.hotkey_off && item).then_some(setting.hotkey);
         let failed = crate::companion::hotkey::set(wanted, cx);
         self.settings
             .update(cx, |panel, cx| panel.hotkey_failed(failed, cx));

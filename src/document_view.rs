@@ -208,6 +208,9 @@ pub(crate) struct DocumentView {
     autosave: Option<gpui::Task<()>>,
     pub(crate) project_names_open: bool,
     pub(crate) project_term: Option<Entity<markdown_search::SearchInput>>,
+    /// The Project page's name field, shown in the header's breadcrumb
+    /// right after Move to New Project (#1313); the workspace owns it.
+    pub(crate) project_name_field: Option<Entity<markdown_search::SearchInput>>,
     /// The result of Pseudonymize Clipboard, for a few seconds.
     pub(crate) clipboard_notice: pii::ui::restore::ClipboardNotice,
     /// The before/after view replaces the editor while open.
@@ -458,6 +461,7 @@ impl DocumentView {
             autosave: None,
             project_names_open: false,
             project_term: None,
+            project_name_field: None,
             clipboard_notice: Default::default(),
             compare: None,
             switcher: Default::default(),

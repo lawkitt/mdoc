@@ -56,6 +56,9 @@ pub(super) struct ProjectsState {
     pub(super) renaming: Option<(String, Entity<markdown_search::SearchInput>)>,
     /// Saves the rename when focus leaves its field.
     rename_blur: Option<gpui::Subscription>,
+    /// Each document Move to New Project moved, and the Project it made:
+    /// its name is ready to edit once the document's tab has loaded again.
+    naming: std::collections::HashMap<VaultId, String>,
     pub(super) list_open: bool,
     /// The Keychain explainer is shown.
     pub(super) explainer: bool,
@@ -771,6 +774,12 @@ impl Workspace {
         let Some(document) = VaultId::parse(&undo.document) else {
             return;
         };
+        // The Project the move made goes: its name field closes unsaved, and
+        // one still waiting for the reload never opens.
+        if (self.project_ui.renaming.as_ref()).is_some_and(|(id, _)| Some(id) == made.as_ref()) {
+            self.finish_rename(false, window, cx);
+        }
+        self.project_ui.naming.remove(&document);
         self.queue_op(document, Op::Undo { undo, made }, window, cx);
         cx.notify();
     }
@@ -919,6 +928,16 @@ impl Workspace {
                 let asked = ask
                     .zip(made.clone())
                     .map(|(with, made)| (with, made, id.to_string()));
+                // The new Project's name is ready to edit once its tab shows
+                // the moved document (#1313).
+                // Another move of the same document since forgets it.
+                match (&moving, &made) {
+                    (Moving::New, Some(made)) => self
+                        .project_ui
+                        .naming
+                        .insert(document.clone(), made.clone()),
+                    _ => self.project_ui.naming.remove(&document),
+                };
                 let tab = self.find_document(&DocumentId::Vault(document.clone()), None, cx);
                 match tab {
                     Some(tab) => {
@@ -926,11 +945,17 @@ impl Workspace {
                         if let Some(view) = self.tab_view(tab) {
                             view.update(cx, |view, cx| view.realias_reply(names, &aliases, cx));
                         }
-                        self.reload_tab(tab, document, window, cx)
+                        self.reload_tab(tab, document.clone(), window, cx)
                     }
                     None => {
                         self.moving.remove(&document);
                     }
+                }
+                if !self.reloading.contains_key(&document) {
+                    let document = document.clone();
+                    cx.defer_in(window, move |this, window, cx| {
+                        this.name_moved_project(None, &document, window, cx)
+                    });
                 }
                 let place = match &moved.project {
                     Some(project) => format!("“{}”", project.name),
@@ -1495,9 +1520,18 @@ impl Workspace {
         });
         let focus = input.read(cx).focus_handle(cx);
         window.focus(&focus, cx);
-        // Leaving the field saves, like Enter (Escape still cancels).
+        // Leaving the field saves, like Enter (Escape still cancels). The
+        // header's field, opened by Move to New Project, stays open while
+        // another app is in front: Ask's app comes forward right after it.
         self.project_ui.rename_blur =
             Some(cx.on_focus_out(&focus, window, |this, _, window, cx| {
+                let header = (this.tabs.iter()).any(|tab| {
+                    tab.view()
+                        .is_some_and(|v| v.read(cx).project_name_field.is_some())
+                });
+                if header && !window.is_window_active() {
+                    return;
+                }
                 this.finish_rename(true, window, cx)
             }));
         self.project_ui.renaming = Some((project_id, input));
@@ -1530,6 +1564,14 @@ impl Workspace {
     ) -> Option<Entity<markdown_search::SearchInput>> {
         let (project_id, input) = self.project_ui.renaming.take()?;
         self.project_ui.rename_blur = None;
+        for view in self.tabs.iter().filter_map(|t| t.view().cloned()) {
+            if view.read(cx).project_name_field.is_some() {
+                view.update(cx, |view, cx| {
+                    view.project_name_field = None;
+                    cx.notify();
+                });
+            }
+        }
         let name = input.read(cx).value().trim().to_string();
         if save && !name.is_empty() {
             if self
@@ -1549,6 +1591,48 @@ impl Workspace {
             }
         }
         Some(input)
+    }
+
+    /// Move to New Project's document is shown again (tab `tab`, once it
+    /// reloaded) or not live: the Project's name is ready to edit, the
+    /// document's name selected. In the header's breadcrumb when its tab is
+    /// in view; otherwise on the Project's page.
+    pub(super) fn name_moved_project(
+        &mut self,
+        tab: Option<u64>,
+        document: &VaultId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(project) = self.project_ui.naming.remove(document) else {
+            return;
+        };
+        // A dialog or the recency switcher keeps the keyboard: the name
+        // stays the document's, Rename on the Project's page still renames.
+        if self.projects.project(&project).is_none()
+            || self.quit_flow.quitting()
+            || self.project_ui.renaming.is_some()
+            || self.dialog_up(window)
+            || self.switcher.is_some()
+        {
+            return;
+        }
+        let shown = (tab.filter(|tab| *tab == self.tabs.active() && !self.showing_overview(cx)))
+            .and_then(|tab| self.tab_view(tab))
+            .filter(|view| view.read(cx).project.is(&project));
+        match shown {
+            Some(view) => {
+                self.start_rename_project(project, window, cx);
+                let input = (self.project_ui.renaming.as_ref()).map(|(_, input)| input.clone());
+                view.update(cx, |view, cx| {
+                    view.project_name_field = input;
+                    cx.notify();
+                });
+            }
+            None => {
+                self.show_project_page(&project, super::project_page::Place::Rename, window, cx)
+            }
+        }
     }
 
     /// Show the Project page.

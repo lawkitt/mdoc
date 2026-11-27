@@ -94,7 +94,9 @@ pub struct Mention {
 pub enum DocumentPhase {
     /// Never scanned, nor proposed names some other way.
     Unscanned,
-    /// Scanned, with proposals waiting.
+    /// Scanned, with proposals waiting. In a list with none proposed: moved
+    /// since its last save, so not Ready until its next save, which Copy for
+    /// AI and Share make (#1292); "Moved · open it to share".
     Reviewing,
     /// Scanned, nothing waiting: ready for Copy for AI.
     Ready,
