@@ -575,7 +575,7 @@ fn the_shelf_keys_reach_a_refused_rows_step(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
-    cx.update(|_, cx| crate::shelf_ui::bind_keys(cx));
+    cx.update(|_, cx| crate::shelf::shelf_ui::bind_keys(cx));
     open_proposed(&tabs, cx, dir.path(), "lease.md", TEXT, &["Anna Petrova"]);
     // Listed: one alias applied, one name still proposed.
     let view = active(&tabs, cx);
@@ -599,7 +599,7 @@ fn the_shelf_keys_reach_a_refused_rows_step(cx: &mut TestAppContext) {
         .unwrap();
     assert_eq!(row.step(), Some(Step::ReplaceAndCopy(1)));
     shelf_cx.write_to_clipboard(gpui::ClipboardItem::new_string("before".into()));
-    shelf_cx.dispatch_action(crate::shelf_ui::ShelfCopyForAi);
+    shelf_cx.dispatch_action(crate::shelf::shelf_ui::ShelfCopyForAi);
     let focused = shelf
         .update(&mut shelf_cx, |view, window, cx| {
             assert_eq!(view.refused(cx), Some(0));

@@ -523,10 +523,10 @@ pub(crate) struct SavedReplyRow {
 /// unresolved tokens red, as the restore tab marked them.
 pub(crate) fn reply_marks(
     restored: &RestoredText,
-    theme: crate::style::Theme,
+    theme: crate::ui::style::Theme,
 ) -> Vec<mdoc_editor::SourceAnnotation> {
     let gold = theme.proposed();
-    let red = crate::style::markdown_style(theme).alert_caution;
+    let red = crate::ui::style::markdown_style(theme).alert_caution;
     let mark = |id, range, accent: gpui::Hsla| mdoc_editor::SourceAnnotation {
         id,
         range,

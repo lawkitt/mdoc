@@ -9,9 +9,8 @@ use crate::{
         self, CloseMarkdownSearch, FindNextMarkdown, FindPreviousMarkdown, ReplaceAllMarkdown,
         ReplaceNextMarkdown, SearchRefresh, ToggleMarkdownMatchCase, ToggleMarkdownWholeWord,
     },
-    settings_ui, spelling,
-    style::{self, Theme},
-    ui,
+    spelling, ui,
+    ui::style::{self, Theme},
     workspace::{self, Import, New, Open, RetryDocument, ToggleTheme},
 };
 use gpui::{
@@ -158,7 +157,7 @@ pub(crate) struct DocumentView {
     /// External files over the empty page: whether any is supported.
     pub(crate) file_drag: Option<bool>,
     pub(crate) preferences: settings::Shared,
-    pub(crate) model_panel: Entity<settings_ui::Panel>,
+    pub(crate) model_panel: Entity<crate::settings::Panel>,
     pub(crate) theme: Rc<Cell<Theme>>,
     pub(crate) title: style::TitleBar,
     pub(crate) editor: Entity<EditorState>,
@@ -272,7 +271,7 @@ pub(crate) enum Background {
 pub(crate) struct DocumentViewDependencies {
     pub(crate) closing: workspace::CloseWatch,
     pub(crate) preferences: settings::Shared,
-    pub(crate) model_panel: Entity<settings_ui::Panel>,
+    pub(crate) model_panel: Entity<crate::settings::Panel>,
     pub(crate) theme: Rc<Cell<Theme>>,
     pub(crate) import_busy: Arc<AtomicBool>,
     pub(crate) ocr: OcrState,
@@ -287,7 +286,7 @@ pub(crate) struct DocumentViewDependencies {
 /// knows, without starting a check.
 pub(crate) fn known_ocr_state(
     preferences: &settings::Shared,
-    panel: &settings_ui::Panel,
+    panel: &crate::settings::Panel,
 ) -> OcrState {
     let Ok(config) = preferences.borrow().snapshot().map(|p| p.ocr) else {
         return OcrState::Missing;
@@ -301,8 +300,8 @@ pub(crate) fn known_ocr_state(
         installed.config = config;
         return OcrState::Ready(installed);
     }
-    match &panel.statuses[settings_ui::Panel::index(settings::Model::Ocr(config.model))] {
-        settings_ui::Status::Damaged(e) | settings_ui::Status::Unavailable(e) => {
+    match &panel.statuses[crate::settings::Panel::index(settings::Model::Ocr(config.model))] {
+        crate::settings::Status::Damaged(e) | crate::settings::Status::Unavailable(e) => {
             OcrState::Failed(e.clone())
         }
         _ => OcrState::Missing,
@@ -1048,7 +1047,8 @@ impl DocumentView {
             let config = config.clone();
             let subscription =
                 cx.subscribe_in(&panel, window, move |this, _, event, window, cx| {
-                    if let settings_ui::Event::Finished(settings::Model::Ocr(model), result) = event
+                    if let crate::settings::Event::Finished(settings::Model::Ocr(model), result) =
+                        event
                         && *model == config.model
                         && this.import.setting_up()
                     {
@@ -1312,7 +1312,7 @@ impl DocumentView {
         let progress = model.and_then(|m| panel.progress_of(m));
         let cancelling = panel.cancelling();
         let pending = model
-            .map(|m| panel.pending[settings_ui::Panel::index(m)])
+            .map(|m| panel.pending[crate::settings::Panel::index(m)])
             .unwrap_or_default();
         let installing =
             progress.is_some() || (shared && matches!(self.ocr_state, OcrState::Installing));
@@ -1464,7 +1464,7 @@ impl DocumentView {
                 })
                 .child(
                     ui::card_actions().child(
-                        settings_ui::control(
+                        crate::settings::control(
                             "cancel-ocr-setup",
                             "Cancel",
                             theme,
@@ -1513,7 +1513,7 @@ impl DocumentView {
             window.defer(cx, move |window, cx| window.focus(&focus, cx));
         }
         let name = model
-            .map(crate::models::short_name)
+            .map(crate::app::models::short_name)
             .unwrap_or_else(|| "OCR".into());
         // The engine says what it cannot read.
         let hint = if unreadable.is_empty() {
@@ -1609,7 +1609,7 @@ impl DocumentView {
                             }),
                     )
                     .child(
-                        settings_ui::control(
+                        crate::settings::control(
                             "extract-native",
                             "Use native text only",
                             theme,
@@ -1893,7 +1893,7 @@ impl DocumentView {
         let Some(LifecycleEffect::AskForFiles) = self.lifecycle.open_files() else {
             return;
         };
-        let paths = crate::native_picker::paths(
+        let paths = crate::app::native_picker::paths(
             cx,
             PathPromptOptions {
                 files: true,
@@ -1933,7 +1933,7 @@ impl DocumentView {
             name.push_str(".md");
         }
         let directory = self.export_directory(cx);
-        let path = crate::native_picker::new_path(cx, &directory, Some(&name));
+        let path = crate::app::native_picker::new_path(cx, &directory, Some(&name));
         cx.spawn_in(window, async move |this, cx| {
             let result = path.await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -2072,7 +2072,8 @@ fn toggled(on: bool) -> gpui::Toggled {
 
 /// The find bar's keys, from the shortcuts table.
 pub(crate) fn bind_markdown_search_keys(cx: &mut App) {
-    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Find, cx);
+    let bindings =
+        crate::commands::shortcuts::bindings(crate::commands::shortcuts::Owner::Find, cx);
     cx.bind_keys(bindings);
 }
 
@@ -2526,7 +2527,7 @@ impl Render for DocumentView {
             .when(!self.lifecycle.source_only() && self.import.busy(), |v| v.child(
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) || self.import.setting_up() { "Setting up text recognition…" } else if self.import.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
-            .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("Text recognized by {} · {} DPI · minimum confidence {}",crate::models::short_name(settings::Model::Ocr(config.model)),config.dpi,config.minimum_confidence))))
+            .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("Text recognized by {} · {} DPI · minimum confidence {}",crate::app::models::short_name(settings::Model::Ocr(config.model)),config.dpi,config.minimum_confidence))))
             .children(import_notice).children(clipboard_notice).children(ocr_notice.filter(|_| !show_markdown))
             .when(narrow_preview, |v| v.child(self.pane_switch(cx))))
             .child(div().flex().flex_1().min_h_0()

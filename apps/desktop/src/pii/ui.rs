@@ -22,7 +22,7 @@ use scan::ScanJob;
 #[cfg(test)]
 mod tests;
 
-use crate::{document_view::DocumentView, settings_ui};
+use crate::document_view::DocumentView;
 use gpui::{App, Context, FocusHandle, Focusable, Hsla, KeyBinding, Pixels, Window, actions, px};
 use mdoc_pii::{Category, IdentitySnapshot, Review, tracking::ReplacementPlan};
 use mdoc_store::settings;
@@ -142,7 +142,7 @@ impl Drop for ReviewUi {
     }
 }
 impl ReviewUi {
-    pub fn new(theme: Rc<Cell<crate::style::Theme>>, cx: &mut Context<DocumentView>) -> Self {
+    pub fn new(theme: Rc<Cell<crate::ui::style::Theme>>, cx: &mut Context<DocumentView>) -> Self {
         Self {
             review: Review::default(),
             reviewing: false,
@@ -331,7 +331,7 @@ pub(crate) const POPUP_UNDO: &str = "PseudonymReview && !PseudonymReplacement";
 /// after the table's popup keys: the chooser is also `PseudonymReview`, and
 /// the later binding wins its Enter.
 pub(crate) fn bind_keys(cx: &mut App) {
-    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Pii, cx);
+    let bindings = crate::commands::shortcuts::bindings(crate::commands::shortcuts::Owner::Pii, cx);
     cx.bind_keys(bindings);
     cx.bind_keys([
         // This multiline field is a Share control: Tab moves between
@@ -649,7 +649,7 @@ impl DocumentView {
             &self.model_panel.clone(),
             window,
             move |this, _, event, _, cx| {
-                let settings_ui::Event::Finished(finished, result) = event else {
+                let crate::settings::Event::Finished(finished, result) = event else {
                     return;
                 };
                 if *finished != model {

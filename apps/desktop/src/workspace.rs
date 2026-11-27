@@ -6,9 +6,8 @@ use crate::{
         Background, DocumentView, DocumentViewDependencies, OcrState, known_ocr_state,
     },
     pii::ui::PiiApplyAll,
-    settings_ui,
-    style::{self, Theme},
     ui,
+    ui::style::{self, Theme},
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Bounds, Context, Entity, EventEmitter, Focusable,
@@ -315,7 +314,7 @@ pub(super) struct Workspace {
     switcher_focus: gpui::FocusHandle,
     switcher_return: Option<gpui::FocusHandle>,
     preferences: settings::Shared,
-    settings: Entity<settings_ui::Panel>,
+    settings: Entity<crate::settings::Panel>,
     settings_subscription: Option<Subscription>,
     theme: Rc<Cell<Theme>>,
     ready: bool,
@@ -384,7 +383,7 @@ pub(super) struct Workspace {
     vault: vault_state::VaultState,
     /// The AI connector and its listener, while "AI connector (preview)"
     /// is on and the Vault is open.
-    ai_connector: Option<crate::ai_connector::Running>,
+    ai_connector: Option<crate::ai::connector::Running>,
     /// What the window knows of the AI project: the Project last viewed,
     /// the share prompt, the activity shown.
     ai: ai_project::AiProject,
@@ -397,7 +396,7 @@ pub(super) struct Workspace {
     /// or a recorder in tests and renders.
     notifier: ai_deliveries::Notifier,
     /// An Ask waiting for its Unfiled document's move (item 10).
-    ai_ask: crate::ai_ask::Waiting,
+    ai_ask: crate::ai::ask::Waiting,
     /// Settings › Vault's key, the first-Project nudge and the wrong-key
     /// screen.
     recovery: recovery_key::Recovery,
@@ -441,7 +440,7 @@ pub(super) struct Workspace {
     /// document's.
     window_title: String,
     /// The live views the Window menu lists, as last handed to it (#1160).
-    live_view_menu: Vec<crate::menus::LiveViewItem>,
+    live_view_menu: Vec<crate::commands::menus::LiveViewItem>,
     /// Shared with document headers: title-bar inset and drag state.
     title: style::TitleBar,
     shell: shell::ShellState,
@@ -468,7 +467,7 @@ impl Workspace {
 
     /// Every prompt in the app is mdoc's own confirm dialog.
     pub(crate) fn install_prompts(&self, cx: &mut App) {
-        crate::confirm_dialog::install(self.theme.clone(), cx);
+        crate::ui::confirm_dialog::install(self.theme.clone(), cx);
     }
 
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -484,12 +483,12 @@ impl Workspace {
         });
         cx.observe_window_activation(window, |_, window, cx| {
             if window.is_window_active() {
-                crate::menu_bar::window_activated(cx);
+                crate::shelf::menu_bar::window_activated(cx);
             }
         })
         .detach();
         if !cfg!(test) {
-            this.notices.load_crash(crate::crash::pending());
+            this.notices.load_crash(crate::app::crash::pending());
         }
         this.session_writer.set_path(if cfg!(test) {
             None
@@ -576,7 +575,8 @@ impl Workspace {
             settings::Store::open(settings::Store::default_path())
         };
         let theme = Rc::new(Cell::new(Theme::default()));
-        let panel = cx.new(|cx| settings_ui::Panel::new(preferences.clone(), theme.clone(), cx));
+        let panel =
+            cx.new(|cx| crate::settings::Panel::new(preferences.clone(), theme.clone(), cx));
         let mut sidebar = sidebar::Sidebar::default();
         sidebar.restore_width(
             preferences
@@ -710,76 +710,77 @@ impl Workspace {
             }));
         this.theme
             .set(style::resolve(this.theme_choice, window.appearance()));
-        this.settings_subscription = Some(cx.subscribe_in(
-            &panel,
-            window,
-            |this, _, event, window, cx| match event {
-                settings_ui::Event::ThemeSelected(choice) => {
-                    this.select_theme(*choice, window, cx);
-                }
-                settings_ui::Event::Applied | settings_ui::Event::Checked => {
-                    this.refresh_model_settings(cx);
-                    crate::menu_bar::set_enabled(this.menu_bar_setting(), cx);
-                    // "AI connector (preview)" starts or stops at once; a
-                    // model now set up lets entering documents scan.
-                    this.refresh_ai_connector(window, cx);
-                    this.scan_on_entry(cx);
-                    // Spelling choices apply at once; views re-read them on render.
-                    for view in this.tabs.iter().filter_map(|tab| tab.view()) {
-                        view.update(cx, |_, cx| cx.notify());
+        this.settings_subscription =
+            Some(
+                cx.subscribe_in(&panel, window, |this, _, event, window, cx| match event {
+                    crate::settings::Event::ThemeSelected(choice) => {
+                        this.select_theme(*choice, window, cx);
                     }
-                }
-                // Off stops before its save lands; a failed save
-                // starts it again (#1220).
-                settings_ui::Event::AiConnectorShown(false) => this.stop_ai_connector(cx),
-                settings_ui::Event::AiConnectorShown(true) => this.refresh_ai_connector(window, cx),
-                settings_ui::Event::Finished(settings::Model::Ocr(model), result) => {
-                    let selected = this.preferences.borrow().snapshot().map(|p| p.ocr);
-                    if let Ok(config) = selected
-                        && config.model == *model
-                    {
-                        let state = match result {
-                            Ok(Some(installed)) => {
-                                let mut installed = installed.clone();
-                                installed.config = config;
-                                OcrState::Ready(installed)
-                            }
-                            Ok(None) => OcrState::Missing,
-                            Err(e) => OcrState::Failed(e.clone()),
-                        };
-                        this.set_ocr(state, cx);
-                    } else if matches!(this.ocr_state, OcrState::Installing) {
-                        // A tab's setup of a model Settings no longer
-                        // selects ended; the tab may be gone.
-                        let state = known_ocr_state(&this.preferences, this.settings.read(cx));
-                        this.set_ocr(state, cx);
+                    crate::settings::Event::Applied | crate::settings::Event::Checked => {
+                        this.refresh_model_settings(cx);
+                        crate::shelf::menu_bar::set_enabled(this.menu_bar_setting(), cx);
+                        // "AI connector (preview)" starts or stops at once; a
+                        // model now set up lets entering documents scan.
+                        this.refresh_ai_connector(window, cx);
+                        this.scan_on_entry(cx);
+                        // Spelling choices apply at once; views re-read them on render.
+                        for view in this.tabs.iter().filter_map(|tab| tab.view()) {
+                            view.update(cx, |_, cx| cx.notify());
+                        }
                     }
-                }
-                // The detection model set up: AI project members that
-                // waited for it scan now.
-                settings_ui::Event::Finished(settings::Model::Pii(_), Ok(_)) => {
-                    this.scan_on_entry(cx);
-                }
-                settings_ui::Event::Finished(_, _) => {}
-                settings_ui::Event::Compare(model) => {
-                    this.open_comparison(*model, window, cx);
-                }
-                settings_ui::Event::RestartToUpdate => this.restart_to_update(window, cx),
-                settings_ui::Event::Shortcuts => this.toggle_shortcuts(window, cx),
-                settings_ui::Event::UserListsChanged(lists) => {
-                    this.save_user_lists(lists.clone(), window, cx)
-                }
-                settings_ui::Event::UnlockLists => this.unlock_projects(window, cx),
-                settings_ui::Event::ShowRecoveryKey => this.show_recovery_key(cx),
-                settings_ui::Event::CategoriesUnticked(categories) => {
-                    for view in this.tabs.iter().filter_map(|tab| tab.view().cloned()) {
-                        view.update(cx, |view, cx| {
-                            view.default_categories_unticked(categories, cx)
-                        });
+                    // Off stops before its save lands; a failed save
+                    // starts it again (#1220).
+                    crate::settings::Event::AiConnectorShown(false) => this.stop_ai_connector(cx),
+                    crate::settings::Event::AiConnectorShown(true) => {
+                        this.refresh_ai_connector(window, cx)
                     }
-                }
-            },
-        ));
+                    crate::settings::Event::Finished(settings::Model::Ocr(model), result) => {
+                        let selected = this.preferences.borrow().snapshot().map(|p| p.ocr);
+                        if let Ok(config) = selected
+                            && config.model == *model
+                        {
+                            let state = match result {
+                                Ok(Some(installed)) => {
+                                    let mut installed = installed.clone();
+                                    installed.config = config;
+                                    OcrState::Ready(installed)
+                                }
+                                Ok(None) => OcrState::Missing,
+                                Err(e) => OcrState::Failed(e.clone()),
+                            };
+                            this.set_ocr(state, cx);
+                        } else if matches!(this.ocr_state, OcrState::Installing) {
+                            // A tab's setup of a model Settings no longer
+                            // selects ended; the tab may be gone.
+                            let state = known_ocr_state(&this.preferences, this.settings.read(cx));
+                            this.set_ocr(state, cx);
+                        }
+                    }
+                    // The detection model set up: AI project members that
+                    // waited for it scan now.
+                    crate::settings::Event::Finished(settings::Model::Pii(_), Ok(_)) => {
+                        this.scan_on_entry(cx);
+                    }
+                    crate::settings::Event::Finished(_, _) => {}
+                    crate::settings::Event::Compare(model) => {
+                        this.open_comparison(*model, window, cx);
+                    }
+                    crate::settings::Event::RestartToUpdate => this.restart_to_update(window, cx),
+                    crate::settings::Event::Shortcuts => this.toggle_shortcuts(window, cx),
+                    crate::settings::Event::UserListsChanged(lists) => {
+                        this.save_user_lists(lists.clone(), window, cx)
+                    }
+                    crate::settings::Event::UnlockLists => this.unlock_projects(window, cx),
+                    crate::settings::Event::ShowRecoveryKey => this.show_recovery_key(cx),
+                    crate::settings::Event::CategoriesUnticked(categories) => {
+                        for view in this.tabs.iter().filter_map(|tab| tab.view().cloned()) {
+                            view.update(cx, |view, cx| {
+                                view.default_categories_unticked(categories, cx)
+                            });
+                        }
+                    }
+                }),
+            );
         this
     }
 
@@ -799,11 +800,11 @@ impl Workspace {
             .unwrap()]
         .clone();
         match status {
-            settings_ui::Status::Missing => {
+            crate::settings::Status::Missing => {
                 self.set_ocr(OcrState::Missing, cx);
                 return;
             }
-            settings_ui::Status::Damaged(e) | settings_ui::Status::Unavailable(e) => {
+            crate::settings::Status::Damaged(e) | crate::settings::Status::Unavailable(e) => {
                 self.set_ocr(
                     if ocr::SUPPORTED {
                         OcrState::Failed(e)
@@ -876,7 +877,7 @@ impl Workspace {
             .unwrap_or_default()
             .updates;
         if updates.check_automatically {
-            crate::updater::spawn_check(updates.include_prereleases, true, cx);
+            crate::app::updater::spawn_check(updates.include_prereleases, true, cx);
         }
     }
     /// "mdoc had a problem last time it ran", with the exact report before
@@ -944,7 +945,7 @@ impl Workspace {
                                         theme,
                                     ))
                                     .on_click(cx.listener(move |this, _, _, cx| {
-                                        cx.open_url(&crate::crash::issue_url(&send_report));
+                                        cx.open_url(&crate::app::crash::issue_url(&send_report));
                                         done(this, cx);
                                     })),
                             )
@@ -987,13 +988,13 @@ impl Workspace {
     /// Restart now: the ordinary quit — unsaved-change prompts,
     /// session save — swaps the staged update in, then mdoc relaunches.
     pub(super) fn restart_to_update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        crate::updater::request_restart(cx);
+        crate::app::updater::request_restart(cx);
         self.settings
             .update(cx, |panel, cx| panel.close(window, cx));
         self.quit(window, cx);
         // Quitting can't start now (a prompt is open): don't relaunch later.
         if self.quit_flow.may_quit() {
-            crate::updater::cancel_restart(cx);
+            crate::app::updater::cancel_restart(cx);
         }
     }
     pub(super) fn show_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2011,7 +2012,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        crate::menu_bar::reveal_if_hidden(window, cx);
+        crate::shelf::menu_bar::reveal_if_hidden(window, cx);
         self.open_paths(paths, window, cx);
     }
 
@@ -2019,8 +2020,8 @@ impl Workspace {
     /// the window with every tab kept in memory. A quit already
     /// asking goes on.
     pub(super) fn close_requested(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if crate::menu_bar::keeps_running(cx) && self.quit_flow.may_quit() {
-            crate::menu_bar::close_window(window, cx);
+        if crate::shelf::menu_bar::keeps_running(cx) && self.quit_flow.may_quit() {
+            crate::shelf::menu_bar::close_window(window, cx);
         } else {
             self.quit(window, cx);
         }
@@ -2057,9 +2058,9 @@ impl Workspace {
     /// The user cancelled a quit: no relaunch, and a system quit waiting on
     /// it is refused.
     pub(super) fn quit_cancelled(cx: &mut App) {
-        crate::updater::cancel_restart(cx);
+        crate::app::updater::cancel_restart(cx);
         #[cfg(any(target_os = "macos", test))]
-        crate::system_quit::cancelled(cx);
+        crate::app::system_quit::cancelled(cx);
     }
 
     /// Ask each tab in `at_risk` in turn, then quit.
@@ -2243,7 +2244,7 @@ impl Workspace {
     fn quit_failed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.quit_flow.abandon() {
             Self::quit_cancelled(cx);
-            crate::menu_bar::reveal_if_hidden(window, cx);
+            crate::shelf::menu_bar::reveal_if_hidden(window, cx);
         }
         cx.notify();
     }
@@ -2398,7 +2399,7 @@ impl Workspace {
             .post(format!("Could not save session: {error}"));
         if self.quit_flow.abandon() {
             // A window hidden in the menu bar shows to ask.
-            crate::menu_bar::reveal_if_hidden(window, cx);
+            crate::shelf::menu_bar::reveal_if_hidden(window, cx);
             let answer = window.prompt(
                 PromptLevel::Warning,
                 "Could not save the tab list",
@@ -2788,7 +2789,7 @@ impl Workspace {
                             )
                             .when(!menu_open, |v| {
                                 v.tooltip(style::tooltip(
-                                    crate::shortcuts::tip("New document", &New),
+                                    crate::commands::shortcuts::tip("New document", &New),
                                     theme,
                                 ))
                             })
@@ -3074,7 +3075,7 @@ fn sidebar_toggle(focus: &gpui::FocusHandle, expanded: bool, theme: Theme) -> ui
     // Quiet, like every other rail and title-bar icon.
     ui::header_icon_untipped("sidebar-toggle", label, ui::Icon::Sidebar, theme, false)
         .tooltip(style::tooltip(
-            crate::shortcuts::tip(label, &ToggleSidebar),
+            crate::commands::shortcuts::tip(label, &ToggleSidebar),
             theme,
         ))
         .size(px(32.))
@@ -3324,7 +3325,7 @@ impl Render for Workspace {
         let views = self.live_view_items(cx);
         if views != self.live_view_menu {
             self.live_view_menu = views.clone();
-            cx.defer(move |cx| crate::menus::set_live_views(&views, cx));
+            cx.defer(move |cx| crate::commands::menus::set_live_views(&views, cx));
         }
         if !cx.has_active_drag() && self.shell.drop.is_some() {
             self.shell.drop = None;
@@ -3341,7 +3342,7 @@ impl Render for Workspace {
         }
         self.title.notices.set(notices);
         // A crash report says what the window showed (no text, no names).
-        crate::crash::note_state(format!(
+        crate::app::crash::note_state(format!(
             "{}, {} tabs, sidebar {}, {:?} theme{}",
             if home {
                 "Home".to_string()
@@ -3660,7 +3661,7 @@ impl Workspace {
     /// Carry out what a notices transition asks for.
     fn carry_out_notices(&mut self, effect: notices::NoticesEffect) {
         match effect {
-            notices::NoticesEffect::DiscardCrashReport => crate::crash::discard(),
+            notices::NoticesEffect::DiscardCrashReport => crate::app::crash::discard(),
             notices::NoticesEffect::OpenBell => self.title.notices_open.set(true),
             notices::NoticesEffect::CloseBell => self.title.notices_open.set(false),
         }

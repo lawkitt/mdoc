@@ -383,7 +383,7 @@ fn the_ninth_view_evicts_the_least_recent_after_its_autosave(cx: &mut TestAppCon
     assert_eq!(listed(cx).len(), LIMIT);
     assert!(!listed(cx).contains(&first));
     let shown = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    cx.dispatch_action(crate::menus::ShowLiveView(first));
+    cx.dispatch_action(crate::commands::menus::ShowLiveView(first));
     cx.run_until_parked();
     assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), shown);
     let saved = vault(&tabs, cx).document(&document).unwrap().markdown;

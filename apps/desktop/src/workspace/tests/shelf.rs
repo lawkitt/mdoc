@@ -872,7 +872,7 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
     let pending_row = index(ShelfKey::Tab(pending), cx);
     let label = shelf
         .read_with(cx, |view, cx| {
-            crate::shelf_ui::row_label(&view.content(cx).documents[pending_row])
+            crate::shelf::shelf_ui::row_label(&view.content(cx).documents[pending_row])
         })
         .unwrap();
     // The Project is named after its first document: masked too.
@@ -929,7 +929,7 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
     ));
     shelf
         .update(cx, |view, window, cx| {
-            view.clipboard(crate::shelf_ui::ClipboardRow::Restore, window, cx)
+            view.clipboard(crate::shelf::shelf_ui::ClipboardRow::Restore, window, cx)
         })
         .unwrap();
     assert_eq!(
@@ -998,7 +998,7 @@ fn the_shelf_is_reachable_by_keyboard_and_the_picker_keeps_focus(cx: &mut TestAp
         "Clara Moss wrote.",
         &[("Clara Moss", Person)],
     );
-    cx.update(|_, cx| crate::shelf_ui::bind_keys(cx));
+    cx.update(|_, cx| crate::shelf::shelf_ui::bind_keys(cx));
     written(cx);
     let shelf = open_shelf(cx);
     let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
@@ -1076,10 +1076,10 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
         "Clara Moss wrote to the landlord about the deposit.",
         &[("Clara Moss", Person)],
     );
-    cx.update(|_, cx| crate::shelf_ui::bind_keys(cx));
+    cx.update(|_, cx| crate::shelf::shelf_ui::bind_keys(cx));
     written(cx);
     let shelf = open_shelf(cx);
-    let open = |shelf: gpui::WindowHandle<crate::shelf_ui::ShelfView>,
+    let open = |shelf: gpui::WindowHandle<crate::shelf::shelf_ui::ShelfView>,
                 cx: &mut VisualTestContext| {
         cx.update(|_, cx| {
             cx.windows()
@@ -1115,7 +1115,7 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
         if cfg!(target_os = "macos") {
             cx.simulate_keystrokes(&format!("cmd-{row}"));
         } else {
-            cx.dispatch_action(crate::shelf_ui::ShelfCopyRow(row));
+            cx.dispatch_action(crate::shelf::shelf_ui::ShelfCopyRow(row));
         }
     };
     let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
@@ -1131,7 +1131,8 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
         Some(1)
     );
     assert!(open(shelf, cx), "Copied shows first");
-    cx.executor().advance_clock(crate::shelf_ui::COPIED_FOR);
+    cx.executor()
+        .advance_clock(crate::shelf::shelf_ui::COPIED_FOR);
     cx.run_until_parked();
     assert!(!open(shelf, cx), "then the shelf closes");
 
@@ -1146,7 +1147,7 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
     assert!(source.starts_with("Names from "), "{source}");
     shelf
         .update(cx, |view, window, cx| {
-            view.clipboard(crate::shelf_ui::ClipboardRow::Restore, window, cx)
+            view.clipboard(crate::shelf::shelf_ui::ClipboardRow::Restore, window, cx)
         })
         .unwrap();
     let line = |cx: &mut VisualTestContext| {
@@ -1159,7 +1160,8 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
         "{}",
         line(cx)
     );
-    cx.executor().advance_clock(crate::shelf_ui::RESULT_FOR);
+    cx.executor()
+        .advance_clock(crate::shelf::shelf_ui::RESULT_FOR);
     cx.run_until_parked();
     assert_eq!(line(cx), source);
 

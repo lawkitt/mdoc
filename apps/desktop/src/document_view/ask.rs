@@ -5,7 +5,7 @@
 //! document, the card offering "Move to a new Project and share". The
 //! window carries each choice out (`TabEvent::Ask`).
 use super::DocumentView;
-use crate::{ai_ask, ui, workspace::TabEvent};
+use crate::{ui, workspace::TabEvent};
 use gpui::{App, Context, Window, div, prelude::*, px};
 use mdoc_store::settings::AskWith;
 use std::{cell::Cell, rc::Rc};
@@ -147,7 +147,7 @@ impl DocumentView {
         let last = self.ask_shown()?;
         let theme = self.theme.get();
         let enabled = self.ask_enabled(last, cx);
-        let main = ui::control("header-ask", ai_ask::label(last), theme, enabled)
+        let main = ui::control("header-ask", crate::ai::ask::label(last), theme, enabled)
             .when(cfg!(test), |v| v.debug_selector(|| "header-ask".into()))
             .on_click(cx.listener(move |this, _, window, cx| {
                 if this.ask_enabled(last, cx) {
@@ -261,7 +261,7 @@ impl DocumentView {
         let theme = self.theme.get();
         let reason = self.alias_actions_reason();
         let mut menu = self.ask_panel("ask-menu", cx);
-        for with in ai_ask::CHOICES {
+        for with in crate::ai::ask::CHOICES {
             let id = match with {
                 AskWith::Claude => "ask-claude",
                 AskWith::ChatGpt => "ask-chatgpt",
@@ -274,7 +274,7 @@ impl DocumentView {
             menu = menu.child(
                 ui::menu_row_because(
                     id,
-                    ai_ask::label(with),
+                    crate::ai::ask::label(with),
                     None,
                     Some(with == last),
                     theme,
@@ -300,11 +300,11 @@ impl DocumentView {
     fn ask_unfiled_card(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
         let with = self.ask.unfiled.unwrap_or_default();
-        let title = ai_ask::unfiled_title(with);
+        let title = crate::ai::ask::unfiled_title(with);
         let shared = self.ask.shared.clone();
         let text = match &shared {
-            Some((_, name)) => ai_ask::unfiled_shared_text(name),
-            None => ai_ask::UNFILED_TEXT.to_string(),
+            Some((_, name)) => crate::ai::ask::unfiled_shared_text(name),
+            None => crate::ai::ask::UNFILED_TEXT.to_string(),
         };
         let card = self
             .ask_panel("ask-unfiled", cx)
@@ -339,7 +339,7 @@ impl DocumentView {
                             // The shared Project first; a new one second.
                             Some(_) => ui::action_control(
                                 "ask-move-and-share",
-                                ai_ask::MOVE_AND_SHARE,
+                                crate::ai::ask::MOVE_AND_SHARE,
                                 theme,
                                 true,
                                 false,
@@ -347,7 +347,7 @@ impl DocumentView {
                             .rounded_lg(),
                             None => ui::primary_button(
                                 "ask-move-and-share",
-                                ai_ask::MOVE_AND_SHARE,
+                                crate::ai::ask::MOVE_AND_SHARE,
                                 theme,
                                 true,
                             ),
@@ -362,7 +362,7 @@ impl DocumentView {
                     .children(shared.map(|(id, name)| {
                         ui::primary_button(
                             "ask-move-into-shared",
-                            ai_ask::move_into_and_ask(&name),
+                            crate::ai::ask::move_into_and_ask(&name),
                             theme,
                             true,
                         )

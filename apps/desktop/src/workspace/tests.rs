@@ -9,9 +9,8 @@ use crate::{
     pii::ui::{PiiApplyAll, Pseudonymize},
     preview::RetryPreview,
     search_session::FindMarkdown,
-    settings_ui,
-    style::{self, Theme},
     ui,
+    ui::style::{self, Theme},
     workspace::{
         Close, Import, New, Open, OpenProject, PasteAiResponse, PseudonymizeClipboard, Quit,
         Settings, ToggleSidebar, ToggleTheme,
@@ -104,7 +103,7 @@ fn window_menu_views(cx: &mut VisualTestContext) -> Vec<(String, u64)> {
             gpui::OwnedMenuItem::Action { name, action, .. } => {
                 let show = action
                     .as_any()
-                    .downcast_ref::<crate::menus::ShowLiveView>()?;
+                    .downcast_ref::<crate::commands::menus::ShowLiveView>()?;
                 Some((name, show.0))
             }
             _ => None,
@@ -552,8 +551,8 @@ fn vault(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Arc<mdoc_vault
 }
 
 /// The menu bar shelf over this window, as it opens now.
-fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<crate::shelf_ui::ShelfView> {
-    use crate::shelf_ui::{ShelfContent, ShelfView};
+fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<crate::shelf::shelf_ui::ShelfView> {
+    use crate::shelf::shelf_ui::{ShelfContent, ShelfView};
     let workspace = cx.window_handle().downcast::<Workspace>().unwrap();
     let shelf = cx.cx.update(|cx| {
         let content = workspace
@@ -573,8 +572,8 @@ fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<crate::shelf_ui:
 /// bar item opens it.
 fn open_companion(
     cx: &mut VisualTestContext,
-) -> gpui::WindowHandle<crate::companion::CompanionView> {
-    use crate::companion::CompanionView;
+) -> gpui::WindowHandle<crate::ai::companion::CompanionView> {
+    use crate::ai::companion::CompanionView;
     let workspace = cx.window_handle().downcast::<Workspace>().unwrap();
     let companion = cx.cx.update(|cx| {
         let content = workspace

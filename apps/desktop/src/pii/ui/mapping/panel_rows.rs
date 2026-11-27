@@ -7,7 +7,8 @@ use super::{
 use crate::{
     document_view::DocumentView,
     pii::ui::{APPLIED_ID, KEPT_ID},
-    style, ui,
+    ui,
+    ui::style,
 };
 use gpui::{
     AnyElement, App, AppContext, Context, Entity, Focusable, HighlightStyle, Hsla, Pixels,
@@ -19,7 +20,7 @@ use std::ops::Range;
 /// Starts a panel drag: remembers what is dragged and shows its ghost chip.
 fn start_drag(
     weak: gpui::WeakEntity<DocumentView>,
-    theme: crate::style::Theme,
+    theme: crate::ui::style::Theme,
 ) -> impl Fn(&PanelDrag, gpui::Point<Pixels>, &mut Window, &mut App) -> Entity<DragGhost> + 'static
 {
     move |drag, _, _, cx| {
@@ -49,7 +50,7 @@ struct RowColors {
     guide_applied_selected: Hsla,
 }
 impl RowColors {
-    fn new(theme: crate::style::Theme) -> Self {
+    fn new(theme: crate::ui::style::Theme) -> Self {
         let p = theme.pdf_style();
         Self {
             hover: Hsla {

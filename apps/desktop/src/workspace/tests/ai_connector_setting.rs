@@ -16,7 +16,7 @@ fn set_preview(tabs: &Entity<Workspace>, on: bool, cx: &mut VisualTestContext) {
         preferences.ai_connector.preview = on;
         tabs.preferences.borrow_mut().current = Some(preferences);
         tabs.settings
-            .update(cx, |_, cx| cx.emit(settings_ui::Event::Applied));
+            .update(cx, |_, cx| cx.emit(crate::settings::Event::Applied));
     });
     cx.run_until_parked();
 }
@@ -37,7 +37,7 @@ fn start(tabs: &Entity<Workspace>, endpoint: &Endpoint, cx: &mut VisualTestConte
             preview: true,
             ..Default::default()
         };
-        tabs.ai_connector = crate::ai_connector::start(vault, &on, Some(endpoint)).unwrap();
+        tabs.ai_connector = crate::ai::connector::start(vault, &on, Some(endpoint)).unwrap();
         assert!(tabs.ai_connector.is_some(), "listening at once");
     });
 }
@@ -55,7 +55,7 @@ fn off_stops_before_its_save_lands(cx: &mut TestAppContext) {
     // Still saved on.
     tabs.update(cx, |tabs, cx| {
         tabs.settings.update(cx, |_, cx| {
-            cx.emit(settings_ui::Event::AiConnectorShown(false))
+            cx.emit(crate::settings::Event::AiConnectorShown(false))
         })
     });
     cx.run_until_parked();
@@ -67,7 +67,7 @@ fn off_stops_before_its_save_lands(cx: &mut TestAppContext) {
     }
     tabs.update(cx, |tabs, cx| {
         tabs.settings.update(cx, |_, cx| {
-            cx.emit(settings_ui::Event::AiConnectorShown(true))
+            cx.emit(crate::settings::Event::AiConnectorShown(true))
         })
     });
     cx.run_until_parked();
@@ -90,7 +90,7 @@ fn a_failed_start_reaches_settings(cx: &mut TestAppContext) {
             preview: true,
             ..Default::default()
         };
-        let started = crate::ai_connector::start(vault, &on, Some(&endpoint));
+        let started = crate::ai::connector::start(vault, &on, Some(&endpoint));
         tabs.ai_started(started, window, cx);
         assert!(tabs.ai_connector.is_none());
     });
@@ -159,7 +159,7 @@ fn click_preview_held(tabs: &Entity<Workspace>, held: u64, cx: &mut VisualTestCo
     cx.simulate_resize(size(px(1100.), px(2400.)));
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.settings.update(cx, |panel, cx| {
-            panel.show_category(settings_ui::Category::AiConnector, window, cx);
+            panel.show_category(crate::settings::Category::AiConnector, window, cx);
             let gate = (cx.background_executor()).timer(std::time::Duration::from_secs(held));
             panel.hold_next_save(cx.background_executor().spawn(gate));
         })
@@ -172,7 +172,7 @@ fn click_preview_held(tabs: &Entity<Workspace>, held: u64, cx: &mut VisualTestCo
 
 /// Settings publishes `event`, as a model check finishing (`Checked`) or
 /// another save landing (`Applied`) does.
-fn publish(tabs: &Entity<Workspace>, event: settings_ui::Event, cx: &mut VisualTestContext) {
+fn publish(tabs: &Entity<Workspace>, event: crate::settings::Event, cx: &mut VisualTestContext) {
     tabs.update(cx, |tabs, cx| {
         tabs.settings.update(cx, |_, cx| cx.emit(event))
     });
@@ -216,19 +216,19 @@ fn a_model_check_mid_save_leaves_off_off(cx: &mut TestAppContext) {
     click_preview_held(&tabs, 60, cx);
     assert!(saved_on(&tabs, cx), "the save is still held");
     assert_stopped(&tabs, &endpoint, cx);
-    publish(&tabs, settings_ui::Event::Checked, cx);
+    publish(&tabs, crate::settings::Event::Checked, cx);
     assert_stopped(&tabs, &endpoint, cx);
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.settings
             .update(cx, |panel, cx| panel.close(window, cx))
     });
-    publish(&tabs, settings_ui::Event::Checked, cx);
+    publish(&tabs, crate::settings::Event::Checked, cx);
     assert_stopped(&tabs, &endpoint, cx);
-    publish(&tabs, settings_ui::Event::Applied, cx);
+    publish(&tabs, crate::settings::Event::Applied, cx);
     assert_stopped(&tabs, &endpoint, cx);
     save_lands(cx);
     assert!(!saved_on(&tabs, cx));
-    publish(&tabs, settings_ui::Event::Checked, cx);
+    publish(&tabs, crate::settings::Event::Checked, cx);
     assert_stopped(&tabs, &endpoint, cx);
 }
 
@@ -244,7 +244,7 @@ fn on_mid_save_starts_once(cx: &mut TestAppContext) {
     set_preview(&tabs, false, cx);
     click_preview_held(&tabs, 60, cx);
     assert!(!saved_on(&tabs, cx), "the save is still held");
-    publish(&tabs, settings_ui::Event::Checked, cx);
+    publish(&tabs, crate::settings::Event::Checked, cx);
     assert_stopped(&tabs, &endpoint, cx);
     save_lands(cx);
     assert!(saved_on(&tabs, cx));
@@ -256,7 +256,7 @@ fn on_mid_save_starts_once(cx: &mut TestAppContext) {
             .map(|r| r.connector.clone())
     });
     let first = first.expect("started once saved");
-    publish(&tabs, settings_ui::Event::Checked, cx);
+    publish(&tabs, crate::settings::Event::Checked, cx);
     let now = cx.update(|_, cx| {
         tabs.read(cx)
             .ai_connector
@@ -285,7 +285,7 @@ fn off_then_on_mid_save_starts_once_the_on_lands(cx: &mut TestAppContext) {
     // On again, its own save queued behind the off's and held longer.
     click_preview_held(&tabs, 120, cx);
     assert!(saved_on(&tabs, cx), "the off is still saving");
-    publish(&tabs, settings_ui::Event::Checked, cx);
+    publish(&tabs, crate::settings::Event::Checked, cx);
     assert_stopped(&tabs, &endpoint, cx);
     save_lands(cx);
     assert!(!saved_on(&tabs, cx), "the off landed");

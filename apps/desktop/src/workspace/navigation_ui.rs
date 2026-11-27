@@ -5,7 +5,7 @@ use super::{
     navigation::{Arrival, Stop},
     project_page::Place,
 };
-use crate::{style, ui};
+use crate::{ui, ui::style};
 use gpui::{
     AnyElement, App, Context, MouseButton, MouseDownEvent, Window, actions, div, prelude::*, px,
 };
@@ -152,9 +152,9 @@ impl Workspace {
                     })
                     .tooltip(style::tooltip(
                         if backwards {
-                            crate::shortcuts::tip(label, &Back)
+                            crate::commands::shortcuts::tip(label, &Back)
                         } else {
-                            crate::shortcuts::tip(label, &Forward)
+                            crate::commands::shortcuts::tip(label, &Forward)
                         },
                         theme,
                     ))

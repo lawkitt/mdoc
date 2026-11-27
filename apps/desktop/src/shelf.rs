@@ -13,8 +13,11 @@
 //! live in a private temporary folder until quit.
 
 mod exports;
+pub(crate) mod menu_bar;
+pub(crate) mod shelf_ui;
 #[cfg(test)]
 mod tests;
+pub(crate) mod tray;
 
 use crate::workspace::ProjectLink;
 pub(crate) use exports::ShelfExports;

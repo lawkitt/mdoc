@@ -233,7 +233,7 @@ fn failed_final_checkpoint_can_cancel_quit_without_losing_tabs(cx: &mut TestAppC
 }
 
 /// The workspace window behind `cx`, as the macOS terminate hook sees it.
-fn system_quit_target(cx: &mut VisualTestContext) -> crate::system_quit::QuitTarget {
+fn system_quit_target(cx: &mut VisualTestContext) -> crate::app::system_quit::QuitTarget {
     cx.update(|window, cx| {
         (
             window.window_handle().downcast::<Workspace>().unwrap(),
@@ -246,9 +246,9 @@ fn system_quit_target(cx: &mut VisualTestContext) -> crate::system_quit::QuitTar
 /// closing the app's last window answers it as main.rs does.
 fn system_quit_gate(
     cx: &mut VisualTestContext,
-) -> (crate::system_quit::QuitGate, Rc<RefCell<Vec<bool>>>) {
+) -> (crate::app::system_quit::QuitGate, Rc<RefCell<Vec<bool>>>) {
     let replies = Rc::new(RefCell::new(Vec::new()));
-    let gate = crate::system_quit::QuitGate::new({
+    let gate = crate::app::system_quit::QuitGate::new({
         let replies = replies.clone();
         move |terminate| replies.borrow_mut().push(terminate)
     });
@@ -267,7 +267,7 @@ fn system_quit_gate(
 
 #[gpui::test]
 fn system_quit_writes_the_edit_and_answers_appkit(cx: &mut TestAppContext) {
-    use crate::system_quit::Answer;
+    use crate::app::system_quit::Answer;
     let (tabs, cx) = boot(cx, Session::default());
     let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
     cx.simulate_input("unsaved");
@@ -289,7 +289,7 @@ fn system_quit_writes_the_edit_and_answers_appkit(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn system_quit_without_changes_closes_without_asking(cx: &mut TestAppContext) {
-    use crate::system_quit::{Answer, QuitGate};
+    use crate::app::system_quit::{Answer, QuitGate};
     let (_tabs, cx) = boot(cx, Session::default());
     let (gate, replies) = system_quit_gate(cx);
     assert_eq!(
@@ -307,7 +307,7 @@ fn system_quit_without_changes_closes_without_asking(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn own_quit_opens_the_gate(cx: &mut TestAppContext) {
-    use crate::system_quit::{Answer, QuitGate};
+    use crate::app::system_quit::{Answer, QuitGate};
     let (_tabs, cx) = boot(cx, Session::default());
     let gate = QuitGate::new(|_| panic!("nothing deferred"));
     // ⌘Q closes the last window: main.rs then quits, and that terminate
@@ -321,7 +321,7 @@ fn own_quit_opens_the_gate(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn system_quit_waits_through_a_failed_final_save(cx: &mut TestAppContext) {
-    use crate::system_quit::Answer;
+    use crate::app::system_quit::Answer;
     let dir = tempfile::tempdir().unwrap();
     let parent_file = dir.path().join("not-a-directory");
     std::fs::write(&parent_file, "preserve").unwrap();
@@ -339,7 +339,7 @@ fn system_quit_waits_through_a_failed_final_save(cx: &mut TestAppContext) {
     );
     cx.run_until_parked();
     assert!(cx.has_pending_prompt());
-    assert!(cx.update(|_, cx| crate::system_quit::waiting(cx)));
+    assert!(cx.update(|_, cx| crate::app::system_quit::waiting(cx)));
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
     assert_eq!(*replies.borrow(), [false]);

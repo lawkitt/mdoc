@@ -5,7 +5,7 @@ use crate::{
     comment_rail::CommentRail,
     document_view::{Background, DocumentView},
     markdown_search,
-    style::Theme,
+    ui::style::Theme,
     workspace,
 };
 use gpui::{App, Context, Entity, Focusable, Subscription, Window, actions, prelude::*};

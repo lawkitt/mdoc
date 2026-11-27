@@ -68,8 +68,8 @@ fn ask_to_close(
 ) {
     let (app, cx) = boot(cx);
     cx.update(|_, cx| {
-        crate::confirm_dialog::bind_keys(cx);
-        crate::confirm_dialog::install(
+        crate::ui::confirm_dialog::bind_keys(cx);
+        crate::ui::confirm_dialog::install(
             std::rc::Rc::new(std::cell::Cell::new(style::Theme::Light)),
             cx,
         )
@@ -203,7 +203,7 @@ fn files_opened_during_a_confirm_dialog_wait_for_the_answer(cx: &mut TestAppCont
 fn an_open_already_resolving_waits_for_a_dialog_raised_meanwhile(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     cx.update(|_, cx| {
-        crate::confirm_dialog::install(
+        crate::ui::confirm_dialog::install(
             std::rc::Rc::new(std::cell::Cell::new(style::Theme::Light)),
             cx,
         )

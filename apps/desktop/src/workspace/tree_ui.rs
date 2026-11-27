@@ -10,7 +10,7 @@ use super::{
     navigation::{Arrival, Stop},
     tree::{Row, RowKey, Shown, TreeEffect},
 };
-use crate::{style, ui};
+use crate::{ui, ui::style};
 use gpui::{AnyElement, App, Context, PromptLevel, Window, div, prelude::*, px};
 use mdoc_store::document_id::{DocumentId, VaultId};
 use mdoc_vault::{DocumentOrigin, DocumentSummary, ProjectSummary, SourceKind};
@@ -964,7 +964,7 @@ impl Workspace {
                 )
                 .when(!self.context_menu_open(), |v| {
                     v.tooltip(style::tooltip(
-                        crate::shortcuts::tip("New Project", &super::NewProject),
+                        crate::commands::shortcuts::tip("New Project", &super::NewProject),
                         theme,
                     ))
                 })
@@ -1020,7 +1020,7 @@ impl Workspace {
                     .track_focus(&self.panel_new_focus)
                     .when(!self.context_menu_open(), |v| {
                         v.tooltip(style::tooltip(
-                            crate::shortcuts::tip("New document", &super::New),
+                            crate::commands::shortcuts::tip("New document", &super::New),
                             theme,
                         ))
                     })

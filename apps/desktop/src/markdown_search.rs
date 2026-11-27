@@ -49,7 +49,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("end", End, context),
         KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, context),
     ]);
-    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::TextField, cx);
+    let bindings =
+        crate::commands::shortcuts::bindings(crate::commands::shortcuts::Owner::TextField, cx);
     cx.bind_keys(bindings);
 }
 
@@ -87,14 +88,17 @@ impl SearchInput {
         self.focus_accent = accent;
         self
     }
-    pub fn with_theme(mut self, theme: std::rc::Rc<std::cell::Cell<crate::style::Theme>>) -> Self {
+    pub fn with_theme(
+        mut self,
+        theme: std::rc::Rc<std::cell::Cell<crate::ui::style::Theme>>,
+    ) -> Self {
         self.focus_accent = std::rc::Rc::new(move || theme.get().search_accent());
         self
     }
 
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
-            focus_accent: std::rc::Rc::new(|| crate::style::Theme::default().search_accent()),
+            focus_accent: std::rc::Rc::new(|| crate::ui::style::Theme::default().search_accent()),
             placeholder: "Search Markdown",
             label: None,
             focus_handle: cx.focus_handle().tab_index(0).tab_stop(true),

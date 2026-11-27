@@ -205,7 +205,10 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
 #[gpui::test]
 fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
-    for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
+    for theme in [
+        crate::ui::style::Theme::Dark,
+        crate::ui::style::Theme::Light,
+    ] {
         for (width, height) in [(1500., 900.), (640., 480.)] {
             cx.simulate_resize(gpui::size(px(width), px(height)));
             app.update_in(cx, |app, window, cx| {
@@ -526,7 +529,10 @@ fn not_a_name_from_the_category_menu(cx: &mut gpui::TestAppContext) {
 #[gpui::test]
 fn owner_picker_click_links_without_merging_identities(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
-    for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
+    for theme in [
+        crate::ui::style::Theme::Dark,
+        crate::ui::style::Theme::Light,
+    ] {
         cx.simulate_resize(gpui::size(px(1500.), px(1000.)));
         let (full, email) = app.update_in(cx, |app, window, cx| {
             app.theme.set(theme);
@@ -707,7 +713,10 @@ fn panel_click_reveals_exact_word_and_editor_popup_retains_workspace(
     cx: &mut gpui::TestAppContext,
 ) {
     let (app, cx) = crate::document_view::tests::boot(cx);
-    for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
+    for theme in [
+        crate::ui::style::Theme::Dark,
+        crate::ui::style::Theme::Light,
+    ] {
         for (width, height, preview) in [
             (1500., 900., false),
             (1100., 760., true),
@@ -804,7 +813,10 @@ fn panel_click_reveals_exact_word_and_editor_popup_retains_workspace(
 #[gpui::test]
 fn visible_alias_draft_and_apply_share_one_undo_step(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
-    for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
+    for theme in [
+        crate::ui::style::Theme::Dark,
+        crate::ui::style::Theme::Light,
+    ] {
         for (width, height) in [(1500., 900.), (640., 480.)] {
             cx.simulate_resize(gpui::size(px(width), px(height)));
             let source = "Павлова Марина Сергеевна · Павлова М.С.";
@@ -962,7 +974,10 @@ fn category_origin_existing_alias_and_draft_lifecycle_are_explicit(cx: &mut gpui
 #[gpui::test]
 fn table_occurrence_popup_uses_exact_painted_word_in_both_themes(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
-    for theme in [crate::style::Theme::Light, crate::style::Theme::Dark] {
+    for theme in [
+        crate::ui::style::Theme::Light,
+        crate::ui::style::Theme::Dark,
+    ] {
         cx.simulate_resize(gpui::size(px(1500.), px(900.)));
         app.update_in(cx, |app, window, cx| {
             app.theme.set(theme);
@@ -1308,7 +1323,10 @@ fn kept_homonyms_stay_with_their_entity_before_and_after_apply(cx: &mut gpui::Te
 #[gpui::test]
 fn unticking_an_applied_mention_restores_only_its_original(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
-    for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
+    for theme in [
+        crate::ui::style::Theme::Dark,
+        crate::ui::style::Theme::Light,
+    ] {
         let source = "Павлова М.С. · Павлова М.С.";
         app.update_in(cx, |app, window, cx| {
             app.theme.set(theme);
@@ -2872,7 +2890,10 @@ fn popup_enter_on_an_applied_mention_does_nothing(cx: &mut gpui::TestAppContext)
 #[gpui::test]
 fn review_footer_fits_at_minimum_window_size(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
-    for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
+    for theme in [
+        crate::ui::style::Theme::Dark,
+        crate::ui::style::Theme::Light,
+    ] {
         cx.simulate_resize(gpui::size(px(720.), px(480.)));
         let source = "Павлова Марина Сергеевна · Павлова М.С. · marina@example.invalid";
         app.update_in(cx, |app, window, cx| {

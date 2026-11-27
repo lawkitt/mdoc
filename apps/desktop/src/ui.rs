@@ -1,5 +1,8 @@
 //! Shared chrome controls. GPUI activates focused click controls with Enter/Space.
-use crate::style::Theme;
+pub(crate) mod confirm_dialog;
+pub(crate) mod style;
+
+use crate::ui::style::Theme;
 use gpui::{
     Animation, AnimationExt, AnyElement, App, FocusHandle, KeyBinding, Window, actions, div,
     prelude::*, px,
@@ -237,7 +240,7 @@ pub fn header_icon(
 ) -> Control {
     let label = label.into();
     header_icon_untipped(id, label.clone(), icon, theme, on)
-        .tooltip(crate::style::tooltip(label.to_string(), theme))
+        .tooltip(crate::ui::style::tooltip(label.to_string(), theme))
 }
 
 /// A header icon that opens a menu or popover: its tooltip shows only while
@@ -254,7 +257,7 @@ pub fn header_menu_icon(
     if open {
         button
     } else {
-        button.tooltip(crate::style::tooltip(label.to_string(), theme))
+        button.tooltip(crate::ui::style::tooltip(label.to_string(), theme))
     }
 }
 
@@ -471,7 +474,7 @@ pub fn model_attribution(
     model: mdoc_store::settings::Model,
     theme: Theme,
 ) -> gpui::Stateful<gpui::Div> {
-    let text = crate::models::attribution_label(model);
+    let text = crate::app::models::attribution_label(model);
     div()
         .id(id)
         .role(gpui::Role::Group)
@@ -498,7 +501,7 @@ pub fn card_hint(text: impl Into<gpui::SharedString>, theme: Theme) -> gpui::Div
 pub fn card_error(text: impl Into<gpui::SharedString>, theme: Theme) -> gpui::Div {
     div()
         .text_size(px(12.))
-        .text_color(crate::style::markdown_style(theme).alert_caution)
+        .text_color(crate::ui::style::markdown_style(theme).alert_caution)
         .child(text.into())
 }
 pub fn card_actions() -> gpui::Div {
@@ -610,7 +613,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("tab", NextControl, Some("UiControl || UiPanel")),
         KeyBinding::new("shift-tab", PreviousControl, Some("UiControl || UiPanel")),
     ]);
-    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Ui, cx);
+    let bindings = crate::commands::shortcuts::bindings(crate::commands::shortcuts::Owner::Ui, cx);
     cx.bind_keys(bindings);
 }
 
@@ -780,18 +783,18 @@ pub fn floating_button(
                 .text_color(p.header_fg),
         )
         .child(text.into())
-        .tooltip(crate::style::tooltip(label.to_string(), theme))
+        .tooltip(crate::ui::style::tooltip(label.to_string(), theme))
 }
 
 /// The header's bell while workspace notices wait: an amber dot
 /// with the count; a click opens or closes the notices popover.
-pub fn notice_bell(title: &crate::style::TitleBar, theme: Theme) -> Option<AnyElement> {
+pub fn notice_bell(title: &crate::ui::style::TitleBar, theme: Theme) -> Option<AnyElement> {
     let count = title.notices.get();
     if count == 0 {
         return None;
     }
     let open = title.notices_open.get();
-    let amber = crate::style::markdown_style(theme).alert_warning;
+    let amber = crate::ui::style::markdown_style(theme).alert_warning;
     let bell = title.notices_bell.clone();
     Some(
         div()
@@ -934,7 +937,7 @@ fn caption_buttons(window: &Window, theme: Theme) -> Option<AnyElement> {
     Some(
         div()
             .flex()
-            .h(px(crate::style::HEADER_HEIGHT))
+            .h(px(crate::ui::style::HEADER_HEIGHT))
             .flex_shrink_0()
             .child(button("caption-min", "—", gpui::WindowControlArea::Min))
             .child(button("caption-max", "☐", gpui::WindowControlArea::Max))

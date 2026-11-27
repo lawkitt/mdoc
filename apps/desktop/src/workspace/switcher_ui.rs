@@ -76,10 +76,10 @@ impl Workspace {
     /// The live views as the Window menu lists them: by title, in the
     /// order they opened (#1160). Which one is shown is left out, so
     /// switching documents leaves the menu bar as it is.
-    pub(super) fn live_view_items(&self, cx: &App) -> Vec<crate::menus::LiveViewItem> {
+    pub(super) fn live_view_items(&self, cx: &App) -> Vec<crate::commands::menus::LiveViewItem> {
         let mut views: Vec<_> = (self.tabs.iter())
             .filter(|tab| !self.is_placeholder(tab, cx))
-            .map(|tab| crate::menus::LiveViewItem {
+            .map(|tab| crate::commands::menus::LiveViewItem {
                 id: tab.id(),
                 title: super::tab_label(tab, cx).name.into(),
             })
@@ -102,7 +102,7 @@ impl Workspace {
         {
             return;
         }
-        crate::menu_bar::reveal_window(window, cx);
+        crate::shelf::menu_bar::reveal_window(window, cx);
         self.activate(id, window, cx);
         cx.notify();
     }

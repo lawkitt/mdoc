@@ -11,10 +11,9 @@ use crate::{
         CloseMarkdownSearch, FindMarkdown, FindNextMarkdown, FindPreviousMarkdown,
         FindReplaceMarkdown, ReplaceNextMarkdown, map_edit_offset,
     },
-    settings_ui,
     spelling::{NextMisspelling, PreviousMisspelling, ToggleDocumentSpelling},
-    style::{self, Theme},
     ui,
+    ui::style::{self, Theme},
     workspace::{self, Import, New, Open},
 };
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
@@ -33,7 +32,7 @@ pub(crate) fn boot(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut Visua
     cx.update(workspace::bind_app_actions);
     cx.update(markdown_search::bind_keys);
     cx.update(pii::ui::bind_keys);
-    cx.update(settings_ui::bind_keys);
+    cx.update(crate::settings::bind_keys);
     // After the global ⌘↩ (Apply all), as in main, so find fields win.
     cx.update(bind_markdown_search_keys);
     let (tabs, cx) = cx.add_window_view(|window, cx| {

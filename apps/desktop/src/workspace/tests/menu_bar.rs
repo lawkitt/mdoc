@@ -1,7 +1,7 @@
 //! Staying in the menu bar: with the item on, closing the window
 //! hides it with every tab kept; Quit still asks; off, closing quits.
 use super::*;
-use crate::menu_bar;
+use crate::shelf::menu_bar;
 
 fn install(tabs: &Entity<Workspace>, enabled: bool, cx: &mut VisualTestContext) {
     install_noting(tabs, enabled, true, cx);
@@ -20,20 +20,24 @@ fn install_noting(
 }
 
 #[cfg(target_os = "macos")]
-fn note(cx: &mut VisualTestContext) -> Option<gpui::WindowHandle<crate::shelf_ui::NoteView>> {
+fn note(
+    cx: &mut VisualTestContext,
+) -> Option<gpui::WindowHandle<crate::shelf::shelf_ui::NoteView>> {
     cx.update(|_, cx| {
         cx.windows()
             .iter()
-            .find_map(|window| window.downcast::<crate::shelf_ui::NoteView>())
+            .find_map(|window| window.downcast::<crate::shelf::shelf_ui::NoteView>())
     })
 }
 
 #[cfg(target_os = "macos")]
 fn shelf_open(cx: &mut VisualTestContext) -> bool {
     cx.update(|_, cx| {
-        cx.windows()
-            .iter()
-            .any(|window| window.downcast::<crate::shelf_ui::ShelfView>().is_some())
+        cx.windows().iter().any(|window| {
+            window
+                .downcast::<crate::shelf::shelf_ui::ShelfView>()
+                .is_some()
+        })
     })
 }
 
@@ -239,9 +243,11 @@ fn quit_when_windows_close_turns_the_switch_off_and_quits(cx: &mut TestAppContex
     cx.run_until_parked();
     // The window is gone with the quit, so look at the app's windows.
     assert!(cx.cx.read(|cx| {
-        cx.windows()
-            .iter()
-            .all(|window| window.downcast::<crate::shelf_ui::NoteView>().is_none())
+        cx.windows().iter().all(|window| {
+            window
+                .downcast::<crate::shelf::shelf_ui::NoteView>()
+                .is_none()
+        })
     }));
     assert!(!cx.cx.read(menu_bar::keeps_running));
     // Nothing asks: the edit is written and the app quits.

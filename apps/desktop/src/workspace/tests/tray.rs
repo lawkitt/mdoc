@@ -6,7 +6,7 @@
 
 use super::ai_project::{Fixture, boot_fixture, deliver, fixture, set_preview, shared_lease};
 use super::*;
-use crate::{companion::CompanionView, menu_bar, shelf_ui::ShelfView};
+use crate::{ai::companion::CompanionView, shelf::menu_bar, shelf::shelf_ui::ShelfView};
 use mdoc_mcp::wire::Kind;
 
 /// The tray installed with the switch `on`, and the preview as it is.
@@ -115,6 +115,9 @@ fn a_delivery_opens_it_without_focus(cx: &mut TestAppContext) {
 /// Done when: the first-close note and the setting say "system tray".
 #[test]
 fn the_words_are_windows_words() {
-    assert_eq!(crate::tray::SETTING, "Keep mdoc in the system tray");
-    assert_eq!(crate::tray::NOTE_TITLE, "mdoc is still in the system tray.");
+    assert_eq!(crate::shelf::tray::SETTING, "Keep mdoc in the system tray");
+    assert_eq!(
+        crate::shelf::tray::NOTE_TITLE,
+        "mdoc is still in the system tray."
+    );
 }

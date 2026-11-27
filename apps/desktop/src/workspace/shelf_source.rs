@@ -553,22 +553,22 @@ impl Workspace {
     /// quit that cannot start brings it back, since no item is left to.
     pub(crate) fn quit_when_windows_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let saved = self.update_general(|general| general.menu_bar = false, cx);
-        crate::menu_bar::quit_when_windows_close(cx);
+        crate::shelf::menu_bar::quit_when_windows_close(cx);
         if let Err(error) = saved {
             // Quitting now would bring the item back at the next launch with
             // no note: show the window and say so instead.
-            crate::menu_bar::reveal_if_hidden(window, cx);
+            crate::shelf::menu_bar::reveal_if_hidden(window, cx);
             self.notices.post(format!(
                 "Could not save \u{201c}Quit when windows close\u{201d}: {error}. \
                  Turn off Settings \u{203a} General \u{203a} {} to try again.",
-                crate::tray::SETTING
+                crate::shelf::tray::SETTING
             ));
             cx.notify();
             return;
         }
         self.quit(window, cx);
         if !self.quit_flow.quitting() {
-            crate::menu_bar::reveal_if_hidden(window, cx);
+            crate::shelf::menu_bar::reveal_if_hidden(window, cx);
         }
     }
 

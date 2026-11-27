@@ -1,4 +1,4 @@
-//! What the companion window ([`crate::companion`], ADR 0128; Milestone 2
+//! What the companion window ([`crate::ai::companion`], ADR 0128; Milestone 2
 //! item 14) reads from the window, and what its controls ask of it: the AI
 //! project and Stop sharing, its documents by AI label and state, the
 //! latest reply restored, the latest review request with its proposals and
@@ -21,7 +21,7 @@ use super::{
     autosave::Write,
     document_writer::Target,
 };
-use crate::{ai_connector, document_view::DocumentView, shelf::ShelfDocument};
+use crate::{document_view::DocumentView, shelf::ShelfDocument};
 use gpui::{App, Context, Window};
 use mdoc_pii::{Review, restore::RestoreMap};
 use mdoc_store::document_id::{DocumentId, VaultId};
@@ -235,7 +235,7 @@ impl Workspace {
             };
             Some(CompanionReview {
                 document: ask.document.clone(),
-                from: ai_connector::display_name(&ask.app),
+                from: crate::ai::connector::display_name(&ask.app),
                 label: ask.label.clone(),
                 step,
             })
@@ -303,7 +303,7 @@ impl Workspace {
         let latest = self.ai.latest_reply()?;
         Some(CompanionReply {
             id: latest.reply.clone(),
-            from: ai_connector::display_name(&latest.app),
+            from: crate::ai::connector::display_name(&latest.app),
             restored: self.companion_reply_text(&latest.reply)?,
             saved: latest.saved,
             saving: latest.saving,
@@ -346,7 +346,7 @@ impl Workspace {
         self.next_op += 1;
         let target = Target::Op(self.next_op);
         self.queue_write(target, Write::Promote(id.to_string()), window, cx);
-        crate::menu_bar::companion_changed(cx);
+        crate::shelf::menu_bar::companion_changed(cx);
         cx.notify();
     }
 
@@ -421,7 +421,7 @@ impl Workspace {
             self.tabs.behind_active(tab);
         }
         self.initialize(tab, window, cx);
-        crate::menu_bar::companion_changed(cx);
+        crate::shelf::menu_bar::companion_changed(cx);
         cx.notify();
         let document = document.to_string();
         cx.spawn_in(window, async move |this, cx| {
@@ -503,7 +503,7 @@ impl Workspace {
 
     fn companion_replace_ended(&mut self, document: &str, ran: bool, cx: &mut Context<Self>) {
         self.ai.replace_ended(document, ran);
-        crate::menu_bar::companion_changed(cx);
+        crate::shelf::menu_bar::companion_changed(cx);
         cx.notify();
     }
 }

@@ -9,8 +9,8 @@ fn available_update_marks_the_settings_button(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("Settings").is_some());
     assert!(cx.debug_bounds("update-dot").is_none());
     cx.update(|_, cx| {
-        cx.set_global(crate::updater::UpdateState {
-            available: Some(crate::updater::test_update("9.0.0")),
+        cx.set_global(crate::app::updater::UpdateState {
+            available: Some(crate::app::updater::test_update("9.0.0")),
             ..Default::default()
         })
     });
@@ -38,7 +38,7 @@ fn installed_notice_leaves_no_dot_on_the_collapsed_rail(cx: &mut TestAppContext)
     collapse(&tabs, cx);
     // Just updated, nothing newer: the "installed" notice isn't an update.
     cx.update(|_, cx| {
-        cx.set_global(crate::updater::UpdateState {
+        cx.set_global(crate::app::updater::UpdateState {
             updated_to: Some("9.0.0".into()),
             ..Default::default()
         })
@@ -47,8 +47,8 @@ fn installed_notice_leaves_no_dot_on_the_collapsed_rail(cx: &mut TestAppContext)
     assert!(cx.debug_bounds("rail-settings").is_some());
     assert!(cx.debug_bounds("rail-update-dot").is_none());
     cx.update(|_, cx| {
-        cx.set_global(crate::updater::UpdateState {
-            available: Some(crate::updater::test_update("9.1.0")),
+        cx.set_global(crate::app::updater::UpdateState {
+            available: Some(crate::app::updater::test_update("9.1.0")),
             ..Default::default()
         })
     });
@@ -63,15 +63,15 @@ fn update_banner_opens_settings_and_dismisses_per_version(cx: &mut TestAppContex
     draw(cx);
     assert!(cx.debug_bounds("update-banner").is_none());
     // A manual check's result raises no banner; an automatic one does.
-    let found = crate::updater::UpdateState {
-        available: Some(crate::updater::test_update("9.0.0")),
+    let found = crate::app::updater::UpdateState {
+        available: Some(crate::app::updater::test_update("9.0.0")),
         ..Default::default()
     };
     cx.update(|_, cx| cx.set_global(found.clone()));
     draw(cx);
     assert!(cx.debug_bounds("update-banner").is_none());
     cx.update(|_, cx| {
-        cx.set_global(crate::updater::UpdateState {
+        cx.set_global(crate::app::updater::UpdateState {
             automatic: true,
             ..found
         })
@@ -85,7 +85,7 @@ fn update_banner_opens_settings_and_dismisses_per_version(cx: &mut TestAppContex
     cx.update(|_, cx| {
         let settings = tabs.read(cx).settings.read(cx);
         assert!(settings.open);
-        assert_eq!(settings.category(), settings_ui::Category::General);
+        assert_eq!(settings.category(), crate::settings::Category::General);
     });
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.settings
@@ -104,7 +104,7 @@ fn update_banner_opens_settings_and_dismisses_per_version(cx: &mut TestAppContex
             "× doesn't open Settings"
         );
         assert_eq!(
-            crate::updater::state(cx).dismissed.as_deref(),
+            crate::app::updater::state(cx).dismissed.as_deref(),
             Some("9.0.0")
         );
     });

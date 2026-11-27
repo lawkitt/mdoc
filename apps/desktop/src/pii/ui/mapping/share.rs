@@ -6,7 +6,8 @@ use crate::{
     document_view::{DocumentView, Inspector},
     pii::ui::{APPLIED_ID, CopyForAi, KEPT_ID},
     refusal::Step,
-    style, ui,
+    ui,
+    ui::style,
 };
 use gpui::{AnyElement, App, Context, Focusable, Window, div, prelude::*, px};
 

@@ -3,7 +3,8 @@ use crate::{
     document_view::{CopyMarkdown, ExportMarkdown, Save, TogglePreview},
     pii::ui::{CopyForAi, PiiApplyAll},
     spelling::ToggleDocumentSpelling,
-    style, ui,
+    ui,
+    ui::style,
     workspace::{
         CancelProjectName, Close, ConfirmProjectName, Import, Open, PasteAiResponse, ProjectEvent,
         TabEvent,
@@ -206,8 +207,8 @@ impl DocumentView {
             }
             Primary::Pseudonymize => {
                 ui::filled_button("primary-action", "Pseudonymize", theme, true)
-                    .tooltip(crate::style::tooltip(
-                        crate::shortcuts::tip(
+                    .tooltip(crate::ui::style::tooltip(
+                        crate::commands::shortcuts::tip(
                             "Find names to replace",
                             &crate::pii::ui::Pseudonymize,
                         ),
@@ -351,7 +352,7 @@ impl DocumentView {
                         .aria_label(format!("Left out of the Markdown: {line}"))
                         .child(div().flex_shrink_0().child("ⓘ"))
                         .child(div().min_w_0().truncate().child(line.clone()))
-                        .tooltip(crate::style::tooltip(line, theme)),
+                        .tooltip(crate::ui::style::tooltip(line, theme)),
                 )
             })
             // A control in the drag row takes its own clicks.
@@ -816,7 +817,7 @@ impl DocumentView {
 
 /// "Documents stay on this Mac", explained on hover. Literally
 /// true: the only network use is the update check and chosen model downloads.
-fn local_note(theme: crate::style::Theme) -> impl IntoElement {
+fn local_note(theme: crate::ui::style::Theme) -> impl IntoElement {
     let p = theme.pdf_style();
     let machine = if cfg!(target_os = "macos") {
         "this Mac"
@@ -839,7 +840,7 @@ fn local_note(theme: crate::style::Theme) -> impl IntoElement {
         .text_size(px(12.))
         .text_color(p.header_muted)
         .aria_label(format!("Documents stay on {machine}. {detail}"))
-        .tooltip(crate::style::tooltip(detail, theme))
+        .tooltip(crate::ui::style::tooltip(detail, theme))
         .child(
             gpui::svg()
                 .data(include_bytes!("../../resources/ui/lock.svg"))

@@ -8,7 +8,7 @@ use super::{
     folder_sheet::{CAP, CAP_NOTE, DroppedFolder, Pending, Sheet, Status, Target},
     shortcuts_ui::ShowShortcuts,
 };
-use crate::{style, ui};
+use crate::{ui, ui::style};
 use gpui::{
     AnyElement, ClickEvent, Context, FocusHandle, KeyDownEvent, ScrollHandle, Window, div,
     prelude::*, px,
@@ -578,7 +578,7 @@ impl Workspace {
                             .on_action(|_: &Settings, _, _| {})
                             .on_action(|_: &OpenPalette, _, _| {})
                             .on_action(|_: &ShowShortcuts, _, _| {})
-                            .on_action(|_: &crate::menus::About, _, _| {})
+                            .on_action(|_: &crate::commands::menus::About, _, _| {})
                             .on_action(|_: &SwitchDocument, _, _| {})
                             .on_action(|_: &SwitchDocumentBack, _, _| {})
                             .on_action(|_: &ToggleSidebar, _, _| {})

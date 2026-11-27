@@ -4,8 +4,8 @@
 //! expected, not suspicious, and the drawing is never taken for it.
 use super::Workspace;
 use crate::{
-    style::{self, Theme},
     ui,
+    ui::style::{self, Theme},
     workspace::{
         Close, Import, New, Open, OpenProject, RetryDocument, Settings, SwitchDocument,
         SwitchDocumentBack, ToggleSidebar,
@@ -393,7 +393,7 @@ impl Workspace {
                             .on_action(|_: &OpenProject, _, _| {})
                             .on_action(|_: &super::NewProject, _, _| {})
                             .on_action(|_: &Settings, _, _| {})
-                            .on_action(|_: &crate::menus::About, _, _| {})
+                            .on_action(|_: &crate::commands::menus::About, _, _| {})
                             .on_action(|_: &super::CheckForUpdates, _, _| {})
                             .on_action(|_: &SwitchDocument, _, _| {})
                             .on_action(|_: &SwitchDocumentBack, _, _| {})

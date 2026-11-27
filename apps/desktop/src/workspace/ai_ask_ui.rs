@@ -1,14 +1,14 @@
 //! Ask in the window (#1164 Decisions 2, 3 and 22; Milestone 2 item 10),
 //! only while "AI connector (preview)" runs: what the document header's
 //! choice does (`TabEvent::Ask`), and the Project page's Ask button. The
-//! words and links are `crate::ai_ask`'s.
+//! words and links are `crate::ai::ask`'s.
 //!
 //! Ask Claude or Ask ChatGPT shares the Project as part of the click, in
 //! place of any other, then opens the app with a prompt naming the
 //! document by the label the connector gives it. Copy for AI is today's
 //! Copy for AI. Each choice is remembered as `ai_connector.ask`.
 use super::Workspace;
-use crate::{ai_ask, ui};
+use crate::ui;
 use gpui::{AnyElement, Context, Window, div, prelude::*, px};
 use mdoc_store::settings::{self, AskWith};
 
@@ -70,7 +70,7 @@ impl Workspace {
             return;
         };
         if self.excluded_from_ai(document.as_str()) {
-            self.notices.post(ai_ask::EXCLUDED);
+            self.notices.post(crate::ai::ask::EXCLUDED);
             cx.notify();
             return;
         }
@@ -155,7 +155,7 @@ impl Workspace {
         // shares nothing.
         let on_page = (self.project_ui.page.as_ref()).is_some_and(|page| page.id() == project);
         if on_page {
-            let with = ai_ask::on_project_page(with);
+            let with = crate::ai::ask::on_project_page(with);
             self.remember_ask(with, cx);
             self.ask_app(project, None, with, cx);
         }
@@ -177,7 +177,7 @@ impl Workspace {
             return;
         }
         let prompt = match document {
-            None => ai_ask::PROJECT_PROMPT.to_string(),
+            None => crate::ai::ask::PROJECT_PROMPT.to_string(),
             Some(document) => {
                 let Some(running) = &self.ai_connector else {
                     return;
@@ -195,20 +195,20 @@ impl Workspace {
                     }
                 };
                 let Some(label) = label else {
-                    self.notices.post(ai_ask::EXCLUDED);
+                    self.notices.post(crate::ai::ask::EXCLUDED);
                     return;
                 };
-                ai_ask::document_prompt(&label, document)
+                crate::ai::ask::document_prompt(&label, document)
             }
         };
-        let Some(link) = ai_ask::link(with, &prompt) else {
+        let Some(link) = crate::ai::ask::link(with, &prompt) else {
             return;
         };
         cx.open_url(&link);
         let name = (self.projects.project(project))
             .map(|project| project.name.clone())
             .unwrap_or_default();
-        self.notices.post(ai_ask::opened(with, &name));
+        self.notices.post(crate::ai::ask::opened(with, &name));
     }
 
     /// Whether document `id` is excluded from AI apps.
@@ -228,10 +228,10 @@ impl Workspace {
     ) -> Option<AnyElement> {
         self.ai_connector.as_ref()?;
         let theme = self.theme.get();
-        let last = ai_ask::on_project_page(self.ask_last());
+        let last = crate::ai::ask::on_project_page(self.ask_last());
         let (ask, menu) = (project.to_string(), project.to_string());
         let main = self
-            .page_control("project-page-ask", ai_ask::label(last), cx)
+            .page_control("project-page-ask", crate::ai::ask::label(last), cx)
             .on_click(cx.listener(move |this, _, _, cx| this.ask_about_project(&ask, last, cx)));
         let open = self.project_ui.ask_menu.is_some();
         let (frame, more) = ui::split_button(
@@ -269,7 +269,7 @@ impl Workspace {
             return None;
         }
         let theme = self.theme.get();
-        let last = ai_ask::on_project_page(self.ask_last());
+        let last = crate::ai::ask::on_project_page(self.ask_last());
         let close = |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
             this.project_ui.ask_menu = None;
             if let Some(focus) = this.menu_return.take() {
@@ -310,7 +310,7 @@ impl Workspace {
             menu = menu.child(
                 ui::menu_row(
                     key,
-                    ai_ask::label(with),
+                    crate::ai::ask::label(with),
                     None,
                     Some(with == last),
                     theme,

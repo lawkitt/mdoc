@@ -453,8 +453,8 @@ fn the_window_menu_lists_the_live_views(cx: &mut TestAppContext) {
     );
     // Every live view's row reaches its handler.
     let views = cx.update(|_, cx| tabs.read(cx).live_view_menu.clone());
-    let rows = (crate::menus::items_with(&views).into_iter())
-        .filter(|(_, action)| action.as_any().is::<crate::menus::ShowLiveView>());
+    let rows = (crate::commands::menus::items_with(&views).into_iter())
+        .filter(|(_, action)| action.as_any().is::<crate::commands::menus::ShowLiveView>());
     for (name, action) in rows {
         let available = cx.update(|window, cx| {
             window.is_action_available(action.as_ref(), cx)
@@ -464,7 +464,7 @@ fn the_window_menu_lists_the_live_views(cx: &mut TestAppContext) {
     }
     // Choosing the first, from behind, brings the window forward to it.
     cx.deactivate_window();
-    cx.dispatch_action(crate::menus::ShowLiveView(ids[0]));
+    cx.dispatch_action(crate::commands::menus::ShowLiveView(ids[0]));
     cx.run_until_parked();
     draw(cx);
     assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), ids[0]);
@@ -485,7 +485,7 @@ fn the_window_menu_lists_the_live_views(cx: &mut TestAppContext) {
     // The palette open: nothing moves under it.
     cx.dispatch_action(OpenPalette);
     cx.run_until_parked();
-    cx.dispatch_action(crate::menus::ShowLiveView(ids[1]));
+    cx.dispatch_action(crate::commands::menus::ShowLiveView(ids[1]));
     cx.run_until_parked();
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
@@ -499,7 +499,7 @@ fn the_window_menu_lists_the_live_views(cx: &mut TestAppContext) {
     draw(cx);
     assert_eq!(window_menu_views(cx).len(), 2);
     // One no longer live does nothing.
-    cx.dispatch_action(crate::menus::ShowLiveView(u64::MAX));
+    cx.dispatch_action(crate::commands::menus::ShowLiveView(u64::MAX));
     cx.run_until_parked();
     assert!(cx.update(|_, cx| tabs.read(cx).showing_overview(cx)));
 }

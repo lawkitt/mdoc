@@ -59,7 +59,7 @@ fn new_project_from_the_project_menu_makes_an_empty_project_and_opens_its_page(
 ) {
     let (tabs, cx) = home(cx);
     // The menu bar's own item, as a click on it dispatches it.
-    let (_, action) = (crate::menus::items().into_iter())
+    let (_, action) = (crate::commands::menus::items().into_iter())
         .find(|(name, _)| name.as_ref() == "New Project…")
         .expect("Project › New Project…");
     cx.update(|window, cx| window.dispatch_action(action, cx));

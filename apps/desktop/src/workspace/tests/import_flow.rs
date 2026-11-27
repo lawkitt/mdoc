@@ -186,7 +186,7 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
         let label = format!(
             "{}: {}",
             model.name(),
-            crate::models::attribution_label(model)
+            crate::app::models::attribution_label(model)
         );
         let bounds = cx
             .debug_bounds(Box::leak(label.into_boxed_str()))
@@ -217,7 +217,7 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
     assert!(cx.debug_bounds("Retry").is_some());
     // A download finished from Settings only enables one-click Run OCR.
     panel.update(cx, |_, cx| {
-        cx.emit(settings_ui::Event::Finished(
+        cx.emit(crate::settings::Event::Finished(
             settings::Model::Ocr(settings::OcrModel::V6Small),
             Ok(Some(ocr::Installed {
                 config: settings::OcrConfig::default(),
@@ -428,7 +428,7 @@ fn ocr_setup_ending_after_its_tab_closed_clears_installing(cx: &mut TestAppConte
         prefs.borrow_mut().current.as_mut().unwrap().ocr.model = settings::OcrModel::Cyrillic;
     });
     panel.update(cx, |_, cx| {
-        cx.emit(settings_ui::Event::Finished(
+        cx.emit(crate::settings::Event::Finished(
             settings::Model::Ocr(settings::OcrModel::V6Small),
             Err("Download cancelled.".into()),
         ))

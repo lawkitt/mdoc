@@ -6,7 +6,7 @@
 //! a log or the clipboard. Tests and headless renders inject the key
 //! store, so they never ask the OS.
 use super::{Workspace, vault_state::Opening};
-use crate::{markdown_search::SearchInput, settings_ui::Category, style, ui};
+use crate::{markdown_search::SearchInput, settings::Category, ui, ui::style};
 use gpui::{AnyElement, Context, Entity, Focusable, Window, actions, div, prelude::*, px};
 use mdoc_vault::{Vault, VaultError, recovery};
 use zeroize::Zeroizing;
