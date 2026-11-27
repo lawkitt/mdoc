@@ -31,19 +31,9 @@ mod ai_connector;
 mod categories;
 pub(crate) mod dictionary;
 pub(crate) mod lists;
+mod text;
 mod vault;
 pub(crate) use categories::Category;
-
-fn status_label(status: &Status) -> String {
-    match status {
-        Status::Unknown => "Not checked",
-        Status::Missing => "Not downloaded",
-        Status::Ready => "Installed",
-        Status::Damaged(_) => "Repair needed",
-        Status::Unavailable(_) => "Unavailable",
-    }
-    .into()
-}
 
 actions!(
     model_settings,
@@ -103,7 +93,7 @@ impl SetupCompletion {
             Ok(_) if remove => Status::Missing,
             Ok(_) => Status::Ready,
             Err(_) if progress.cancel.load(Ordering::Relaxed) => Status::Unknown,
-            Err(e) if progress.state.lock().unwrap().phase == "Checking runtime" => {
+            Err(e) if progress.state.lock().unwrap().phase == text::CHECKING_RUNTIME => {
                 Status::Unavailable(e.clone())
             }
             Err(e) => Status::Damaged(e.clone()),
@@ -117,10 +107,10 @@ impl SetupCompletion {
         let before = checked_files.unwrap_or_else(|| after.clone());
         let status = model_state.record(model, &before, after, status);
         if result.is_ok() && !remove && status != Status::Ready {
-            result = Err("Model files changed. Retry setup.".into());
+            result = Err(text::MODEL_FILES_CHANGED.into());
         }
         if let Err(error) = model_state.save() {
-            eprintln!("Could not remember model setup: {error}");
+            eprintln!("{}", text::setup_not_remembered(error));
         }
         Self {
             result,
@@ -218,7 +208,7 @@ fn field(
         let mut input = SearchInput::new(cx)
             .with_theme(theme)
             .with_key_context("SettingsInput")
-            .with_placeholder("0–1")
+            .with_placeholder(text::NUMBER_PLACEHOLDER)
             .with_label(label);
         input.set_value(value.into(), cx);
         input
@@ -334,13 +324,13 @@ impl Panel {
             ocr_installations: Vec::new(),
             pending: Model::ALL.map(models::pending).to_vec(),
             threshold: field(
-                "Detection threshold",
+                text::DETECTION_THRESHOLD,
                 &draft.pseudonymization.threshold.to_string(),
                 theme.clone(),
                 cx,
             ),
             confidence: field(
-                "OCR minimum confidence",
+                text::OCR_MINIMUM_CONFIDENCE,
                 &draft.ocr.minimum_confidence.to_string(),
                 theme.clone(),
                 cx,
@@ -713,7 +703,7 @@ impl Panel {
         #[cfg(test)]
         let permit: Option<model_work::Permit> = None;
         #[cfg(not(test))]
-        let permit = match model_work::Permit::acquire_for("checking installed models") {
+        let permit = match model_work::Permit::acquire_for(text::CHECKING_INSTALLED_MODELS) {
             Ok(permit) => Some(permit),
             Err(_) => {
                 self.check_pending = true;
@@ -765,7 +755,7 @@ impl Panel {
                 })
                 .collect::<Vec<_>>();
             if let Err(error) = model_state.save() {
-                eprintln!("Could not remember model checks: {error}");
+                eprintln!("{}", text::checks_not_remembered(error));
             }
             (statuses, installed, pending, model_state)
         });
@@ -822,8 +812,7 @@ impl Panel {
             .ok()
             .filter(|v| v.is_finite() && (0.0..=1.0).contains(v));
         let Some(value) = value else {
-            self.number_errors[index] =
-                Some("Enter a number from 0 to 1. The previous value is still active.".into());
+            self.number_errors[index] = Some(text::NUMBER_OUT_OF_RANGE.into());
             cx.notify();
             return;
         };
@@ -989,9 +978,7 @@ impl Panel {
                         if this.ai_connector_saved_on() {
                             cx.emit(Event::AiConnectorShown(true));
                         }
-                        this.error = Some(format!(
-                            "Could not save settings: {e}. Previous defaults remain active."
-                        ));
+                        this.error = Some(text::not_saved(e));
                         this.save_error = this.error.clone();
                     }
                 }
@@ -1003,7 +990,7 @@ impl Panel {
     }
     pub fn setup(&mut self, model: Model, remove: bool, cx: &mut Context<Self>) {
         if self.working.is_some() || model_work::busy() {
-            self.error = Some("Another model job is running. Retry when it finishes.".into());
+            self.error = Some(text::ANOTHER_MODEL_JOB.into());
             cx.notify();
             return;
         }
@@ -1118,7 +1105,7 @@ impl Panel {
                 != Some(Status::Ready)
         {
             status = Status::Unknown;
-            result = Err("Model files changed. Retry setup.".into());
+            result = Err(text::MODEL_FILES_CHANGED.into());
         }
         // Runtimes are shared, so any setup can change every model's size.
         self.pending = Model::ALL.map(models::pending).to_vec();
@@ -1151,29 +1138,16 @@ impl Panel {
             Some(Err(updater::Ineligible::Unsupported))
         );
         let status = match &state.install {
-            updater::Install::Downloading { version, .. } => format!(
-                "Downloading mdoc {version}… {}%",
-                state.percent().unwrap_or(0)
-            ),
-            updater::Install::Ready { version, .. } => {
-                format!(
-                    "mdoc {version} is ready. It replaces this version when mdoc restarts or quits."
-                )
+            updater::Install::Downloading { version, .. } => {
+                text::downloading_update(version, state.percent().unwrap_or(0))
             }
-            updater::Install::Failed { version, message } => {
-                format!("Couldn't update to mdoc {version}. {message}")
-            }
-            updater::Install::Idle if state.checking => "Checking for updates…".to_string(),
+            updater::Install::Ready { version, .. } => text::update_ready(version),
+            updater::Install::Failed { version, message } => text::update_failed(version, message),
+            updater::Install::Idle if state.checking => text::CHECKING_FOR_UPDATES.to_string(),
             updater::Install::Idle => match &state.available {
-                Some(update) => format!(
-                    "mdoc {} is available. You have {}.",
-                    update.version,
-                    env!("CARGO_PKG_VERSION")
-                ),
-                None if state.checked => {
-                    format!("mdoc {} is the latest version.", env!("CARGO_PKG_VERSION"))
-                }
-                None => format!("You have mdoc {}.", env!("CARGO_PKG_VERSION")),
+                Some(update) => text::update_available(&update.version, env!("CARGO_PKG_VERSION")),
+                None if state.checked => text::latest_version(env!("CARGO_PKG_VERSION")),
+                None => text::current_version(env!("CARGO_PKG_VERSION")),
             },
         };
         // Why this copy can't install the available update, if it can't.
@@ -1211,11 +1185,17 @@ impl Panel {
             .gap_2()
             .when(!busy, |v| {
                 v.child(
-                    self.scrolled_quiet("updates-check", "Check now", theme, !state.checking, cx)
-                        .when(cfg!(test), |v| v.debug_selector(|| "updates-check".into()))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            updater::spawn_check(this.draft.updates.include_prereleases, false, cx)
-                        })),
+                    self.scrolled_quiet(
+                        "updates-check",
+                        text::CHECK_NOW,
+                        theme,
+                        !state.checking,
+                        cx,
+                    )
+                    .when(cfg!(test), |v| v.debug_selector(|| "updates-check".into()))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        updater::spawn_check(this.draft.updates.include_prereleases, false, cx)
+                    })),
                 )
             })
             .when(can_install, |v| {
@@ -1223,9 +1203,9 @@ impl Panel {
                     self.scrolled_control(
                         "updates-install",
                         if matches!(state.install, updater::Install::Failed { .. }) {
-                            "Try again"
+                            text::TRY_AGAIN
                         } else {
-                            "Download and install"
+                            text::DOWNLOAD_AND_INSTALL
                         },
                         theme,
                         true,
@@ -1248,17 +1228,23 @@ impl Panel {
                 matches!(state.install, updater::Install::Ready { .. }),
                 |v| {
                     v.child(
-                        self.scrolled_control("updates-restart", "Restart now", theme, true, cx)
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "updates-restart".into())
-                            })
-                            .on_click(cx.listener(|_, _, _, cx| cx.emit(Event::RestartToUpdate))),
+                        self.scrolled_control(
+                            "updates-restart",
+                            text::RESTART_NOW,
+                            theme,
+                            true,
+                            cx,
+                        )
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "updates-restart".into())
+                        })
+                        .on_click(cx.listener(|_, _, _, cx| cx.emit(Event::RestartToUpdate))),
                     )
                 },
             )
             .when_some(release, |v, url| {
                 v.child(
-                    self.scrolled_control("updates-view", "View release ↗", theme, true, cx)
+                    self.scrolled_control("updates-view", text::VIEW_RELEASE, theme, true, cx)
                         .when(cfg!(test), |v| v.debug_selector(|| "updates-view".into()))
                         .on_click(move |_, _, cx| cx.open_url(&url)),
                 )
@@ -1269,11 +1255,11 @@ impl Panel {
             .flex()
             .flex_col()
             .child(self.setting_row(
-                "Automatic updates",
-                "Check when mdoc starts.",
+                text::AUTOMATIC_UPDATES,
+                text::AUTOMATIC_UPDATES_DESCRIPTION,
                 self.switch(
                     "updates-automatic",
-                    "Check when mdoc starts",
+                    text::CHECK_WHEN_MDOC_STARTS,
                     updates.check_automatically,
                     true,
                     |p| p.updates.check_automatically = !p.updates.check_automatically,
@@ -1326,15 +1312,15 @@ impl Panel {
                 )
             })
             .child(self.setting_row(
-                "Include pre-releases",
+                text::INCLUDE_PRERELEASES,
                 if prerelease_build {
-                    "This build always includes pre-releases."
+                    text::PRERELEASE_BUILD
                 } else {
-                    "Also offer versions published for testing."
+                    text::PRERELEASES_DESCRIPTION
                 },
                 self.switch(
                     "updates-prereleases",
-                    "Include pre-releases",
+                    text::INCLUDE_PRERELEASES,
                     updates.include_prereleases || prerelease_build,
                     !prerelease_build,
                     |p| p.updates.include_prereleases = !p.updates.include_prereleases,
@@ -1348,10 +1334,7 @@ impl Panel {
     fn section_note(&self, text: &str, model: Model) -> String {
         match self.pending[Self::index(model)].runtime {
             0 => text.to_owned(),
-            runtime => format!(
-                "{text} The first download adds a {} MB shared runtime.",
-                model_download::megabytes(runtime)
-            ),
+            runtime => text::with_runtime(text, model_download::megabytes(runtime)),
         }
     }
     fn row(&self, model: Model, cx: &mut Context<Self>) -> AnyElement {
@@ -1386,92 +1369,354 @@ impl Panel {
         };
         // A missing model's size sits on its Download button.
         let status_label = if checking {
-            "Checking…".to_owned()
+            text::CHECKING.to_owned()
         } else {
-            status_label(status)
+            text::status_label(status)
         };
-        let download_label = format!(
-            "Download · {} MB",
-            model_download::megabytes(if pending.model > 0 {
-                pending.model
-            } else {
-                bytes
-            })
-        );
-        let note = (missing && selected && !working).then_some("Downloads on first use");
-        div().id(("settings-choice", index)).flex().flex_col().min_w_0()
-            .border_b_1().border_color(palette.border)
+        let download_label = text::download(model_download::megabytes(if pending.model > 0 {
+            pending.model
+        } else {
+            bytes
+        }));
+        let note = (missing && selected && !working).then_some(text::DOWNLOADS_ON_FIRST_USE);
+        div()
+            .id(("settings-choice", index))
+            .flex()
+            .flex_col()
+            .min_w_0()
+            .border_b_1()
+            .border_color(palette.border)
             .when(selected, |v| v.bg(gpui::Hsla { a: 0.05, ..accent }))
-            .child(div().flex().flex_wrap().items_center().gap_2().p_2()
-                .child(crate::ui::focus_ring(("select-model", index), theme).role(gpui::Role::RadioButton).aria_label(models::title(model)).aria_toggled(if selected { gpui::Toggled::True } else { gpui::Toggled::False }).key_context("UiControl").tab_index(0).tab_stop(selectable).flex().flex_1().flex_basis(px(220.)).min_w(px(200.)).items_center().gap_3()
-                    .when(selectable, |v| v.cursor_pointer())
-                    .when(!selectable, |v| v.opacity(0.5))
-                    .child(div().flex().flex_col().flex_1().min_w_0().gap_1()
-                        .child(div().flex().items_center().gap_2().min_w_0()
-                            .child(div().text_size(px(13.)).text_ellipsis().child(models::title(model)))
-                            .when(model.recommended(), |v| v.child(div().flex_shrink_0().px_1().rounded_sm().text_size(px(10.)).text_color(accent).border_1().border_color(gpui::Hsla { a: 0.5, ..accent }).child("Recommended"))))
-                        .child(div().text_size(px(11.)).text_color(palette.header_muted).child(match note {
-                            Some(note) => format!("{} · {} MB · {status_label} · {note}", model.summary(), model_download::megabytes(bytes)),
-                            None => format!("{} · {} MB · {status_label}", model.summary(), model_download::megabytes(bytes)),
-                        })))
-                    .child(div().text_color(if selected { accent } else { palette.header_muted }).child(if selected { "●" } else { "○" }))
-                    .when(cfg!(test) && model == Model::Pii(PiiModel::Fp32), |v| v.debug_selector(|| "settings-select-fp32".into()))
-                    .map(|v| self.reveal(("select-model", index), v, selectable, cx))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if selectable && !selected {
-                            this.select(model, cx);
-                        }
-                    })))
-                .child(div().flex().flex_shrink_0().items_center().gap_2()
-                    .when(working, |v| v.child(self.scrolled_quiet(("cancel-model", index), crate::ui::text::CANCEL, theme, !self.cancelling(), cx)
-                        .on_click(cx.listener(|this, _, _, cx| this.cancel_setup(cx)))))
-                    .when(missing && !working, |v| v.child(self.scrolled_control(("download-model", index), download_label, theme, idle && ocr::SUPPORTED, cx)
-                        .on_click(cx.listener(move |this, _, _, cx| { if idle && ocr::SUPPORTED { this.setup(model, false, cx); } }))))
-                    .when(matches!(status, Status::Damaged(_)) && !working, |v| v.child(self.scrolled_control(("repair-now", index), "Repair", theme, idle && ocr::SUPPORTED, cx)
-                        .on_click(cx.listener(move |this, _, _, cx| { if idle && ocr::SUPPORTED { this.setup(model, false, cx); } }))))
-                    // Remove… is a bordered button like Download and Repair, and is
-                    // absent rather than dimmed while it can't run.
-                    .when(!missing && !working && !checking && removable, |v| v.child(self.scrolled_control(("remove-model", index), "Remove…", theme, true, cx)
-                        .when(cfg!(test), move |v| v.debug_selector(move || format!("settings-remove-{index}")))
-                        .on_click(cx.listener(move |_, _, window, cx| {
-                        let prompt = window.prompt(PromptLevel::Warning, &format!("Remove {} model files?", model.name()), Some("Shared runtimes and documents are retained."), &["Remove", crate::ui::text::CANCEL], cx);
-                        cx.spawn(async move |this, cx| { if prompt.await.ok() == Some(0) { let _ = this.update(cx, |this, cx| this.setup(model, true, cx)); } }).detach();
-                    }))))
-                    .child(self.scrolled_quiet(("model-details", index), if self.details == Some(model) { "Less ↑" } else { "Details ↓" }, theme, true, cx)
-                        .when(cfg!(test) && model == Model::Pii(PiiModel::Fp16), |v| v.debug_selector(|| "settings-details-fp16".into()))
-                        .on_click(cx.listener(move |this, _, _, cx| { this.details = if this.details == Some(model) { None } else { Some(model) }; cx.notify(); })))))
-            .child(div().px_2().pb_2().child(ui::model_attribution(("model-attribution", index), model, theme)))
-            .when_some(self.progress_of(model), |v, state| v.child(div().px_2().pb_3().child(ui::setup_progress(("model-progress", index), &state, self.cancelling(), theme))))
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_2()
+                    .p_2()
+                    .child(
+                        crate::ui::focus_ring(("select-model", index), theme)
+                            .role(gpui::Role::RadioButton)
+                            .aria_label(models::title(model))
+                            .aria_toggled(if selected {
+                                gpui::Toggled::True
+                            } else {
+                                gpui::Toggled::False
+                            })
+                            .key_context("UiControl")
+                            .tab_index(0)
+                            .tab_stop(selectable)
+                            .flex()
+                            .flex_1()
+                            .flex_basis(px(220.))
+                            .min_w(px(200.))
+                            .items_center()
+                            .gap_3()
+                            .when(selectable, |v| v.cursor_pointer())
+                            .when(!selectable, |v| v.opacity(0.5))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_2()
+                                            .min_w_0()
+                                            .child(
+                                                div()
+                                                    .text_size(px(13.))
+                                                    .text_ellipsis()
+                                                    .child(models::title(model)),
+                                            )
+                                            .when(model.recommended(), |v| {
+                                                v.child(
+                                                    div()
+                                                        .flex_shrink_0()
+                                                        .px_1()
+                                                        .rounded_sm()
+                                                        .text_size(px(10.))
+                                                        .text_color(accent)
+                                                        .border_1()
+                                                        .border_color(gpui::Hsla {
+                                                            a: 0.5,
+                                                            ..accent
+                                                        })
+                                                        .child(text::RECOMMENDED),
+                                                )
+                                            }),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .text_color(palette.header_muted)
+                                            .child(text::model_line(
+                                                model.summary(),
+                                                model_download::megabytes(bytes),
+                                                &status_label,
+                                                note,
+                                            )),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_color(if selected {
+                                        accent
+                                    } else {
+                                        palette.header_muted
+                                    })
+                                    .child(if selected { "●" } else { "○" }),
+                            )
+                            .when(cfg!(test) && model == Model::Pii(PiiModel::Fp32), |v| {
+                                v.debug_selector(|| "settings-select-fp32".into())
+                            })
+                            .map(|v| self.reveal(("select-model", index), v, selectable, cx))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if selectable && !selected {
+                                    this.select(model, cx);
+                                }
+                            })),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_shrink_0()
+                            .items_center()
+                            .gap_2()
+                            .when(working, |v| {
+                                v.child(
+                                    self.scrolled_quiet(
+                                        ("cancel-model", index),
+                                        crate::ui::text::CANCEL,
+                                        theme,
+                                        !self.cancelling(),
+                                        cx,
+                                    )
+                                    .on_click(cx.listener(|this, _, _, cx| this.cancel_setup(cx))),
+                                )
+                            })
+                            .when(missing && !working, |v| {
+                                v.child(
+                                    self.scrolled_control(
+                                        ("download-model", index),
+                                        download_label,
+                                        theme,
+                                        idle && ocr::SUPPORTED,
+                                        cx,
+                                    )
+                                    .on_click(cx.listener(
+                                        move |this, _, _, cx| {
+                                            if idle && ocr::SUPPORTED {
+                                                this.setup(model, false, cx);
+                                            }
+                                        },
+                                    )),
+                                )
+                            })
+                            .when(matches!(status, Status::Damaged(_)) && !working, |v| {
+                                v.child(
+                                    self.scrolled_control(
+                                        ("repair-now", index),
+                                        text::REPAIR,
+                                        theme,
+                                        idle && ocr::SUPPORTED,
+                                        cx,
+                                    )
+                                    .on_click(cx.listener(
+                                        move |this, _, _, cx| {
+                                            if idle && ocr::SUPPORTED {
+                                                this.setup(model, false, cx);
+                                            }
+                                        },
+                                    )),
+                                )
+                            })
+                            // Remove… is a bordered button like Download and Repair, and is
+                            // absent rather than dimmed while it can't run.
+                            .when(!missing && !working && !checking && removable, |v| {
+                                v.child(
+                                    self.scrolled_control(
+                                        ("remove-model", index),
+                                        text::REMOVE_ELLIPSIS,
+                                        theme,
+                                        true,
+                                        cx,
+                                    )
+                                    .when(cfg!(test), move |v| {
+                                        v.debug_selector(move || format!("settings-remove-{index}"))
+                                    })
+                                    .on_click(cx.listener(
+                                        move |_, _, window, cx| {
+                                            let prompt = window.prompt(
+                                                PromptLevel::Warning,
+                                                &text::remove_model_files(model.name()),
+                                                Some(text::REMOVE_MODEL_KEEPS),
+                                                &[text::REMOVE, crate::ui::text::CANCEL],
+                                                cx,
+                                            );
+                                            cx.spawn(async move |this, cx| {
+                                                if prompt.await.ok() == Some(0) {
+                                                    let _ = this.update(cx, |this, cx| {
+                                                        this.setup(model, true, cx)
+                                                    });
+                                                }
+                                            })
+                                            .detach();
+                                        },
+                                    )),
+                                )
+                            })
+                            .child(
+                                self.scrolled_quiet(
+                                    ("model-details", index),
+                                    if self.details == Some(model) {
+                                        text::LESS
+                                    } else {
+                                        text::DETAILS
+                                    },
+                                    theme,
+                                    true,
+                                    cx,
+                                )
+                                .when(cfg!(test) && model == Model::Pii(PiiModel::Fp16), |v| {
+                                    v.debug_selector(|| "settings-details-fp16".into())
+                                })
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        this.details = if this.details == Some(model) {
+                                            None
+                                        } else {
+                                            Some(model)
+                                        };
+                                        cx.notify();
+                                    },
+                                )),
+                            ),
+                    ),
+            )
+            .child(div().px_2().pb_2().child(ui::model_attribution(
+                ("model-attribution", index),
+                model,
+                theme,
+            )))
+            .when_some(self.progress_of(model), |v, state| {
+                v.child(div().px_2().pb_3().child(ui::setup_progress(
+                    ("model-progress", index),
+                    &state,
+                    self.cancelling(),
+                    theme,
+                )))
+            })
             .when(self.details == Some(model), |v| {
                 let (revision, path) = match model {
-                    Model::Ocr(m) => (ocr::manifest::for_model(m).revision.to_string(), ocr::root().map(|root| ocr::model_root(&root, m)).map_err(|e| e.to_string())),
-                    Model::Pii(m) => (mdoc_detect::manifest_for(m).revision, mdoc_detect::root_for(m).map_err(|e| e.to_string())),
+                    Model::Ocr(m) => (
+                        ocr::manifest::for_model(m).revision.to_string(),
+                        ocr::root()
+                            .map(|root| ocr::model_root(&root, m))
+                            .map_err(|e| e.to_string()),
+                    ),
+                    Model::Pii(m) => (
+                        mdoc_detect::manifest_for(m).revision,
+                        mdoc_detect::root_for(m).map_err(|e| e.to_string()),
+                    ),
                 };
-                let evidence = match model { Model::Ocr(m) => m.evidence(), Model::Pii(m) => m.evidence() };
+                let evidence = match model {
+                    Model::Ocr(m) => m.evidence(),
+                    Model::Pii(m) => m.evidence(),
+                };
                 let (_, license) = models::source_and_license(model);
-                let mut details = div().flex().flex_col().gap_2().px_2().pb_3().min_w_0().text_size(px(11.)).text_color(palette.header_muted)
-                    .child(div().text_color(palette.header_fg).child(format!("{} · {} MB", model.name(), model_download::megabytes(bytes))))
+                let mut details = div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .px_2()
+                    .pb_3()
+                    .min_w_0()
+                    .text_size(px(11.))
+                    .text_color(palette.header_muted)
+                    .child(div().text_color(palette.header_fg).child(text::model_size(
+                        model.name(),
+                        model_download::megabytes(bytes),
+                    )))
                     .child(evidence)
-                    .when_some(match status { Status::Damaged(e) | Status::Unavailable(e) => Some(e.clone()), _ => None }, |v, reason| v.child(reason));
+                    .when_some(
+                        match status {
+                            Status::Damaged(e) | Status::Unavailable(e) => Some(e.clone()),
+                            _ => None,
+                        },
+                        |v, reason| v.child(reason),
+                    );
                 if let Model::Pii(m) = model {
                     let manifest = mdoc_detect::manifest_for(m);
-                    let export_url = format!("https://huggingface.co/{}/tree/{}", manifest.repository, manifest.revision);
-                    details = details.child(m.description()).child(format!("Languages: {}", m.languages()))
-                        .child(div().flex().flex_wrap().gap_2()
-                            .child(self.scrolled_quiet(("settings-hf", index * 2), "Model card ↗", theme, true, cx).on_click(move |_, _, cx| cx.open_url(m.hugging_face_url())))
-                            .child(self.scrolled_quiet(("settings-hf", index * 2 + 1), "Pinned files ↗", theme, true, cx).on_click(move |_, _, cx| cx.open_url(&export_url))));
+                    let export_url = format!(
+                        "https://huggingface.co/{}/tree/{}",
+                        manifest.repository, manifest.revision
+                    );
+                    details = details
+                        .child(m.description())
+                        .child(text::languages(m.languages()))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .gap_2()
+                                .child(
+                                    self.scrolled_quiet(
+                                        ("settings-hf", index * 2),
+                                        text::MODEL_CARD,
+                                        theme,
+                                        true,
+                                        cx,
+                                    )
+                                    .on_click(move |_, _, cx| cx.open_url(m.hugging_face_url())),
+                                )
+                                .child(
+                                    self.scrolled_quiet(
+                                        ("settings-hf", index * 2 + 1),
+                                        text::PINNED_FILES,
+                                        theme,
+                                        true,
+                                        cx,
+                                    )
+                                    .on_click(move |_, _, cx| cx.open_url(&export_url)),
+                                ),
+                        );
                 }
-                details = details.child(format!("Revision: {revision}\nLicenses: {license}\nStorage: {}", path.map(|p| p.display().to_string()).unwrap_or_else(|e| e)))
+                details = details
+                    .child(text::model_facts(
+                        &revision,
+                        &license,
+                        path.map(|p| p.display().to_string()).unwrap_or_else(|e| e),
+                    ))
                     .child(match model {
-                        Model::Ocr(_) => "CPU · ONNX Runtime 1.32.0 · PDFium native-v7988\nFixed upstream precision · converter-managed threads\nLimits: 256 MiB PDF · 4-page batches · 256 MiB bitmap/page",
-                        Model::Pii(_) => "CPU · ONNX Runtime 1.32.0 · 4 threads\nLimits: 2 MiB source · 512 tokens/window · 120 s cooperative deadline",
+                        Model::Ocr(_) => text::OCR_RUNTIME,
+                        Model::Pii(_) => text::PII_RUNTIME,
                     })
-                    .child(div().flex().flex_wrap().gap_2()
-                        .when(!missing, |v| v.child(self.scrolled_quiet(("repair-model", index), "Repair", theme, idle && ocr::SUPPORTED, cx)
-                            .on_click(cx.listener(move |this, _, _, cx| { if idle && ocr::SUPPORTED { this.setup(model, false, cx); } }))))
-);
+                    .child(div().flex().flex_wrap().gap_2().when(!missing, |v| {
+                        v.child(
+                            self.scrolled_quiet(
+                                ("repair-model", index),
+                                text::REPAIR,
+                                theme,
+                                idle && ocr::SUPPORTED,
+                                cx,
+                            )
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    if idle && ocr::SUPPORTED {
+                                        this.setup(model, false, cx);
+                                    }
+                                },
+                            )),
+                        )
+                    }));
                 v.child(details)
-            }).into_any_element()
+            })
+            .into_any_element()
     }
 }
 impl gpui::Focusable for Panel {
@@ -1483,8 +1728,8 @@ impl gpui::Focusable for Panel {
 impl Panel {
     fn appearance_section(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         self.setting_row(
-            "Appearance",
-            "Follow the system or choose a theme.",
+            text::APPEARANCE,
+            text::APPEARANCE_DESCRIPTION,
             div()
                 .map(|v| {
                     #[cfg(all(
@@ -1509,14 +1754,14 @@ impl Panel {
                 })
                 .id("settings-theme")
                 .role(gpui::Role::RadioGroup)
-                .aria_label("Theme")
+                .aria_label(text::THEME)
                 .flex()
                 .gap_2()
                 .children(
                     [
-                        (ThemeChoice::System, "System", "settings-theme-system"),
-                        (ThemeChoice::Light, "Light", "settings-theme-light"),
-                        (ThemeChoice::Dark, "Dark", "settings-theme-dark"),
+                        (ThemeChoice::System, text::SYSTEM, "settings-theme-system"),
+                        (ThemeChoice::Light, text::LIGHT, "settings-theme-light"),
+                        (ThemeChoice::Dark, text::DARK, "settings-theme-dark"),
                     ]
                     .into_iter()
                     .map(|(choice, label, id)| {

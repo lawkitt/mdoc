@@ -1,7 +1,7 @@
 //! The user dictionary view inside Settings: search as you type,
 //! add the typed word, remove words with a short Undo. The list is
 //! virtualized, so only visible rows are drawn and focusable.
-use super::{Event, Panel, quiet_control};
+use super::{Event, Panel, quiet_control, text};
 use crate::{
     document::markdown_search::{self, SearchInput},
     ui,
@@ -69,7 +69,7 @@ impl Panel {
             SearchInput::new(cx)
                 .with_theme(self.theme.clone())
                 .with_key_context("SettingsInput")
-                .with_placeholder("Search or add a word")
+                .with_placeholder(text::SEARCH_OR_ADD_WORD)
         });
         let subscription = cx.subscribe(
             &query,
@@ -188,18 +188,17 @@ impl Panel {
             (store.words.words.len(), store.words.error.clone())
         };
         let summary = match count {
-            0 => "No words yet. Add them with “Add to dictionary” in the editor.".to_string(),
-            1 => "1 word".to_string(),
-            n => format!("{n} words"),
+            0 => text::NO_WORDS_YET.to_string(),
+            n => text::words(n),
         };
         div()
             .flex()
             .flex_col()
             .child(
                 self.setting_row(
-                    "Your dictionary",
+                    text::YOUR_DICTIONARY,
                     summary,
-                    self.scrolled_quiet("manage-dictionary", "Manage…", theme, true, cx)
+                    self.scrolled_quiet("manage-dictionary", text::MANAGE, theme, true, cx)
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "manage-dictionary".into())
                         })
@@ -233,16 +232,13 @@ impl Panel {
                 .collect(),
         );
         let count = if needle.is_empty() {
-            match all.len() {
-                1 => "1 word".to_string(),
-                n => format!("{n} words"),
-            }
+            text::words(all.len())
         } else {
-            format!("{} of {}", shown.len(), all.len())
+            text::words_of(shown.len(), all.len())
         };
         let typed = match self.typed(cx) {
             Typed::Add(word) => Some(
-                ui::primary_button("add-dictionary-word", format!("Add “{word}”"), theme, true)
+                ui::primary_button("add-dictionary-word", text::add_word(&word), theme, true)
                     .self_start()
                     .when(cfg!(test), |v| {
                         v.debug_selector(|| "add-dictionary-word".into())
@@ -257,14 +253,14 @@ impl Panel {
                 div()
                     .text_size(px(11.))
                     .text_color(p.header_muted)
-                    .child("Already in your dictionary")
+                    .child(text::ALREADY_IN_DICTIONARY)
                     .into_any_element(),
             ),
             Typed::Invalid => Some(
                 div()
                     .text_size(px(11.))
                     .text_color(p.header_muted)
-                    .child("Enter a single word with at least one letter, up to 64 characters.")
+                    .child(text::NOT_A_WORD)
                     .into_any_element(),
             ),
             Typed::Empty => None,
@@ -278,9 +274,9 @@ impl Panel {
                 .text_size(px(12.))
                 .text_color(p.header_muted)
                 .child(if all.is_empty() {
-                    "Your dictionary is empty. Type a word above to add it, or use “Add to dictionary” in the editor."
+                    text::DICTIONARY_EMPTY
                 } else {
-                    "No matching words."
+                    text::NO_MATCHING_WORDS
                 })
         });
         let list = (!shown.is_empty()).then(|| {
@@ -309,11 +305,11 @@ impl Panel {
                                     let target = word.clone();
                                     quiet_control(
                                         gpui::SharedString::from(format!("remove-word-{word}")),
-                                        "Remove",
+                                        text::REMOVE,
                                         theme,
                                         true,
                                     )
-                                    .aria_label(format!("Remove {word} from your dictionary"))
+                                    .aria_label(text::remove_from_dictionary(&word))
                                     .when(cfg!(test), |v| {
                                         v.debug_selector(move || format!("remove-word-{index}"))
                                     })
@@ -347,10 +343,10 @@ impl Panel {
                         .flex_1()
                         .min_w_0()
                         .text_ellipsis()
-                        .child(format!("Removed “{word}”")),
+                        .child(text::removed_word(word)),
                 )
                 .child(
-                    quiet_control("undo-remove-word", "Undo", theme, true)
+                    quiet_control("undo-remove-word", text::UNDO, theme, true)
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "undo-remove-word".into())
                         })
