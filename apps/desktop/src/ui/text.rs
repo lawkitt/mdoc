@@ -82,7 +82,6 @@ mod tests {
         "commands",
         "main",
         "review",
-        "settings",
         "shelf",
         "workspace",
     ];
