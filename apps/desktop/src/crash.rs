@@ -251,6 +251,20 @@ mod tests {
             )
             .is_none()
         );
+        // Each frame first on its own: the app's, absolute or `./`, and a
+        // crate's by `./`, read as before the app moved to apps/desktop.
+        let first =
+            |at: &str| first_own_frame(&format!("   0: mdoc::f\n             at {at}:1:2\n"));
+        let app = format!("{root}/apps/desktop/src/a.rs");
+        assert_eq!(first(&app).as_deref(), Some("mdoc::f at src/a.rs:1:2"));
+        assert_eq!(
+            first("./apps/desktop/src/a.rs").as_deref(),
+            Some("mdoc::f at src/a.rs:1:2")
+        );
+        assert_eq!(
+            first("./crates/b/src/c.rs").as_deref(),
+            Some("mdoc::f at crates/b/src/c.rs:1:2")
+        );
     }
 
     #[test]
