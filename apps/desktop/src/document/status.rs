@@ -2,6 +2,7 @@
 //! Markdown pane, the preview pane's status when it has no page, and the
 //! notices above the text.
 use super::{DocumentView, ExtractNative, OcrState, RunOcr, button};
+use crate::document::text;
 use crate::{
     document::preview::RetryPreview,
     ui,
@@ -61,21 +62,21 @@ impl DocumentView {
             } else if running {
                 (
                     if self.import.recognizing() {
-                        "Recognizing text…"
+                        text::RECOGNIZING_TEXT
                     } else {
-                        "Converting to Markdown…"
+                        text::CONVERTING_TO_MARKDOWN
                     },
                     true,
                 )
             } else if self.import.auto_pending() {
-                ("Waiting to convert…", true)
+                (text::WAITING_TO_CONVERT, true)
             } else if cancelled {
                 // "Try again" in the toolbar converts it afresh.
-                ("Conversion cancelled", false)
+                (text::CONVERSION_CANCELLED, false)
             } else if self.error.is_some() {
-                ("Conversion could not be completed", false)
+                (text::CONVERSION_NOT_COMPLETED, false)
             } else {
-                ("Convert this document to begin editing", false)
+                (text::CONVERT_TO_BEGIN, false)
             };
             return card
                 .child(if busy {
@@ -109,33 +110,35 @@ impl DocumentView {
         };
         let count = pages.len();
         let card = card
-            .child(ui::card_title(if count == 0 { "Text recognition needs your attention" } else { self.ocr_pages_title() }))
-            .when(count > 0, |v| v.child(ui::card_text(if self.import.ocr_all_pages() {
-                format!(
-                    "{} usable text. Recognition reads {} on this computer; the original stays in the preview.",
-                    if count == 1 { "The page has no" } else { "No page has" },
-                    if count == 1 { "it" } else { "them" },
-                )
+            .child(ui::card_title(if count == 0 {
+                text::RECOGNITION_NEEDS_ATTENTION
             } else {
-                format!(
-                    "{count} {} no usable text ({}). Recognition reads {} on this computer; the original stays in the preview.",
-                    if count == 1 { "page has" } else { "pages have" },
-                    ui::page_ranges(&pages, 8),
-                    if count == 1 { "it" } else { "them" },
-                )
-            }, theme)));
-        if !ocr::SUPPORTED {
-            return card
-                .child(ui::card_text(
-                    "Local OCR is unavailable on this platform.",
+                self.ocr_pages_title()
+            }))
+            .when(count > 0, |v| {
+                v.child(ui::card_text(
+                    if self.import.ocr_all_pages() {
+                        text::no_usable_text_all(count)
+                    } else {
+                        text::no_usable_text(count, ui::page_ranges(&pages, 8))
+                    },
                     theme,
                 ))
+            });
+        if !ocr::SUPPORTED {
+            return card
+                .child(ui::card_text(text::LOCAL_OCR_UNAVAILABLE, theme))
                 .child(
                     ui::card_actions().child(
-                        ui::primary_button("extract-native", "Use native text only", theme, true)
-                            .on_click(|_, window, cx| {
-                                window.dispatch_action(Box::new(ExtractNative), cx)
-                            }),
+                        ui::primary_button(
+                            "extract-native",
+                            text::USE_NATIVE_TEXT_ONLY,
+                            theme,
+                            true,
+                        )
+                        .on_click(|_, window, cx| {
+                            window.dispatch_action(Box::new(ExtractNative), cx)
+                        }),
                     ),
                 )
                 .into_any_element();
@@ -148,7 +151,7 @@ impl DocumentView {
                     if stopping {
                         crate::ui::text::CANCELLING
                     } else {
-                        "Recognizing text…"
+                        text::RECOGNIZING_TEXT
                     },
                     theme,
                 ))
@@ -215,14 +218,14 @@ impl DocumentView {
                 .or_else(|| self.import.ocr_error().cloned()),
         };
         let primary = if ready && self.import.ocr_error().is_none() {
-            "Run OCR"
+            text::RUN_OCR
         } else if failed.is_some() {
-            "Retry"
+            text::RETRY
         } else if pending.total() == 0 {
             // Installed but not yet checked: setup only verifies it.
-            "Run OCR"
+            text::RUN_OCR
         } else {
-            "Download & recognize"
+            text::DOWNLOAD_AND_RECOGNIZE
         };
         if std::mem::take(&mut self.focus_card)
             && (self.focus.contains_focused(window, cx) || window.focused(cx).is_none())
@@ -232,23 +235,22 @@ impl DocumentView {
         }
         let name = model
             .map(crate::app::models::short_name)
-            .unwrap_or_else(|| "OCR".into());
+            .unwrap_or_else(|| text::OCR.into());
         // The engine says what it cannot read.
         let hint = if unreadable.is_empty() {
             choice.reason.clone()
         } else {
-            format!(
-                "{}. {} OCR cannot read {}.",
-                choice.reason,
+            text::cannot_read(
+                &choice.reason,
                 mdoc_import::ocr::title(ocr_model),
-                recognition::label(&unreadable)
+                recognition::label(&unreadable),
             )
         };
         let accent = theme.search_accent();
         let picker = div()
             .id("recognition-languages")
             .role(gpui::Role::RadioGroup)
-            .aria_label("Recognition languages")
+            .aria_label(text::RECOGNITION_LANGUAGES)
             .flex()
             .flex_wrap()
             .items_center()
@@ -258,13 +260,13 @@ impl DocumentView {
                     .mr_1()
                     .text_size(px(12.))
                     .text_color(palette.header_muted)
-                    .child("Recognize"),
+                    .child(text::RECOGNIZE),
             )
             .children(mdoc_import::ocr::offered().into_iter().enumerate().map(
                 |(index, languages)| {
                     let selected = choice.languages == languages;
                     let label = recognition::label(languages);
-                    let selector = format!("recognize {label}");
+                    let selector = text::recognize_selector(&label);
                     crate::ui::focus_ring(("recognition-language", index), theme)
                         .role(gpui::Role::RadioButton)
                         .aria_label(label.clone())
@@ -300,17 +302,13 @@ impl DocumentView {
                 v.debug_selector(|| "ocr-language-hint".into())
             }))
             .child(
-                ui::card_hint(
-                    "For this document only. Default: Settings › Recognition.",
-                    theme,
-                )
-                .when(cfg!(test), |v| {
+                ui::card_hint(text::FOR_THIS_DOCUMENT_ONLY, theme).when(cfg!(test), |v| {
                     v.debug_selector(|| "ocr-document-only".into())
                 }),
             )
             .when_some(failed, |v, error| v.child(ui::card_error(error, theme)))
             .when(self.conversion_cancelled(), |v| {
-                v.child(ui::card_text("Recognition cancelled.", theme))
+                v.child(ui::card_text(text::RECOGNITION_CANCELLED, theme))
             })
             .child(
                 ui::card_actions()
@@ -329,12 +327,12 @@ impl DocumentView {
                     .child(
                         crate::settings::control(
                             "extract-native",
-                            "Use native text only",
+                            text::USE_NATIVE_TEXT_ONLY,
                             theme,
                             !disabled,
                         )
                         .when(cfg!(test), |v| {
-                            v.debug_selector(|| "Use native text only".into())
+                            v.debug_selector(|| text::USE_NATIVE_TEXT_ONLY.into())
                         })
                         .on_click(move |_, window, cx| {
                             if !disabled {
@@ -358,12 +356,9 @@ impl DocumentView {
             )
             .child(ui::card_note(
                 if ready || pending.total() == 0 {
-                    format!("{name} · runs on this computer")
+                    text::runs_here(&name)
                 } else {
-                    format!(
-                        "{name} · {}, once · then runs on this computer",
-                        pending.download_label()
-                    )
+                    text::downloads_once(&name, pending.download_label())
                 },
                 theme,
             ))
@@ -379,9 +374,9 @@ impl DocumentView {
             self.import.ocr_all_pages(),
             self.import.ocr_required().map(<[u32]>::len),
         ) {
-            (true, Some(1)) => "This page needs text recognition",
-            (true, _) => "All pages need text recognition",
-            (false, _) => "Some pages need text recognition",
+            (true, Some(1)) => text::THIS_PAGE_NEEDS_RECOGNITION,
+            (true, _) => text::ALL_PAGES_NEED_RECOGNITION,
+            (false, _) => text::SOME_PAGES_NEED_RECOGNITION,
         }
     }
 
@@ -389,16 +384,16 @@ impl DocumentView {
     /// Retry only when another attempt can succeed.
     pub(super) fn preview_status(&self, theme: Theme) -> gpui::AnyElement {
         if self.preview.loading() {
-            return ui::activity("preview-activity", "Preparing preview…", theme)
+            return ui::activity("preview-activity", text::PREPARING_PREVIEW, theme)
                 .into_any_element();
         }
         let message = if self.preview.queued() {
-            "Waiting to prepare preview…".to_string()
+            text::WAITING_TO_PREPARE_PREVIEW.to_string()
         } else {
             self.preview
                 .message()
                 .cloned()
-                .unwrap_or_else(|| "No preview".into())
+                .unwrap_or_else(|| text::NO_PREVIEW_TITLE.into())
         };
         div()
             .id("preview-status")
@@ -413,7 +408,7 @@ impl DocumentView {
             .text_size(px(14.))
             .child(message)
             .when(!self.preview.queued() && self.preview.retryable(), |v| {
-                v.child(button("Retry", RetryPreview, theme))
+                v.child(button(text::RETRY, RetryPreview, theme))
             })
             .into_any_element()
     }
@@ -474,7 +469,7 @@ impl DocumentView {
                             .child(detail),
                     )
                     .when(id == "preview-notice" && self.preview.retryable(), |v| {
-                        v.child(button("Retry", RetryPreview, theme))
+                        v.child(button(text::RETRY, RetryPreview, theme))
                     })
                     .when_some(
                         (self.copy_refusal.as_ref())
@@ -493,19 +488,21 @@ impl DocumentView {
                         },
                     )
                     .when(id == "ocr-notice", |v| {
-                        v.child(ui::control("show-markdown", "Show", theme, true).on_click(
-                            cx.listener(|this, _, _, cx| {
-                                this.original_selected = false;
-                                cx.notify();
-                            }),
-                        ))
+                        v.child(
+                            ui::control("show-markdown", text::SHOW, theme, true).on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    this.original_selected = false;
+                                    cx.notify();
+                                }),
+                            ),
+                        )
                     })
                     .child(
                         crate::ui::focus_ring((id, 1usize), theme)
                             .role(gpui::Role::Button)
                             .key_context("UiControl")
                             .tab_index(0)
-                            .aria_label("Dismiss notice")
+                            .aria_label(text::DISMISS_NOTICE)
                             .when(cfg!(test), |v| {
                                 v.debug_selector(move || format!("{id}-dismiss"))
                             })

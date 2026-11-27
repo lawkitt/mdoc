@@ -80,7 +80,6 @@ mod tests {
         "ai",
         "app",
         "commands",
-        "document",
         "main",
         "review",
         "shelf",
