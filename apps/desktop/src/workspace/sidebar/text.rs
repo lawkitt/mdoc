@@ -19,6 +19,21 @@ pub(crate) const NO_PROJECTS_YET: &str = "No Projects yet";
 pub(crate) const SHOW_FEWER: &str = "Show fewer";
 pub(crate) const MOVE_TO_NEW_PROJECT: &str = "Move to New Project";
 pub(crate) const MOVE_TO_UNFILED: &str = "Move to Unfiled";
+/// A Project row's chevron, as a screen reader names it.
+pub(crate) const COLLAPSE_PROJECT: &str = "Collapse Project";
+pub(crate) const EXPAND_PROJECT: &str = "Expand Project";
+/// The delete question's button.
+pub(crate) const DELETE: &str = "Delete";
+/// Navigation's directions, and Home as a stop.
+pub(crate) const BACK: &str = "Back";
+pub(crate) const FORWARD: &str = "Forward";
+pub(crate) const HOME: &str = "Home";
+/// The foot's Settings row and the rail's Settings button.
+pub(crate) const SETTINGS: &str = "Settings";
+/// The tree's sections, and the button that adds a Project.
+pub(crate) const PROJECTS: &str = "Projects";
+pub(crate) const UNFILED: &str = "Unfiled";
+pub(crate) const NEW_PROJECT: &str = "New Project";
 
 /// A Back or Forward control's label, with the stop it goes to.
 pub(crate) fn stop_toward(direction: impl Display, destination: impl Display) -> String {

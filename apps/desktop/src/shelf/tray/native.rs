@@ -374,16 +374,24 @@ fn menu_point(owner: HWND) -> POINT {
 /// and the notification area gets the focus back however it closes.
 fn show_menu(owner: HWND) {
     let at = menu_point(owner);
-    // SAFETY: a new menu, destroyed below; `owner` is live.
+    // The rows' words, as `w!` would spell them: UTF-16 with a NUL.
+    let wide = |text: &str| text.encode_utf16().chain([0]).collect::<Vec<u16>>();
+    let (open_mdoc, settings, quit) = (
+        wide(crate::shelf::text::OPEN_MDOC),
+        wide(crate::shelf::text::SETTINGS),
+        wide(crate::shelf::text::QUIT),
+    );
+    // SAFETY: a new menu, destroyed below; `owner` is live, and the rows'
+    // words outlive the calls that copy them.
     let chosen = unsafe {
         let menu = CreatePopupMenu();
         if menu.is_null() {
             return;
         }
-        AppendMenuW(menu, MF_STRING, OPEN_MDOC, w!("Open mdoc"));
-        AppendMenuW(menu, MF_STRING, SETTINGS, w!("Settings"));
+        AppendMenuW(menu, MF_STRING, OPEN_MDOC, open_mdoc.as_ptr());
+        AppendMenuW(menu, MF_STRING, SETTINGS, settings.as_ptr());
         AppendMenuW(menu, MF_SEPARATOR, 0, null());
-        AppendMenuW(menu, MF_STRING, QUIT, w!("Quit"));
+        AppendMenuW(menu, MF_STRING, QUIT, quit.as_ptr());
         SetForegroundWindow(owner);
         let chosen = TrackPopupMenu(
             menu,

@@ -15,6 +15,16 @@ use mdoc_vault::DocumentSummary;
 use std::collections::HashMap;
 
 impl Workspace {
+    /// What's new: the release notes of the version just installed.
+    pub(super) fn open_release_notes(version: &str, cx: &mut App) {
+        cx.open_url(&crate::app::updater::release_url(version));
+    }
+
+    /// The What's new strip's ×.
+    pub(super) fn dismiss_whats_new(cx: &mut App) {
+        crate::app::updater::dismiss_banner(cx);
+    }
+
     /// The hidden blank tab under Home: never edited, never listed.
     pub(in crate::workspace) fn is_placeholder(&self, tab: &Tab, cx: &App) -> bool {
         tab.record().blank_disposable

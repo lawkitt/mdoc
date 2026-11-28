@@ -4,26 +4,17 @@
 use mdoc_import::{model_download::Pending, ocr};
 use mdoc_store::settings::Model;
 
+pub(crate) use super::text::{setup_label, short_name};
+
 pub fn check_status(result: Result<bool, String>) -> mdoc_store::model_state::Status {
     use mdoc_store::model_state::Status;
     if !ocr::SUPPORTED {
-        return Status::Unavailable(
-            "Automatic inference supports Apple Silicon macOS and Windows x64.".into(),
-        );
+        return Status::Unavailable(super::text::UNSUPPORTED.into());
     }
     match result {
         Ok(true) => Status::Ready,
         Ok(false) => Status::Missing,
         Err(error) => Status::Unavailable(error),
-    }
-}
-
-pub fn setup_label(model: Model, remove: bool) -> &'static str {
-    match (model, remove) {
-        (Model::Ocr(_), false) => "installing text recognition",
-        (Model::Ocr(_), true) => "removing text recognition",
-        (Model::Pii(_), false) => "installing pseudonymization model",
-        (Model::Pii(_), true) => "removing pseudonymization model",
     }
 }
 
@@ -48,14 +39,6 @@ pub fn title(model: Model) -> String {
     match model {
         Model::Ocr(m) => ocr::title(m),
         Model::Pii(m) => m.title().into(),
-    }
-}
-
-/// How setup prompts name the bundle, e.g. "English OCR".
-pub fn short_name(model: Model) -> String {
-    match model {
-        Model::Ocr(m) => format!("{} OCR", ocr::title(m)),
-        Model::Pii(m) => format!("{} model", m.title()),
     }
 }
 
@@ -84,7 +67,7 @@ pub fn source_and_license(model: Model) -> (String, String) {
 
 pub fn attribution_label(model: Model) -> String {
     let (source, license) = source_and_license(model);
-    format!("Source: {source}\nLicense: {license}")
+    super::text::attribution(source, license)
 }
 
 #[cfg(test)]

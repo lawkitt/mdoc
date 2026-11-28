@@ -2,10 +2,11 @@
 //! pseudonymized document out, and an AI reply box that restores in place
 //! with Copy reply and Open as tab.
 use super::Selection;
+use crate::review::text::{self, review_tab_label, share_status};
 use crate::{
     document::{DocumentView, Inspector},
     review::refusal::Step,
-    review::{APPLIED_ID, CopyForAi, KEPT_ID},
+    review::{APPLIED_ID, KEPT_ID},
     ui,
     ui::style,
 };
@@ -62,8 +63,8 @@ impl DocumentView {
                         review_tab_label(entities),
                         Inspector::Review,
                     ))
-                    .child(tab("inspector-share", "Share".into(), Inspector::Share))
-                    .child(tab("inspector-notes", "Notes".into(), Inspector::Notes)),
+                    .child(tab("inspector-share", text::SHARE.into(), Inspector::Share))
+                    .child(tab("inspector-notes", text::NOTES.into(), Inspector::Notes)),
             )
             .into_any_element()
     }
@@ -132,8 +133,13 @@ impl DocumentView {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(section("Send to an AI"))
-                    .child(div().when(cfg!(test), |v| v.debug_selector(|| "share-status".into())).text_size(px(13.)).child(status))
+                    .child(section(text::SEND_TO_AN_AI))
+                    .child(
+                        div()
+                            .when(cfg!(test), |v| v.debug_selector(|| "share-status".into()))
+                            .text_size(px(13.))
+                            .child(status),
+                    )
                     .child(
                         ui::filled_button(
                             "share-copy-for-ai",
@@ -141,79 +147,132 @@ impl DocumentView {
                             theme,
                             copy_enabled,
                         )
-                        .when(cfg!(test), |v| v.debug_selector(|| "share-copy-for-ai".into()))
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "share-copy-for-ai".into())
+                        })
                         .h(px(32.))
-                        .on_click(cx.listener(move |this, _, window, cx| match step {
-                            Some(step) => cx.emit(crate::workspace::TabEvent::CopyStep(step)),
-                            None if copy_for_ai => this.copy_for_ai(&CopyForAi, window, cx),
-                            None => {}
-                        })),
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.share_copy(step, copy_for_ai, window, cx)
+                            },
+                        )),
                     )
-                    .child(note("Adds a short note asking the AI to keep every alias exactly as written.".into()))
+                    .child(note(text::ADDS_A_SHORT_NOTE.into()))
                     // Only checked exits: Copy Markdown and Export Markdown
                     // hand the text out as it is, so they stay in the
                     // header's ⋯ menu, the File menu, their shortcuts and
                     // the palette (Vault & Projects item 29).
-                    .when(aliases || self.reply.exists(), |v| v.children(self.reply_section(cx)))
-                    .child(section("Project"))
+                    .when(aliases || self.reply.exists(), |v| {
+                        v.children(self.reply_section(cx))
+                    })
+                    .child(section(text::PROJECT))
                     .child(match &link {
                         Some(link) => ui::control("share-project-page", "", theme, true)
-                            .when(cfg!(test), |v| v.debug_selector(|| "share-project-page".into()))
-                            .aria_label(format!("Open Project {}", link.name))
-                            .on_click(cx.listener(|_, _, _, cx| cx.emit(crate::workspace::TabEvent::Project(crate::workspace::ProjectEvent::OpenPage))))
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "share-project-page".into())
+                            })
+                            .aria_label(text::open_project(&link.name))
+                            .on_click(cx.listener(|_, _, _, cx| {
+                                cx.emit(crate::workspace::TabEvent::Project(
+                                    crate::workspace::ProjectEvent::OpenPage,
+                                ))
+                            }))
                             .flex()
                             .items_center()
                             .gap_2()
-                            .child(div().size(px(8.)).rounded_full().bg(style::project_color(link.hue(), theme)))
+                            .child(
+                                div()
+                                    .size(px(8.))
+                                    .rounded_full()
+                                    .bg(style::project_color(link.hue(), theme)),
+                            )
                             .child(div().flex_1().truncate().child(link.name.clone()))
                             .into_any_element(),
-                        None if !movable => note("Kept with the document, encrypted on this computer.".into()).into_any_element(),
-                        None => note("Unfiled. Its names are kept with it, encrypted on this computer; in a Project, its documents share them.".into()).into_any_element(),
+                        None if !movable => {
+                            note(text::KEPT_WITH_THE_DOCUMENT.into()).into_any_element()
+                        }
+                        None => note(text::UNFILED_NAMES_KEPT.into()).into_any_element(),
                     })
                     // A row, so the buttons keep their label width like Copy
                     // Markdown instead of stretching into a field. Move to
                     // Project… shows once another Project exists (#1312).
                     .when(movable, |v| {
-                        let others = self.projects.get().saturating_sub(usize::from(link.is_some()));
+                        let others = self
+                            .projects
+                            .get()
+                            .saturating_sub(usize::from(link.is_some()));
                         let bounds = self.share_move_bounds.clone();
                         v.child(
-                            div().flex().flex_wrap().gap_2()
-                            .when(others > 0, |row| row.child(
-                                div()
-                                    .relative()
-                                    .child(gpui::canvas(move |b, _, _| bounds.set(b), |_, _, _, _| {}).absolute().inset_0())
-                                    .child(
-                                        ui::action_control("share-move-to-project", "Move to Project…", theme, true, false)
-                                            .when(cfg!(test), |v| v.debug_selector(|| "share-move-to-project".into()))
-                                            .rounded_lg()
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                window.focus(&this.pii.mapping.focus, cx);
-                                                let at = this.share_move_bounds.get().bottom_left();
-                                                cx.emit(crate::workspace::TabEvent::Project(crate::workspace::ProjectEvent::MoveMenu(at)));
-                                            })),
-                                    ),
-                            ))
-                            .child(
-                                ui::primary_button("share-new-project", "Move to New Project", theme, true)
-                                    .when(cfg!(test), |v| v.debug_selector(|| "share-new-project".into()))
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        // The button leaves with the click; the panel
-                                        // stays in every view, so shortcuts keep a
-                                        // focused target (#79).
-                                        window.focus(&this.pii.mapping.focus, cx);
-                                        cx.emit(crate::workspace::TabEvent::Project(crate::workspace::ProjectEvent::MoveToNew));
-                                    })),
-                            ),
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .gap_2()
+                                .when(others > 0, |row| {
+                                    row.child(
+                                        div()
+                                            .relative()
+                                            .child(
+                                                gpui::canvas(
+                                                    move |b, _, _| bounds.set(b),
+                                                    |_, _, _, _| {},
+                                                )
+                                                .absolute()
+                                                .inset_0(),
+                                            )
+                                            .child(
+                                                ui::action_control(
+                                                    "share-move-to-project",
+                                                    text::MOVE_TO_PROJECT,
+                                                    theme,
+                                                    true,
+                                                    false,
+                                                )
+                                                .when(cfg!(test), |v| {
+                                                    v.debug_selector(|| {
+                                                        "share-move-to-project".into()
+                                                    })
+                                                })
+                                                .rounded_lg()
+                                                .on_click(cx.listener(|this, _, window, cx| {
+                                                    window.focus(&this.pii.mapping.focus, cx);
+                                                    let at =
+                                                        this.share_move_bounds.get().bottom_left();
+                                                    cx.emit(crate::workspace::TabEvent::Project(
+                                                        crate::workspace::ProjectEvent::MoveMenu(
+                                                            at,
+                                                        ),
+                                                    ));
+                                                })),
+                                            ),
+                                    )
+                                })
+                                .child(
+                                    ui::primary_button(
+                                        "share-new-project",
+                                        text::MOVE_TO_NEW_PROJECT,
+                                        theme,
+                                        true,
+                                    )
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "share-new-project".into())
+                                    })
+                                    .on_click(cx.listener(
+                                        move |this, _, window, cx| {
+                                            // The button leaves with the click; the panel
+                                            // stays in every view, so shortcuts keep a
+                                            // focused target (#79).
+                                            window.focus(&this.pii.mapping.focus, cx);
+                                            cx.emit(crate::workspace::TabEvent::Project(
+                                                crate::workspace::ProjectEvent::MoveToNew,
+                                            ));
+                                        },
+                                    )),
+                                ),
                         )
                     }),
             )
             .into_any_element()
     }
-}
-
-/// The Review tab's label: the names in the list (#1314).
-fn review_tab_label(names: usize) -> String {
-    format!("Review · {names}")
 }
 
 impl DocumentView {
@@ -235,13 +294,11 @@ impl DocumentView {
     ) -> String {
         match step {
             Some(Step::ReplaceAndCopy(_)) => {
-                let names = self.pending_name_count(cx);
-                let unit = if names == 1 { "name" } else { "names" };
-                format!("Replace {names} {unit} and copy")
+                text::replace_names_and_copy(self.pending_name_count(cx))
             }
             Some(step) => step.label(),
             None if copied && self.copied_for_ai => crate::ui::text::COPIED.into(),
-            None => "Copy for AI".into(),
+            None => text::COPY_FOR_AI.into(),
         }
     }
 
@@ -292,13 +349,13 @@ impl DocumentView {
                         .text_size(px(11.))
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(p.header_muted)
-                        .child("AI REPLY"),
+                        .child(text::AI_REPLY_HEADING),
                 )
                 .child(
                     // The editor tracks its own handle; the box only rings it.
                     ui::focus_ring("share-reply-box", theme)
                         .ring_for(&focus)
-                        .aria_label("AI reply")
+                        .aria_label(text::AI_REPLY)
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "share-reply-box".into())
                         })
@@ -331,16 +388,14 @@ impl DocumentView {
                         }))
                         .when(!restorable, |v| {
                             v.child(
-                                muted("No aliases are applied, so nothing can be restored.".into())
-                                    .when(cfg!(test), |v| {
-                                        v.debug_selector(|| "share-reply-nothing".into())
-                                    }),
+                                muted(text::NOTHING_CAN_BE_RESTORED.into()).when(cfg!(test), |v| {
+                                    v.debug_selector(|| "share-reply-nothing".into())
+                                }),
                             )
                         })
                         .into_any_element()
                 } else {
-                    muted("Paste the AI's answer: the real names come back here at once.".into())
-                        .into_any_element()
+                    muted(text::PASTE_THE_AIS_ANSWER.into()).into_any_element()
                 })
                 .child(
                     div()
@@ -353,7 +408,7 @@ impl DocumentView {
                                 if copied {
                                     crate::ui::text::COPIED
                                 } else {
-                                    "Copy reply"
+                                    text::COPY_REPLY
                                 },
                                 theme,
                                 restorable,
@@ -370,15 +425,22 @@ impl DocumentView {
                             )),
                         )
                         .child(
-                            ui::primary_button("share-open-reply", "Open reply", theme, restorable)
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "share-open-reply".into())
-                                })
-                                .on_click(cx.listener(move |this, _, _, cx| {
+                            ui::primary_button(
+                                "share-open-reply",
+                                text::OPEN_REPLY,
+                                theme,
+                                restorable,
+                            )
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "share-open-reply".into())
+                            })
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
                                     if restorable {
                                         this.open_saved_reply(cx)
                                     }
-                                })),
+                                },
+                            )),
                         )
                         // Bordered like its neighbors, not a bare text
                         // control beside them (U25).
@@ -386,7 +448,7 @@ impl DocumentView {
                             v.child(
                                 ui::primary_button(
                                     "share-next-unrecognised",
-                                    "Next unrecognized",
+                                    text::NEXT_UNRECOGNIZED,
                                     theme,
                                     true,
                                 )
@@ -409,7 +471,7 @@ impl DocumentView {
                             .text_size(px(11.))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(p.header_muted)
-                            .child("SAVED REPLIES"),
+                            .child(text::SAVED_REPLIES_HEADING),
                     )
                     .children(self.saved_replies.iter().enumerate().map(|(index, row)| {
                         let id = row.id.clone();
@@ -535,48 +597,19 @@ impl DocumentView {
                                     .child(div().opacity(0.7).child(format!(
                                         "· {}{}",
                                         category.label(),
-                                        if applied { " · applied" } else { "" }
+                                        if applied { text::DOT_APPLIED } else { "" }
                                     ))),
                             )
                             .child(div().opacity(0.7).child(if kept {
-                                "Kept · click to edit"
+                                text::KEPT_CLICK_TO_EDIT
                             } else {
-                                "Click to edit"
+                                text::CLICK_TO_EDIT
                             })),
                     ),
             )
             .with_priority(1)
             .into_any_element(),
         )
-    }
-}
-
-/// The Share status for `pending` proposals, `applied` replacements, `kept`
-/// mentions and `left` known names still in the text as written. It counts
-/// `names`, the Review tab's unit: those still to replace while any is,
-/// then those replaced (#1314).
-fn share_status(names: usize, pending: usize, applied: usize, kept: usize, left: usize) -> String {
-    let unit = if names == 1 { "name" } else { "names" };
-    if pending > 0 {
-        let them = if names == 1 { "it" } else { "them" };
-        return format!(
-            "{} still to replace — apply {them} first.",
-            super::panel::names_in_places(names, pending)
-        );
-    }
-    if applied == 0 {
-        return "Nothing is replaced yet.".to_string();
-    }
-    let applied = format!("{names} {unit}");
-    let kept = if kept > 0 {
-        format!(" · {kept} kept")
-    } else {
-        String::new()
-    };
-    match left {
-        0 => format!("{applied} replaced{kept}. Names in the text are aliases now."),
-        1 => format!("{applied} replaced{kept}. 1 name not replaced."),
-        n => format!("{applied} replaced{kept}. {n} names not replaced."),
     }
 }
 
