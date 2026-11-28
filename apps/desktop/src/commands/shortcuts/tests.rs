@@ -1,6 +1,7 @@
 //! The one-table invariant: every bound user-facing action is in
 //! the table, and the table is what the app binds.
 use super::*;
+use crate::document;
 use gpui::{Keystroke, OperatingSystem, TestAppContext};
 
 /// The table resolves `mod-` itself, so the host OS doesn't matter here.

@@ -16,7 +16,6 @@
 
 use crate::{
     commands::{table, text},
-    document,
     document::comparison_ui,
     document::markdown_search,
     document::search_session as find,
