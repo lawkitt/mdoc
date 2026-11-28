@@ -3,6 +3,7 @@ use super::{
     Applying, MappingAction,
     popup::{self, Scope, Step},
 };
+use crate::review::text;
 use crate::{
     document::DocumentView,
     review::{APPLIED_ID, KEPT_ID, PiiClosePopup, PiiConfirm, Popup},
@@ -418,7 +419,7 @@ impl DocumentView {
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "direct-cancel-addition".into())
                         })
-                        .aria_label("Cancel addition")
+                        .aria_label(text::CANCEL_ADDITION)
                         .on_click(
                             cx.listener(|this, _, window, cx| this.cancel_addition(window, cx)),
                         )
@@ -442,9 +443,9 @@ impl DocumentView {
                                 gpui::Toggled::True
                             })
                             .aria_label(if kept {
-                                format!("Replace · tick to propose {in_scope} again")
+                                text::tick_to_propose(in_scope)
                             } else {
-                                format!("Replace · untick to keep {in_scope} originals")
+                                text::untick_to_keep(in_scope)
                             })
                             .flex()
                             .items_center()
@@ -469,15 +470,12 @@ impl DocumentView {
                                         v.border_1().border_color(palette.header_muted)
                                     }),
                             )
-                            .child("Replace")
+                            .child(text::REPLACE)
                             .tooltip(crate::ui::style::tooltip(
                                 if kept {
-                                    "Tick to replace again (Space)".to_string()
+                                    text::TICK_TO_REPLACE_AGAIN.to_string()
                                 } else {
-                                    format!(
-                                        "Untick to keep the original (Space, {})",
-                                        scope_keys(mapping.scope, "⌫")
-                                    )
+                                    text::untick_to_keep_original(scope_keys(mapping.scope, "⌫"))
                                 },
                                 theme,
                             ))
@@ -532,9 +530,7 @@ impl DocumentView {
                                         .text_color(palette.header_muted)
                                         .child(alias.clone())
                                         .tooltip(crate::ui::style::tooltip(
-                                            format!(
-                                                "Kept as the original; tick Replace to use {alias}"
-                                            ),
+                                            text::kept_as_original(&alias),
                                             theme,
                                         ))
                                         .into_any_element()
@@ -577,7 +573,7 @@ impl DocumentView {
                                 (None, true) => format!("{} ▾", category.label()),
                                 (None, false) => category.label().to_string(),
                             })
-                            .aria_label("Correct category for selected scope")
+                            .aria_label(text::CORRECT_CATEGORY)
                             .when(identity.is_some() || kept, |v| {
                                 v.on_click(cx.listener(|this, _, window, cx| {
                                     this.pii.mapping.toggle_category_picker();
@@ -628,7 +624,7 @@ impl DocumentView {
                                 .text_size(px(11.))
                                 .text_color(accent)
                                 .bg(Hsla { a: 0.16, ..accent })
-                                .child("Applied"),
+                                .child(text::APPLIED),
                         )
                     })
                     .when(mentions.len() > 1, |v| {
@@ -644,9 +640,9 @@ impl DocumentView {
                             .when(mentions.len() > 1, |v| {
                                 v.child(
                                     self.popup_control("direct-prev", "‹", true, cx)
-                                        .aria_label("Previous mention")
+                                        .aria_label(text::PREVIOUS_MENTION)
                                         .tooltip(crate::ui::style::tooltip(
-                                            format!("Previous mention of {alias} (←)"),
+                                            text::previous_mention_of(&alias),
                                             theme,
                                         ))
                                         .on_click(cx.listener(|this, _, window, cx| {
@@ -661,7 +657,7 @@ impl DocumentView {
                                     crate::ui::live_text(
                                         "direct-position",
                                         crate::ui::position_announcement(
-                                            "Mention",
+                                            text::MENTION,
                                             index + 1,
                                             mentions.len(),
                                         ),
@@ -680,9 +676,9 @@ impl DocumentView {
                                 )
                                 .child(
                                     self.popup_control("direct-next", "›", true, cx)
-                                        .aria_label("Next mention")
+                                        .aria_label(text::NEXT_MENTION)
                                         .tooltip(crate::ui::style::tooltip(
-                                            format!("Next mention of {alias} (→)"),
+                                            text::next_mention_of(&alias),
                                             theme,
                                         ))
                                         .on_click(cx.listener(|this, _, window, cx| {
@@ -692,7 +688,7 @@ impl DocumentView {
                             })
                             .child(
                                 self.popup_control("direct-close", "×", true, cx)
-                                    .aria_label("Close replacement popup")
+                                    .aria_label(text::CLOSE_REPLACEMENT_POPUP)
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.close_pii_popup(&PiiClosePopup, window, cx)
                                     })),
@@ -705,7 +701,7 @@ impl DocumentView {
                         .flex_shrink_0()
                         .text_size(px(11.))
                         .text_color(palette.header_muted)
-                        .child("Hidden source value · containing passage shown in document"),
+                        .child(text::HIDDEN_SOURCE_VALUE),
                 )
             })
             .when_some(mapping.field_error.clone(), |v, error| {
@@ -985,13 +981,13 @@ impl DocumentView {
             v.child(div().h(px(1.)).my_1().bg(palette.border)).child(
                 self.menu_row(
                     "direct-owner",
-                    "Belongs to…",
-                    owner.unwrap_or_else(|| "nobody".into()),
+                    text::BELONGS_TO_MENU,
+                    owner.unwrap_or_else(|| text::NOBODY_OWNER.into()),
                     None,
                     enabled,
                     cx,
                 )
-                .aria_label("Belongs to")
+                .aria_label(text::BELONGS_TO)
                 // The owner menu opens with focus in its search.
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.pii.mapping.toggle_owner_picker();
@@ -1007,8 +1003,8 @@ impl DocumentView {
             v.child(div().h(px(1.)).my_1().bg(palette.border))
         })
         .child(
-            self.menu_row("direct-not-a-name", "Not a name", "", None, enabled, cx)
-                .aria_label("Not a name")
+            self.menu_row("direct-not-a-name", text::NOT_A_NAME, "", None, enabled, cx)
+                .aria_label(text::NOT_A_NAME)
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.pii.mapping.close_pickers();
                     this.not_a_name(window, cx);
@@ -1041,7 +1037,7 @@ impl DocumentView {
             .text_color(accent)
             .font_weight(gpui::FontWeight::MEDIUM)
             .hover(move |s| s.border_color(palette.border))
-            .tooltip(crate::ui::style::tooltip("Rename alias".into(), theme))
+            .tooltip(crate::ui::style::tooltip(text::RENAME_ALIAS.into(), theme))
             .child(mapping.alias.clone())
             // A pencil on hover marks the alias as editable.
             .child(
@@ -1120,8 +1116,8 @@ impl DocumentView {
                 v.child(
                     self.menu_row(
                         "direct-use-alias",
-                        format!("Rename to \"{draft}\""),
-                        format!("{selected_count} mentions"),
+                        text::rename_to(draft),
+                        text::mentions(selected_count),
                         None,
                         enabled,
                         cx,
@@ -1133,7 +1129,7 @@ impl DocumentView {
                 )
             })
             .when(count > 0, |v| {
-                v.child(self.menu_heading("Same as…")).child(
+                v.child(self.menu_heading(text::SAME_AS)).child(
                     uniform_list(
                         "direct-alias-targets",
                         count,
@@ -1156,9 +1152,10 @@ impl DocumentView {
                                     .when(cfg!(test), |v| {
                                         v.debug_selector(move || format!("target-{target}"))
                                     })
-                                    .aria_label(format!(
-                                        "Use {alias}, {original}, {}",
-                                        category.label()
+                                    .aria_label(text::use_alias(
+                                        &alias,
+                                        &original,
+                                        category.label(),
                                     ))
                                     .w_full()
                                     .h(px(30.))
@@ -1201,7 +1198,7 @@ impl DocumentView {
             .child(
                 self.menu_row(
                     "direct-new-alias",
-                    "New alias",
+                    text::NEW_ALIAS,
                     new_alias,
                     None,
                     enabled,
@@ -1240,12 +1237,12 @@ impl DocumentView {
             },
             cx,
         )
-        .child(self.menu_heading("Belongs to"))
+        .child(self.menu_heading(text::BELONGS_TO))
         .child(div().px_1().pb_1().child(mapping.target.clone()))
         .child(
             self.menu_row(
                 "direct-owner-none",
-                "Nobody",
+                text::NOBODY,
                 "",
                 Some(identity.owner.is_none()),
                 enabled,
@@ -1317,11 +1314,13 @@ impl DocumentView {
             div().flex().min_w_0().gap(px(2.)).children(
                 [Scope::Mention, Scope::Entity].into_iter().map(|scope| {
                     let (label, count, tip) = match scope {
-                        Scope::Mention => ("This one", None, "Only this mention".to_string()),
+                        Scope::Mention => {
+                            (text::THIS_ONE, None, text::ONLY_THIS_MENTION.to_string())
+                        }
                         _ => (
-                            "All",
+                            text::ALL,
                             Some(mentions),
-                            format!("All {mentions} mentions of {alias}, in every spelling"),
+                            text::all_mentions_of(mentions, alias),
                         ),
                     };
                     let on = selected == scope;
@@ -1335,7 +1334,7 @@ impl DocumentView {
                     // The label and count are drawn as children; name the
                     // segment for screen readers and report the chosen one.
                     .aria_label(match count {
-                        Some(count) => format!("All {count} mentions"),
+                        Some(count) => text::all_mentions(count),
                         None => label.to_string(),
                     })
                     .aria_toggled(if on {

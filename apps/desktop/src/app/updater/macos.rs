@@ -11,6 +11,7 @@ use std::{
 };
 
 use super::Ineligible;
+use crate::app::text;
 
 /// The designated requirement every mdoc bundle must satisfy: an Apple-rooted
 /// Developer ID Application certificate for this team, and our bundle id.
@@ -61,7 +62,7 @@ pub fn stage(dmg: &Path, dest: &Path) -> Result<(), String> {
     let mount = Mount::attach(dmg)?;
     let app = mount.dir.path().join("mdoc.app");
     if !app.is_dir() {
-        return Err("The downloaded disk image does not contain mdoc.app.".into());
+        return Err(text::NO_APP_IN_IMAGE.into());
     }
     remove(dest);
     ditto(&app, dest)
@@ -72,19 +73,16 @@ pub fn stage(dmg: &Path, dest: &Path) -> Result<(), String> {
 /// that knows about revoked certificates and notarization) and the version
 /// the release claims. The feed's tag is a claim; the bundle is the fact.
 pub fn verify(app: &Path, version: &str, gatekeeper: bool) -> Result<(), String> {
-    codesign_requirement(app, true)
-        .map_err(|e| format!("The update is not signed by the mdoc developer: {e}"))?;
+    codesign_requirement(app, true).map_err(text::not_signed)?;
     if gatekeeper {
         run(Command::new("/usr/sbin/spctl")
             .args(["--assess", "--type", "execute"])
             .arg(app))
-        .map_err(|e| format!("macOS Gatekeeper rejected the update: {e}"))?;
+        .map_err(text::gatekeeper_rejected)?;
     }
     let found = bundle_version(app)?;
     if found != version {
-        return Err(format!(
-            "The update contains mdoc {found}, not the {version} the release promised."
-        ));
+        return Err(text::wrong_version(&found, version));
     }
     Ok(())
 }
@@ -102,24 +100,17 @@ fn swap_with(
     version: &str,
     gatekeeper: bool,
 ) -> Result<(), String> {
-    let parent = installed
-        .parent()
-        .ok_or("The installed app has no parent folder.")?;
+    let parent = installed.parent().ok_or(text::NO_PARENT_FOLDER)?;
     let name = installed
         .file_name()
-        .ok_or("The installed app has no name.")?
+        .ok_or(text::NO_NAME)?
         .to_string_lossy();
     let incoming = parent.join(format!(".{name}.update"));
     let backup = parent.join(format!(".{name}.old"));
     // A swap that couldn't roll back left only the backup: restore it rather
     // than delete the last intact copy.
     if backup.exists() && !installed.exists() {
-        fs::rename(&backup, installed).map_err(|e| {
-            format!(
-                "Couldn't restore the previous app from {}: {e}",
-                backup.display()
-            )
-        })?;
+        fs::rename(&backup, installed).map_err(|e| text::not_restored(backup.display(), e))?;
     }
     remove(&incoming);
     remove(&backup);
@@ -129,19 +120,16 @@ fn swap_with(
     }
     if let Err(e) = fs::rename(installed, &backup) {
         remove(&incoming);
-        return Err(format!("Couldn't move the current app aside: {e}"));
+        return Err(text::not_moved_aside(e));
     }
     if let Err(e) = fs::rename(&incoming, installed) {
         // Never leave the app missing: the backup goes only once it is back.
         return match fs::rename(&backup, installed) {
             Ok(()) => {
                 remove(&incoming);
-                Err(format!("Couldn't move the new app into place: {e}"))
+                Err(text::not_moved_into_place(e))
             }
-            Err(restore) => Err(format!(
-                "Couldn't move the new app into place ({e}) or restore the previous one ({restore}). The previous app is at {}.",
-                backup.display()
-            )),
+            Err(restore) => Err(text::not_moved_nor_restored(e, restore, backup.display())),
         };
     }
     remove(&backup);
@@ -154,7 +142,9 @@ fn codesign_requirement(app: &Path, deep: bool) -> Result<(), String> {
     if deep {
         command.arg("--deep");
     }
-    run(command.arg(format!("-R{REQUIREMENT}")).arg(app))
+    run(command
+        .arg(text::requirement_argument(REQUIREMENT))
+        .arg(app))
 }
 
 fn bundle_version(app: &Path) -> Result<String, String> {
@@ -164,14 +154,13 @@ fn bundle_version(app: &Path) -> Result<String, String> {
         .output()
         .map_err(|e| e.to_string())?;
     if !output.status.success() {
-        return Err("The update has no readable version.".into());
+        return Err(text::NO_READABLE_VERSION.into());
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
 fn ditto(from: &Path, to: &Path) -> Result<(), String> {
-    run(Command::new("/usr/bin/ditto").arg(from).arg(to))
-        .map_err(|e| format!("Couldn't copy the update: {e}"))
+    run(Command::new("/usr/bin/ditto").arg(from).arg(to)).map_err(text::not_copied)
 }
 
 fn remove(path: &Path) {
@@ -209,7 +198,7 @@ impl Mount {
             ])
             .arg(dir.path())
             .arg(dmg))
-        .map_err(|e| format!("Couldn't open the downloaded disk image: {e}"))?;
+        .map_err(text::image_not_opened)?;
         Ok(Self { dir })
     }
 }

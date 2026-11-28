@@ -3,6 +3,7 @@
 //! step. Kept mentions come from the review's Keep decisions, so an entity
 //! stays listed, unticked, and undo brings its tick back.
 use super::KeptName;
+use crate::review::text;
 use crate::{document::DocumentView, review::APPLIED_ID};
 use gpui::Context;
 use mdoc_pii::decisions::{Decision, Mentions};
@@ -155,7 +156,7 @@ impl DocumentView {
             self.pii.error = None;
             self.review_changed(cx);
         } else {
-            self.pii.error = Some("Couldn't propose it again; select the text to add it.".into());
+            self.pii.error = Some(text::COULD_NOT_PROPOSE_AGAIN.into());
         }
         cx.notify();
         proposed

@@ -4,7 +4,7 @@
 //! switch off and quits as mdoc now would. It never shows again.
 
 use super::CloseShelf;
-use crate::{shelf::menu_bar, ui, ui::style::Theme, workspace::Workspace};
+use crate::{shelf::menu_bar, shelf::text, ui, ui::style::Theme, workspace::Workspace};
 use gpui::{
     App, Context, FocusHandle, Focusable, Render, Window, WindowHandle, div, prelude::*, px,
 };
@@ -13,7 +13,7 @@ use std::{cell::Cell, rc::Rc};
 pub(crate) const NOTE_WIDTH: f32 = 300.;
 pub(crate) const NOTE_HEIGHT: f32 = 108.;
 pub(crate) const NOTE_TITLE: &str = crate::shelf::tray::NOTE_TITLE;
-pub(crate) const NOTE_TEXT: &str = "Your documents are here.";
+pub(crate) use crate::shelf::text::NOTE_TEXT;
 
 pub(crate) struct NoteView {
     workspace: WindowHandle<Workspace>,
@@ -108,17 +108,22 @@ impl Render for NoteView {
                     .justify_end()
                     .gap(px(8.))
                     .child(
-                        ui::control("shelf-note-quit", "Quit when windows close", theme, true)
-                            .h(px(28.))
-                            .flex()
-                            .items_center()
-                            .text_size(px(12.))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.quit_when_windows_close(window, cx)
-                            })),
+                        ui::control(
+                            "shelf-note-quit",
+                            text::QUIT_WHEN_WINDOWS_CLOSE,
+                            theme,
+                            true,
+                        )
+                        .h(px(28.))
+                        .flex()
+                        .items_center()
+                        .text_size(px(12.))
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.quit_when_windows_close(window, cx)
+                        })),
                     )
                     .child(
-                        ui::primary_button("shelf-note-got-it", "Got it", theme, true)
+                        ui::primary_button("shelf-note-got-it", text::GOT_IT, theme, true)
                             .track_focus(&self.got_it)
                             .on_click(cx.listener(|this, _, window, cx| this.got_it(window, cx))),
                     ),

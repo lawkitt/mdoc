@@ -5,6 +5,7 @@
 //! document, the card offering "Move to a new Project and share". The
 //! window carries each choice out (`TabEvent::Ask`).
 use super::DocumentView;
+use crate::document::text;
 use crate::{ui, workspace::TabEvent};
 use gpui::{App, Context, Window, div, prelude::*, px};
 use mdoc_store::settings::AskWith;
@@ -156,7 +157,7 @@ impl DocumentView {
             }));
         let open = self.ask.open || self.ask.unfiled.is_some();
         let (frame, more) =
-            ui::split_button(main, "header-ask-more", "More ways to ask", open, theme);
+            ui::split_button(main, "header-ask-more", text::MORE_WAYS_TO_ASK, open, theme);
         let bounds = self.ask.bounds.clone();
         let popup = if self.ask.unfiled.is_some() {
             Some(self.ask_unfiled_card(cx))

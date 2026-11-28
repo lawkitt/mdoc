@@ -15,6 +15,7 @@
 #![allow(unsafe_code)] // The window server's event calls (#897).
 
 use super::{hotkey, probe};
+use crate::ai::text::probes as text;
 use gpui::{App, Global, WindowHandle};
 use mdoc_store::settings::Hotkey;
 use std::{cell::Cell, ffi::c_void, rc::Rc};
@@ -93,27 +94,21 @@ pub(crate) fn run() -> ! {
     gpui_platform::application().run(move |cx: &mut App| {
         let before = probe::frontmost();
         if before == Some(own) {
-            println!(
-                "note: mdoc was frontmost before the probe; run it from a terminal with \
-                 another app in front"
-            );
+            println!("{}", text::FRONTMOST_BEFORE_PROBE);
         }
         // SAFETY: a plain query of this process's grant.
         if !unsafe { CGPreflightPostEventAccess() } {
-            println!(
-                "hotkey probe: posting key events needs the Accessibility grant of the app \
-                 running the probe; nothing was registered"
-            );
+            println!("{}", text::NO_ACCESSIBILITY);
             std::process::exit(2);
         }
         cx.set_global(Toggled::default());
         let registrar = Box::new(hotkey::native::Native::new(cx));
         hotkey::use_registrar(registrar, toggle, cx);
         if let Some(why) = hotkey::set(Some(Hotkey::COMPANION), cx) {
-            println!("registered: FAILED {why}");
+            println!("{}", text::registered_failed(why));
             std::process::exit(1);
         }
-        println!("registered: ok {}", Hotkey::COMPANION.label());
+        println!("{}", text::registered_ok(Hotkey::COMPANION.label()));
         cx.spawn(async move |cx| {
             let settle = cx.background_executor().clone();
             let mut failed = false;
@@ -121,7 +116,7 @@ pub(crate) fn run() -> ! {
                 failed |= !found.is_empty();
                 let verdict = match found.is_empty() {
                     true => "ok".to_string(),
-                    false => format!("FAILED {found:?}"),
+                    false => text::failed(&found),
                 };
                 println!("{step}: {verdict} {seen}");
             };
@@ -135,7 +130,7 @@ pub(crate) fn run() -> ! {
             let native = window.and_then(|window| probe::inspect_window(window, cx));
             let mut found = probe::failures(native, before, own);
             if presses != 1 {
-                found.push(format!("{presses} presses reached mdoc, not 1"));
+                found.push(text::presses_not_one(presses));
             }
             report("first press opened it", found, format!("{native:?}"));
             post_option_m();
@@ -146,10 +141,7 @@ pub(crate) fn run() -> ! {
             });
             let frontmost = probe::frontmost();
             let checks = [
-                (
-                    presses == 2,
-                    format!("{presses} presses reached mdoc, not 2"),
-                ),
+                (presses == 2, text::presses_not_two(presses)),
                 (window.is_none(), "it is still open".into()),
                 (!probe::app_active(), "mdoc became active".into()),
                 (
@@ -161,11 +153,7 @@ pub(crate) fn run() -> ! {
                 .filter(|(ok, _)| !ok)
                 .map(|(_, what)| what)
                 .collect();
-            report(
-                "second press closed it",
-                found,
-                format!("frontmost: {frontmost:?}"),
-            );
+            report("second press closed it", found, text::frontmost(frontmost));
             cx.update(|cx| hotkey::set(None, cx));
             std::process::exit(i32::from(failed));
         })

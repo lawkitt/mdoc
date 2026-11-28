@@ -79,14 +79,8 @@ mod tests {
     /// window's owners are named `workspace/<owner>`; `workspace` alone is the
     /// window's own root files.
     const EXEMPT: &[&str] = &[
-        "ai",
-        "app",
         "commands",
-        "document",
         "main",
-        "review",
-        "settings",
-        "shelf",
         "workspace/ai",
         "workspace/headless_renders",
         "workspace/projects",
@@ -96,8 +90,13 @@ mod tests {
         "workspace/vault",
     ];
 
-    /// Test-only files at the crate root, never checked.
-    const TEST_FILES: &[&str] = &["exits.rs", "perf_tests.rs", "test_support.rs"];
+    /// Test-only files not named `tests.rs`, never checked.
+    const TEST_FILES: &[&str] = &[
+        "exits.rs",
+        "perf_tests.rs",
+        "test_support.rs",
+        "review/mapping/decision_tests.rs",
+    ];
 
     /// CONTEXT.md's avoided words the check skips: their bans are about naming
     /// a Project ("case", "matter") or the Shelf ("tray"), while the app's
@@ -289,7 +288,7 @@ mod tests {
             .into_iter()
             .filter(|path| {
                 let rel = path.strip_prefix(src()).unwrap();
-                !(rel.components().count() == 1 && TEST_FILES.contains(&rel.to_str().unwrap()))
+                !TEST_FILES.iter().any(|file| Path::new(file) == rel)
             })
             .map(|path| {
                 let text = std::fs::read_to_string(&path).unwrap();
