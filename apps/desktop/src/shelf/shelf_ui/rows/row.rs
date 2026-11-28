@@ -5,7 +5,7 @@
 //! ready starts its meta line with its state, so the title keeps its room,
 //! and has its step's button where Copy for AI would be.
 
-use super::{ShelfRows, ShelfRowsEvent};
+use super::ShelfRows;
 use crate::{
     shelf::{
         Preview, ShelfDocument,
@@ -503,10 +503,7 @@ impl ShelfRows {
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.mouse_move(event, window, cx)
             }))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.press = None;
-                cx.emit(ShelfRowsEvent::Open(index));
-            }))
+            .on_click(cx.listener(move |this, _, _, cx| this.open(index, cx)))
             .into_any_element()
     }
 }

@@ -7,6 +7,7 @@
 //! nothing is pending in it, and no name the tab knows is written out in
 //! it. ⌘C stays silent. When proposals are pending in it, the right-click
 //! menu offers "Replace N and Copy" in Edit and the Pseudonymized column.
+use super::text;
 use crate::document::DocumentView;
 use gpui::{App, ClipboardItem, Context, WeakEntity};
 use mdoc_editor::CopyCheck;
@@ -86,7 +87,7 @@ impl DocumentView {
             Some(SelectionCheck::Clean) => CopyCheck::default(),
             Some(SelectionCheck::NotClean(not)) if not.proposals > 0 && self.can_replace() => {
                 CopyCheck {
-                    action: Some(format!("Replace {} and Copy", not.proposals).into()),
+                    action: Some(text::replace_and_copy_selection(not.proposals).into()),
                     ..marked()
                 }
             }

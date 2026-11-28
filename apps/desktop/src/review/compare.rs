@@ -2,6 +2,7 @@
 //! pseudonymized text, both formatted like the editor and read-only, scrolling
 //! together. Live: it follows every change to the applied replacements, with
 //! the editor's replacement motion.
+use super::text;
 use super::{APPLIED_ID, CopyFrom};
 use crate::{document::DocumentView, ui, ui::style};
 use gpui::{
@@ -440,7 +441,7 @@ impl DocumentView {
                         .key_context("ToolbarRegion")
                         .when(cfg!(test), |v| v.debug_selector(|| "view-switcher".into()))
                         .role(gpui::Role::Group)
-                        .aria_label("View")
+                        .aria_label(text::VIEW)
                         .flex()
                         .items_center()
                         .gap_1()
@@ -459,27 +460,27 @@ impl DocumentView {
                             }
                         }))
                         .when(views || self.reply.exists(), |v| {
-                            v.child(segment("view-edit", "Edit", None))
+                            v.child(segment("view-edit", text::EDIT, None))
                         })
                         .when(views, |v| {
                             v.child(segment(
                                 "view-original",
-                                "Original",
+                                text::ORIGINAL,
                                 Some(CompareMode::Original),
                             ))
                             .child(segment(
                                 "view-pseudonymized",
-                                "Pseudonymized",
+                                text::PSEUDONYMIZED,
                                 Some(CompareMode::Pseudonymized),
                             ))
                             .child(segment(
                                 "view-side",
-                                "Side by side",
+                                text::SIDE_BY_SIDE,
                                 Some(CompareMode::Side),
                             ))
                         })
                         .when(self.reply.exists(), |v| {
-                            v.child(segment("view-reply", "Reply", Some(CompareMode::Reply)))
+                            v.child(segment("view-reply", text::REPLY, Some(CompareMode::Reply)))
                         })
                         .when(views || self.reply.exists(), |v| {
                             v.child(div().w(px(1.)).h(px(16.)).mx_1().bg(palette.border))
@@ -487,13 +488,13 @@ impl DocumentView {
                         .child(zoom_step(
                             "zoom-out",
                             "−",
-                            "Zoom out",
+                            text::ZOOM_OUT,
                             -crate::document::ZOOM_STEP,
                         ))
                         .child(
                             ui::control("zoom-reset", percent, theme, true)
                                 .when(cfg!(test), |v| v.debug_selector(|| "zoom-reset".into()))
-                                .aria_label("Reset zoom")
+                                .aria_label(text::RESET_ZOOM)
                                 .min_w(px(48.))
                                 .flex()
                                 .justify_center()
@@ -503,7 +504,7 @@ impl DocumentView {
                         .child(zoom_step(
                             "zoom-in",
                             "+",
-                            "Zoom in",
+                            text::ZOOM_IN,
                             crate::document::ZOOM_STEP,
                         ))
                         .opacity(opacity),
@@ -885,7 +886,7 @@ impl DocumentView {
                 })
                 .when(switchable, |v| {
                     v.cursor_pointer()
-                        .tooltip(crate::ui::style::tooltip("Switch column".into(), theme))
+                        .tooltip(crate::ui::style::tooltip(text::SWITCH_COLUMN.into(), theme))
                         .on_click(cx.listener(|this, _, _, cx| {
                             if let Some(state) = this.compare.as_mut() {
                                 state.original_only = !state.original_only;
@@ -937,9 +938,9 @@ impl DocumentView {
         let close = ui::floating_button(
             "close-compare",
             if reply {
-                "Close reply (Esc)"
+                text::CLOSE_REPLY
             } else {
-                "Close side by side (Esc)"
+                text::CLOSE_SIDE_BY_SIDE
             },
             ui::Icon::Close,
             crate::ui::text::CLOSE,
@@ -970,7 +971,7 @@ impl DocumentView {
                         "compare-original",
                         &state.left,
                         &state.original,
-                        label("compare-label-original", "Original", &state.left),
+                        label("compare-label-original", text::ORIGINAL, &state.left),
                     )
                     .when(!show_left, |v| v.absolute().inset_0().invisible()),
                 )
@@ -982,7 +983,7 @@ impl DocumentView {
                         "compare-current",
                         &state.right,
                         &state.current,
-                        label("compare-label-current", "Pseudonymized", &state.right),
+                        label("compare-label-current", text::PSEUDONYMIZED, &state.right),
                     )
                     .when(!show_right, |v| v.absolute().inset_0().invisible()),
                 )
@@ -999,7 +1000,7 @@ impl DocumentView {
                                 "compare-reply",
                                 &state.reply_scroll,
                                 &state.reply,
-                                label("compare-label-reply", "Reply", &state.reply_scroll),
+                                label("compare-label-reply", text::REPLY, &state.reply_scroll),
                             )),
                     )
                 })
