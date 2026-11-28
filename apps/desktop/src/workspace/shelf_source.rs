@@ -26,6 +26,16 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+/// What the window keeps for the shelf and its Copy for AI; everything
+/// else the shelf shows is read fresh from the tabs and the Vault.
+#[derive(Default)]
+pub(super) struct ShelfSource {
+    /// The tab whose Copy for AI waits for its writes to land before the
+    /// Vault's outbound check runs, with the clipboard's text when it was
+    /// asked.
+    pub(super) copy_for_ai_waiting: Option<(u64, Option<String>)>,
+}
+
 /// The shelf opens at most this many stored documents to fill its list:
 /// one whose text holds no alias is not listed.
 const STORED_READS: usize = 4 * shelf::MAX_DOCUMENTS;
@@ -194,7 +204,7 @@ impl Workspace {
     /// against the names its Project holds now (#1091 Decision 19). What
     /// it shows is written first, and the copy waits for the writes.
     pub(super) fn copy_tab_for_ai(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        self.copy_for_ai_waiting = None;
+        self.shelf_source.copy_for_ai_waiting = None;
         self.autosave(id, window, cx);
         let clipboard = clipboard_text(cx);
         self.try_copy_for_ai(id, clipboard, cx);
@@ -203,7 +213,7 @@ impl Workspace {
     /// The writes a waiting Copy for AI waited for have landed: check it
     /// again.
     pub(super) fn copy_for_ai_after_write(&mut self, cx: &mut Context<Self>) {
-        if let Some((id, clipboard)) = self.copy_for_ai_waiting.take() {
+        if let Some((id, clipboard)) = self.shelf_source.copy_for_ai_waiting.take() {
             self.try_copy_for_ai(id, clipboard, cx);
         }
     }
@@ -234,7 +244,7 @@ impl Workspace {
                 (None, shelf::Readiness::Checking)
                     if self.document_writer.busy() || view.read(cx).finding_names() =>
                 {
-                    self.copy_for_ai_waiting = Some((id, clipboard));
+                    self.shelf_source.copy_for_ai_waiting = Some((id, clipboard));
                     return;
                 }
                 (None, readiness) => Err(Refusal::of(
