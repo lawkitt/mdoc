@@ -19,16 +19,25 @@ pub(crate) fn dev_profile_title(title: impl Display) -> String {
 }
 
 /// What a crash report says the window showed (no text, no names): the
-/// view, the tab count, the sidebar, the theme, and whether the palette is
-/// open.
+/// document view's state, or Home when there is none; the tab count; the
+/// sidebar; the theme; and whether the palette is open.
 pub(crate) fn crash_state(
-    view: impl Display,
+    view: Option<String>,
     tabs: usize,
-    sidebar: &str,
+    sidebar_expanded: bool,
     theme: impl std::fmt::Debug,
-    palette: &str,
+    palette_open: bool,
 ) -> String {
-    format!("{view}, {tabs} tabs, sidebar {sidebar}, {theme:?} theme{palette}")
+    format!(
+        "{}, {tabs} tabs, sidebar {}, {theme:?} theme{}",
+        view.as_deref().unwrap_or("Home"),
+        if sidebar_expanded {
+            "expanded"
+        } else {
+            "collapsed"
+        },
+        if palette_open { ", palette open" } else { "" },
+    )
 }
 
 pub(crate) fn could_not_restore_tabs(error: impl Display) -> String {

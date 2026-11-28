@@ -1,5 +1,6 @@
 //! Shared occurrence selection, explicit mutation scopes and draft lifecycle.
 use super::{Applying, MappingAction, Selection};
+use crate::review::text;
 use crate::{
     document::DocumentView,
     review::{APPLIED_ID, KEPT_ID, PiiClosePopup},
@@ -420,9 +421,9 @@ impl DocumentView {
             .any(|other| other != id && review.identity(other).is_some_and(|i| i.alias == value))
         {
             self.pii.mapping.show_alias_choices();
-            self.pii.mapping.set_field_error(Some(
-                "Choose the existing entity below to use its alias.".into(),
-            ));
+            self.pii
+                .mapping
+                .set_field_error(Some(text::CHOOSE_EXISTING_ENTITY.into()));
             cx.notify();
             return false;
         }
@@ -587,7 +588,7 @@ impl DocumentView {
             .collect();
         let before = self.editor.read(cx).history_id();
         let Some(after) = self.commit_plans(revision, &plans, None, cx) else {
-            self.pii.error = Some("Document changed. Review the replacement again.".into());
+            self.pii.error = Some(text::REVIEW_THE_REPLACEMENT_AGAIN.into());
             cx.notify();
             return;
         };
@@ -712,7 +713,7 @@ impl DocumentView {
         let editor = self.editor.read(cx);
         let revision = editor.revision();
         if !self.pii.review.matches_history(editor.history_id()) {
-            self.pii.error = Some("Document changed. Review the replacement again.".into());
+            self.pii.error = Some(text::REVIEW_THE_REPLACEMENT_AGAIN.into());
             cx.notify();
             return None;
         }
@@ -1115,6 +1116,29 @@ impl DocumentView {
             self.close_pii_popup(&PiiClosePopup, window, cx);
         }
         cx.notify();
+    }
+
+    /// Enter in the popup: the alias field opens its choices; after a manual
+    /// addition, Apply.
+    pub(super) fn confirm_popup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .pii
+            .mapping
+            .alias
+            .read(cx)
+            .focus_handle(cx)
+            .is_focused(window)
+        {
+            self.open_alias_choice(window, cx);
+        } else if self.pii.enter_applies
+            && self
+                .active_annotation()
+                .is_some_and(|a| a & (APPLIED_ID | KEPT_ID) == 0)
+        {
+            // After a manual addition, Apply is the default action.
+            self.apply_scope(cx);
+        }
+        cx.stop_propagation();
     }
 }
 

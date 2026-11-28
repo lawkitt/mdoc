@@ -1,15 +1,12 @@
 //! Find-session ownership, scheduling, editor integration, and the find
-//! bar's buttons, counter and keys.
+//! bar's keys.
 //!
 //! Replace, Replace all, Whole word and their keys follow the buffer search
 //! bar of Zed's `search` crate (https://github.com/zed-industries/zed),
 //! GPL-3.0-or-later; see THIRD-PARTY-LICENSES.html.
 use crate::document::DocumentView;
-use crate::{
-    ui,
-    ui::style::{self, Theme},
-};
-use gpui::{App, Context, Focusable, SharedString, Window, actions, prelude::*, px};
+use crate::document::text::{self, replace_all_status};
+use gpui::{App, Context, Focusable, SharedString, Window, actions, px};
 use mdoc_editor::{SearchIndex, SearchMatch, SearchOptions};
 use std::{ops::Range, sync::Arc};
 actions!(
@@ -178,22 +175,6 @@ fn replace_skip(search_match: &SearchMatch, applied: &[Range<usize>]) -> Option<
         .get(first)
         .is_some_and(|alias| alias.start < range.end)
         .then_some(ReplaceSkip::Alias)
-}
-
-fn replace_all_status(replaced: usize, formatting: usize, alias: usize) -> String {
-    let mut status = format!("Replaced {replaced}");
-    let mut skipped = Vec::new();
-    if formatting > 0 {
-        skipped.push(format!("{formatting} (formatting)"));
-    }
-    if alias > 0 {
-        skipped.push(format!("{alias} (alias)"));
-    }
-    if !skipped.is_empty() {
-        status.push_str(" · skipped ");
-        status.push_str(&skipped.join(" · "));
-    }
-    status
 }
 
 impl DocumentView {
@@ -413,8 +394,8 @@ impl DocumentView {
             Some(skip) => {
                 self.search.status = Some(
                     match skip {
-                        ReplaceSkip::Formatting => "Skipped: crosses formatting",
-                        ReplaceSkip::Alias => "Skipped: alias, change it in Replacements",
+                        ReplaceSkip::Formatting => text::SKIPPED_FORMATTING,
+                        ReplaceSkip::Alias => text::SKIPPED_ALIAS,
                     }
                     .into(),
                 );
@@ -791,81 +772,6 @@ pub(crate) fn map_edit_offset(old: &str, new: &str, offset: usize) -> usize {
         return new.len().saturating_sub(old.len().saturating_sub(offset));
     }
     prefix.min(new.len())
-}
-
-/// A find-bar control: a focusable button named for assistive technology,
-/// whose tooltip shows its shortcut.
-pub(super) fn search_bar_button(
-    id: &'static str,
-    content: impl IntoElement,
-    label: &'static str,
-    shortcut: &'static str,
-    theme: Theme,
-) -> ui::Control {
-    let palette = theme.pdf_style();
-    crate::ui::focus_ring(id, theme)
-        .when(cfg!(test), |v| v.debug_selector(move || id.into()))
-        .role(gpui::Role::Button)
-        .key_context("UiControl")
-        .tab_index(0)
-        .aria_label(label)
-        .aria_keyshortcuts(shortcut)
-        .tooltip(style::tooltip(format!("{label}  {shortcut}"), theme))
-        .flex_shrink_0()
-        .rounded_md()
-        .px_2()
-        .h(px(28.))
-        .flex()
-        .items_center()
-        .cursor_pointer()
-        .text_color(palette.header_muted)
-        .hover(|view| view.bg(palette.placeholder_bg))
-        .child(content)
-}
-
-/// The macOS or the Windows/Linux spelling of a shortcut.
-pub(super) const fn chord(mac: &'static str, other: &'static str) -> &'static str {
-    if cfg!(target_os = "macos") {
-        mac
-    } else {
-        other
-    }
-}
-
-/// The find bar's counter: what it shows ("14 / 16") and what a screen reader
-/// says ("Match 14 of 16").
-pub(crate) fn find_counter(
-    empty_query: bool,
-    searching: bool,
-    active: Option<usize>,
-    matches: usize,
-) -> (String, gpui::SharedString) {
-    if empty_query {
-        ("0 / 0".into(), "No search".into())
-    } else if searching {
-        ("Searching…".into(), "Searching…".into())
-    } else if matches == 0 {
-        ("0 matches".into(), "No matches".into())
-    } else {
-        let position = active.map_or(0, |index| index + 1);
-        let spoken = if position == 0 {
-            format!(
-                "{matches} {}",
-                if matches == 1 { "match" } else { "matches" }
-            )
-        } else {
-            ui::position_announcement("Match", position, matches)
-        };
-        (format!("{position} / {matches}"), spoken.into())
-    }
-}
-
-pub(super) fn toggled(on: bool) -> gpui::Toggled {
-    if on {
-        gpui::Toggled::True
-    } else {
-        gpui::Toggled::False
-    }
 }
 
 /// The find bar's keys, from the shortcuts table.

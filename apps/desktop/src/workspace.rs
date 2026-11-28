@@ -386,10 +386,8 @@ pub(super) struct Workspace {
     /// Views whose last write failed: their edit is in no file, so eviction
     /// keeps them.
     unsaved: std::collections::HashSet<u64>,
-    /// The tab whose Copy for AI waits for its writes to land before the
-    /// Vault's outbound check runs, with the clipboard's text when it was
-    /// asked.
-    copy_for_ai_waiting: Option<(u64, Option<String>)>,
+    /// What the window keeps for the shelf and its Copy for AI.
+    shelf_source: shelf_source::ShelfSource,
     /// One admission at a time, so a repeat waits for the import before it.
     admitting: bool,
     admit_queue: std::collections::VecDeque<(Vec<PathBuf>, Option<String>)>,
@@ -648,7 +646,7 @@ impl Workspace {
             closing_after_write: Default::default(),
             evicting: Default::default(),
             unsaved: Default::default(),
-            copy_for_ai_waiting: None,
+            shelf_source: Default::default(),
             admitting: false,
             admit_queue: Default::default(),
             // Tests name their own; they never touch the real cache.
@@ -1254,25 +1252,15 @@ impl Render for Workspace {
         self.title.notices.set(notices);
         // A crash report says what the window showed (no text, no names).
         crate::app::crash::note_state(text::crash_state(
-            if home {
-                "Home".to_string()
-            } else {
+            (!home).then(|| {
                 self.active_view()
                     .map(|v| v.read(cx).crash_state(cx))
                     .unwrap_or_default()
-            },
+            }),
             self.tabs.len(),
-            if self.sidebar.choice().unwrap_or(true) {
-                "expanded"
-            } else {
-                "collapsed"
-            },
+            self.sidebar.choice().unwrap_or(true),
             theme,
-            if self.shell.palette.is_some() {
-                ", palette open"
-            } else {
-                ""
-            },
+            self.shell.palette.is_some(),
         ));
         // Collapsed, headers join the title row: they leave room for the
         // traffic lights and the expand toggle that sit in it.

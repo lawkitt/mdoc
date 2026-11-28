@@ -2,6 +2,7 @@
 //! conversion taking the tab over, Export Markdown, where links resolve,
 //! and the name the window title shows.
 use super::{DocumentView, LastFolder, Next, document_lifecycle::LifecycleEffect};
+use crate::document::text::{self, chooser_unavailable};
 use crate::workspace::{self, Open};
 use gpui::{App, Context, Focusable, PathPromptOptions, Window, px};
 use mdoc_store::document::{self, Document};
@@ -14,7 +15,7 @@ impl DocumentView {
                 .source()
                 .and_then(|path| path.file_name())
                 .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "Source".into())
+                .unwrap_or_else(|| text::SOURCE.into())
         } else {
             self.session.display_name()
         }
@@ -36,7 +37,7 @@ impl DocumentView {
 
     /// The window title while this tab shows; the workspace sets it.
     pub(crate) fn window_title(&self) -> String {
-        format!("{} — mdoc", self.display_name())
+        text::window_title(self.display_name())
     }
 
     /// Replace or close the document, unless one of its dialogs is open.
@@ -182,7 +183,7 @@ impl DocumentView {
             .detach();
             cx.notify();
         } else {
-            self.error = Some("Choose a Markdown or supported source document.".into());
+            self.error = Some(text::CHOOSE_A_SOURCE.into());
             cx.notify();
         }
     }
@@ -197,7 +198,7 @@ impl DocumentView {
                 files: true,
                 directories: false,
                 multiple: true,
-                prompt: Some("Open one or more files".into()),
+                prompt: Some(text::OPEN_ONE_OR_MORE.into()),
             },
         );
         cx.spawn_in(window, async move |this, cx| {
@@ -248,26 +249,18 @@ impl DocumentView {
                             .flatten()
                             .and_then(std::path::Path::parent);
                         if !document::is_markdown(&path) {
-                            this.error = Some(
-                                "Export Markdown with a .md, .markdown, .mdown, or .txt extension."
-                                    .into(),
-                            );
+                            this.error = Some(text::EXPORT_EXTENSION.into());
                         } else if viewing.is_some_and(|dir| path.starts_with(dir)) {
-                            this.error = Some(
-                                "Choose a folder of your own: this one holds a copy mdoc removes."
-                                    .into(),
-                            );
+                            this.error = Some(text::CHOOSE_YOUR_OWN_FOLDER.into());
                         } else if source.is_some_and(|source| {
                             mdoc_store::session_store::identity(source)
                                 == mdoc_store::session_store::identity(&path)
                         }) {
-                            this.error = Some(
-                                "Choose a different path to preserve the imported source.".into(),
-                            );
+                            this.error = Some(text::PRESERVE_THE_SOURCE.into());
                         } else if let Err(error) =
                             document::export(&path, this.editor.read(cx).text())
                         {
-                            this.error = Some(format!("Could not export: {error}"));
+                            this.error = Some(text::could_not_export(error));
                         } else {
                             this.error = None;
                             LastFolder::note(&path, cx);
@@ -282,16 +275,4 @@ impl DocumentView {
         })
         .detach();
     }
-}
-
-/// The system file dialog could not open. On Linux GPUI uses the
-/// xdg-desktop-portal file chooser, which minimal systems and WSL lack.
-pub(crate) fn chooser_unavailable(error: &impl std::fmt::Display) -> String {
-    let hint = if cfg!(target_os = "linux") {
-        " Install xdg-desktop-portal with a backend such as xdg-desktop-portal-gtk, \
-         or open files from the command line (mdoc path/to/file) or by dropping them."
-    } else {
-        ""
-    };
-    format!("The file dialog could not open: {error}.{hint}")
 }

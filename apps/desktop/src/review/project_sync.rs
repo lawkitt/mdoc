@@ -2,8 +2,10 @@
 //! the Project retired lines the tab up with it again, and alias or category
 //! changes made in another member tab arrive as an edit in this tab's own
 //! history.
-use crate::{document::DocumentView, document::markdown_search, ui};
-use gpui::{AnyElement, AppContext, Context, Focusable, div, prelude::*, px};
+mod view;
+use super::text;
+use crate::{document::DocumentView, document::markdown_search};
+use gpui::{AppContext, Context, Focusable, Window};
 use mdoc_pii::Category;
 use mdoc_pii::restore::{ExportedIdentity, plan_join};
 
@@ -62,7 +64,7 @@ impl DocumentView {
             .is_none()
         {
             self.pii.review.restore_identity_snapshot(old);
-            return Err("The document changed. Try again.".into());
+            return Err(text::DOCUMENT_CHANGED_TRY_AGAIN.into());
         }
         Ok(())
     }
@@ -133,7 +135,7 @@ impl DocumentView {
             })
             .collect();
         if let Err(error) = self.retag_identities(&changes, cx) {
-            self.pii.error = Some(format!("Could not follow a change to the Project: {error}"));
+            self.pii.error = Some(text::could_not_follow(error));
         }
         let missing: Vec<_> = identities
             .iter()
@@ -147,139 +149,48 @@ impl DocumentView {
         }
         cx.notify();
     }
-}
 
-impl DocumentView {
-    /// Project names this document doesn't mention, folded under the panel
-    /// footer, with a field to add a name to the Project.
-    pub(crate) fn project_names_section(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let link = self.project.link()?;
-        let theme = self.theme.get();
-        let palette = theme.pdf_style();
-        let absent: Vec<_> = self
-            .project
-            .names()
-            .iter()
-            .filter(|c| !self.project_alias_is_present(&c.alias, cx))
-            .collect();
-        let open = self.project_names_open;
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .on_action(cx.listener(
-                    |this, _: &crate::workspace::ConfirmProjectName, window, cx| {
-                        let Some(input) = this.project_term.clone() else {
-                            return;
-                        };
-                        let term = input.read(cx).value().trim().to_string();
-                        if !term.is_empty() {
-                            cx.emit(crate::workspace::TabEvent::Project(
-                                crate::workspace::ProjectEvent::AddTerm(term),
-                            ));
-                        }
-                        input.update(cx, |input, cx| input.reset(cx));
-                        window.focus(&input.read(cx).focus_handle(cx), cx);
-                    },
-                ))
-                .on_action(cx.listener(
-                    |this, _: &crate::workspace::CancelProjectName, window, cx| {
-                        if let Some(input) = &this.project_term {
-                            input.update(cx, |input, cx| input.reset(cx));
-                        }
-                        window.focus(&this.editor.read(cx).focus_handle(cx), cx);
-                    },
-                ))
-                .child(
-                    ui::control(
-                        "project-names-toggle",
-                        if absent.is_empty() {
-                            // Nothing to list: keep only the way to add a name.
-                            format!(
-                                "{} Add a name to “{}”",
-                                if open { "▾" } else { "▸" },
-                                link.name
-                            )
-                        } else {
-                            format!(
-                                "{} In “{}”, not in this document ({})",
-                                if open { "▾" } else { "▸" },
-                                link.name,
-                                absent.len()
-                            )
-                        },
-                        theme,
-                        true,
-                    )
-                    .when(cfg!(test), |v| {
-                        v.debug_selector(|| "project-names-toggle".into())
-                    })
-                    .text_size(px(12.))
-                    .text_color(palette.header_muted)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.project_names_open = !this.project_names_open;
-                        if this.project_names_open && this.project_term.is_none() {
-                            this.project_term = Some(cx.new(|cx| {
-                                markdown_search::SearchInput::new(cx)
-                                    .with_theme(this.theme.clone())
-                                    .with_key_context("ProjectName")
-                                    .with_placeholder("Add a name to the Project…")
-                            }));
-                        }
-                        if let Some(input) = this
-                            .project_term
-                            .clone()
-                            .filter(|_| this.project_names_open)
-                        {
-                            window.focus(&input.read(cx).focus_handle(cx), cx);
-                        }
-                        cx.notify();
-                    })),
-                )
-                .when(open, |v| {
-                    v.when(!absent.is_empty(), |v| {
-                        v.child(
-                            div()
-                                .id("project-names")
-                                .when(cfg!(test), |v| v.debug_selector(|| "project-names".into()))
-                                .max_h(px(160.))
-                                .overflow_y_scroll()
-                                .flex()
-                                .flex_col()
-                                .children(absent.iter().map(|c| {
-                                    div()
-                                        .flex()
-                                        .gap_2()
-                                        .px_2()
-                                        .text_size(px(12.))
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .min_w_0()
-                                                .truncate()
-                                                .child(c.wording().to_string()),
-                                        )
-                                        .child(
-                                            div()
-                                                .flex_shrink_0()
-                                                .text_color(theme.applied())
-                                                .child(c.alias.clone()),
-                                        )
-                                })),
-                        )
-                    })
-                    .children(self.project_term.clone().map(|input| {
-                        div()
-                            .mx_2()
-                            .px_1()
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(palette.border)
-                            .child(input)
-                    }))
-                })
-                .into_any_element(),
-        )
+    /// Enter in the Project-name field: add its name to the Project and empty it.
+    fn confirm_project_name(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(input) = self.project_term.clone() else {
+            return;
+        };
+        let term = input.read(cx).value().trim().to_string();
+        if !term.is_empty() {
+            cx.emit(crate::workspace::TabEvent::Project(
+                crate::workspace::ProjectEvent::AddTerm(term),
+            ));
+        }
+        input.update(cx, |input, cx| input.reset(cx));
+        window.focus(&input.read(cx).focus_handle(cx), cx);
+    }
+
+    /// Esc in the Project-name field: empty it and return to the text.
+    fn cancel_project_name(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(input) = &self.project_term {
+            input.update(cx, |input, cx| input.reset(cx));
+        }
+        window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+    }
+
+    /// The names section's toggle: open it with its field focused, or fold it.
+    fn toggle_project_names(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.project_names_open = !self.project_names_open;
+        if self.project_names_open && self.project_term.is_none() {
+            self.project_term = Some(cx.new(|cx| {
+                markdown_search::SearchInput::new(cx)
+                    .with_theme(self.theme.clone())
+                    .with_key_context("ProjectName")
+                    .with_placeholder(text::ADD_A_NAME_TO_THE_PROJECT)
+            }));
+        }
+        if let Some(input) = self
+            .project_term
+            .clone()
+            .filter(|_| self.project_names_open)
+        {
+            window.focus(&input.read(cx).focus_handle(cx), cx);
+        }
+        cx.notify();
     }
 }
