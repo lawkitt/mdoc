@@ -4,6 +4,7 @@ use super::{
     checklist::Tick,
     panel::{PanelEntry, PanelItem, ROW_HEIGHT, ReplacementRow},
 };
+use crate::review::text;
 use crate::{
     document::DocumentView,
     review::{APPLIED_ID, KEPT_ID},
@@ -173,12 +174,7 @@ impl DocumentView {
                 v.debug_selector(move || format!("replacement-category-{}", category.token()))
             })
             .role(gpui::Role::Heading)
-            .aria_label(format!(
-                "{}, {entities} {}, {mentions} {}",
-                category.label(),
-                if entities == 1 { "name" } else { "names" },
-                if mentions == 1 { "mention" } else { "mentions" },
-            ))
+            .aria_label(text::category_heading(category.label(), entities, mentions))
             .w_full()
             .h(px(ROW_HEIGHT))
             .px(px(ROW_INSET))
@@ -322,14 +318,14 @@ impl DocumentView {
                 .flex_shrink_0()
                 .text_size(px(12.))
                 .text_color(theme.applied())
-                .child(format!("Link to {}", row.alias))
+                .child(text::link_to(&row.alias))
                 .into_any_element()
         } else if kept_only {
             div()
                 .flex_shrink_0()
                 .text_size(px(12.))
                 .text_color(palette.header_muted)
-                .child("kept")
+                .child(text::KEPT_TAG)
                 .into_any_element()
         } else {
             let alias = row.alias.clone();
@@ -373,9 +369,9 @@ impl DocumentView {
                 v.debug_selector(move || format!("entity-expand-{id}"))
             })
             .aria_label(if expanded {
-                "Hide mentions"
+                text::HIDE_MENTIONS
             } else {
-                "Show mentions"
+                text::SHOW_MENTIONS
             })
             .flex_shrink_0()
             .min_w(px(COUNT_WIDTH + 2. + CHEVRON_SIZE))
@@ -422,14 +418,13 @@ impl DocumentView {
                 cx.stop_propagation();
                 this.toggle_group(id, cx);
             }));
-        base.aria_label(format!(
-            "{} to {}, {} mentions, {} applied, {} kept, {}",
-            row.original,
-            row.alias,
+        base.aria_label(text::identity_row(
+            &row.original,
+            &row.alias,
             row.mentions,
             row.applied,
             row.kept,
-            if expanded { "expanded" } else { "collapsed" }
+            expanded,
         ))
         .when(cfg!(test), |v| {
             v.debug_selector(move || format!("identity-{id}"))
@@ -445,7 +440,7 @@ impl DocumentView {
         .child(
             self.tick_box(
                 SharedString::from(format!("entity-tick-{id}")),
-                format!("Replace {} with {}", row.original, row.alias),
+                text::replace_with(&row.original, &row.alias),
                 tick,
                 cx,
                 move |this, cx| this.toggle_entity(id, cx),
@@ -539,7 +534,7 @@ impl DocumentView {
         let (before, word, after) = self.readable_mention(&range, cx);
         let start = range.start;
         let tick_range = range.clone();
-        base.aria_label(format!("{word}: original kept"))
+        base.aria_label(text::original_kept(&word))
             .when(cfg!(test), |v| {
                 v.debug_selector(move || format!("kept-{start}"))
             })
@@ -551,7 +546,7 @@ impl DocumentView {
             .child(
                 self.tick_box(
                     SharedString::from(format!("kept-tick-{start}")),
-                    format!("Replace {word}"),
+                    text::replace_word(&word),
                     Tick::Off,
                     cx,
                     move |this, cx| this.retick_mention(id, tick_range.clone(), cx),
@@ -621,7 +616,7 @@ impl DocumentView {
         };
         base.aria_label(format!(
             "{original}: {before}{word}{after}{}",
-            if applied { ", applied" } else { "" }
+            if applied { text::COMMA_APPLIED } else { "" }
         ))
         .when(cfg!(test), |v| {
             v.debug_selector(move || format!("mention-{annotation}"))
@@ -639,7 +634,7 @@ impl DocumentView {
         .child(
             self.tick_box(
                 SharedString::from(format!("mention-tick-{annotation}")),
-                format!("Replace {word}"),
+                text::replace_word(&word),
                 Tick::On,
                 cx,
                 move |this, cx| this.toggle_mention(annotation, cx),
@@ -719,8 +714,8 @@ impl DocumentView {
                     .bg(self.theme.get().pdf_style().border),
             )
             .child(
-                self.menu_row("panel-not-a-name", "Not a name", "", None, enabled, cx)
-                    .aria_label("Not a name")
+                self.menu_row("panel-not-a-name", text::NOT_A_NAME, "", None, enabled, cx)
+                    .aria_label(text::NOT_A_NAME)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         this.pii.mapping.panel_menu = None;
