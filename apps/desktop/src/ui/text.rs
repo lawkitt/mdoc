@@ -86,7 +86,6 @@ mod tests {
         "workspace/projects",
         "workspace/replies",
         "workspace/saving",
-        "workspace/shelf_source",
         "workspace/vault",
     ];
 
