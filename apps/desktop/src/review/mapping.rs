@@ -1,5 +1,6 @@
 //! Identity review and direct correction. All mutation uses editor history.
 use super::{APPLIED_ID, KEPT_ID, Popup};
+use crate::review::text;
 use crate::{document::DocumentView, document::markdown_search};
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Pixels, Window, px};
 use mdoc_pii::{
@@ -113,14 +114,6 @@ pub(super) enum PanelFilter {
 }
 impl PanelFilter {
     pub(super) const ALL: [Self; 4] = [Self::All, Self::Proposed, Self::Applied, Self::Kept];
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            Self::All => "All",
-            Self::Proposed => "To replace",
-            Self::Applied => "Applied",
-            Self::Kept => "Kept",
-        }
-    }
     pub(super) fn shows(self, applied: bool) -> bool {
         match self {
             Self::All => true,
@@ -461,14 +454,14 @@ impl MappingUi {
                 markdown_search::SearchInput::new(cx)
                     .with_theme(theme.clone())
                     .with_key_context(match placeholder {
-                        "Alias" => "PseudonymReplacement",
-                        "Find an alias or original" => "ReplacementSearch",
+                        text::ALIAS => "PseudonymReplacement",
+                        text::FIND_ALIAS_OR_ORIGINAL => "ReplacementSearch",
                         _ => "SettingsInput",
                     })
                     .with_placeholder(placeholder)
             });
             cx.observe(&input, |_, _, cx| cx.notify()).detach();
-            if placeholder == "Alias" {
+            if placeholder == text::ALIAS {
                 cx.subscribe(
                     &input,
                     |this, _, _: &markdown_search::SearchInputEvent, cx| {
@@ -508,9 +501,9 @@ impl MappingUi {
             cue_generation: 0,
             cued_detected: false,
             selected: None,
-            search: input("Find an alias or original"),
-            alias: input("Alias"),
-            target: input("Find an identity"),
+            search: input(text::FIND_ALIAS_OR_ORIGINAL),
+            alias: input(text::ALIAS),
+            target: input(text::FIND_AN_IDENTITY),
             applied: None,
             expanded: Default::default(),
             kept_names: Default::default(),
@@ -520,7 +513,7 @@ impl MappingUi {
             panel_selected: false,
             panel_menu: None,
             header_edit: None,
-            header_alias: input("New alias"),
+            header_alias: input(text::NEW_ALIAS),
             notice: None,
             previous_focus: None,
             scroll: gpui::ScrollHandle::new(),
@@ -869,7 +862,7 @@ impl DocumentView {
             .map(|p| (p.range.clone(), p.after.to_string()))
             .collect();
         let Some(after) = self.commit_plans(revision, &plans, Some(old), cx) else {
-            self.pii.error = Some("Document changed. Review the mapping again.".into());
+            self.pii.error = Some(text::REVIEW_THE_MAPPING_AGAIN.into());
             cx.notify();
             return;
         };
@@ -930,12 +923,12 @@ impl DocumentView {
                     ranges.iter().map(|r| (r.start, r.end)).collect();
                 let current = review
                     .identity(identity)
-                    .ok_or("Entity is no longer available.")?
+                    .ok_or(text::ENTITY_NO_LONGER_AVAILABLE)?
                     .clone();
                 let target = if let Some(target) = target {
                     review
                         .identity(target)
-                        .ok_or("Entity is no longer available.")?;
+                        .ok_or(text::ENTITY_NO_LONGER_AVAILABLE)?;
                     target
                 } else if ranges.len() == review.identity_count(identity) && alias.is_some() {
                     identity
@@ -955,7 +948,7 @@ impl DocumentView {
                         if source.get(c.range.clone())
                             != review.variant(c.variant).map(|g| g.original.as_ref())
                         {
-                            return Err("Candidate changed. Review it again.".into());
+                            return Err(text::CANDIDATE_CHANGED.into());
                         }
                         assignments.push((c.range.clone(), target));
                     }
@@ -992,7 +985,7 @@ impl DocumentView {
             MappingAction::AssignVariant(group, target) => {
                 let original = review
                     .variant(group)
-                    .ok_or("Variant is no longer available.")?
+                    .ok_or(text::VARIANT_NO_LONGER_AVAILABLE)?
                     .original
                     .clone();
                 review.assign_variant(group, target)?;
@@ -1009,32 +1002,32 @@ impl DocumentView {
                     g.mentions.contains(range)
                         && source.get(range.clone()) == Some(g.original.as_ref())
                 }) {
-                    return Err("Candidate changed. Review it again.".into());
+                    return Err(text::CANDIDATE_CHANGED.into());
                 }
                 let target = target.unwrap_or_else(|| {
                     review.new_identity(review.variant(group).unwrap().category)
                 });
                 review
                     .identity(target)
-                    .ok_or("Identity is no longer available.")?;
+                    .ok_or(text::IDENTITY_NO_LONGER_AVAILABLE)?;
                 assignments.push((range.clone(), target));
             }
             MappingAction::AssignApplied(id, target, all) => {
                 let selected = review
                     .applied_occurrence(id)
-                    .ok_or("Replacement is no longer available.")?
+                    .ok_or(text::REPLACEMENT_NO_LONGER_AVAILABLE)?
                     .clone();
                 let target = target.unwrap_or_else(|| review.new_identity(selected.step.category));
                 review
                     .identity(target)
-                    .ok_or("Identity is no longer available.")?;
+                    .ok_or(text::IDENTITY_NO_LONGER_AVAILABLE)?;
                 if all {
                     let group = review
                         .variants()
                         .iter()
                         .find(|g| g.original.as_ref() == selected.step.original())
                         .map(|g| g.id)
-                        .ok_or("Original variant is no longer available.")?;
+                        .ok_or(text::ORIGINAL_VARIANT_NO_LONGER_AVAILABLE)?;
                     return self.prepare_mapping_change(
                         &MappingAction::AssignVariant(group, target),
                         source,
@@ -1053,11 +1046,11 @@ impl DocumentView {
                 continue;
             };
             if source.get(a.range.clone()) != Some(a.step.after.as_ref()) {
-                return Err("Replacement changed. Review it again.".into());
+                return Err(text::REPLACEMENT_CHANGED.into());
             }
             let identity = review
                 .identity(target)
-                .ok_or("Identity is no longer available.")?;
+                .ok_or(text::IDENTITY_NO_LONGER_AVAILABLE)?;
             // An equal visible alias can still need a different identity/category.
             plans.push(ReplacementPlan {
                 range: a.range.clone(),
@@ -1091,7 +1084,7 @@ impl DocumentView {
         plans.extend(pending);
         plans.sort_by_key(|p| p.range.start);
         if plans.windows(2).any(|p| p[0].range.end > p[1].range.start) {
-            self.pii.error = Some("Candidates overlap. Review them again.".into());
+            self.pii.error = Some(text::CANDIDATES_OVERLAP.into());
             cx.notify();
             return;
         }

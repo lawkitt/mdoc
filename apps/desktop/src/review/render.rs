@@ -1,4 +1,5 @@
 //! PII toolbar and popup routing. State stays in the parent controller.
+use super::text;
 use super::{Popup, ReviewUi};
 use crate::{document::DocumentView, ui};
 use gpui::{AnyElement, App, Context, Window, div, prelude::*, px};
@@ -68,7 +69,7 @@ impl DocumentView {
                 })
                 .group("scan-status")
                 .role(gpui::Role::Button)
-                .aria_label(format!("{} Cancel pseudonymization", stage.text))
+                .aria_label(text::cancel_pseudonymization(&stage.text))
                 .tab_index(0)
                 .relative()
                 .ml_1()
@@ -160,17 +161,12 @@ pub(super) struct ScanStage {
 /// advance on a timer and settle on the last ones; then the label
 /// names the window being read, "Finding names… 3 of 12" (#309).
 pub(super) fn scan_stage(elapsed: f32, (done, windows): (usize, usize)) -> ScanStage {
-    const STAGES: [&str; 4] = [
-        "Reading…",
-        "Analyzing…",
-        "Finding names…",
-        "Linking mentions…",
-    ];
+    const STAGES: [&str; 4] = text::SCAN_STAGES;
     const SLOT: f32 = 1.8;
     if windows > 1 {
         return ScanStage {
             key: STAGES.len(),
-            text: format!("Finding names… {} of {windows}", (done + 1).min(windows)).into(),
+            text: text::finding_names_of((done + 1).min(windows), windows).into(),
             fade: None,
         };
     }
