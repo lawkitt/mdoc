@@ -1117,6 +1117,29 @@ impl DocumentView {
         }
         cx.notify();
     }
+
+    /// Enter in the popup: the alias field opens its choices; after a manual
+    /// addition, Apply.
+    pub(super) fn confirm_popup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .pii
+            .mapping
+            .alias
+            .read(cx)
+            .focus_handle(cx)
+            .is_focused(window)
+        {
+            self.open_alias_choice(window, cx);
+        } else if self.pii.enter_applies
+            && self
+                .active_annotation()
+                .is_some_and(|a| a & (APPLIED_ID | KEPT_ID) == 0)
+        {
+            // After a manual addition, Apply is the default action.
+            self.apply_scope(cx);
+        }
+        cx.stop_propagation();
+    }
 }
 
 /// What reverted replacements become.
