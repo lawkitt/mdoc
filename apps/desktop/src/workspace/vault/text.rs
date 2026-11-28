@@ -34,7 +34,25 @@ pub(crate) const PREVIEW_ALLOW: &str = "Allow";
 
 /// Why the key store gave no key.
 pub(crate) const KEY_NEEDS_ASKING: &str = "mdoc could not read the key without asking.";
+/// The injected key store of tests and headless renders.
+#[cfg(any(
+    test,
+    all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    )
+))]
 pub(crate) const NO_KEY_HELD: &str = "No key is held.";
+/// The injected key store of tests and headless renders.
+#[cfg(any(
+    test,
+    all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    )
+))]
 pub(crate) const KEY_STORE_REFUSED: &str = "The key store refused it.";
 /// Settings › Vault's Show, before the documents open or with the wrong key.
 pub(crate) const KEY_SHOWS_ONCE_OPEN: &str =
