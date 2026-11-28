@@ -3,6 +3,7 @@
 //! indicator and next/previous navigation. Checking and suggestions never run
 //! on the UI thread; it only copies the text and the PII ranges.
 use crate::document::DocumentView;
+use crate::document::text;
 use gpui::{App, Context, Focusable, Window, actions, px};
 use mdoc_editor::{Diagnostic, EditorState};
 use mdoc_spell::{Accepted, Exclusions, LineCache, Options, Speller};
@@ -62,8 +63,8 @@ const ADD_TO_DICTIONARY: usize = 1;
 /// the background, then Ignore and Add to dictionary.
 pub(crate) fn install_editor_hooks(editor: &mut EditorState, preferences: settings::Shared) {
     editor.set_diagnostic_actions(vec![
-        "Ignore in this document".into(),
-        "Add to dictionary".into(),
+        text::IGNORE_IN_THIS_DOCUMENT.into(),
+        text::ADD_TO_DICTIONARY.into(),
     ]);
     editor.on_suggest(move |word, cx| {
         let options = configured_options(&preferences);

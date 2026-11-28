@@ -167,14 +167,13 @@ impl Workspace {
                 .text_size(px(13.))
                 .child(div().flex_1().child(text::installed(&version)))
                 .child(
-                    ui::link_button("whats-new", text::WHATS_NEW, theme, true).on_click(
-                        move |_, _, cx| cx.open_url(&crate::app::updater::release_url(&version)),
-                    ),
+                    ui::link_button("whats-new", text::WHATS_NEW, theme, true)
+                        .on_click(move |_, _, cx| Self::open_release_notes(&version, cx)),
                 )
                 .child(
                     ui::control("dismiss-whats-new", "×", theme, true)
                         .aria_label(crate::ui::text::DISMISS)
-                        .on_click(|_, _, cx| crate::app::updater::dismiss_banner(cx)),
+                        .on_click(|_, _, cx| Self::dismiss_whats_new(cx)),
                 )
                 .into_any_element(),
         )
@@ -242,7 +241,6 @@ impl Workspace {
         let title = match self.home.drop {
             _ if unavailable.is_some() => text::DOCUMENTS_UNAVAILABLE.to_string(),
             Some(0) => text::CANT_BE_OPENED.to_string(),
-            Some(1) => text::DROP_TO_OPEN.to_string(),
             Some(n) => text::drop_files(n),
             None => text::DROP_DOCUMENTS_HERE.to_string(),
         };

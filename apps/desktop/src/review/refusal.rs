@@ -7,6 +7,7 @@
 //! pending names as Apply does and then asks Copy for AI, whose readiness
 //! check (`Vault::text_for_ai`) decides what leaves.
 
+use super::text::{self, reason};
 use crate::shelf::Readiness;
 
 /// The one step that resolves a refusal.
@@ -23,15 +24,6 @@ pub(crate) enum Step {
 }
 
 impl Step {
-    /// The button's label, the count shown before the click.
-    pub(crate) fn label(self) -> String {
-        match self {
-            Self::ReplaceAndCopy(n) => format!("Replace {n} and copy"),
-            Self::Review => "Review".into(),
-            Self::FindNames => "Find names".into(),
-        }
-    }
-
     /// The step for a document in `readiness`; `scanned`: it was scanned for
     /// names, so a document never saved Ready has a review to finish.
     /// `None` when nothing the user does resolves it now: ready, or still
@@ -67,7 +59,7 @@ impl Refusal {
     /// A document kept from AI: no step on desktop changes that.
     pub(crate) fn excluded() -> Self {
         Self {
-            reason: "This document is excluded from AI.".into(),
+            reason: text::EXCLUDED_FROM_AI.into(),
             step: None,
         }
     }
@@ -82,31 +74,9 @@ impl Refusal {
             return Self::of(Readiness::NotReviewed, false, false);
         }
         Self {
-            reason: "No names in this document are replaced.".into(),
+            reason: text::NO_NAMES_REPLACED.into(),
             step: None,
         }
-    }
-}
-
-fn reason(readiness: Readiness, scanned: bool, failed: bool) -> String {
-    match readiness {
-        Readiness::LeftToReview(1) => "1 proposal is left to review.".into(),
-        Readiness::LeftToReview(n) => format!("{n} proposals are left to review."),
-        Readiness::NamesNotReplaced(1) => "1 known name is still written out in the text. \
-             It may be a name another document added to the Project."
-            .into(),
-        Readiness::NamesNotReplaced(n) => format!(
-            "{n} known names are still written out in the text. They may be names another \
-             document added to the Project."
-        ),
-        Readiness::ChangedSinceReview => "The text changed since its review.".into(),
-        Readiness::NotReviewed if scanned => "It hasn't been reviewed.".into(),
-        Readiness::NotReviewed => "Its names haven't been found yet.".into(),
-        Readiness::Checking if failed => {
-            "Its last change could not be saved, so its names can't be checked.".into()
-        }
-        Readiness::Checking => "mdoc is still checking its names. Try again in a moment.".into(),
-        Readiness::Ready => "Try again in a moment.".into(),
     }
 }
 
