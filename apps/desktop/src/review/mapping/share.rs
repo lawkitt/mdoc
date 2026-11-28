@@ -297,8 +297,7 @@ impl DocumentView {
                 text::replace_names_and_copy(self.pending_name_count(cx))
             }
             Some(step) => step.label(),
-            None if copied && self.copied_for_ai => crate::ui::text::COPIED.into(),
-            None => text::COPY_FOR_AI.into(),
+            None => ui::copy_label(copied && self.copied_for_ai, text::COPY_FOR_AI).into(),
         }
     }
 
@@ -405,11 +404,7 @@ impl DocumentView {
                         .child(
                             ui::primary_button(
                                 "share-copy-reply",
-                                if copied {
-                                    crate::ui::text::COPIED
-                                } else {
-                                    text::COPY_REPLY
-                                },
+                                ui::copy_label(copied, text::COPY_REPLY),
                                 theme,
                                 restorable,
                             )

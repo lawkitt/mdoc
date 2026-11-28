@@ -330,45 +330,33 @@ impl ShelfRows {
             .child(div().flex_1())
             .when(ready, |header| {
                 header.child(
-                    ui::focus_ring(("shelf-copy", index), theme)
-                        .role(gpui::Role::Button)
-                        .aria_label(text::COPY_FOR_AI)
-                        .key_context("UiControl")
-                        .tab_stop(true)
-                        .flex_shrink_0()
-                        .h(px(22.))
-                        .px(px(8.))
-                        .flex()
-                        .items_center()
-                        .gap(px(4.))
-                        .rounded_md()
-                        .border_1()
-                        .border_color(p.border)
-                        .text_size(px(12.))
-                        .text_color(if copied {
-                            theme.applied_text()
-                        } else {
-                            p.header_fg
-                        })
-                        .cursor_pointer()
-                        .hover(move |s| s.bg(p.placeholder_bg))
-                        .when(copied, |button| {
-                            button.child(
-                                gpui::svg()
-                                    .data(ui::Icon::Check.data())
-                                    .size(px(12.))
-                                    .text_color(theme.applied_text()),
-                            )
-                        })
-                        .child(if copied {
-                            crate::ui::text::COPIED
-                        } else {
-                            text::COPY_FOR_AI
-                        })
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            cx.stop_propagation();
-                            this.copy(index, window, cx);
-                        })),
+                    ui::copied_look(
+                        ui::focus_ring(("shelf-copy", index), theme)
+                            .role(gpui::Role::Button)
+                            .aria_label(text::COPY_FOR_AI)
+                            .key_context("UiControl")
+                            .tab_stop(true)
+                            .flex_shrink_0()
+                            .h(px(22.))
+                            .px(px(8.))
+                            .flex()
+                            .items_center()
+                            .gap(px(4.))
+                            .rounded_md()
+                            .border_1()
+                            .border_color(p.border)
+                            .text_size(px(12.)),
+                        copied,
+                        p.header_fg,
+                        theme,
+                    )
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(p.placeholder_bg))
+                    .child(ui::copy_label(copied, text::COPY_FOR_AI))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.copy(index, window, cx);
+                    })),
                 )
             })
             .when_some(step, |header, step| {
