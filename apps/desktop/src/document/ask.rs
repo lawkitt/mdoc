@@ -6,6 +6,7 @@
 //! window carries each choice out (`TabEvent::Ask`).
 use super::DocumentView;
 use crate::document::text;
+use crate::ui::MenuPanel;
 use crate::{ui, workspace::TabEvent};
 use gpui::{App, Context, Window, div, prelude::*, px};
 use mdoc_store::settings::AskWith;
@@ -208,52 +209,42 @@ impl DocumentView {
         let theme = self.theme.get();
         ui::panel(id, theme)
             .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
-            .track_focus(&self.ask.focus)
-            .key_context("UiPanel UiMenu")
-            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                ui::cycle(window, cx, Some(&this.ask.focus), false);
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                ui::cycle(window, cx, Some(&this.ask.focus), true);
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+            .menu_focus(&self.ask.focus, "UiPanel UiMenu", cx, |this, window, cx| {
                 this.close_ask(window, cx);
                 cx.stop_propagation();
-            }))
+            })
             .mt(px(32.))
             .p_1()
             .rounded_lg()
             .shadow_lg()
-            .on_mouse_down_out(
-                cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
-                    // A press on the chevron is its toggle's.
-                    if this.ask.bounds.get().contains(&event.position) {
-                        return;
+            .menu_dismiss(cx, |this, event, window, cx| {
+                // A press on the chevron is its toggle's.
+                if this.ask.bounds.get().contains(&event.position) {
+                    return;
+                }
+                this.ask.open = false;
+                this.ask.unfiled = None;
+                let panel = this.ask.focus.clone();
+                let button = this.ask.more_focus.clone();
+                window.defer(cx, move |window, cx| {
+                    if panel.contains_focused(window, cx) {
+                        window.focus(&button, cx);
                     }
-                    this.ask.open = false;
-                    this.ask.unfiled = None;
-                    let panel = this.ask.focus.clone();
-                    let button = this.ask.more_focus.clone();
-                    window.defer(cx, move |window, cx| {
-                        if panel.contains_focused(window, cx) {
-                            window.focus(&button, cx);
-                        }
-                    });
-                    cx.notify();
-                }),
-            )
+                });
+                cx.notify();
+            })
     }
 
     fn anchored(panel: gpui::Stateful<gpui::Div>) -> gpui::AnyElement {
-        gpui::deferred(
-            gpui::anchored()
-                .anchor(gpui::Anchor::TopRight)
-                .snap_to_window_with_margin(px(8.))
-                .child(panel),
+        ui::popover(
+            ui::Placement {
+                corner: Some(gpui::Anchor::TopRight),
+                position: None,
+                margin: Some(px(8.)),
+            },
+            1,
+            panel,
         )
-        .with_priority(1)
         .into_any_element()
     }
 

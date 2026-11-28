@@ -2,6 +2,7 @@
 //! ⋯ menu, the Markdown and Source switch, and the empty page a blank tab shows.
 use super::DocumentView;
 use crate::document::text::{self, apply_label};
+use crate::ui::MenuPanel;
 use crate::{
     document::spelling::ToggleDocumentSpelling,
     document::{CopyMarkdown, ExportMarkdown, Save, TogglePreview},
@@ -577,200 +578,189 @@ impl DocumentView {
             ui::menu_row(id, label, shortcut, checked, theme, enabled)
                 .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
         };
-        gpui::deferred(
-            gpui::anchored()
-                .anchor(gpui::Anchor::TopRight)
-                .snap_to_window_with_margin(px(8.))
+        ui::popover(
+            ui::Placement {
+                corner: Some(gpui::Anchor::TopRight),
+                position: None,
+                margin: Some(px(8.)),
+            },
+            1,
+            ui::panel("more-menu", theme)
+                .menu_focus(
+                    &self.more_menu_focus,
+                    "UiPanel UiMenu",
+                    cx,
+                    |this, window, cx| {
+                        this.close_more(window, cx);
+                        cx.stop_propagation();
+                    },
+                )
+                .mt(px(32.))
+                .p_1()
+                .rounded_lg()
+                .shadow_lg()
+                .menu_dismiss(cx, |this, event, window, cx| {
+                    // A press on the More button is its toggle's.
+                    if this.more_bounds.get().contains(&event.position) {
+                        return;
+                    }
+                    this.more_open = false;
+                    // Unless the click focused something, focus goes
+                    // back to the button rather than the closed menu.
+                    let menu = this.more_menu_focus.clone();
+                    let button = this.more_focus.clone();
+                    window.defer(cx, move |window, cx| {
+                        if menu.contains_focused(window, cx) {
+                            window.focus(&button, cx);
+                        }
+                    });
+                    cx.notify();
+                })
                 .child(
-                    ui::panel("more-menu", theme)
-                        .track_focus(&self.more_menu_focus)
-                        .key_context("UiPanel UiMenu")
-                        .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                            ui::cycle(window, cx, Some(&this.more_menu_focus), false);
-                            cx.stop_propagation();
-                        }))
-                        .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                            ui::cycle(window, cx, Some(&this.more_menu_focus), true);
-                            cx.stop_propagation();
-                        }))
-                        .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                            this.close_more(window, cx);
-                            cx.stop_propagation();
-                        }))
-                        .mt(px(32.))
-                        .p_1()
-                        .rounded_lg()
-                        .shadow_lg()
-                        .on_mouse_down_out(cx.listener(
-                            |this, event: &gpui::MouseDownEvent, window, cx| {
-                                // A press on the More button is its toggle's.
-                                if this.more_bounds.get().contains(&event.position) {
-                                    return;
-                                }
+                    row(
+                        "more-save",
+                        text::SAVE.into(),
+                        Some(modifier("⌘S", "Ctrl+S")),
+                        None,
+                        copy,
+                    )
+                    .on_click(cx.listener(guard(copy, || Box::new(Save)))),
+                )
+                .child(
+                    row(
+                        "more-export",
+                        text::EXPORT_MARKDOWN.into(),
+                        Some(modifier("⇧⌘S", "Ctrl+Shift+S")),
+                        None,
+                        copy,
+                    )
+                    .on_click(cx.listener(guard(copy, || Box::new(ExportMarkdown)))),
+                )
+                .child(ui::menu_divider(theme))
+                .child(
+                    row(
+                        "more-copy-markdown",
+                        text::COPY_MARKDOWN.into(),
+                        Some(modifier("⇧⌘M", "Ctrl+Shift+M")),
+                        None,
+                        has_text,
+                    )
+                    .on_click(cx.listener(guard(has_text, || Box::new(CopyMarkdown)))),
+                )
+                .child(
+                    ui::menu_row_because(
+                        "more-copy-for-ai",
+                        text::COPY_FOR_AI,
+                        Some(modifier("⇧⌘C", "Ctrl+Shift+C")),
+                        None,
+                        theme,
+                        for_ai,
+                        copy_reason.filter(|_| !for_ai).map(Into::into),
+                    )
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "more-copy-for-ai".into())
+                    })
+                    .on_click(cx.listener(guard(for_ai, || Box::new(CopyForAi)))),
+                )
+                .child(
+                    ui::menu_row_because(
+                        "more-paste-reply",
+                        text::PASTE_AI_REPLY,
+                        Some(modifier("⌥⇧⌘V", "Ctrl+Alt+Shift+V")),
+                        None,
+                        theme,
+                        aliases,
+                        alias_reason.map(Into::into),
+                    )
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "more-paste-reply".into())
+                    })
+                    .on_click(cx.listener(guard(aliases, || Box::new(PasteAiResponse)))),
+                )
+                .child(
+                    row("more-notes", text::NOTES.into(), None, None, notes).on_click(cx.listener(
+                        move |this, _, window, cx| {
+                            if notes {
                                 this.more_open = false;
-                                // Unless the click focused something, focus goes
-                                // back to the button rather than the closed menu.
-                                let menu = this.more_menu_focus.clone();
-                                let button = this.more_focus.clone();
-                                window.defer(cx, move |window, cx| {
-                                    if menu.contains_focused(window, cx) {
-                                        window.focus(&button, cx);
-                                    }
-                                });
-                                cx.notify();
-                            },
-                        ))
-                        .child(
-                            row(
-                                "more-save",
-                                text::SAVE.into(),
-                                Some(modifier("⌘S", "Ctrl+S")),
-                                None,
-                                copy,
-                            )
-                            .on_click(cx.listener(guard(copy, || Box::new(Save)))),
-                        )
-                        .child(
-                            row(
-                                "more-export",
-                                text::EXPORT_MARKDOWN.into(),
-                                Some(modifier("⇧⌘S", "Ctrl+Shift+S")),
-                                None,
-                                copy,
-                            )
-                            .on_click(cx.listener(guard(copy, || Box::new(ExportMarkdown)))),
-                        )
-                        .child(ui::menu_divider(theme))
-                        .child(
-                            row(
-                                "more-copy-markdown",
-                                text::COPY_MARKDOWN.into(),
-                                Some(modifier("⇧⌘M", "Ctrl+Shift+M")),
-                                None,
-                                has_text,
-                            )
-                            .on_click(cx.listener(guard(has_text, || Box::new(CopyMarkdown)))),
-                        )
-                        .child(
-                            ui::menu_row_because(
-                                "more-copy-for-ai",
-                                text::COPY_FOR_AI,
-                                Some(modifier("⇧⌘C", "Ctrl+Shift+C")),
-                                None,
-                                theme,
-                                for_ai,
-                                copy_reason.filter(|_| !for_ai).map(Into::into),
-                            )
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "more-copy-for-ai".into())
-                            })
-                            .on_click(cx.listener(guard(for_ai, || Box::new(CopyForAi)))),
-                        )
-                        .child(
-                            ui::menu_row_because(
-                                "more-paste-reply",
-                                text::PASTE_AI_REPLY,
-                                Some(modifier("⌥⇧⌘V", "Ctrl+Alt+Shift+V")),
-                                None,
-                                theme,
-                                aliases,
-                                alias_reason.map(Into::into),
-                            )
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "more-paste-reply".into())
-                            })
-                            .on_click(cx.listener(guard(aliases, || Box::new(PasteAiResponse)))),
-                        )
-                        .child(
-                            row("more-notes", text::NOTES.into(), None, None, notes).on_click(
-                                cx.listener(move |this, _, window, cx| {
-                                    if notes {
-                                        this.more_open = false;
-                                        this.show_notes(window, cx);
-                                    }
-                                }),
-                            ),
-                        )
-                        .child(ui::menu_divider(theme))
-                        .child(
-                            row(
-                                "more-spelling",
-                                if spelling_on && misspelled > 0 {
-                                    text::spelling_count(misspelled)
-                                } else {
-                                    text::SPELLING.into()
-                                },
-                                None,
-                                Some(spelling_on),
-                                !self.spelling_control_off(),
-                            )
-                            .on_click(
-                                cx.listener(guard(!self.spelling_control_off(), || {
-                                    Box::new(ToggleDocumentSpelling)
-                                })),
-                            ),
-                        )
-                        .child(
-                            row(
-                                "more-rescan",
-                                text::RESCAN.into(),
-                                None,
-                                None,
-                                copy && !self.pii.scanning(),
-                            )
-                            .on_click(cx.listener(
-                                |this, _, window, cx| {
-                                    // Focus back to the document, as other rows do.
-                                    this.more_open = false;
-                                    if this.lifecycle.source_only() {
-                                        window.focus(&this.focus, cx);
-                                    } else {
-                                        window.focus(&this.editor.read(cx).focus_handle(cx), cx);
-                                    }
-                                    this.start_pii_scan(cx);
-                                    window.refresh();
-                                },
-                            )),
-                        )
-                        .child(ui::menu_divider(theme))
-                        // The move menu, under the ⋯ button (#1312).
-                        .child(
-                            ui::menu_row_because(
-                                "more-move",
-                                text::MOVE_TO_PROJECT,
-                                None,
-                                None,
-                                theme,
-                                movable,
-                                move_reason.map(Into::into),
-                            )
-                            .when(cfg!(test), |v| v.debug_selector(|| "more-move".into()))
-                            .on_click(cx.listener(
-                                move |this, _, window, cx| {
-                                    if movable {
-                                        this.more_open = false;
-                                        window.focus(&this.more_focus, cx);
-                                        let at = this.more_bounds.get().bottom_left();
-                                        cx.emit(TabEvent::Project(ProjectEvent::MoveMenu(at)));
-                                        cx.notify();
-                                    }
-                                },
-                            )),
-                        )
-                        .child(ui::menu_divider(theme))
-                        .child(
-                            row(
-                                "more-close",
-                                crate::ui::text::CLOSE.into(),
-                                Some(modifier("⌘W", "Ctrl+W")),
-                                None,
-                                true,
-                            )
-                            .on_click(cx.listener(guard(true, || Box::new(Close)))),
-                        ),
+                                this.show_notes(window, cx);
+                            }
+                        },
+                    )),
+                )
+                .child(ui::menu_divider(theme))
+                .child(
+                    row(
+                        "more-spelling",
+                        if spelling_on && misspelled > 0 {
+                            text::spelling_count(misspelled)
+                        } else {
+                            text::SPELLING.into()
+                        },
+                        None,
+                        Some(spelling_on),
+                        !self.spelling_control_off(),
+                    )
+                    .on_click(
+                        cx.listener(guard(!self.spelling_control_off(), || {
+                            Box::new(ToggleDocumentSpelling)
+                        })),
+                    ),
+                )
+                .child(
+                    row(
+                        "more-rescan",
+                        text::RESCAN.into(),
+                        None,
+                        None,
+                        copy && !self.pii.scanning(),
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        // Focus back to the document, as other rows do.
+                        this.more_open = false;
+                        if this.lifecycle.source_only() {
+                            window.focus(&this.focus, cx);
+                        } else {
+                            window.focus(&this.editor.read(cx).focus_handle(cx), cx);
+                        }
+                        this.start_pii_scan(cx);
+                        window.refresh();
+                    })),
+                )
+                .child(ui::menu_divider(theme))
+                // The move menu, under the ⋯ button (#1312).
+                .child(
+                    ui::menu_row_because(
+                        "more-move",
+                        text::MOVE_TO_PROJECT,
+                        None,
+                        None,
+                        theme,
+                        movable,
+                        move_reason.map(Into::into),
+                    )
+                    .when(cfg!(test), |v| v.debug_selector(|| "more-move".into()))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        if movable {
+                            this.more_open = false;
+                            window.focus(&this.more_focus, cx);
+                            let at = this.more_bounds.get().bottom_left();
+                            cx.emit(TabEvent::Project(ProjectEvent::MoveMenu(at)));
+                            cx.notify();
+                        }
+                    })),
+                )
+                .child(ui::menu_divider(theme))
+                .child(
+                    row(
+                        "more-close",
+                        crate::ui::text::CLOSE.into(),
+                        Some(modifier("⌘W", "Ctrl+W")),
+                        None,
+                        true,
+                    )
+                    .on_click(cx.listener(guard(true, || Box::new(Close)))),
                 ),
         )
-        .with_priority(1)
         .into_any_element()
     }
 

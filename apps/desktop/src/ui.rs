@@ -1,5 +1,5 @@
-//! Shared chrome controls, one file per kind: buttons, menus, cards and the
-//! title bar, beside the style and the confirm dialog. Here stay what every
+//! Shared chrome controls, one file per kind: buttons, menus, the popover
+//! menu, cards and the title bar, beside the style and the confirm dialog. Here stay what every
 //! kind builds on: focus and keyboard reach, status and spoken text, icons,
 //! the popover surface and page ranges. GPUI activates focused click
 //! controls with Enter/Space.
@@ -7,6 +7,7 @@ mod buttons;
 mod cards;
 pub(crate) mod confirm_dialog;
 mod menus;
+mod popover;
 pub(crate) mod style;
 pub(crate) mod text;
 mod title_bar;
@@ -29,6 +30,7 @@ pub use cards::{
 };
 pub use gpui_pdf::FocusRing as Control;
 pub use menus::{menu_divider, menu_row, menu_row_because};
+pub use popover::{MenuPanel, Placement, popover};
 pub use title_bar::{no_drag, notice_bell, title_bar, title_drag};
 
 /// The one keyboard focus indicator.

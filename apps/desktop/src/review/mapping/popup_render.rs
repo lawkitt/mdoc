@@ -4,6 +4,7 @@ use super::{
     popup::{self, Scope, Step},
 };
 use crate::review::text;
+use crate::ui::MenuPanel;
 use crate::{
     document::DocumentView,
     review::{APPLIED_ID, PiiClosePopup, PiiConfirm, Popup},
@@ -757,10 +758,19 @@ impl DocumentView {
             .child(anchor)
             // A zero-size point at the anchor's bottom-left places the menu.
             .children(menu.map(|menu| {
-                div().absolute().top_full().left_0().child(
-                    deferred(anchored().snap_to_window().child(div().pt_1().child(menu)))
-                        .with_priority(3),
-                )
+                div()
+                    .absolute()
+                    .top_full()
+                    .left_0()
+                    .child(crate::ui::popover(
+                        crate::ui::Placement {
+                            corner: None,
+                            position: None,
+                            margin: None,
+                        },
+                        3,
+                        div().pt_1().child(menu),
+                    ))
             }))
     }
     /// The surface shared by the popup's floating menus. A press inside it
@@ -793,55 +803,44 @@ impl DocumentView {
         close: fn(&mut Self, &mut Window, &mut Context<Self>) -> bool,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
-        let (next, previous, out) = (group.clone(), group.clone(), group.clone());
+        let out = group.clone();
         let (escape, outside) = (back.clone(), back.clone());
-        menu.track_focus(group)
-            .key_context("UiPanel UiMenu PiiMenu")
-            .on_action(
-                cx.listener(move |_, _: &crate::ui::NextControl, window, cx| {
-                    crate::ui::cycle(window, cx, Some(&next), false);
-                    cx.stop_propagation();
-                }),
-            )
-            .on_action(
-                cx.listener(move |_, _: &crate::ui::PreviousControl, window, cx| {
-                    crate::ui::cycle(window, cx, Some(&previous), true);
-                    cx.stop_propagation();
-                }),
-            )
-            .on_action(
-                cx.listener(move |this, _: &crate::ui::CloseMenu, window, cx| {
-                    if close(this, window, cx) {
-                        window.focus(&escape, cx);
-                    }
-                    cx.notify();
-                    cx.stop_propagation();
-                }),
-            )
-            // A click outside closes the menu, so keys never reach what is
-            // behind it while it shows; a click on its own button
-            // is that button's toggle. A right-click opens a menu on top and
-            // leaves this one under it (#92).
-            .on_mouse_down_out(cx.listener(move |_, e: &gpui::MouseDownEvent, window, cx| {
-                if e.button != gpui::MouseButton::Left {
+        menu.menu_focus(
+            group,
+            "UiPanel UiMenu PiiMenu",
+            cx,
+            move |this, window, cx| {
+                if close(this, window, cx) {
+                    window.focus(&escape, cx);
+                }
+                cx.notify();
+                cx.stop_propagation();
+            },
+        )
+        // A click outside closes the menu, so keys never reach what is
+        // behind it while it shows; a click on its own button
+        // is that button's toggle. A right-click opens a menu on top and
+        // leaves this one under it (#92).
+        .menu_dismiss(cx, move |_, e, window, cx| {
+            if e.button != gpui::MouseButton::Left {
+                return;
+            }
+            let (menu, back) = (out.clone(), outside.clone());
+            let view = cx.entity().downgrade();
+            window.defer(cx, move |window, cx| {
+                if back.is_focused(window) {
                     return;
                 }
-                let (menu, back) = (out.clone(), outside.clone());
-                let view = cx.entity().downgrade();
-                window.defer(cx, move |window, cx| {
-                    if back.is_focused(window) {
-                        return;
-                    }
-                    let had_focus = menu.contains_focused(window, cx);
-                    let _ = view.update(cx, |this, cx| {
-                        close(this, window, cx);
-                        cx.notify();
-                    });
-                    if had_focus {
-                        window.focus(&back, cx);
-                    }
+                let had_focus = menu.contains_focused(window, cx);
+                let _ = view.update(cx, |this, cx| {
+                    close(this, window, cx);
+                    cx.notify();
                 });
-            }))
+                if had_focus {
+                    window.focus(&back, cx);
+                }
+            });
+        })
     }
     /// The open category menu's row for the current category, which takes
     /// focus when the menu opens.

@@ -4,6 +4,7 @@
 use super::DocumentView;
 use crate::document::text;
 use crate::ui;
+use crate::ui::MenuPanel;
 use gpui::{App, Context, FocusHandle, Window, div, prelude::*, px};
 use mdoc_pii::decisions::EntryState;
 use std::{
@@ -179,96 +180,89 @@ impl DocumentView {
             })
             .collect::<Vec<_>>();
         drop(handles);
-        gpui::deferred(
-            gpui::anchored()
-                .anchor(gpui::Anchor::TopRight)
-                .snap_to_window_with_margin(px(8.))
+        ui::popover(
+            ui::Placement {
+                corner: Some(gpui::Anchor::TopRight),
+                position: None,
+                margin: Some(px(8.)),
+            },
+            1,
+            ui::panel("decision-history", theme)
+                .when(cfg!(test), |v| {
+                    v.debug_selector(|| "decision-history".into())
+                })
+                .menu_focus(
+                    &self.history.menu,
+                    "UiPanel UiMenu",
+                    cx,
+                    |this, window, cx| {
+                        this.close_decision_history(window, cx);
+                        cx.stop_propagation();
+                    },
+                )
+                .role(gpui::Role::Menu)
+                .aria_label(text::WHAT_YOU_DID)
+                .menu_dismiss(cx, |this, event, window, cx| {
+                    // A press on the clock button is its toggle's.
+                    if this.history.bounds.get().contains(&event.position) {
+                        return;
+                    }
+                    this.history.open = false;
+                    let menu = this.history.menu.clone();
+                    let button = this.history.button.clone();
+                    window.defer(cx, move |window, cx| {
+                        if menu.contains_focused(window, cx) {
+                            window.focus(&button, cx);
+                        }
+                    });
+                    cx.notify();
+                })
+                .mt(px(32.))
+                .w(px(340.))
+                .p_1()
+                .rounded_lg()
+                .shadow_lg()
+                .flex()
+                .flex_col()
                 .child(
-                    ui::panel("decision-history", theme)
-                        .when(cfg!(test), |v| {
-                            v.debug_selector(|| "decision-history".into())
-                        })
-                        .track_focus(&self.history.menu)
-                        .key_context("UiPanel UiMenu")
-                        .role(gpui::Role::Menu)
-                        .aria_label(text::WHAT_YOU_DID)
-                        .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                            ui::cycle(window, cx, Some(&this.history.menu), false);
-                            cx.stop_propagation();
-                        }))
-                        .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                            ui::cycle(window, cx, Some(&this.history.menu), true);
-                            cx.stop_propagation();
-                        }))
-                        .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                            this.close_decision_history(window, cx);
-                            cx.stop_propagation();
-                        }))
-                        .on_mouse_down_out(cx.listener(
-                            |this, event: &gpui::MouseDownEvent, window, cx| {
-                                // A press on the clock button is its toggle's.
-                                if this.history.bounds.get().contains(&event.position) {
-                                    return;
-                                }
-                                this.history.open = false;
-                                let menu = this.history.menu.clone();
-                                let button = this.history.button.clone();
-                                window.defer(cx, move |window, cx| {
-                                    if menu.contains_focused(window, cx) {
-                                        window.focus(&button, cx);
-                                    }
-                                });
-                                cx.notify();
-                            },
-                        ))
-                        .mt(px(32.))
-                        .w(px(340.))
-                        .p_1()
-                        .rounded_lg()
-                        .shadow_lg()
+                    div()
+                        .px(px(12.))
+                        .pt_1()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .child(text::WHAT_YOU_DID),
+                )
+                .when(empty, |v| {
+                    v.child(
+                        div()
+                            .px(px(12.))
+                            .pt_1()
+                            .text_color(p.header_muted)
+                            .child(text::NO_DECISIONS_YET),
+                    )
+                })
+                .child(
+                    div()
+                        .id("decision-history-list")
+                        // Room for the rows' outside focus ring.
+                        .p(px(gpui_pdf::FOCUS_RING_OUTSET))
                         .flex()
                         .flex_col()
-                        .child(
-                            div()
-                                .px(px(12.))
-                                .pt_1()
-                                .font_weight(gpui::FontWeight::MEDIUM)
-                                .child(text::WHAT_YOU_DID),
-                        )
-                        .when(empty, |v| {
-                            v.child(
-                                div()
-                                    .px(px(12.))
-                                    .pt_1()
-                                    .text_color(p.header_muted)
-                                    .child(text::NO_DECISIONS_YET),
-                            )
-                        })
-                        .child(
-                            div()
-                                .id("decision-history-list")
-                                // Room for the rows' outside focus ring.
-                                .p(px(gpui_pdf::FOCUS_RING_OUTSET))
-                                .flex()
-                                .flex_col()
-                                .gap(px(2.))
-                                .max_h(px(360.))
-                                .overflow_y_scroll()
-                                .track_scroll(&self.history.scroll)
-                                .children(list),
-                        )
-                        .child(ui::menu_divider(theme))
-                        .child(
-                            div()
-                                .px(px(12.))
-                                .pb_1()
-                                .text_size(px(12.))
-                                .text_color(p.header_muted)
-                                .child(text::FOOTER),
-                        ),
+                        .gap(px(2.))
+                        .max_h(px(360.))
+                        .overflow_y_scroll()
+                        .track_scroll(&self.history.scroll)
+                        .children(list),
+                )
+                .child(ui::menu_divider(theme))
+                .child(
+                    div()
+                        .px(px(12.))
+                        .pb_1()
+                        .text_size(px(12.))
+                        .text_color(p.header_muted)
+                        .child(text::FOOTER),
                 ),
         )
-        .with_priority(1)
         .into_any_element()
     }
 }

@@ -1,9 +1,7 @@
 //! The selection pill's category menu: "Replace · Person ▾" adds the
 //! selection in a picked category.
 use crate::{document::DocumentView, review::PiiAddCandidateAs};
-use gpui::{
-    AnyElement, Context, Focusable, SharedString, Window, anchored, deferred, point, prelude::*, px,
-};
+use gpui::{AnyElement, Context, Focusable, SharedString, Window, point, prelude::*, px};
 use mdoc_pii::Category;
 
 /// Room the menu needs above the pill to open upward.
@@ -128,14 +126,15 @@ impl DocumentView {
             )
         };
         Some(
-            deferred(
-                anchored()
-                    .anchor(corner)
-                    .position(at)
-                    .snap_to_window_with_margin(px(8.))
-                    .child(menu),
+            crate::ui::popover(
+                crate::ui::Placement {
+                    corner: Some(corner),
+                    position: Some(at),
+                    margin: Some(px(8.)),
+                },
+                3,
+                menu,
             )
-            .with_priority(3)
             .into_any_element(),
         )
     }

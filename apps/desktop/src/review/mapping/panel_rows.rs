@@ -5,6 +5,7 @@ use super::{
     panel::{PanelEntry, PanelItem, ROW_HEIGHT, ReplacementRow},
 };
 use crate::review::text;
+use crate::ui::MenuPanel;
 use crate::{document::DocumentView, review::APPLIED_ID, ui, ui::style};
 use gpui::{
     AnyElement, App, AppContext, Context, Entity, HighlightStyle, Hsla, Pixels, SharedString,
@@ -657,10 +658,10 @@ impl DocumentView {
     ) -> AnyElement {
         let enabled = !self.pii.scanning();
         self.menu_surface("panel-category-menu")
-            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+            .menu_dismiss(cx, |this, _, _, cx| {
                 this.pii.mapping.panel_menu = None;
                 cx.notify();
-            }))
+            })
             .children(Category::ALL.into_iter().map(|category| {
                 self.menu_row(
                     SharedString::from(format!("panel-category-{}", category.token())),
