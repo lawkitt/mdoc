@@ -1,23 +1,40 @@
 //! Replacements panel rows: group headers and mention rows.
 use super::{
-    DragGhost, DropTarget, MappingAction, PanelCursor, PanelDrag, PanelMenu,
+    DropTarget, PanelCursor, PanelDrag, PanelMenu,
     checklist::Tick,
     panel::{PanelEntry, PanelItem, ROW_HEIGHT, ReplacementRow},
 };
 use crate::review::text;
-use crate::{
-    document::DocumentView,
-    review::{APPLIED_ID, KEPT_ID},
-    ui,
-    ui::style,
-};
+use crate::{document::DocumentView, review::APPLIED_ID, ui, ui::style};
 use gpui::{
-    AnyElement, App, AppContext, Context, Entity, Focusable, HighlightStyle, Hsla, Pixels,
-    SharedString, StyledText, Window, div, prelude::*, px,
+    AnyElement, App, AppContext, Context, Entity, HighlightStyle, Hsla, Pixels, SharedString,
+    StyledText, Window, div, prelude::*, px,
 };
 use mdoc_pii::Category;
-use std::ops::Range;
+use std::{ops::Range, sync::Arc};
 
+/// The drag ghost: the dragged original as a compact chip.
+pub(super) struct DragGhost {
+    pub label: Arc<str>,
+    pub theme: crate::ui::style::Theme,
+}
+impl gpui::Render for DragGhost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl gpui::IntoElement {
+        use gpui::{ParentElement, Styled};
+        let palette = self.theme.pdf_style();
+        gpui::div()
+            .px_2()
+            .py_1()
+            .rounded_md()
+            .bg(palette.bg)
+            .border_1()
+            .border_color(self.theme.applied())
+            .text_size(px(12.))
+            .text_color(palette.header_fg)
+            .shadow_md()
+            .child(self.label.to_string())
+    }
+}
 /// Starts a panel drag: remembers what is dragged and shows its ghost chip.
 fn start_drag(
     weak: gpui::WeakEntity<DocumentView>,
@@ -465,40 +482,11 @@ impl DocumentView {
         .child(chevron)
         .on_mouse_down(
             gpui::MouseButton::Right,
-            cx.listener(move |this, _, window, cx| {
-                cx.stop_propagation();
-                let menu = &mut this.pii.mapping.panel_menu;
-                *menu = (*menu != Some(PanelMenu::Category(id))).then_some(PanelMenu::Category(id));
-                // Escape reaches the menu from the list; an open popup keeps
-                // its focus and closes the menu first (#92).
-                let popup = &this.pii.focus;
-                if !(popup.is_focused(window) || popup.contains_focused(window, cx)) {
-                    window.focus(&this.pii.mapping.focus, cx);
-                }
-                cx.notify();
-            }),
+            cx.listener(move |this, _, window, cx| this.toggle_category_menu(id, window, cx)),
         )
         // A click toggles the group: opening shows its mentions and the popup
         // on the first one; closing folds it away.
-        .on_click(cx.listener(move |this, _, window, cx| {
-            this.pii.mapping.cursor = Some(PanelCursor::Header(id));
-            if this.pii.mapping.expanded.remove(&id) {
-                this.pii.dismiss_popup();
-                this.pii.mapping.panel_selected = false;
-                window.focus(&this.pii.mapping.focus, cx);
-                cx.notify();
-                return;
-            }
-            this.pii.mapping.expanded.insert(id);
-            match this.identity_occurrences(id).into_iter().next() {
-                Some((annotation, _)) => {
-                    this.open_from_panel(annotation, window, cx);
-                    this.pii.mapping.cursor = Some(PanelCursor::Header(id));
-                }
-                None => window.focus(&this.pii.mapping.focus, cx),
-            }
-            cx.notify();
-        }))
+        .on_click(cx.listener(move |this, _, window, cx| this.toggle_identity_row(id, window, cx)))
         .on_drag(
             PanelDrag::Entity {
                 identity: id,
@@ -507,15 +495,6 @@ impl DocumentView {
             start_drag(cx.entity().downgrade(), theme),
         )
         .into_any_element()
-    }
-
-    /// Reveal a mention from the panel and open its popup there:
-    /// the panel's own scroll lands it in view, then the popup anchors to it.
-    fn open_from_panel(&mut self, annotation: u64, window: &mut Window, cx: &mut Context<Self>) {
-        // A narrow window showing the source switches back to the Markdown.
-        self.original_selected = false;
-        self.panel_select_mention(annotation, cx);
-        self.activate_annotation(annotation, window, cx);
     }
 
     /// A kept mention under its entity: unticked, muted; ticking proposes it
@@ -562,13 +541,7 @@ impl DocumentView {
                     .text_ellipsis()
                     .child(format!("{before}{word}{after}")),
             )
-            .on_click(cx.listener(move |this, _, window, cx| {
-                // Like a kept marker in the text: the popup opens on it, unticked.
-                this.original_selected = false;
-                this.reveal_replacement_offset(start, cx);
-                this.activate_annotation(KEPT_ID | start as u64, window, cx);
-                cx.notify();
-            }))
+            .on_click(cx.listener(move |this, _, window, cx| this.open_kept_row(start, window, cx)))
             .into_any_element()
     }
 
@@ -698,12 +671,7 @@ impl DocumentView {
                     cx,
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    cx.stop_propagation();
-                    this.pii.mapping.panel_menu = None;
-                    if category != current {
-                        this.change_mapping(MappingAction::Category(id, category), cx);
-                    }
-                    cx.notify();
+                    this.pick_identity_category(id, category, current, cx)
                 }))
             }))
             // Not a name for the whole identity, last.
@@ -723,103 +691,5 @@ impl DocumentView {
                     })),
             )
             .into_any_element()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn expanded_identities(&self) -> usize {
-        self.pii.mapping.expanded.len()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn expand_all_focus(&self) -> gpui::FocusHandle {
-        self.pii.mapping.expand_all_focus.clone()
-    }
-
-    /// Whether every identity the panel lists is expanded.
-    pub(crate) fn all_identities_expanded(&self, cx: &App) -> bool {
-        let entries = self.replacement_entries(cx);
-        let mut headers = entries
-            .iter()
-            .filter(|(_, item)| matches!(item, PanelItem::Header))
-            .peekable();
-        headers.peek().is_some()
-            && headers.all(|(row, _)| self.pii.mapping.expanded.contains(&row.id))
-    }
-
-    /// Expand or collapse every identity the panel lists. A mention under
-    /// the keyboard cursor hands it to its identity's row when collapsing.
-    pub(crate) fn set_all_identities_expanded(&mut self, expand: bool, cx: &mut Context<Self>) {
-        let entries = self.replacement_entries(cx);
-        if expand {
-            let ids = entries
-                .iter()
-                .filter(|(_, item)| matches!(item, PanelItem::Header))
-                .map(|(row, _)| row.id);
-            self.pii.mapping.expanded.extend(ids);
-        } else {
-            if let Some(PanelCursor::Mention(annotation)) = self.pii.mapping.cursor
-                && let Some((row, _)) = entries
-                    .iter()
-                    .find(|(_, item)| item.mention() == Some(annotation))
-            {
-                self.pii.mapping.cursor = Some(PanelCursor::Header(row.id));
-            }
-            self.pii.mapping.expanded.clear();
-        }
-        cx.notify();
-    }
-
-    /// Expand or collapse one group; nothing is selected.
-    pub(super) fn toggle_group(&mut self, id: u64, cx: &mut Context<Self>) {
-        let expanded = &mut self.pii.mapping.expanded;
-        if !expanded.remove(&id) {
-            expanded.insert(id);
-        }
-        cx.notify();
-    }
-
-    fn edit_header_alias(
-        &mut self,
-        id: u64,
-        alias: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let input = self.pii.mapping.header_alias.clone();
-        input.update(cx, |input, cx| input.set_value(alias, cx));
-        self.pii.mapping.header_edit = Some(id);
-        window.focus(&input.read(cx).focus_handle(cx), cx);
-        cx.notify();
-    }
-
-    /// Rename the whole entity from its header; a rejected alias keeps editing.
-    fn commit_header_alias(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let value = self
-            .pii
-            .mapping
-            .header_alias
-            .read(cx)
-            .value()
-            .trim()
-            .to_owned();
-        if self
-            .pii
-            .review
-            .identity(id)
-            .is_some_and(|i| i.alias != value)
-        {
-            self.change_mapping(MappingAction::Rename(id, value), cx);
-            if self.pii.error.is_some() {
-                cx.notify();
-                return;
-            }
-        }
-        self.cancel_header_alias(window, cx);
-    }
-
-    fn cancel_header_alias(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.pii.mapping.header_edit = None;
-        window.focus(&self.pii.mapping.focus, cx);
-        cx.notify();
     }
 }

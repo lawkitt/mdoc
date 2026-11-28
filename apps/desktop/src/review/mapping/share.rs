@@ -6,7 +6,7 @@ use crate::review::text::{self, review_tab_label, share_status};
 use crate::{
     document::{DocumentView, Inspector},
     review::refusal::Step,
-    review::{APPLIED_ID, CopyForAi, KEPT_ID},
+    review::{APPLIED_ID, KEPT_ID},
     ui,
     ui::style,
 };
@@ -152,10 +152,8 @@ impl DocumentView {
                         })
                         .h(px(32.))
                         .on_click(cx.listener(
-                            move |this, _, window, cx| match step {
-                                Some(step) => cx.emit(crate::workspace::TabEvent::CopyStep(step)),
-                                None if copy_for_ai => this.copy_for_ai(&CopyForAi, window, cx),
-                                None => {}
+                            move |this, _, window, cx| {
+                                this.share_copy(step, copy_for_ai, window, cx)
                             },
                         )),
                     )
