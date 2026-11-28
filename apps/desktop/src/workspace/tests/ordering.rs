@@ -551,7 +551,7 @@ const NOT_THE_VAULT: &[&str] = &["self", "this", "tabs", "file", "pipe", "out", 
 
 /// The job bodies, by file under `src/` and function.
 const JOBS: &[(&str, &str)] = &[
-    ("workspace/saving/quit_flow.rs", "run_quit"),
+    ("workspace/saving/quit_flow/actions.rs", "run_quit"),
     ("workspace/saving/autosave.rs", "run_notes_save"),
     ("workspace/saving/autosave.rs", "run_save"),
     ("workspace/saving/autosave.rs", "write_captured"),
