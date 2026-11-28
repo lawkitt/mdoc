@@ -478,8 +478,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     // Locked as on a launch whose quiet probe could not read the key: open
     // tabs still show; the clipboard buttons ask to unlock.
     d.change(|w, _, _| {
-        w.vault
-            .opened(crate::workspace::vault::vault_state::Opening::MayAsk);
+        w.vault.opened(crate::workspace::vault::Opening::MayAsk);
         w.projects.clear();
     })?;
     let (rows, source) = documents(true);

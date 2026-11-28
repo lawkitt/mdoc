@@ -1,9 +1,8 @@
-//! The window's hold on the Vault: opened at launch with the OS-held key
-//! read quietly, Locked while that read would ask, Denied after the macOS
-//! dialog was declined, and Unavailable when there is no key store or the
-//! Vault does not open, or WrongKey when it was sealed with another key
-//! (a recovery key opens it). Tabs whose document waits for the key are kept
-//! here and load once it opens.
+//! The Vault's state: the window's hold on it, opened at launch with the
+//! OS-held key read quietly, Locked while that read would ask, Denied after
+//! the macOS dialog, WrongKey for a Vault sealed with another key; where the
+//! key is read and kept; and which tabs wait for it. No GPUI.
+use super::text;
 use super::text::{key_unavailable, vault_unavailable};
 use mdoc_store::os_key::KeyError;
 use mdoc_vault::{Vault, VaultError};
@@ -11,6 +10,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use zeroize::Zeroizing;
 
 /// What reading the key and opening the Vault gave.
 pub(in crate::workspace) enum Opening {
@@ -140,6 +140,116 @@ impl VaultState {
     }
 }
 
+/// Where the window reads and keeps the Vault key.
+#[derive(Clone, Default)]
+pub(crate) enum KeyStore {
+    /// The OS key store, through mdoc-store's guarded key path.
+    #[default]
+    Os,
+    /// Tests and headless renders: a key in memory.
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
+    Injected(std::sync::Arc<std::sync::Mutex<InjectedKey>>),
+}
+
+/// An injected key store: what it holds, and what was stored in it.
+#[cfg(any(
+    test,
+    all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    )
+))]
+#[derive(Default)]
+pub(crate) struct InjectedKey {
+    pub key: Option<[u8; 32]>,
+    /// Every key stored, in order.
+    pub stored: Vec<[u8; 32]>,
+    /// Storing fails, as when the OS refuses.
+    pub refuse: bool,
+}
+
+impl KeyStore {
+    /// The Vault key, read the way Unlock reads it (it may ask on macOS).
+    pub(super) fn read(&self) -> Result<Zeroizing<[u8; 32]>, String> {
+        match self {
+            Self::Os => match mdoc_store::os_key::vault_key(false) {
+                Ok(Some(key)) => Ok(Zeroizing::new(key)),
+                Ok(None) => Err(text::KEY_NEEDS_ASKING.into()),
+                Err(error) => Err(error.to_string()),
+            },
+            #[cfg(any(
+                test,
+                all(
+                    debug_assertions,
+                    feature = "headless-renders",
+                    any(target_os = "macos", target_os = "windows")
+                )
+            ))]
+            Self::Injected(store) => (store.lock().unwrap().key)
+                .map(Zeroizing::new)
+                .ok_or_else(|| text::NO_KEY_HELD.into()),
+        }
+    }
+
+    /// Keep `key` as the Vault key.
+    pub(super) fn store(&self, key: &[u8; 32]) -> Result<(), String> {
+        match self {
+            Self::Os => mdoc_store::os_key::store_vault_key(key).map_err(|e| e.to_string()),
+            #[cfg(any(
+                test,
+                all(
+                    debug_assertions,
+                    feature = "headless-renders",
+                    any(target_os = "macos", target_os = "windows")
+                )
+            ))]
+            Self::Injected(store) => {
+                let mut store = store.lock().unwrap();
+                if store.refuse {
+                    return Err(text::KEY_STORE_REFUSED.into());
+                }
+                store.key = Some(*key);
+                store.stored.push(*key);
+                Ok(())
+            }
+        }
+    }
+}
+
+/// A key that is there but can't be opened (a slot or key file sealed by
+/// another Windows installation, or damaged) leaves a Vault that holds
+/// documents to its recovery key, which then replaces the slot. Any other
+/// failure leaves the Vault unavailable.
+pub(super) fn key_unreadable(error: KeyError, root: Option<std::path::PathBuf>) -> Opening {
+    let unreadable = matches!(
+        error,
+        KeyError::DataProtection
+            | KeyError::KeyDamaged
+            | KeyError::KeychainDamaged
+            | KeyError::KeyringDamaged
+    );
+    match root {
+        Some(root) if unreadable && holds_objects(&root) => Opening::WrongKey(root),
+        _ => Opening::Key(error),
+    }
+}
+
+/// The Vault's folder holds sealed objects (#1091 Decision 12's layout).
+pub(super) fn holds_objects(root: &std::path::Path) -> bool {
+    root.join("manifest.enc").is_file()
+        || ["docs", "projects", "replies"].iter().any(|dir| {
+            std::fs::read_dir(root.join(dir)).is_ok_and(|mut entries| entries.next().is_some())
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,5 +314,30 @@ mod tests {
             VaultEffect::Load(vec![3])
         );
         assert!(state.wrong_key_root().is_none());
+    }
+
+    #[test]
+    fn a_key_that_cannot_be_opened_offers_the_recovery_key_for_a_vault_with_documents() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("vault");
+        // No Vault yet: nothing to recover.
+        let opening = key_unreadable(KeyError::DataProtection, Some(root.clone()));
+        assert!(matches!(opening, Opening::Key(KeyError::DataProtection)));
+        let vault = Vault::open(&root, &[1; 32]).unwrap();
+        vault
+            .create_project(mdoc_vault::NewProject::default())
+            .unwrap();
+        vault.flush().unwrap();
+        for error in [KeyError::DataProtection, KeyError::KeyDamaged] {
+            assert!(matches!(
+                key_unreadable(error, Some(root.clone())),
+                Opening::WrongKey(found) if found == root
+            ));
+        }
+        // No key store at all is not a key to recover.
+        assert!(matches!(
+            key_unreadable(KeyError::NoKeyStore, Some(root.clone())),
+            Opening::Key(KeyError::NoKeyStore)
+        ));
     }
 }

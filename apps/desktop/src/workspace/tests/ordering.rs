@@ -573,7 +573,7 @@ const JOBS: &[(&str, &str)] = &[
         "workspace/projects/new_project/actions.rs",
         "run_empty_project",
     ),
-    ("workspace/vault/user_lists.rs", "run_user_lists"),
+    ("workspace/vault/actions.rs", "run_user_lists"),
     ("workspace/projects/export_project.rs", "run_export"),
 ];
 

@@ -71,7 +71,7 @@ mod sidebar;
 mod text;
 pub(crate) use sidebar::navigation_ui::{Back, Forward};
 mod vault;
-pub(crate) use vault::recovery_key::OpenWithRecoveryKey;
+pub(crate) use vault::OpenWithRecoveryKey;
 actions!(
     mdoc,
     [
@@ -348,7 +348,7 @@ pub(super) struct Workspace {
     /// The window, for writes that end after the call that queued them.
     window_handle: gpui::AnyWindowHandle,
     /// The Vault, once the key opened it.
-    vault: vault::vault_state::VaultState,
+    vault: vault::VaultState,
     /// The AI connector and its listener, while "AI connector (preview)"
     /// is on and the Vault is open.
     ai_connector: Option<crate::ai::connector::Running>,
@@ -367,7 +367,7 @@ pub(super) struct Workspace {
     ai_ask: crate::ai::ask::Waiting,
     /// Settings › Vault's key, the first-Project nudge and the wrong-key
     /// screen.
-    recovery: vault::recovery_key::Recovery,
+    recovery: vault::Recovery,
     /// Documents' autosaves, one write at a time.
     document_writer: saving::autosave::Writer,
     /// Where each imported tab's file was opened from, so opening it again

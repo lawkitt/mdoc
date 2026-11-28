@@ -1,8 +1,11 @@
-//! The Keychain explainer: before mdoc reads the Vault key in a way
-//! that may show the macOS password dialog, say why, and preview that dialog
-//! with a short, captioned animation below the text so the real one is
-//! expected, not suspicious, and the drawing is never taken for it.
+//! The Vault's view: the Keychain explainer, before mdoc reads the key in a
+//! way that may show the macOS password dialog, with its animated preview
+//! of that dialog; the Projects key bar; and the recovery key's nudge, Home
+//! panel and field.
 use super::text;
+use super::{OpenWithRecoveryKey, RECOVERY_FIELD};
+use crate::document::markdown_search::SearchInput;
+use crate::settings::Category;
 use crate::workspace::Workspace;
 use crate::{
     ui,
@@ -13,6 +16,7 @@ use crate::{
     },
 };
 use gpui::{Animation, AnimationExt, AnyElement, App, Context, Hsla, Window, div, prelude::*, px};
+use gpui::{Entity, Focusable};
 use std::{
     sync::{Arc, LazyLock},
     time::Duration,
@@ -536,5 +540,180 @@ impl Workspace {
                 }))
                 .into_any_element(),
         )
+    }
+
+    /// The nudge's card in the bell.
+    pub(in crate::workspace) fn recovery_nudge_bar(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if !self.recovery_nudge() {
+            return None;
+        }
+        let theme = self.theme.get();
+        let accent = theme.search_accent();
+        Some(
+            div()
+                .id("recovery-nudge")
+                .when(cfg!(test), |v| v.debug_selector(|| "recovery-nudge".into()))
+                .flex()
+                .flex_col()
+                .gap_2()
+                .px_3()
+                .py_2()
+                .text_size(px(12.))
+                .bg(gpui::Hsla { a: 0.07, ..accent })
+                .child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .child(div().text_color(accent).child("ⓘ"))
+                        .child(div().flex_1().min_w_0().child(text::NUDGE)),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            ui::control("recovery-nudge-later", text::NOT_NOW, theme, true)
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "recovery-nudge-later".into())
+                                })
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.dismiss_recovery_nudge(cx)),
+                                ),
+                        )
+                        .child(
+                            ui::control(
+                                "recovery-nudge-show",
+                                text::SHOW_RECOVERY_KEY,
+                                theme,
+                                true,
+                            )
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "recovery-nudge-show".into())
+                            })
+                            .on_click(cx.listener(
+                                |this, _, window, cx| {
+                                    this.title.notices_open.set(false);
+                                    this.settings.update(cx, |panel, cx| {
+                                        panel.show_category(Category::Vault, window, cx)
+                                    });
+                                    this.show_recovery_key(cx);
+                                },
+                            )),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// Home's drop zone while the Vault was sealed with another key: the
+    /// recovery key field and Open Documents.
+    pub(in crate::workspace) fn recovery_panel(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let field = self.recovery.field.clone();
+        div()
+            .id("home-recovery")
+            .when(cfg!(test), |v| v.debug_selector(|| "home-recovery".into()))
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_3()
+            .px_6()
+            .pt_6()
+            .pb_5()
+            .rounded_xl()
+            .border_1()
+            .border_color(p.border)
+            .child(
+                div()
+                    .text_size(px(15.))
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(p.header_fg)
+                    .child(text::ENTER_RECOVERY_KEY),
+            )
+            .child(
+                div()
+                    .max_w(px(460.))
+                    .text_center()
+                    .text_size(px(12.))
+                    .text_color(p.header_muted)
+                    .child(text::RECOVERY_DETAIL),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .max_w(px(680.))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(p.border)
+                            .font_family(style::markdown_style(theme).mono.family.clone())
+                            .key_context(RECOVERY_FIELD)
+                            .on_action(cx.listener(|this, _: &OpenWithRecoveryKey, window, cx| {
+                                this.open_with_recovery_key(window, cx)
+                            }))
+                            .children(field),
+                    )
+                    .child(
+                        ui::filled_button(
+                            "home-recovery-open",
+                            text::OPEN_DOCUMENTS,
+                            theme,
+                            !self.recovery.opening,
+                        )
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "home-recovery-open".into())
+                        })
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.open_with_recovery_key(window, cx)
+                        })),
+                    ),
+            )
+            .children(self.recovery.error.clone().map(|error| {
+                div()
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "home-recovery-error".into())
+                    })
+                    .max_w(px(460.))
+                    .text_center()
+                    .text_size(px(12.))
+                    .text_color(style::markdown_style(theme).alert_caution)
+                    .child(error)
+            }))
+            .into_any_element()
+    }
+
+    pub(super) fn recovery_field(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<SearchInput> {
+        if let Some(field) = &self.recovery.field {
+            return field.clone();
+        }
+        let theme = self.theme.clone();
+        let field = cx.new(|cx| {
+            SearchInput::new(cx)
+                .with_theme(theme)
+                .with_key_context(RECOVERY_FIELD)
+                .with_placeholder(text::RECOVERY_PLACEHOLDER)
+                .with_label(text::RECOVERY_KEY)
+        });
+        let focus = field.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+        self.recovery.field = Some(field.clone());
+        field
     }
 }

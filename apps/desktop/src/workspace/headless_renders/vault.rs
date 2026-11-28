@@ -182,7 +182,7 @@ pub(super) fn recovery_key(d: &mut Driver) -> Result<()> {
     use crate::settings::Category;
     d.change(|w, window, cx| {
         w.use_key_store(std::sync::Arc::new(std::sync::Mutex::new(
-            crate::workspace::vault::recovery_key::InjectedKey {
+            crate::workspace::vault::InjectedKey {
                 key: Some([3; 32]),
                 ..Default::default()
             },
