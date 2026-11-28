@@ -6,7 +6,7 @@ use super::{
 use crate::review::text;
 use crate::{
     document::DocumentView,
-    review::{APPLIED_ID, KEPT_ID, PiiClosePopup, PiiConfirm, Popup},
+    review::{APPLIED_ID, PiiClosePopup, PiiConfirm, Popup},
     ui::style,
 };
 use gpui::{
@@ -363,26 +363,9 @@ impl DocumentView {
                     cx.stop_propagation();
                 }),
             )
-            .on_action(cx.listener(|this, _: &PiiConfirm, window, cx| {
-                if this
-                    .pii
-                    .mapping
-                    .alias
-                    .read(cx)
-                    .focus_handle(cx)
-                    .is_focused(window)
-                {
-                    this.open_alias_choice(window, cx);
-                } else if this.pii.enter_applies
-                    && this
-                        .active_annotation()
-                        .is_some_and(|a| a & (APPLIED_ID | KEPT_ID) == 0)
-                {
-                    // After a manual addition, Apply is the default action.
-                    this.apply_scope(cx);
-                }
-                cx.stop_propagation();
-            }))
+            .on_action(
+                cx.listener(|this, _: &PiiConfirm, window, cx| this.confirm_popup(window, cx)),
+            )
             .on_mouse_down_out(
                 cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
                     let mapping = &this.pii.mapping;

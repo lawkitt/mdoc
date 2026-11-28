@@ -83,13 +83,9 @@ mod tests {
         "main",
         "workspace/ai",
         "workspace/headless_renders",
-        "workspace/home",
-        "workspace/notices",
-        "workspace/palette",
         "workspace/projects",
         "workspace/replies",
         "workspace/saving",
-        "workspace/shelf_source",
         "workspace/vault",
     ];
 

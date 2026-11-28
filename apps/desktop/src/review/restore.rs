@@ -341,4 +341,19 @@ impl DocumentView {
         cx.notify();
         false
     }
+
+    /// Share's copy button: the step a refusal needs, or Copy for AI.
+    pub(super) fn share_copy(
+        &mut self,
+        step: Option<Step>,
+        copy_for_ai: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match step {
+            Some(step) => cx.emit(crate::workspace::TabEvent::CopyStep(step)),
+            None if copy_for_ai => self.copy_for_ai(&CopyForAi, window, cx),
+            None => {}
+        }
+    }
 }
