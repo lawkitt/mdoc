@@ -565,157 +565,126 @@ impl Workspace {
         let list_height = (window.viewport_size().height - px(300.)).clamp(px(120.), px(360.));
         Some(
             gpui::deferred(
-                div()
-                    .id("folder-sheet-overlay")
+                ui::sheet_scrim("folder-sheet-overlay", theme, 64.)
                     .absolute()
                     .inset_0()
-                    .flex()
-                    .items_start()
-                    .justify_center()
-                    .pt(px(64.))
-                    .bg(theme.scrim())
-                    // A modal: nothing behind it takes the pointer or a drop.
-                    .occlude()
                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
                     .on_mouse_down(gpui::MouseButton::Middle, |_, _, cx| cx.stop_propagation())
                     .child(
-                        ui::panel("folder-sheet", theme)
-                            .when(cfg!(test), |v| v.debug_selector(|| "folder-sheet".into()))
-                            .role(gpui::Role::Dialog)
-                            .aria_label(format!("Open folder “{}”", sheet.name()))
-                            // Window commands wait until the sheet is answered.
-                            .on_action(|_: &Close, _, _| {})
-                            .on_action(|_: &New, _, _| {})
-                            .on_action(|_: &Open, _, _| {})
-                            .on_action(|_: &Import, _, _| {})
-                            .on_action(|_: &OpenProject, _, _| {})
-                            .on_action(|_: &crate::workspace::NewProject, _, _| {})
-                            .on_action(|_: &Settings, _, _| {})
-                            .on_action(|_: &OpenPalette, _, _| {})
-                            .on_action(|_: &ShowShortcuts, _, _| {})
-                            .on_action(|_: &crate::commands::menus::About, _, _| {})
-                            .on_action(|_: &SwitchDocument, _, _| {})
-                            .on_action(|_: &SwitchDocumentBack, _, _| {})
-                            .on_action(|_: &ToggleSidebar, _, _| {})
-                            .on_action(|_: &RetryDocument, _, _| {})
-                            .on_action(|_: &crate::workspace::home::ShowHome, _, _| {})
-                            .on_action(|_: &crate::workspace::home::PasteAsNewTab, _, _| {})
-                            .on_action(|_: &PasteAiResponse, _, _| {})
-                            .on_action(|_: &PseudonymizeClipboard, _, _| {})
-                            .on_action(|_: &crate::workspace::RestoreClipboard, _, _| {})
-                            .on_action(|_: &crate::workspace::CheckForUpdates, _, _| {})
-                            .on_action(|_: &crate::review::PiiApplyAll, _, _| {})
-                            .key_context("FolderSheet UiPanel")
-                            .track_focus(&focus.group)
-                            .tab_group()
-                            .tab_stop(false)
-                            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                                if let Some(f) = &this.folder_sheet_focus {
-                                    ui::cycle(window, cx, Some(&f.group), false);
-                                }
-                                cx.stop_propagation();
-                            }))
-                            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                                if let Some(f) = &this.folder_sheet_focus {
-                                    ui::cycle(window, cx, Some(&f.group), true);
-                                }
-                                cx.stop_propagation();
-                            }))
-                            .on_key_down(cx.listener(Self::folder_sheet_key))
-                            .w(px(480.))
-                            .max_w_full()
-                            .p_5()
-                            .flex()
-                            .flex_col()
-                            .gap_3()
-                            .child(ui::card_title(format!("“{}”", sheet.name())))
-                            .children(sheet.skipped().map(|s| ui::card_text(s.to_string(), theme)))
-                            .child(
-                                div()
-                                    .id("folder-sheet-list")
-                                    .role(gpui::Role::List)
-                                    .aria_label("Files")
-                                    .track_scroll(&focus.scroll)
-                                    .overflow_y_scroll()
-                                    .max_h(list_height)
-                                    .flex()
-                                    .flex_col()
-                                    .gap_px()
-                                    // Room for the focus ring's outside stroke.
-                                    .p_1()
-                                    .children(rows),
-                            )
-                            .child(
-                                ui::live_text("folder-sheet-note", note.clone())
+                        ui::sheet_panel(
+                            "folder-sheet",
+                            theme,
+                            gpui::Role::Dialog,
+                            format!("Open folder “{}”", sheet.name()),
+                            &focus.group,
+                            Some("FolderSheet"),
+                        )
+                        // Window commands wait until the sheet is answered.
+                        .on_action(|_: &Close, _, _| {})
+                        .on_action(|_: &New, _, _| {})
+                        .on_action(|_: &Open, _, _| {})
+                        .on_action(|_: &Import, _, _| {})
+                        .on_action(|_: &OpenProject, _, _| {})
+                        .on_action(|_: &crate::workspace::NewProject, _, _| {})
+                        .on_action(|_: &Settings, _, _| {})
+                        .on_action(|_: &OpenPalette, _, _| {})
+                        .on_action(|_: &ShowShortcuts, _, _| {})
+                        .on_action(|_: &crate::commands::menus::About, _, _| {})
+                        .on_action(|_: &SwitchDocument, _, _| {})
+                        .on_action(|_: &SwitchDocumentBack, _, _| {})
+                        .on_action(|_: &ToggleSidebar, _, _| {})
+                        .on_action(|_: &RetryDocument, _, _| {})
+                        .on_action(|_: &crate::workspace::home::ShowHome, _, _| {})
+                        .on_action(|_: &crate::workspace::home::PasteAsNewTab, _, _| {})
+                        .on_action(|_: &PasteAiResponse, _, _| {})
+                        .on_action(|_: &PseudonymizeClipboard, _, _| {})
+                        .on_action(|_: &crate::workspace::RestoreClipboard, _, _| {})
+                        .on_action(|_: &crate::workspace::CheckForUpdates, _, _| {})
+                        .on_action(|_: &crate::review::PiiApplyAll, _, _| {})
+                        .on_key_down(cx.listener(Self::folder_sheet_key))
+                        .w(px(480.))
+                        .max_w_full()
+                        .p_5()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(ui::card_title(format!("“{}”", sheet.name())))
+                        .children(sheet.skipped().map(|s| ui::card_text(s.to_string(), theme)))
+                        .child(
+                            div()
+                                .id("folder-sheet-list")
+                                .role(gpui::Role::List)
+                                .aria_label("Files")
+                                .track_scroll(&focus.scroll)
+                                .overflow_y_scroll()
+                                .max_h(list_height)
+                                .flex()
+                                .flex_col()
+                                .gap_px()
+                                // Room for the focus ring's outside stroke.
+                                .p_1()
+                                .children(rows),
+                        )
+                        .child(
+                            ui::live_text("folder-sheet-note", note.clone())
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "folder-sheet-note".into())
+                                })
+                                .text_size(px(12.))
+                                .text_color(if refused {
+                                    style::markdown_style(theme).alert_caution
+                                } else {
+                                    p.header_muted
+                                })
+                                .child(note),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .justify_end()
+                                .gap_2()
+                                .pt_1()
+                                .child(
+                                    ui::action_control(
+                                        "folder-cancel",
+                                        crate::ui::text::CANCEL,
+                                        theme,
+                                        true,
+                                        false,
+                                    )
                                     .when(cfg!(test), |v| {
-                                        v.debug_selector(|| "folder-sheet-note".into())
+                                        v.debug_selector(|| "folder-cancel".into())
                                     })
-                                    .text_size(px(12.))
-                                    .text_color(if refused {
-                                        style::markdown_style(theme).alert_caution
-                                    } else {
-                                        p.header_muted
+                                    .on_click(cx.listener(
+                                        |this, _, window, cx| this.cancel_folder_sheet(window, cx),
+                                    )),
+                                )
+                                .child(
+                                    ui::action_control(
+                                        "folder-open-files",
+                                        "Open files",
+                                        theme,
+                                        enabled,
+                                        false,
+                                    )
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "folder-open-files".into())
                                     })
-                                    .child(note),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .justify_end()
-                                    .gap_2()
-                                    .pt_1()
-                                    .child(
-                                        ui::action_control(
-                                            "folder-cancel",
-                                            crate::ui::text::CANCEL,
-                                            theme,
-                                            true,
-                                            false,
-                                        )
-                                        .when(cfg!(test), |v| {
-                                            v.debug_selector(|| "folder-cancel".into())
-                                        })
-                                        .on_click(
-                                            cx.listener(|this, _, window, cx| {
-                                                this.cancel_folder_sheet(window, cx)
-                                            }),
-                                        ),
-                                    )
-                                    .child(
-                                        ui::action_control(
-                                            "folder-open-files",
-                                            "Open files",
-                                            theme,
-                                            enabled,
-                                            false,
-                                        )
-                                        .when(cfg!(test), |v| {
-                                            v.debug_selector(|| "folder-open-files".into())
-                                        })
-                                        .on_click(
-                                            cx.listener(|this, _, window, cx| {
-                                                this.open_folder_files(window, cx)
-                                            }),
-                                        ),
-                                    )
-                                    .child(
-                                        ui::primary_button(
-                                            "folder-primary",
-                                            primary,
-                                            theme,
-                                            enabled,
-                                        )
+                                    .on_click(cx.listener(
+                                        |this, _, window, cx| this.open_folder_files(window, cx),
+                                    )),
+                                )
+                                .child(
+                                    ui::primary_button("folder-primary", primary, theme, enabled)
                                         .when(cfg!(test), |v| {
                                             v.debug_selector(|| "folder-primary".into())
                                         })
-                                        .on_click(
-                                            cx.listener(|this, _, window, cx| {
-                                                this.folder_primary(window, cx)
-                                            }),
-                                        ),
-                                    ),
-                            ),
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.folder_primary(window, cx)
+                                        })),
+                                ),
+                        ),
                     ),
             )
             .with_priority(2)
