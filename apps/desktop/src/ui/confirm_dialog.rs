@@ -162,73 +162,57 @@ impl Render for ConfirmDialog {
         let theme = self.theme;
         let palette = theme.pdf_style();
         let size = window.viewport_size();
-        div()
-            .id("confirm-overlay")
+        ui::sheet_scrim("confirm-overlay", theme, 96.)
             .w(size.width)
             .h(size.height)
-            .flex()
-            .items_start()
-            .justify_center()
-            .pt(px(96.))
-            .bg(theme.scrim())
-            // A modal: nothing behind it takes the pointer.
-            .occlude()
             .child(
-                ui::panel("confirm-dialog", theme)
-                    .when(cfg!(test), |v| v.debug_selector(|| "confirm-dialog".into()))
-                    .role(gpui::Role::AlertDialog)
-                    .aria_label(self.message.clone())
-                    .when_some(self.detail.clone(), |v, detail| v.aria_description(detail))
-                    .w(px(420.))
-                    .p_5()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .key_context(format!("{DIALOG} UiPanel").as_str())
-                    // ⌘D / Alt+D: Don't Save, as in the platform's save sheets.
-                    .on_action(cx.listener(|this, _: &Discard, _, cx| {
-                        match this.position(super::text::DONT_SAVE) {
-                            Some(index) => this.answer(index, cx),
-                            None => cx.propagate(),
-                        }
-                    }))
-                    .track_focus(&self.focus)
-                    .tab_group()
-                    .tab_stop(false)
-                    .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                        ui::cycle(window, cx, Some(&this.focus), false);
-                        cx.stop_propagation();
-                    }))
-                    .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                        ui::cycle(window, cx, Some(&this.focus), true);
-                        cx.stop_propagation();
-                    }))
-                    .on_key_down(cx.listener(Self::key_down))
-                    .child(ui::card_title(self.message.clone()))
-                    .when_some(self.detail.clone(), |v, detail| {
-                        v.child(ui::card_text(detail, theme))
-                    })
-                    .child({
-                        let (leading, trailing) = self.order();
-                        let leading: Vec<_> = leading
-                            .into_iter()
-                            .map(|i| self.button(i, theme, cx))
-                            .collect();
-                        let trailing: Vec<_> = trailing
-                            .into_iter()
-                            .map(|i| self.button(i, theme, cx))
-                            .collect();
-                        div()
-                            .flex()
-                            .justify_end()
-                            .items_center()
-                            .gap_2()
-                            .pt_1()
-                            .children(leading)
-                            .when(cfg!(target_os = "macos"), |v| v.child(div().flex_1()))
-                            .children(trailing)
-                    })
-                    .text_color(palette.header_fg),
+                ui::sheet_panel(
+                    "confirm-dialog",
+                    theme,
+                    gpui::Role::AlertDialog,
+                    self.message.clone(),
+                    &self.focus,
+                    Some(DIALOG),
+                )
+                .when_some(self.detail.clone(), |v, detail| v.aria_description(detail))
+                .w(px(420.))
+                .p_5()
+                .flex()
+                .flex_col()
+                .gap_3()
+                // ⌘D / Alt+D: Don't Save, as in the platform's save sheets.
+                .on_action(cx.listener(|this, _: &Discard, _, cx| {
+                    match this.position(super::text::DONT_SAVE) {
+                        Some(index) => this.answer(index, cx),
+                        None => cx.propagate(),
+                    }
+                }))
+                .on_key_down(cx.listener(Self::key_down))
+                .child(ui::card_title(self.message.clone()))
+                .when_some(self.detail.clone(), |v, detail| {
+                    v.child(ui::card_text(detail, theme))
+                })
+                .child({
+                    let (leading, trailing) = self.order();
+                    let leading: Vec<_> = leading
+                        .into_iter()
+                        .map(|i| self.button(i, theme, cx))
+                        .collect();
+                    let trailing: Vec<_> = trailing
+                        .into_iter()
+                        .map(|i| self.button(i, theme, cx))
+                        .collect();
+                    div()
+                        .flex()
+                        .justify_end()
+                        .items_center()
+                        .gap_2()
+                        .pt_1()
+                        .children(leading)
+                        .when(cfg!(target_os = "macos"), |v| v.child(div().flex_1()))
+                        .children(trailing)
+                })
+                .text_color(palette.header_fg),
             )
     }
 }
