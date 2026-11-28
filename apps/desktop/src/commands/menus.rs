@@ -6,27 +6,14 @@
 //! choosing one shows it (#1160). The workspace hands over the list as it
 //! changes, and the menu bar is set again. Nothing is ticked: GPUI can
 //! only rebuild the whole bar, and its macOS platform keeps every
-//! rebuild's actions, so switching documents must not rebuild it.
+//! rebuild's actions, so switching documents must not rebuild it. Each
+//! item is a command of the command table, by its menu bar name.
 
-use crate::{
-    document::search_session::{
-        FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown,
-    },
-    document::{
-        CopyMarkdown, ExportMarkdown, OpenSourceReply, Save, ShowEditView, ShowNotes,
-        ShowOriginalView, ShowPseudonymizedView, ShowReplacements, ToggleCompare, ZoomIn, ZoomOut,
-        ZoomReset,
-    },
-    review::{CopyForAi, Pseudonymize},
-    workspace::{
-        AddDocumentToProject, ChangeProjectColour, CheckForUpdates, Close, DeleteProject,
-        ExportProject, Import, MoveToNewProject, MoveToProject, New, NewProject, Open, OpenPalette,
-        OpenProject, PasteAiResponse, ProjectCategories, PseudonymizeClipboard, Quit,
-        RenameProject, RestoreClipboard, Settings, ShowHome, SwitchDocument, SwitchDocumentBack,
-        ToggleSidebar, palette::shortcuts_ui::ShowShortcuts,
-    },
+use crate::commands::{
+    table::{self, Command},
+    text,
 };
-use gpui::{App, Menu, MenuItem, OsAction, SharedString, SystemMenuType, actions};
+use gpui::{App, Menu, MenuItem, SharedString, SystemMenuType, actions};
 
 /// What Help › mdoc Help and the sidebar's ? open.
 pub(crate) const HELP_URL: &str = "https://github.com/lawkitt/mdoc#readme";
@@ -112,14 +99,25 @@ pub(crate) fn items_with(
     out
 }
 
+/// A command as the menu bar lists it: its menu name and its action.
+fn item(command: &Command) -> MenuItem {
+    MenuItem::Action {
+        name: command.menu.into(),
+        action: command.action(),
+        os_action: command.os,
+        checked: false,
+        disabled: false,
+    }
+}
+
 /// Window's own items, then each live view.
 fn window_items(views: &[LiveViewItem]) -> Vec<MenuItem> {
     let mut items = vec![
-        MenuItem::action("Minimize", MinimizeWindow),
-        MenuItem::action("Zoom", ZoomWindow),
+        item(&table::MINIMIZE),
+        item(&table::ZOOM_WINDOW),
         MenuItem::separator(),
-        MenuItem::action("Switch Document", SwitchDocument),
-        MenuItem::action("Switch Document Back", SwitchDocumentBack),
+        item(&table::SWITCH_DOCUMENT),
+        item(&table::SWITCH_DOCUMENT_BACK),
     ];
     if !views.is_empty() {
         items.push(MenuItem::separator());
@@ -131,105 +129,96 @@ fn window_items(views: &[LiveViewItem]) -> Vec<MenuItem> {
 }
 
 fn menus(views: &[LiveViewItem]) -> Vec<Menu> {
-    let mut app = vec![MenuItem::action("About mdoc", About)];
+    let mut app = vec![item(&table::ABOUT)];
     if cfg!(target_os = "macos") {
-        app.push(MenuItem::action("Check for Updates…", CheckForUpdates));
+        app.push(item(&table::CHECK_FOR_UPDATES));
     }
-    app.extend([
-        MenuItem::separator(),
-        MenuItem::action("Settings…", Settings),
-    ]);
+    app.extend([MenuItem::separator(), item(&table::SETTINGS)]);
     if cfg!(target_os = "macos") {
         app.extend([
             MenuItem::separator(),
-            MenuItem::os_submenu("Services", SystemMenuType::Services),
+            MenuItem::os_submenu(text::SERVICES, SystemMenuType::Services),
             MenuItem::separator(),
-            MenuItem::action("Hide mdoc", HideApp),
-            MenuItem::action("Hide Others", HideOtherApps),
-            MenuItem::action("Show All", ShowAllApps),
+            item(&table::HIDE_MDOC),
+            item(&table::HIDE_OTHERS),
+            item(&table::SHOW_ALL),
         ]);
     }
-    app.extend([MenuItem::separator(), MenuItem::action("Quit mdoc", Quit)]);
-    let mut help = vec![
-        MenuItem::action("mdoc Help", OpenHelp),
-        MenuItem::action("Keyboard Shortcuts", ShowShortcuts),
-    ];
+    app.extend([MenuItem::separator(), item(&table::QUIT)]);
+    let mut help = vec![item(&table::HELP), item(&table::KEYBOARD_SHORTCUTS)];
     if !cfg!(target_os = "macos") {
-        help.extend([
-            MenuItem::separator(),
-            MenuItem::action("Check for Updates…", CheckForUpdates),
-        ]);
+        help.extend([MenuItem::separator(), item(&table::CHECK_FOR_UPDATES)]);
     }
     vec![
-        Menu::new("mdoc").items(app),
-        Menu::new("File").items([
-            MenuItem::action("New", New),
-            MenuItem::action("Open…", Open),
-            MenuItem::action("Open Project…", OpenProject),
-            MenuItem::action("Convert to Markdown", Import),
+        Menu::new(text::MENU_APP).items(app),
+        Menu::new(text::MENU_FILE).items([
+            item(&table::NEW),
+            item(&table::OPEN),
+            item(&table::OPEN_PROJECT),
+            item(&table::CONVERT_TO_MARKDOWN),
             MenuItem::separator(),
-            MenuItem::action("Save", Save),
-            MenuItem::action("Export Markdown…", ExportMarkdown),
+            item(&table::SAVE),
+            item(&table::EXPORT_MARKDOWN),
             MenuItem::separator(),
-            MenuItem::action("Copy Markdown", CopyMarkdown),
-            MenuItem::action("Copy for AI", CopyForAi),
-            MenuItem::action("Paste AI Reply", PasteAiResponse),
+            item(&table::COPY_MARKDOWN),
+            item(&table::COPY_FOR_AI),
+            item(&table::PASTE_AI_REPLY),
             MenuItem::separator(),
-            MenuItem::action(crate::ui::text::CLOSE, Close),
+            item(&table::CLOSE),
         ]),
-        Menu::new("Project").items([
-            MenuItem::action("New Project…", NewProject),
-            MenuItem::action("Move to Project…", MoveToProject),
-            MenuItem::action("Move to New Project", MoveToNewProject),
+        Menu::new(text::MENU_PROJECT).items([
+            item(&table::NEW_PROJECT),
+            item(&table::MOVE_TO_PROJECT),
+            item(&table::MOVE_TO_NEW_PROJECT),
             MenuItem::separator(),
-            MenuItem::action("Add Document…", AddDocumentToProject),
-            MenuItem::action("Rename Project", RenameProject),
-            MenuItem::action("Project Colour", ChangeProjectColour),
-            MenuItem::action("Categories to Detect", ProjectCategories),
+            item(&table::ADD_DOCUMENT_TO_PROJECT),
+            item(&table::RENAME_PROJECT),
+            item(&table::PROJECT_COLOUR),
+            item(&table::PROJECT_CATEGORIES),
             MenuItem::separator(),
-            MenuItem::action("Export Project…", ExportProject),
-            MenuItem::action("Delete Project…", DeleteProject),
+            item(&table::EXPORT_PROJECT),
+            item(&table::DELETE_PROJECT),
         ]),
-        Menu::new("Edit").items([
-            MenuItem::os_action("Undo", mdoc_editor::Undo, OsAction::Undo),
-            MenuItem::os_action("Redo", mdoc_editor::Redo, OsAction::Redo),
+        Menu::new(text::MENU_EDIT).items([
+            item(&table::UNDO),
+            item(&table::REDO),
             MenuItem::separator(),
-            MenuItem::os_action("Cut", mdoc_editor::Cut, OsAction::Cut),
-            MenuItem::os_action("Copy", mdoc_editor::Copy, OsAction::Copy),
-            MenuItem::os_action("Paste", mdoc_editor::Paste, OsAction::Paste),
-            MenuItem::os_action("Select All", mdoc_editor::SelectAll, OsAction::SelectAll),
+            item(&table::CUT),
+            item(&table::COPY),
+            item(&table::PASTE),
+            item(&table::SELECT_ALL),
             MenuItem::separator(),
-            MenuItem::action("Find…", FindMarkdown),
-            MenuItem::action("Find and Replace…", FindReplaceMarkdown),
-            MenuItem::action("Find Next", FindNextMarkdown),
-            MenuItem::action("Find Previous", FindPreviousMarkdown),
+            item(&table::FIND),
+            item(&table::FIND_AND_REPLACE),
+            item(&table::FIND_NEXT),
+            item(&table::FIND_PREVIOUS),
             MenuItem::separator(),
-            MenuItem::action("Pseudonymize", Pseudonymize),
-            MenuItem::action("Pseudonymize Clipboard", PseudonymizeClipboard),
-            MenuItem::action("Restore Clipboard", RestoreClipboard),
+            item(&table::PSEUDONYMIZE),
+            item(&table::PSEUDONYMIZE_CLIPBOARD),
+            item(&table::RESTORE_CLIPBOARD),
         ]),
-        Menu::new("View").items([
-            MenuItem::action("Home", ShowHome),
-            MenuItem::action("Search", OpenPalette),
-            MenuItem::action("Toggle Sidebar", ToggleSidebar),
+        Menu::new(text::MENU_VIEW).items([
+            item(&table::HOME),
+            item(&table::COMMAND_PALETTE),
+            item(&table::TOGGLE_SIDEBAR),
             MenuItem::separator(),
-            MenuItem::action("Edit", ShowEditView),
-            MenuItem::action("Original", ShowOriginalView),
-            MenuItem::action("Pseudonymized", ShowPseudonymizedView),
-            MenuItem::action("Side by Side", ToggleCompare),
+            item(&table::SHOW_EDIT_VIEW),
+            item(&table::SHOW_ORIGINAL_VIEW),
+            item(&table::SHOW_PSEUDONYMIZED_VIEW),
+            item(&table::SIDE_BY_SIDE),
             MenuItem::separator(),
-            MenuItem::action("Show Replacements", ShowReplacements),
-            MenuItem::action("Notes", ShowNotes),
-            MenuItem::action("Open Source AI Reply", OpenSourceReply),
+            item(&table::SHOW_REPLACEMENTS),
+            item(&table::NOTES),
+            item(&table::OPEN_SOURCE_REPLY),
             MenuItem::separator(),
-            MenuItem::action("Zoom In", ZoomIn),
-            MenuItem::action("Zoom Out", ZoomOut),
-            MenuItem::action("Actual Size", ZoomReset),
+            item(&table::ZOOM_IN),
+            item(&table::ZOOM_OUT),
+            item(&table::ACTUAL_SIZE),
         ]),
         // GPUI registers the menu named "Window" as the app's Windows menu,
         // so macOS lists the open windows there, after the live views.
-        Menu::new("Window").items(window_items(views)),
-        Menu::new("Help").items(help),
+        Menu::new(text::MENU_WINDOW).items(window_items(views)),
+        Menu::new(text::MENU_HELP).items(help),
     ]
 }
 

@@ -1,16 +1,17 @@
 //! The document's header: its filled button (Convert, Pseudonymize, Apply or Share), the
 //! ⋯ menu, the Markdown and Source switch, and the empty page a blank tab shows.
 use super::DocumentView;
+use crate::commands::table;
 use crate::document::text::{self, apply_label};
 use crate::{
+    document::TogglePreview,
     document::spelling::ToggleDocumentSpelling,
-    document::{CopyMarkdown, ExportMarkdown, Save, TogglePreview},
-    review::{CopyForAi, PiiApplyAll},
+    review::PiiApplyAll,
     ui,
     ui::style,
     workspace::{
-        self, CancelProjectName, Close, ConfirmProjectName, Import, Open, PasteAiResponse,
-        ProjectEvent, TabEvent, ToggleTheme,
+        self, CancelProjectName, ConfirmProjectName, Import, Open, ProjectEvent, TabEvent,
+        ToggleTheme,
     },
 };
 use gpui::{App, Context, Focusable, Window, div, prelude::*, px};
@@ -511,13 +512,6 @@ impl DocumentView {
 
     fn more_menu(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
-        let modifier = |mac: &'static str, other: &'static str| {
-            if cfg!(target_os = "macos") {
-                mac
-            } else {
-                other
-            }
-        };
         let copy = self.can_copy_markdown() && !self.lifecycle.source_only();
         let has_text = copy && !self.editor.read(cx).text().is_empty();
         let alias_reason = self.alias_actions_reason();
@@ -571,7 +565,7 @@ impl DocumentView {
         };
         let row = |id: &'static str,
                    label: String,
-                   shortcut: Option<&'static str>,
+                   shortcut: Option<gpui::SharedString>,
                    checked: Option<bool>,
                    enabled: bool| {
             ui::menu_row(id, label, shortcut, checked, theme, enabled)
@@ -623,39 +617,39 @@ impl DocumentView {
                         .child(
                             row(
                                 "more-save",
-                                text::SAVE.into(),
-                                Some(modifier("⌘S", "Ctrl+S")),
+                                table::SAVE.label.into(),
+                                table::SAVE.key(),
                                 None,
                                 copy,
                             )
-                            .on_click(cx.listener(guard(copy, || Box::new(Save)))),
+                            .on_click(cx.listener(guard(copy, table::SAVE.make))),
                         )
                         .child(
                             row(
                                 "more-export",
-                                text::EXPORT_MARKDOWN.into(),
-                                Some(modifier("⇧⌘S", "Ctrl+Shift+S")),
+                                table::EXPORT_MARKDOWN.label.into(),
+                                table::EXPORT_MARKDOWN.key(),
                                 None,
                                 copy,
                             )
-                            .on_click(cx.listener(guard(copy, || Box::new(ExportMarkdown)))),
+                            .on_click(cx.listener(guard(copy, table::EXPORT_MARKDOWN.make))),
                         )
                         .child(ui::menu_divider(theme))
                         .child(
                             row(
                                 "more-copy-markdown",
-                                text::COPY_MARKDOWN.into(),
-                                Some(modifier("⇧⌘M", "Ctrl+Shift+M")),
+                                table::COPY_MARKDOWN.label.into(),
+                                table::COPY_MARKDOWN.key(),
                                 None,
                                 has_text,
                             )
-                            .on_click(cx.listener(guard(has_text, || Box::new(CopyMarkdown)))),
+                            .on_click(cx.listener(guard(has_text, table::COPY_MARKDOWN.make))),
                         )
                         .child(
                             ui::menu_row_because(
                                 "more-copy-for-ai",
-                                text::COPY_FOR_AI,
-                                Some(modifier("⇧⌘C", "Ctrl+Shift+C")),
+                                table::COPY_FOR_AI.label,
+                                table::COPY_FOR_AI.key(),
                                 None,
                                 theme,
                                 for_ai,
@@ -664,13 +658,13 @@ impl DocumentView {
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "more-copy-for-ai".into())
                             })
-                            .on_click(cx.listener(guard(for_ai, || Box::new(CopyForAi)))),
+                            .on_click(cx.listener(guard(for_ai, table::COPY_FOR_AI.make))),
                         )
                         .child(
                             ui::menu_row_because(
                                 "more-paste-reply",
-                                text::PASTE_AI_REPLY,
-                                Some(modifier("⌥⇧⌘V", "Ctrl+Alt+Shift+V")),
+                                table::PASTE_AI_REPLY.label,
+                                table::PASTE_AI_REPLY.key(),
                                 None,
                                 theme,
                                 aliases,
@@ -679,17 +673,16 @@ impl DocumentView {
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "more-paste-reply".into())
                             })
-                            .on_click(cx.listener(guard(aliases, || Box::new(PasteAiResponse)))),
+                            .on_click(cx.listener(guard(aliases, table::PASTE_AI_REPLY.make))),
                         )
                         .child(
-                            row("more-notes", text::NOTES.into(), None, None, notes).on_click(
-                                cx.listener(move |this, _, window, cx| {
+                            row("more-notes", table::NOTES.label.into(), None, None, notes)
+                                .on_click(cx.listener(move |this, _, window, cx| {
                                     if notes {
                                         this.more_open = false;
                                         this.show_notes(window, cx);
                                     }
-                                }),
-                            ),
+                                })),
                         )
                         .child(ui::menu_divider(theme))
                         .child(
@@ -737,7 +730,7 @@ impl DocumentView {
                         .child(
                             ui::menu_row_because(
                                 "more-move",
-                                text::MOVE_TO_PROJECT,
+                                table::MOVE_TO_PROJECT.label,
                                 None,
                                 None,
                                 theme,
@@ -761,12 +754,12 @@ impl DocumentView {
                         .child(
                             row(
                                 "more-close",
-                                crate::ui::text::CLOSE.into(),
-                                Some(modifier("⌘W", "Ctrl+W")),
+                                table::CLOSE.label.into(),
+                                table::CLOSE.key(),
                                 None,
                                 true,
                             )
-                            .on_click(cx.listener(guard(true, || Box::new(Close)))),
+                            .on_click(cx.listener(guard(true, table::CLOSE.make))),
                         ),
                 ),
         )

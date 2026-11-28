@@ -1,26 +1,9 @@
 //! The command palette, with its search over the Vault and the shown page's
 //! actions, and the keyboard shortcuts sheet it opens. The palette's rows
 //! and its struct live here; its view, actions and words each have their file.
-use super::home::ShowHome;
 use crate::commands::shortcuts;
-use crate::document::CopyMarkdown;
-use crate::document::ExportMarkdown;
-use crate::document::OpenSourceReply;
-use crate::document::Save;
-use crate::document::ShowNotes;
-use crate::document::ToggleCompare;
+use crate::commands::table;
 use crate::document::markdown_search::SearchInput;
-use crate::review::CopyForAi;
-use crate::review::Pseudonymize;
-use crate::workspace::Close;
-use crate::workspace::New;
-use crate::workspace::Open;
-use crate::workspace::OpenProject;
-use crate::workspace::PasteAiResponse;
-use crate::workspace::PseudonymizeClipboard;
-use crate::workspace::Settings;
-use crate::workspace::ToggleSidebar;
-use crate::workspace::palette::shortcuts_ui::ShowShortcuts;
 use gpui::Entity;
 use gpui::Subscription;
 use gpui::actions;
@@ -113,25 +96,25 @@ impl Command {
     /// key from the shortcuts table.
     fn action(&self) -> Option<Box<dyn gpui::Action>> {
         Some(match self {
-            Command::NewTab => Box::new(New),
-            Command::OpenFiles => Box::new(Open),
-            Command::Pseudonymize => Box::new(Pseudonymize),
-            Command::PseudonymizeClipboard => Box::new(PseudonymizeClipboard),
-            Command::RestoreReply => Box::new(PasteAiResponse),
-            Command::CopyForAi => Box::new(CopyForAi),
-            Command::CopyMarkdown => Box::new(CopyMarkdown),
-            Command::Save => Box::new(Save),
-            Command::ExportMarkdown => Box::new(ExportMarkdown),
-            Command::Close => Box::new(Close),
-            Command::BeforeAfter => Box::new(ToggleCompare),
-            Command::ToggleSidebar => Box::new(ToggleSidebar),
-            Command::OpenProject => Box::new(OpenProject),
-            Command::NewProject => Box::new(super::NewProject),
-            Command::Home => Box::new(ShowHome),
-            Command::Settings => Box::new(Settings),
-            Command::Shortcuts => Box::new(ShowShortcuts),
-            Command::Notes => Box::new(ShowNotes),
-            Command::SourceReply => Box::new(OpenSourceReply),
+            Command::NewTab => table::NEW.action(),
+            Command::OpenFiles => table::OPEN.action(),
+            Command::Pseudonymize => table::PSEUDONYMIZE.action(),
+            Command::PseudonymizeClipboard => table::PSEUDONYMIZE_CLIPBOARD.action(),
+            Command::RestoreReply => table::PASTE_AI_REPLY.action(),
+            Command::CopyForAi => table::COPY_FOR_AI.action(),
+            Command::CopyMarkdown => table::COPY_MARKDOWN.action(),
+            Command::Save => table::SAVE.action(),
+            Command::ExportMarkdown => table::EXPORT_MARKDOWN.action(),
+            Command::Close => table::CLOSE.action(),
+            Command::BeforeAfter => table::SIDE_BY_SIDE.action(),
+            Command::ToggleSidebar => table::TOGGLE_SIDEBAR.action(),
+            Command::OpenProject => table::OPEN_PROJECT.action(),
+            Command::NewProject => table::NEW_PROJECT.action(),
+            Command::Home => table::HOME.action(),
+            Command::Settings => table::SETTINGS.action(),
+            Command::Shortcuts => table::KEYBOARD_SHORTCUTS.action(),
+            Command::Notes => table::NOTES.action(),
+            Command::SourceReply => table::OPEN_SOURCE_REPLY.action(),
             Command::PasteText
             | Command::DecisionHistory
             | Command::ExpandIdentities

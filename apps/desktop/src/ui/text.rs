@@ -79,7 +79,6 @@ mod tests {
     /// window's owners are named `workspace/<owner>`; `workspace` alone is the
     /// window's own root files.
     const EXEMPT: &[&str] = &[
-        "commands",
         "main",
         "workspace/ai",
         "workspace/headless_renders",

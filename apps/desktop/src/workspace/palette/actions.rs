@@ -4,26 +4,12 @@
 
 use super::text;
 use super::{Command, PALETTE, PageAction, Palette, Row};
-use crate::document::CopyMarkdown;
-use crate::document::ExportMarkdown;
-use crate::document::Save;
-use crate::document::ToggleCompare;
+use crate::commands::table;
 use crate::document::markdown_search::SearchInput;
 use crate::document::markdown_search::SearchInputEvent;
-use crate::review::CopyForAi;
-use crate::review::Pseudonymize;
 use crate::ui::style;
-use crate::workspace::Close;
-use crate::workspace::New;
-use crate::workspace::Open;
-use crate::workspace::OpenProject;
-use crate::workspace::PasteAiResponse;
-use crate::workspace::PseudonymizeClipboard;
-use crate::workspace::Settings;
-use crate::workspace::ToggleSidebar;
 use crate::workspace::Workspace;
 use crate::workspace::home;
-use crate::workspace::palette::shortcuts_ui::ShowShortcuts;
 use gpui::App;
 use gpui::Context;
 use gpui::Focusable;
@@ -95,13 +81,13 @@ impl Workspace {
         rows.extend(vec![
             Row {
                 section: text::ACTIONS,
-                label: text::NEW_DOCUMENT.into(),
+                label: table::NEW.label.into(),
                 detail: None,
                 command: Command::NewTab,
             },
             Row {
                 section: text::ACTIONS,
-                label: text::OPEN_FILES.into(),
+                label: table::OPEN.label.into(),
                 detail: None,
                 command: Command::OpenFiles,
             },
@@ -116,37 +102,37 @@ impl Workspace {
             rows.extend([
                 Row {
                     section: text::ACTIONS,
-                    label: text::PSEUDONYMIZE.into(),
+                    label: table::PSEUDONYMIZE.label.into(),
                     detail: None,
                     command: Command::Pseudonymize,
                 },
                 Row {
                     section: text::ACTIONS,
-                    label: text::COPY_FOR_AI.into(),
+                    label: table::COPY_FOR_AI.label.into(),
                     detail: None,
                     command: Command::CopyForAi,
                 },
                 Row {
                     section: text::ACTIONS,
-                    label: text::COPY_MARKDOWN.into(),
+                    label: table::COPY_MARKDOWN.label.into(),
                     detail: None,
                     command: Command::CopyMarkdown,
                 },
                 Row {
                     section: text::ACTIONS,
-                    label: text::SAVE.into(),
+                    label: table::SAVE.label.into(),
                     detail: None,
                     command: Command::Save,
                 },
                 Row {
                     section: text::ACTIONS,
-                    label: text::EXPORT_MARKDOWN.into(),
+                    label: table::EXPORT_MARKDOWN.label.into(),
                     detail: None,
                     command: Command::ExportMarkdown,
                 },
                 Row {
                     section: text::ACTIONS,
-                    label: text::SIDE_BY_SIDE.into(),
+                    label: table::SIDE_BY_SIDE.label.into(),
                     detail: None,
                     command: Command::BeforeAfter,
                 },
@@ -168,7 +154,7 @@ impl Workspace {
             if notes {
                 rows.push(Row {
                     section: text::ACTIONS,
-                    label: text::NOTES.into(),
+                    label: table::NOTES.label.into(),
                     detail: None,
                     command: Command::Notes,
                 });
@@ -176,7 +162,7 @@ impl Workspace {
             if source {
                 rows.push(Row {
                     section: text::ACTIONS,
-                    label: text::OPEN_SOURCE_REPLY.into(),
+                    label: table::OPEN_SOURCE_REPLY.label.into(),
                     detail: None,
                     command: Command::SourceReply,
                 });
@@ -215,7 +201,7 @@ impl Workspace {
             }
             rows.extend([Row {
                 section: text::ACTIONS,
-                label: crate::ui::text::CLOSE.into(),
+                label: table::CLOSE.label.into(),
                 detail: None,
                 command: Command::Close,
             }]);
@@ -223,25 +209,25 @@ impl Workspace {
         rows.extend([
             Row {
                 section: text::ACTIONS,
-                label: text::PASTE_AI_REPLY.into(),
+                label: table::PASTE_AI_REPLY.label.into(),
                 detail: None,
                 command: Command::RestoreReply,
             },
             Row {
                 section: text::ACTIONS,
-                label: text::PSEUDONYMIZE_CLIPBOARD.into(),
+                label: table::PSEUDONYMIZE_CLIPBOARD.label.into(),
                 detail: None,
                 command: Command::PseudonymizeClipboard,
             },
             Row {
                 section: text::ACTIONS,
-                label: text::OPEN_A_PROJECT.into(),
+                label: table::OPEN_PROJECT.label.into(),
                 detail: None,
                 command: Command::OpenProject,
             },
             Row {
                 section: text::ACTIONS,
-                label: text::NEW_PROJECT.into(),
+                label: table::NEW_PROJECT.label.into(),
                 detail: None,
                 command: Command::NewProject,
             },
@@ -253,25 +239,25 @@ impl Workspace {
             },
             Row {
                 section: text::ACTIONS,
-                label: text::TOGGLE_SIDEBAR.into(),
+                label: table::TOGGLE_SIDEBAR.label.into(),
                 detail: None,
                 command: Command::ToggleSidebar,
             },
             Row {
                 section: text::ACTIONS,
-                label: text::KEYBOARD_SHORTCUTS.into(),
+                label: table::KEYBOARD_SHORTCUTS.label.into(),
                 detail: None,
                 command: Command::Shortcuts,
             },
             Row {
                 section: text::GO_TO,
-                label: text::HOME.into(),
+                label: table::HOME.label.into(),
                 detail: None,
                 command: Command::Home,
             },
             Row {
                 section: text::GO_TO,
-                label: text::SETTINGS.into(),
+                label: table::SETTINGS.label.into(),
                 detail: None,
                 command: Command::Settings,
             },
@@ -440,18 +426,20 @@ impl Workspace {
                 window.dispatch_action(action, cx)
             };
         match command {
-            Command::NewTab => dispatch(window, cx, Box::new(New)),
-            Command::OpenFiles => dispatch(window, cx, Box::new(Open)),
+            Command::NewTab => dispatch(window, cx, table::NEW.action()),
+            Command::OpenFiles => dispatch(window, cx, table::OPEN.action()),
             Command::PasteText => self.paste_as_new_tab(window, cx),
-            Command::Pseudonymize => dispatch(window, cx, Box::new(Pseudonymize)),
-            Command::PseudonymizeClipboard => dispatch(window, cx, Box::new(PseudonymizeClipboard)),
-            Command::RestoreReply => dispatch(window, cx, Box::new(PasteAiResponse)),
-            Command::CopyForAi => dispatch(window, cx, Box::new(CopyForAi)),
-            Command::CopyMarkdown => dispatch(window, cx, Box::new(CopyMarkdown)),
-            Command::Save => dispatch(window, cx, Box::new(Save)),
-            Command::ExportMarkdown => dispatch(window, cx, Box::new(ExportMarkdown)),
-            Command::Close => dispatch(window, cx, Box::new(Close)),
-            Command::BeforeAfter => dispatch(window, cx, Box::new(ToggleCompare)),
+            Command::Pseudonymize => dispatch(window, cx, table::PSEUDONYMIZE.action()),
+            Command::PseudonymizeClipboard => {
+                dispatch(window, cx, table::PSEUDONYMIZE_CLIPBOARD.action())
+            }
+            Command::RestoreReply => dispatch(window, cx, table::PASTE_AI_REPLY.action()),
+            Command::CopyForAi => dispatch(window, cx, table::COPY_FOR_AI.action()),
+            Command::CopyMarkdown => dispatch(window, cx, table::COPY_MARKDOWN.action()),
+            Command::Save => dispatch(window, cx, table::SAVE.action()),
+            Command::ExportMarkdown => dispatch(window, cx, table::EXPORT_MARKDOWN.action()),
+            Command::Close => dispatch(window, cx, table::CLOSE.action()),
+            Command::BeforeAfter => dispatch(window, cx, table::SIDE_BY_SIDE.action()),
             // Straight to the document: focus may have gone back to the
             // sidebar, outside the view's action handlers.
             Command::DecisionHistory => {
@@ -487,15 +475,15 @@ impl Workspace {
                     });
                 }
             }
-            Command::ToggleSidebar => dispatch(window, cx, Box::new(ToggleSidebar)),
-            Command::OpenProject => dispatch(window, cx, Box::new(OpenProject)),
-            Command::NewProject => dispatch(window, cx, Box::new(crate::workspace::NewProject)),
+            Command::ToggleSidebar => dispatch(window, cx, table::TOGGLE_SIDEBAR.action()),
+            Command::OpenProject => dispatch(window, cx, table::OPEN_PROJECT.action()),
+            Command::NewProject => dispatch(window, cx, table::NEW_PROJECT.action()),
             Command::Home => self.show_home(window, cx),
-            Command::Settings => dispatch(window, cx, Box::new(Settings)),
+            Command::Settings => dispatch(window, cx, table::SETTINGS.action()),
             Command::SettingsCategory(category) => self
                 .settings
                 .update(cx, |panel, cx| panel.show_category(category, window, cx)),
-            Command::Shortcuts => dispatch(window, cx, Box::new(ShowShortcuts)),
+            Command::Shortcuts => dispatch(window, cx, table::KEYBOARD_SHORTCUTS.action()),
             Command::Theme => self.cycle_theme(window, cx),
             Command::Heading(offset) => {
                 // The Markdown editor must be the pane shown: not Before/After,
@@ -558,12 +546,18 @@ impl Workspace {
             return Vec::new();
         }
         vec![
-            row(text::ADD_DOCUMENT_TO_PROJECT, PageAction::AddDocument),
-            row(text::RENAME_PROJECT, PageAction::RenameProject),
-            row(text::PROJECT_COLOUR, PageAction::ProjectColour),
-            row(text::PROJECT_CATEGORIES, PageAction::ProjectCategories),
-            row(text::EXPORT_PROJECT, PageAction::ExportProject),
-            row(text::DELETE_PROJECT, PageAction::DeleteProject),
+            row(
+                table::ADD_DOCUMENT_TO_PROJECT.label,
+                PageAction::AddDocument,
+            ),
+            row(table::RENAME_PROJECT.label, PageAction::RenameProject),
+            row(table::PROJECT_COLOUR.label, PageAction::ProjectColour),
+            row(
+                table::PROJECT_CATEGORIES.label,
+                PageAction::ProjectCategories,
+            ),
+            row(table::EXPORT_PROJECT.label, PageAction::ExportProject),
+            row(table::DELETE_PROJECT.label, PageAction::DeleteProject),
         ]
     }
 

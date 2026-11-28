@@ -2,7 +2,7 @@
 //!
 //! Each row is what the shortcuts sheet shows: a label, its context group and
 //! the keys for each platform. The palette's shortcut labels come from here
-//! too. Each binding in a row names the module ([`Owner`]) whose `bind_keys`
+//! too. A command's row takes its name and action from the command table. Each binding in a row names the module ([`Owner`]) whose `bind_keys`
 //! registers it, so every module keeps its place in the keymap: GPUI breaks a
 //! tie between equally deep bindings by registration order.
 //!
@@ -15,7 +15,7 @@
 //! on Windows and Linux.
 
 use crate::{
-    commands::menus,
+    commands::{table, text},
     document,
     document::comparison_ui,
     document::markdown_search,
@@ -44,10 +44,10 @@ impl Group {
 
     pub fn title(self) -> &'static str {
         match self {
-            Group::Everywhere => "Everywhere",
-            Group::Editor => "Editor",
-            Group::Popup => "Popups, menus and dialogs",
-            Group::Panel => "Panels and sidebar",
+            Group::Everywhere => text::EVERYWHERE,
+            Group::Editor => text::EDITOR,
+            Group::Popup => text::POPUPS,
+            Group::Panel => text::PANELS,
         }
     }
 }
@@ -297,23 +297,23 @@ pub fn display(key: &str, mac: bool) -> String {
     }
     let name = match (rest, mac) {
         ("enter", true) => "↩".to_string(),
-        ("enter", false) => "Enter".to_string(),
+        ("enter", false) => text::KEY_ENTER.to_string(),
         ("backspace", true) => "⌫".to_string(),
-        ("backspace", false) => "Backspace".to_string(),
+        ("backspace", false) => text::KEY_BACKSPACE.to_string(),
         ("delete", true) => "⌦".to_string(),
-        ("delete", false) => "Delete".to_string(),
-        ("escape", _) => "Esc".to_string(),
-        ("menu", _) => "Menu".to_string(),
-        ("tab", _) => "Tab".to_string(),
-        ("space", _) => "Space".to_string(),
+        ("delete", false) => text::KEY_DELETE.to_string(),
+        ("escape", _) => text::KEY_ESC.to_string(),
+        ("menu", _) => text::KEY_MENU.to_string(),
+        ("tab", _) => text::KEY_TAB.to_string(),
+        ("space", _) => text::KEY_SPACE.to_string(),
         ("up", _) => "↑".to_string(),
         ("down", _) => "↓".to_string(),
         ("left", _) => "←".to_string(),
         ("right", _) => "→".to_string(),
-        ("home", _) => "Home".to_string(),
-        ("pageup", _) => "Page Up".to_string(),
-        ("pagedown", _) => "Page Down".to_string(),
-        ("end", _) => "End".to_string(),
+        ("home", _) => text::KEY_HOME.to_string(),
+        ("pageup", _) => text::KEY_PAGE_UP.to_string(),
+        ("pagedown", _) => text::KEY_PAGE_DOWN.to_string(),
+        ("end", _) => text::KEY_END.to_string(),
         (key, _) => key.to_uppercase(),
     };
     if mac {
@@ -326,7 +326,12 @@ pub fn display(key: &str, mac: bool) -> String {
         text + &name
     } else {
         let mut parts = Vec::new();
-        for (on, word) in [(ctrl, "Ctrl"), (alt, "Alt"), (shift, "Shift"), (cmd, "Win")] {
+        for (on, word) in [
+            (ctrl, text::KEY_CTRL),
+            (alt, text::KEY_ALT),
+            (shift, text::KEY_SHIFT),
+            (cmd, text::KEY_WIN),
+        ] {
             if on {
                 parts.push(word.to_string());
             }
@@ -350,6 +355,13 @@ macro_rules! on {
     };
 }
 
+/// A binding of command `$command`'s action for `$owner` in `$context`.
+macro_rules! cmd {
+    ($owner:ident, $context:expr, $keys:expr, $command:ident) => {
+        Bind::new(Owner::$owner, $context, $keys, table::$command.make)
+    };
+}
+
 const fn row(group: Group, label: &'static str, binds: &'static [Bind]) -> Shortcut {
     Shortcut {
         label,
@@ -367,60 +379,60 @@ pub static SHORTCUTS: &[Shortcut] = &[
     // ---- Everywhere ---------------------------------------------------------
     row(
         Everywhere,
-        "New tab",
-        &[on!(App, None, &["mod-n"], workspace::New)],
+        table::NEW.sheet,
+        &[cmd!(App, None, &["mod-n"], NEW)],
     ),
     row(
         Everywhere,
-        "New Project…",
-        &[on!(App, None, &["mod-shift-n"], workspace::NewProject)],
+        table::NEW_PROJECT.sheet,
+        &[cmd!(App, None, &["mod-shift-n"], NEW_PROJECT)],
     ),
     row(
         Everywhere,
-        "Open files…",
-        &[on!(App, None, &["mod-o"], workspace::Open)],
+        table::OPEN.sheet,
+        &[cmd!(App, None, &["mod-o"], OPEN)],
     ),
     row(
         Everywhere,
-        "Convert to Markdown",
-        &[on!(App, None, &["mod-shift-i"], workspace::Import)],
+        table::CONVERT_TO_MARKDOWN.sheet,
+        &[cmd!(App, None, &["mod-shift-i"], CONVERT_TO_MARKDOWN)],
     ),
     row(
         Everywhere,
-        "Save",
-        &[on!(App, None, &["mod-s"], document::Save)],
+        table::SAVE.sheet,
+        &[cmd!(App, None, &["mod-s"], SAVE)],
     ),
     row(
         Everywhere,
-        "Export Markdown…",
-        &[on!(App, None, &["mod-shift-s"], document::ExportMarkdown)],
+        table::EXPORT_MARKDOWN.sheet,
+        &[cmd!(App, None, &["mod-shift-s"], EXPORT_MARKDOWN)],
     ),
     row(
         Everywhere,
-        crate::ui::text::CLOSE,
-        &[on!(App, None, &["mod-w"], workspace::Close)],
+        table::CLOSE.sheet,
+        &[cmd!(App, None, &["mod-w"], CLOSE)],
     ),
     row(
         Everywhere,
-        "Command palette",
-        &[on!(Shell, None, &["mod-k"], workspace::OpenPalette)],
+        table::COMMAND_PALETTE.sheet,
+        &[cmd!(Shell, None, &["mod-k"], COMMAND_PALETTE)],
     ),
     row(
         Everywhere,
-        "Keyboard shortcuts",
+        table::KEYBOARD_SHORTCUTS.sheet,
         &[
-            on!(Shell, None, &["mod-/"], shortcuts_ui::ShowShortcuts),
-            on!(Shell, Some(CHROME), &["?"], shortcuts_ui::ShowShortcuts),
+            cmd!(Shell, None, &["mod-/"], KEYBOARD_SHORTCUTS),
+            cmd!(Shell, Some(CHROME), &["?"], KEYBOARD_SHORTCUTS),
         ],
     ),
     row(
         Everywhere,
-        "Home",
-        &[on!(Shell, None, &["mod-shift-h"], workspace::ShowHome)],
+        table::HOME.sheet,
+        &[cmd!(Shell, None, &["mod-shift-h"], HOME)],
     ),
     row(
         Everywhere,
-        "Back",
+        text::BACK,
         &[
             on!(Shell, Some("Workspace"), &[], workspace::Back).mac(&["cmd-["]),
             on!(Shell, Some(CHROME), &[], workspace::Back).other(&["alt-left"]),
@@ -428,7 +440,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
-        "Forward",
+        text::FORWARD,
         &[
             on!(Shell, Some("Workspace"), &[], workspace::Forward).mac(&["cmd-]"]),
             on!(Shell, Some(CHROME), &[], workspace::Forward).other(&["alt-right"]),
@@ -436,49 +448,44 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
-        "Settings",
-        &[on!(App, None, &["mod-,"], workspace::Settings)],
+        table::SETTINGS.sheet,
+        &[cmd!(App, None, &["mod-,"], SETTINGS)],
     ),
     row(
         Everywhere,
-        "Switch to a recent document",
-        &[on!(App, None, &["ctrl-tab"], workspace::SwitchDocument)],
+        table::SWITCH_DOCUMENT.sheet,
+        &[cmd!(App, None, &["ctrl-tab"], SWITCH_DOCUMENT)],
     ),
     row(
         Everywhere,
-        "Switch to a recent document, backwards",
-        &[on!(
-            App,
-            None,
-            &["ctrl-shift-tab"],
-            workspace::SwitchDocumentBack
-        )],
+        table::SWITCH_DOCUMENT_BACK.sheet,
+        &[cmd!(App, None, &["ctrl-shift-tab"], SWITCH_DOCUMENT_BACK)],
     ),
     // The macOS convention for View › Toggle Sidebar.
     row(
         Everywhere,
-        "Toggle sidebar",
-        &[on!(App, None, &[], workspace::ToggleSidebar).mac(&["ctrl-cmd-s"])],
+        table::TOGGLE_SIDEBAR.sheet,
+        &[cmd!(App, None, &[], TOGGLE_SIDEBAR).mac(&["ctrl-cmd-s"])],
     ),
     // Keyboard reach.
     row(
         Everywhere,
-        "Next region",
+        text::NEXT_REGION,
         &[on!(Ui, None, &["f6"], crate::ui::NextRegion)],
     ),
     row(
         Everywhere,
-        "Previous region",
+        text::PREVIOUS_REGION,
         &[on!(Ui, None, &["shift-f6"], crate::ui::PreviousRegion)],
     ),
     row(
         Everywhere,
-        "Next control",
+        text::NEXT_CONTROL,
         &[on!(Ui, Some("Workspace"), &["tab"], crate::ui::NextControl)],
     ),
     row(
         Everywhere,
-        "Previous control",
+        text::PREVIOUS_CONTROL,
         &[on!(
             Ui,
             Some("Workspace"),
@@ -488,7 +495,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
-        "Back to the editor from the sidebar or toolbar",
+        text::BACK_TO_THE_EDITOR_FROM_THE_SIDEBAR_OR_TOOLBAR,
         &[on!(
             Ui,
             Some("SidebarRegion || ToolbarRegion"),
@@ -498,7 +505,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
-        "Close notices",
+        text::CLOSE_NOTICES,
         &[on!(
             Shell,
             Some("Workspace"),
@@ -510,41 +517,39 @@ pub static SHORTCUTS: &[Shortcut] = &[
     // bar and the chrome all undo the document.
     row(
         Everywhere,
-        "Undo",
+        table::UNDO.sheet,
         &[
-            on!(Editor, EDITOR, &["mod-z"], mdoc_editor::Undo).also(&["cmd-z", "ctrl-z"]),
-            on!(Pii, Some("IdentityPanel"), &["mod-z"], mdoc_editor::Undo)
-                .also(&["cmd-z", "ctrl-z"]),
-            on!(Pii, Some(pii::POPUP_UNDO), &["mod-z"], mdoc_editor::Undo)
-                .also(&["cmd-z", "ctrl-z"]),
-            on!(Find, FIND, &["mod-z"], mdoc_editor::Undo),
-            on!(Find, REPLACE, &["mod-z"], mdoc_editor::Undo),
-            on!(App, Some(CHROME), &["mod-z"], mdoc_editor::Undo),
+            cmd!(Editor, EDITOR, &["mod-z"], UNDO).also(&["cmd-z", "ctrl-z"]),
+            cmd!(Pii, Some("IdentityPanel"), &["mod-z"], UNDO).also(&["cmd-z", "ctrl-z"]),
+            cmd!(Pii, Some(pii::POPUP_UNDO), &["mod-z"], UNDO).also(&["cmd-z", "ctrl-z"]),
+            cmd!(Find, FIND, &["mod-z"], UNDO),
+            cmd!(Find, REPLACE, &["mod-z"], UNDO),
+            cmd!(App, Some(CHROME), &["mod-z"], UNDO),
         ],
     ),
     row(
         Everywhere,
-        "Redo",
+        table::REDO.sheet,
         &[
-            on!(Editor, EDITOR, &[], mdoc_editor::Redo)
+            cmd!(Editor, EDITOR, &[], REDO)
                 .mac(&["cmd-shift-z"])
                 .other(&["ctrl-shift-z", "ctrl-y"])
                 .also(&["cmd-shift-z", "ctrl-shift-z", "ctrl-y"]),
-            on!(Pii, Some("IdentityPanel"), &[], mdoc_editor::Redo)
+            cmd!(Pii, Some("IdentityPanel"), &[], REDO)
                 .mac(&["cmd-shift-z"])
                 .other(&["ctrl-shift-z", "ctrl-y"])
                 .also(&["cmd-shift-z", "ctrl-shift-z", "ctrl-y"]),
-            on!(Pii, Some(pii::POPUP_UNDO), &[], mdoc_editor::Redo)
+            cmd!(Pii, Some(pii::POPUP_UNDO), &[], REDO)
                 .mac(&["cmd-shift-z"])
                 .other(&["ctrl-shift-z", "ctrl-y"])
                 .also(&["cmd-shift-z", "ctrl-shift-z", "ctrl-y"]),
-            on!(Find, FIND, &[], mdoc_editor::Redo)
+            cmd!(Find, FIND, &[], REDO)
                 .mac(&["cmd-shift-z"])
                 .other(&["ctrl-shift-z", "ctrl-y"]),
-            on!(Find, REPLACE, &[], mdoc_editor::Redo)
+            cmd!(Find, REPLACE, &[], REDO)
                 .mac(&["cmd-shift-z"])
                 .other(&["ctrl-shift-z", "ctrl-y"]),
-            on!(App, Some(CHROME), &[], mdoc_editor::Redo)
+            cmd!(App, Some(CHROME), &[], REDO)
                 .mac(&["cmd-shift-z"])
                 .other(&["ctrl-shift-z", "ctrl-y"]),
         ],
@@ -552,98 +557,89 @@ pub static SHORTCUTS: &[Shortcut] = &[
     // Layouts where plus needs Shift (US: Shift + =) report the Shift.
     row(
         Everywhere,
-        "Zoom in",
-        &[on!(App, None, &["mod-="], document::ZoomIn).also(&[
-            "mod-+",
-            "mod-shift-=",
-            "mod-shift-+",
-        ])],
+        table::ZOOM_IN.sheet,
+        &[cmd!(App, None, &["mod-="], ZOOM_IN).also(&["mod-+", "mod-shift-=", "mod-shift-+"])],
     ),
     row(
         Everywhere,
-        "Zoom out",
-        &[on!(App, None, &["mod--"], document::ZoomOut)],
+        table::ZOOM_OUT.sheet,
+        &[cmd!(App, None, &["mod--"], ZOOM_OUT)],
     ),
     row(
         Everywhere,
-        "Actual size",
-        &[on!(App, None, &["mod-0"], document::ZoomReset)],
+        table::ACTUAL_SIZE.sheet,
+        &[cmd!(App, None, &["mod-0"], ACTUAL_SIZE)],
     ),
     row(
         Everywhere,
-        "Side by side",
-        &[on!(App, None, &["mod-\\"], document::ToggleCompare)],
+        table::SIDE_BY_SIDE.sheet,
+        &[cmd!(App, None, &["mod-\\"], SIDE_BY_SIDE)],
     ),
     row(
         Everywhere,
-        "Pseudonymize",
-        &[on!(Pii, None, &["mod-shift-p"], pii::Pseudonymize)],
+        table::PSEUDONYMIZE.sheet,
+        &[cmd!(Pii, None, &["mod-shift-p"], PSEUDONYMIZE)],
     ),
     row(
         Everywhere,
-        "Apply all replacements",
+        text::APPLY_ALL_REPLACEMENTS,
         &[on!(Pii, None, &["mod-enter"], pii::PiiApplyAll)],
     ),
     row(
         Everywhere,
-        "Copy for AI",
-        &[on!(App, None, &["mod-shift-c"], pii::CopyForAi)],
+        table::COPY_FOR_AI.sheet,
+        &[cmd!(App, None, &["mod-shift-c"], COPY_FOR_AI)],
     ),
     // ⌥⇧⌘C (the grill's pick) is Pseudonymize clipboard's; M for Markdown.
     row(
         Everywhere,
-        "Copy Markdown",
-        &[on!(App, None, &["mod-shift-m"], document::CopyMarkdown)],
+        table::COPY_MARKDOWN.sheet,
+        &[cmd!(App, None, &["mod-shift-m"], COPY_MARKDOWN)],
     ),
     row(
         Everywhere,
-        "Paste AI reply",
-        &[on!(
-            App,
-            None,
-            &["mod-alt-shift-v"],
-            workspace::PasteAiResponse
-        )],
+        table::PASTE_AI_REPLY.sheet,
+        &[cmd!(App, None, &["mod-alt-shift-v"], PASTE_AI_REPLY)],
     ),
     row(
         Everywhere,
-        "Pseudonymize clipboard",
-        &[on!(
+        table::PSEUDONYMIZE_CLIPBOARD.sheet,
+        &[cmd!(
             App,
             None,
             &["mod-alt-shift-c"],
-            workspace::PseudonymizeClipboard
+            PSEUDONYMIZE_CLIPBOARD
         )],
     ),
     row(
         Everywhere,
-        "Hide mdoc",
-        &[on!(Menus, None, &[], menus::HideApp).mac(&["cmd-h"])],
+        table::HIDE_MDOC.sheet,
+        &[cmd!(Menus, None, &[], HIDE_MDOC).mac(&["cmd-h"])],
     ),
     row(
         Everywhere,
-        "Hide others",
-        &[on!(Menus, None, &[], menus::HideOtherApps).mac(&["cmd-alt-h"])],
+        table::HIDE_OTHERS.sheet,
+        &[cmd!(Menus, None, &[], HIDE_OTHERS).mac(&["cmd-alt-h"])],
     ),
     row(
         Everywhere,
-        "Minimize",
-        &[on!(Menus, None, &[], menus::MinimizeWindow).mac(&["cmd-m"])],
+        table::MINIMIZE.sheet,
+        &[cmd!(Menus, None, &[], MINIMIZE).mac(&["cmd-m"])],
     ),
     row(
         Everywhere,
-        "Quit",
-        &[on!(App, None, &["mod-q"], workspace::Quit)],
+        table::QUIT.sheet,
+        &[cmd!(App, None, &["mod-q"], QUIT)],
     ),
     // ---- Editor -------------------------------------------------------------
     row(
         Editor,
-        "New paragraph",
+        text::NEW_PARAGRAPH,
         &[on!(Editor, EDITOR, &["enter"], mdoc_editor::Newline)],
     ),
     row(
         Editor,
-        "Line break",
+        text::LINE_BREAK,
         &[on!(
             Editor,
             EDITOR,
@@ -653,45 +649,45 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Indent",
+        text::INDENT,
         &[on!(Editor, EDITOR, &["tab"], mdoc_editor::Indent)],
     ),
     row(
         Editor,
-        "Outdent",
+        text::OUTDENT,
         &[on!(Editor, EDITOR, &["shift-tab"], mdoc_editor::Outdent)],
     ),
     row(
         Editor,
-        "Bold",
+        text::BOLD,
         &[on!(Editor, EDITOR, &["mod-b"], mdoc_editor::Bold).also(&["cmd-b", "ctrl-b"])],
     ),
     row(
         Editor,
-        "Italic",
+        text::ITALIC,
         &[on!(Editor, EDITOR, &["mod-i"], mdoc_editor::Italic).also(&["cmd-i", "ctrl-i"])],
     ),
     row(
         Editor,
-        "Underline",
+        text::UNDERLINE,
         &[on!(Editor, EDITOR, &["mod-u"], mdoc_editor::Underline).also(&["cmd-u", "ctrl-u"])],
     ),
     row(
         Editor,
-        "Strikethrough",
+        text::STRIKETHROUGH,
         &[on!(Editor, EDITOR, &["mod-shift-x"], mdoc_editor::Strike)
             .also(&["cmd-shift-x", "ctrl-shift-x"])],
     ),
     row(
         Editor,
-        "Code",
+        text::CODE,
         &[on!(Editor, EDITOR, &["mod-e"], mdoc_editor::Code).also(&["cmd-e", "ctrl-e"])],
     ),
     row(
         Editor,
-        "Select all",
+        table::SELECT_ALL.sheet,
         &[
-            on!(Editor, EDITOR, &["mod-a"], mdoc_editor::SelectAll).also(&["cmd-a", "ctrl-a"]),
+            cmd!(Editor, EDITOR, &["mod-a"], SELECT_ALL).also(&["cmd-a", "ctrl-a"]),
             on!(
                 TextField,
                 Some(markdown_search::TEXT_FIELDS),
@@ -703,9 +699,9 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Copy",
+        table::COPY.sheet,
         &[
-            on!(Editor, EDITOR, &["mod-c"], mdoc_editor::Copy).also(&["cmd-c", "ctrl-c"]),
+            cmd!(Editor, EDITOR, &["mod-c"], COPY).also(&["cmd-c", "ctrl-c"]),
             on!(
                 TextField,
                 Some(markdown_search::TEXT_FIELDS),
@@ -717,9 +713,9 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Cut",
+        table::CUT.sheet,
         &[
-            on!(Editor, EDITOR, &["mod-x"], mdoc_editor::Cut).also(&["cmd-x", "ctrl-x"]),
+            cmd!(Editor, EDITOR, &["mod-x"], CUT).also(&["cmd-x", "ctrl-x"]),
             on!(
                 TextField,
                 Some(markdown_search::TEXT_FIELDS),
@@ -731,9 +727,9 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Paste",
+        table::PASTE.sheet,
         &[
-            on!(Editor, EDITOR, &["mod-v"], mdoc_editor::Paste).also(&["cmd-v", "ctrl-v"]),
+            cmd!(Editor, EDITOR, &["mod-v"], PASTE).also(&["cmd-v", "ctrl-v"]),
             on!(
                 TextField,
                 Some(markdown_search::TEXT_FIELDS),
@@ -747,7 +743,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     // document ends; Windows and Linux use Ctrl and Home / End.
     row(
         Editor,
-        "Previous word",
+        text::PREVIOUS_WORD,
         &[on!(Editor, EDITOR, &[], mdoc_editor::WordLeft)
             .mac(&["alt-left"])
             .other(&["ctrl-left"])
@@ -755,7 +751,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Next word",
+        text::NEXT_WORD,
         &[
             on!(Editor, EDITOR, &[], mdoc_editor::WordRight)
                 .mac(&["alt-right"])
@@ -765,7 +761,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Select to previous word",
+        text::SELECT_TO_PREVIOUS_WORD,
         &[on!(Editor, EDITOR, &[], mdoc_editor::SelectWordLeft)
             .mac(&["alt-shift-left"])
             .other(&["ctrl-shift-left"])
@@ -773,7 +769,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Select to next word",
+        text::SELECT_TO_NEXT_WORD,
         &[
             on!(Editor, EDITOR, &[], mdoc_editor::SelectWordRight)
                 .mac(&["alt-shift-right"])
@@ -784,62 +780,62 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Line start",
+        text::LINE_START,
         &[on!(Editor, EDITOR, &[], mdoc_editor::LineStart).mac(&["cmd-left"])],
     ),
     row(
         Editor,
-        "Line end",
+        text::LINE_END,
         &[on!(Editor, EDITOR, &[], mdoc_editor::LineEnd).mac(&["cmd-right"])],
     ),
     row(
         Editor,
-        "Select to line start",
+        text::SELECT_TO_LINE_START,
         &[on!(Editor, EDITOR, &[], mdoc_editor::SelectToLineStart).mac(&["cmd-shift-left"])],
     ),
     row(
         Editor,
-        "Select to line end",
+        text::SELECT_TO_LINE_END,
         &[on!(Editor, EDITOR, &[], mdoc_editor::SelectToLineEnd).mac(&["cmd-shift-right"])],
     ),
     row(
         Editor,
-        "Document start",
+        text::DOCUMENT_START,
         &[on!(Editor, EDITOR, &[], mdoc_editor::DocumentStart)
             .mac(&["cmd-up"])
             .other(&["ctrl-home"])],
     ),
     row(
         Editor,
-        "Document end",
+        text::DOCUMENT_END,
         &[on!(Editor, EDITOR, &[], mdoc_editor::DocumentEnd)
             .mac(&["cmd-down"])
             .other(&["ctrl-end"])],
     ),
     row(
         Editor,
-        "Select to document start",
+        text::SELECT_TO_DOCUMENT_START,
         &[on!(Editor, EDITOR, &[], mdoc_editor::SelectToDocumentStart)
             .mac(&["cmd-shift-up"])
             .other(&["ctrl-shift-home"])],
     ),
     row(
         Editor,
-        "Select to document end",
+        text::SELECT_TO_DOCUMENT_END,
         &[on!(Editor, EDITOR, &[], mdoc_editor::SelectToDocumentEnd)
             .mac(&["cmd-shift-down"])
             .other(&["ctrl-shift-end"])],
     ),
     row(
         Editor,
-        "Delete previous word",
+        text::DELETE_PREVIOUS_WORD,
         &[on!(Editor, EDITOR, &[], mdoc_editor::DeleteWordLeft)
             .mac(&["alt-backspace"])
             .other(&["ctrl-backspace"])],
     ),
     row(
         Editor,
-        "Delete next word",
+        text::DELETE_NEXT_WORD,
         &[
             on!(Editor, EDITOR, &[], mdoc_editor::DeleteToWordEnd).mac(&["alt-delete"]),
             on!(Editor, EDITOR, &[], mdoc_editor::DeleteWordRight).other(&["ctrl-delete"]),
@@ -847,64 +843,64 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Delete to line start",
+        text::DELETE_TO_LINE_START,
         &[on!(Editor, EDITOR, &[], mdoc_editor::DeleteToLineStart).mac(&["cmd-backspace"])],
     ),
     // Find and Replace keys follow Zed's defaults.
     row(
         Editor,
-        "Find",
+        table::FIND.sheet,
         &[
-            on!(Find, EDITOR, &["mod-f"], find::FindMarkdown),
-            on!(Find, None, &["mod-f"], find::FindMarkdown),
-            on!(Find, FIND, &["mod-f"], find::FindMarkdown),
-            on!(Find, REPLACE, &["mod-f"], find::FindMarkdown),
+            cmd!(Find, EDITOR, &["mod-f"], FIND),
+            cmd!(Find, None, &["mod-f"], FIND),
+            cmd!(Find, FIND, &["mod-f"], FIND),
+            cmd!(Find, REPLACE, &["mod-f"], FIND),
         ],
     ),
     row(
         Editor,
-        "Find and replace",
+        table::FIND_AND_REPLACE.sheet,
         &[
-            on!(Find, EDITOR, &[], find::FindReplaceMarkdown)
+            cmd!(Find, EDITOR, &[], FIND_AND_REPLACE)
                 .mac(&["cmd-alt-f"])
                 .other(&["ctrl-h"]),
-            on!(Find, None, &[], find::FindReplaceMarkdown)
+            cmd!(Find, None, &[], FIND_AND_REPLACE)
                 .mac(&["cmd-alt-f"])
                 .other(&["ctrl-h"]),
-            on!(Find, FIND, &[], find::FindReplaceMarkdown)
+            cmd!(Find, FIND, &[], FIND_AND_REPLACE)
                 .mac(&["cmd-alt-f"])
                 .other(&["ctrl-h"]),
-            on!(Find, REPLACE, &[], find::FindReplaceMarkdown)
+            cmd!(Find, REPLACE, &[], FIND_AND_REPLACE)
                 .mac(&["cmd-alt-f"])
                 .other(&["ctrl-h"]),
         ],
     ),
     row(
         Editor,
-        "Find next",
+        table::FIND_NEXT.sheet,
         &[
-            on!(Find, EDITOR, &["mod-g"], find::FindNextMarkdown),
-            on!(Find, FIND, &["mod-g"], find::FindNextMarkdown),
-            on!(Find, REPLACE, &["mod-g"], find::FindNextMarkdown),
+            cmd!(Find, EDITOR, &["mod-g"], FIND_NEXT),
+            cmd!(Find, FIND, &["mod-g"], FIND_NEXT),
+            cmd!(Find, REPLACE, &["mod-g"], FIND_NEXT),
         ],
     ),
     row(
         Editor,
-        "Find previous",
+        table::FIND_PREVIOUS.sheet,
         &[
-            on!(Find, EDITOR, &["mod-shift-g"], find::FindPreviousMarkdown),
-            on!(Find, FIND, &["mod-shift-g"], find::FindPreviousMarkdown),
-            on!(Find, REPLACE, &["mod-shift-g"], find::FindPreviousMarkdown),
+            cmd!(Find, EDITOR, &["mod-shift-g"], FIND_PREVIOUS),
+            cmd!(Find, FIND, &["mod-shift-g"], FIND_PREVIOUS),
+            cmd!(Find, REPLACE, &["mod-shift-g"], FIND_PREVIOUS),
         ],
     ),
     row(
         Editor,
-        "Next match, in the find field",
+        text::NEXT_MATCH_IN_THE_FIND_FIELD,
         &[on!(Find, FIND, &["enter"], find::FindNextMarkdown)],
     ),
     row(
         Editor,
-        "Previous match, in the find field",
+        text::PREVIOUS_MATCH_IN_THE_FIND_FIELD,
         &[on!(
             Find,
             FIND,
@@ -914,12 +910,12 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Replace and find next, in the replace field",
+        text::REPLACE_AND_FIND_NEXT_IN_THE_REPLACE_FIELD,
         &[on!(Find, REPLACE, &["enter"], find::ReplaceNextMarkdown)],
     ),
     row(
         Editor,
-        "Replace all",
+        text::REPLACE_ALL,
         &[
             on!(Find, FIND, &[], find::ReplaceAllMarkdown)
                 .mac(&["cmd-enter"])
@@ -931,7 +927,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Match case",
+        text::MATCH_CASE,
         &[
             on!(Find, FIND, &[], find::ToggleMarkdownMatchCase)
                 .mac(&["cmd-alt-c"])
@@ -943,7 +939,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Whole word",
+        text::WHOLE_WORD,
         &[
             on!(Find, FIND, &[], find::ToggleMarkdownWholeWord)
                 .mac(&["cmd-alt-w"])
@@ -955,7 +951,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Close find",
+        text::CLOSE_FIND,
         &[
             on!(Find, FIND, &["escape"], find::CloseMarkdownSearch),
             on!(Find, REPLACE, &["escape"], find::CloseMarkdownSearch),
@@ -963,12 +959,12 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Next misspelling",
+        text::NEXT_MISSPELLING,
         &[on!(App, None, &["mod-;"], spelling::NextMisspelling)],
     ),
     row(
         Editor,
-        "Previous misspelling",
+        text::PREVIOUS_MISSPELLING,
         &[on!(
             App,
             None,
@@ -978,27 +974,27 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Editor,
-        "Review the proposal at the caret",
+        text::REVIEW_THE_PROPOSAL_AT_THE_CARET,
         &[on!(Pii, EDITOR, &["alt-enter"], pii::PiiReviewCandidate)],
     ),
     row(
         Editor,
-        "Next proposal",
+        text::NEXT_PROPOSAL,
         &[on!(Pii, EDITOR, &["alt-down"], pii::PiiNextCandidate)],
     ),
     row(
         Editor,
-        "Previous proposal",
+        text::PREVIOUS_PROPOSAL,
         &[on!(Pii, EDITOR, &["alt-up"], pii::PiiPreviousCandidate)],
     ),
     row(
         Editor,
-        "Propose the selection",
+        text::PROPOSE_THE_SELECTION,
         &[on!(Pii, EDITOR, &["mod-alt-p"], pii::PiiAddCandidate)],
     ),
     row(
         Editor,
-        "Propose the selection as…",
+        text::PROPOSE_THE_SELECTION_AS,
         &[on!(
             Pii,
             EDITOR,
@@ -1009,7 +1005,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     // Esc leaves side by side, also from inside its read-only columns.
     row(
         Editor,
-        "Leave side by side",
+        text::LEAVE_SIDE_BY_SIDE,
         &[
             on!(Pii, Some("CompareView"), &["escape"], pii::CloseCompare),
             on!(
@@ -1024,7 +1020,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     // The sidebar's tree is one Tab stop; arrows move inside it.
     row(
         Panel,
-        "Sidebar: previous row",
+        text::SIDEBAR_PREVIOUS_ROW,
         &[on!(
             Ui,
             Some("SidebarRow"),
@@ -1034,7 +1030,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Sidebar: next row",
+        text::SIDEBAR_NEXT_ROW,
         &[on!(
             Ui,
             Some("SidebarRow"),
@@ -1044,7 +1040,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Sidebar: collapse a Project, or go to it",
+        text::SIDEBAR_COLLAPSE_A_PROJECT_OR_GO_TO_IT,
         &[on!(
             Ui,
             Some("SidebarRow"),
@@ -1054,7 +1050,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Sidebar: expand a Project, or go into it",
+        text::SIDEBAR_EXPAND_A_PROJECT_OR_GO_INTO_IT,
         &[on!(
             Ui,
             Some("SidebarRow"),
@@ -1064,7 +1060,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Unfiled: select the row above too",
+        text::UNFILED_SELECT_THE_ROW_ABOVE_TOO,
         &[on!(
             Ui,
             Some("SidebarRow"),
@@ -1074,7 +1070,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Unfiled: select the row below too",
+        text::UNFILED_SELECT_THE_ROW_BELOW_TOO,
         &[on!(
             Ui,
             Some("SidebarRow"),
@@ -1084,7 +1080,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Unfiled: delete the selected documents",
+        text::UNFILED_DELETE_THE_SELECTED_DOCUMENTS,
         &[on!(
             Ui,
             Some("SidebarRow"),
@@ -1095,7 +1091,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Sidebar: the row's menu",
+        text::SIDEBAR_THE_ROW_S_MENU,
         // ⌃↩ needs no fn on MacBook keyboards, where F10 is the mute key;
         // Windows adds the Menu key.
         &[on!(
@@ -1109,67 +1105,67 @@ pub static SHORTCUTS: &[Shortcut] = &[
     // The Replacements checklist.
     row(
         Panel,
-        "Replacements: previous row",
+        text::REPLACEMENTS_PREVIOUS_ROW,
         &[on!(Pii, Some(pii::LIST), &["up"], pii::PanelUp)],
     ),
     row(
         Panel,
-        "Replacements: next row",
+        text::REPLACEMENTS_NEXT_ROW,
         &[on!(Pii, Some(pii::LIST), &["down"], pii::PanelDown)],
     ),
     row(
         Panel,
-        "Replacements: first row",
+        text::REPLACEMENTS_FIRST_ROW,
         &[on!(Pii, Some(pii::LIST), &["mod-up"], pii::PanelFirst)],
     ),
     row(
         Panel,
-        "Replacements: last row",
+        text::REPLACEMENTS_LAST_ROW,
         &[on!(Pii, Some(pii::LIST), &["mod-down"], pii::PanelLast)],
     ),
     row(
         Panel,
-        "Replacements: move to the group above",
+        text::REPLACEMENTS_MOVE_TO_THE_GROUP_ABOVE,
         &[on!(Pii, Some(pii::LIST), &["alt-up"], pii::PanelMoveUp)],
     ),
     row(
         Panel,
-        "Replacements: move to the group below",
+        text::REPLACEMENTS_MOVE_TO_THE_GROUP_BELOW,
         &[on!(Pii, Some(pii::LIST), &["alt-down"], pii::PanelMoveDown)],
     ),
     row(
         Panel,
-        "Replacements: back to the filter, then close",
+        text::REPLACEMENTS_BACK_TO_THE_FILTER_THEN_CLOSE,
         &[on!(Pii, Some("IdentityPanel"), &["escape"], pii::PanelEscape).also(&["alt-escape"])],
     ),
     row(
         Panel,
-        "Replacements: tick or untick",
+        text::REPLACEMENTS_TICK_OR_UNTICK,
         &[on!(Pii, Some(pii::LIST), &["space"], pii::PanelToggle)],
     ),
     row(
         Panel,
-        "Replacements: go to the mention",
+        text::REPLACEMENTS_GO_TO_THE_MENTION,
         &[on!(Pii, Some(pii::LIST), &["enter"], pii::PanelOpen)],
     ),
     row(
         Panel,
-        "Replacements: show mentions",
+        text::REPLACEMENTS_SHOW_MENTIONS,
         &[on!(Pii, Some(pii::LIST), &["right"], pii::PanelExpand)],
     ),
     row(
         Panel,
-        "Replacements: hide mentions",
+        text::REPLACEMENTS_HIDE_MENTIONS,
         &[on!(Pii, Some(pii::LIST), &["left"], pii::PanelCollapse)],
     ),
     row(
         Panel,
-        "Replacements: keep the original",
+        text::REPLACEMENTS_KEEP_THE_ORIGINAL,
         &[on!(Pii, Some(pii::LIST), &["backspace"], pii::PanelKeep).also(&["delete"])],
     ),
     row(
         Panel,
-        "Replacements: from the filter to the list",
+        text::REPLACEMENTS_FROM_THE_FILTER_TO_THE_LIST,
         &[on!(
             Pii,
             Some("ReplacementSearch"),
@@ -1180,12 +1176,12 @@ pub static SHORTCUTS: &[Shortcut] = &[
     // The source preview of a PDF or DOCX.
     row(
         Panel,
-        "Source: next page",
+        text::SOURCE_NEXT_PAGE,
         &[on!(Pdf, Some("PdfView"), &["pagedown"], gpui_pdf::NextPage)],
     ),
     row(
         Panel,
-        "Source: previous page",
+        text::SOURCE_PREVIOUS_PAGE,
         &[on!(
             Pdf,
             Some("PdfView"),
@@ -1195,17 +1191,17 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Source: first page",
+        text::SOURCE_FIRST_PAGE,
         &[on!(Pdf, Some("PdfView"), &["home"], gpui_pdf::FirstPage)],
     ),
     row(
         Panel,
-        "Source: last page",
+        text::SOURCE_LAST_PAGE,
         &[on!(Pdf, Some("PdfView"), &["end"], gpui_pdf::LastPage)],
     ),
     row(
         Panel,
-        "Source: next comment",
+        text::SOURCE_NEXT_COMMENT,
         &[on!(
             App,
             Some("PdfView"),
@@ -1215,7 +1211,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Source: previous comment",
+        text::SOURCE_PREVIOUS_COMMENT,
         &[on!(
             App,
             Some("PdfView"),
@@ -1225,7 +1221,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Source: go to page",
+        text::SOURCE_GO_TO_PAGE,
         &[on!(Pdf, Some("PdfView"), &[], gpui_pdf::GoToPage)
             .mac(&["cmd-alt-g"])
             .other(&["ctrl-alt-g"])],
@@ -1234,7 +1230,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     // The mention popup.
     row(
         Popup,
-        "Apply and go to the next proposal",
+        text::APPLY_AND_GO_TO_THE_NEXT_PROPOSAL,
         &[
             on!(Pii, Some(pii::POPUP), &["enter"], pii::ApplyThis),
             // Scope segments keep Space for selection, but Enter applies in
@@ -1244,22 +1240,22 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Tick or untick Replace",
+        text::TICK_OR_UNTICK_REPLACE,
         &[on!(Pii, Some(pii::POPUP), &["space"], pii::PanelKeep)],
     ),
     row(
         Popup,
-        "Keep the original here",
+        text::KEEP_THE_ORIGINAL_HERE,
         &[on!(Pii, Some(pii::POPUP), &["backspace"], pii::KeepThis).also(&["delete"])],
     ),
     row(
         Popup,
-        "Keep this wording everywhere",
+        text::KEEP_THIS_WORDING_EVERYWHERE,
         &[on!(Pii, Some(pii::POPUP), &["mod-backspace"], pii::KeepSame).also(&["mod-delete"])],
     ),
     row(
         Popup,
-        "Keep the whole entity",
+        text::KEEP_THE_WHOLE_ENTITY,
         &[on!(
             Pii,
             Some(pii::POPUP),
@@ -1270,28 +1266,28 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Previous mention",
+        text::PREVIOUS_MENTION,
         &[on!(Pii, Some(pii::STEP), &["left"], pii::PopupPreviousMention).also(&["up"])],
     ),
     row(
         Popup,
-        "Next mention",
+        text::NEXT_MENTION,
         &[on!(Pii, Some(pii::STEP), &["right"], pii::PopupNextMention).also(&["down"])],
     ),
     row(
         Popup,
-        "First mention",
+        text::FIRST_MENTION,
         &[on!(Pii, Some(pii::STEP), &["mod-up"], pii::PopupFirstMention).also(&["mod-left"])],
     ),
     row(
         Popup,
-        "Last mention",
+        text::LAST_MENTION,
         &[on!(Pii, Some(pii::STEP), &["mod-down"], pii::PopupLastMention).also(&["mod-right"])],
     ),
     // In the alias field Enter confirms the draft.
     row(
         Popup,
-        "Confirm the alias",
+        text::CONFIRM_THE_ALIAS,
         &[on!(
             Pii,
             Some("PseudonymReplacement"),
@@ -1301,7 +1297,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Close the popup",
+        text::CLOSE_THE_POPUP,
         &[on!(
             Pii,
             Some("PseudonymReview"),
@@ -1311,7 +1307,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Close a menu",
+        text::CLOSE_A_MENU,
         &[
             on!(Ui, Some("UiMenu"), &["escape"], crate::ui::CloseMenu),
             on!(Pdf, Some("PdfMenu"), &["escape"], gpui_pdf::MenuClose),
@@ -1319,7 +1315,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Notes: close the Inspector",
+        text::NOTES_CLOSE_THE_INSPECTOR,
         &[on!(
             Ui,
             Some("NotesBox > Editor"),
@@ -1329,7 +1325,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Open documents with the recovery key",
+        text::OPEN_DOCUMENTS_WITH_THE_RECOVERY_KEY,
         &[on!(
             Shell,
             Some("RecoveryKey"),
@@ -1339,7 +1335,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Close the command palette",
+        text::CLOSE_THE_COMMAND_PALETTE,
         &[on!(
             Shell,
             Some(workspace::PALETTE),
@@ -1349,7 +1345,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Close keyboard shortcuts",
+        text::CLOSE_KEYBOARD_SHORTCUTS,
         &[on!(
             Shell,
             Some(shortcuts_ui::SHEET),
@@ -1359,7 +1355,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Don't Save, in a save prompt",
+        text::DONT_SAVE_IN_A_SAVE_PROMPT,
         &[on!(
             Dialog,
             Some(confirm_dialog::DIALOG),
@@ -1371,7 +1367,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Close Settings",
+        text::CLOSE_SETTINGS,
         &[on!(
             Settings,
             Some("ModelSettings"),
@@ -1381,7 +1377,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Add the wording to the list",
+        text::ADD_THE_WORDING_TO_THE_LIST,
         &[on!(
             Settings,
             Some("UserListInput"),
@@ -1391,7 +1387,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Add the word to the dictionary",
+        text::ADD_THE_WORD_TO_THE_DICTIONARY,
         &[on!(
             Dictionary,
             Some("DictionarySearch"),
@@ -1401,7 +1397,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Save the Project name",
+        text::SAVE_THE_PROJECT_NAME,
         &[on!(
             Projects,
             Some("ProjectName"),
@@ -1411,7 +1407,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Cancel renaming the Project",
+        text::CANCEL_RENAMING_THE_PROJECT,
         &[on!(
             Projects,
             Some("ProjectName"),
@@ -1421,7 +1417,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Add a name to the Project",
+        text::ADD_A_NAME_TO_THE_PROJECT,
         &[on!(
             Projects,
             Some("ProjectTerm"),
@@ -1431,7 +1427,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Clear the new Project name",
+        text::CLEAR_THE_NEW_PROJECT_NAME,
         &[on!(
             Projects,
             Some("ProjectTerm"),
@@ -1441,7 +1437,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Close the model comparison",
+        text::CLOSE_THE_MODEL_COMPARISON,
         &[on!(
             Comparison,
             Some("ModelComparison"),
@@ -1452,12 +1448,12 @@ pub static SHORTCUTS: &[Shortcut] = &[
     // The menu bar shelf: macOS only, ⌘C as a drag's counterpart.
     row(
         Popup,
-        "Copy a shelf document for AI",
+        text::COPY_A_SHELF_DOCUMENT_FOR_AI,
         &[on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyForAi).mac(&["cmd-c"])],
     ),
     row(
         Popup,
-        "Copy shelf document 1–8 for AI",
+        text::COPY_SHELF_DOCUMENT_1_8_FOR_AI,
         &[
             on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyRow(1)).mac(&["cmd-1"]),
             on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyRow(2)).mac(&["cmd-2"]),

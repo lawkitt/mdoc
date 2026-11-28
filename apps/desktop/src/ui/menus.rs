@@ -7,7 +7,7 @@ use gpui::{div, prelude::*, px};
 pub fn menu_row(
     id: impl Into<gpui::ElementId>,
     label: impl Into<gpui::SharedString>,
-    shortcut: Option<&'static str>,
+    shortcut: Option<gpui::SharedString>,
     checked: Option<bool>,
     theme: Theme,
     enabled: bool,
@@ -20,7 +20,7 @@ pub fn menu_row(
 pub fn menu_row_because(
     id: impl Into<gpui::ElementId>,
     label: impl Into<gpui::SharedString>,
-    shortcut: Option<&'static str>,
+    shortcut: Option<gpui::SharedString>,
     checked: Option<bool>,
     theme: Theme,
     enabled: bool,

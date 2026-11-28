@@ -92,16 +92,11 @@ pub(crate) const PSEUDONYMIZE_FIRST: &str = "Pseudonymize the document first.";
 pub(crate) const APPLY_REPLACEMENTS_FIRST: &str = "Apply replacements first.";
 pub(crate) const NO_NAMES_REPLACED: &str = "No names in this document are replaced.";
 pub(crate) const ONLY_VAULT_DOCUMENTS_MOVE: &str = "Only a document in the Vault moves.";
-/// The ⋯ menu's rows, until one command table words them.
-pub(crate) const SAVE: &str = "Save";
-pub(crate) const EXPORT_MARKDOWN: &str = "Export Markdown…";
-pub(crate) const COPY_MARKDOWN: &str = "Copy Markdown";
-pub(crate) const COPY_FOR_AI: &str = "Copy for AI";
-pub(crate) const PASTE_AI_REPLY: &str = "Paste AI reply";
+/// The Notes box's name.
 pub(crate) const NOTES: &str = "Notes";
+/// The ⋯ menu's own rows; its commands are named by the command table.
 pub(crate) const SPELLING: &str = "Spelling";
 pub(crate) const RESCAN: &str = "Rescan";
-pub(crate) const MOVE_TO_PROJECT: &str = "Move to Project…";
 /// The Markdown and Source switch.
 pub(crate) const VIEW: &str = "View";
 pub(crate) const MARKDOWN: &str = "Markdown";
