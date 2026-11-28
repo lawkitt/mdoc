@@ -195,7 +195,6 @@ impl Workspace {
                     .child(group.title()),
             );
             for row in rows {
-                let keys = row.keys.join(", ");
                 index += 1;
                 list = list.child(
                     div()
@@ -204,7 +203,7 @@ impl Workspace {
                             v.debug_selector(move || format!("shortcut-row-{index}"))
                         })
                         .role(gpui::Role::ListItem)
-                        .aria_label(super::text::shortcut_row(row.label, &keys))
+                        .aria_label(super::text::shortcut_row(row.label, &row.keys))
                         .flex()
                         .items_center()
                         .gap_4()

@@ -483,7 +483,6 @@ impl Workspace {
         let title = match self.shell.drop {
             _ if unavailable.is_some() => text::DOCUMENTS_UNAVAILABLE.to_string(),
             Some(0) => text::CANT_BE_OPENED.to_string(),
-            Some(1) => text::DROP_TO_OPEN.to_string(),
             Some(n) => text::drop_files(n),
             None => text::DROP_DOCUMENTS_HERE.to_string(),
         };
