@@ -1,6 +1,7 @@
 //! The AI return journey: Copy for AI adds a placeholder notice; Paste AI
 //! Response saves the reply to the Vault and shows it restored on its Reply
 //! page (`workspace::replies`); the clipboard actions.
+use super::text;
 use crate::{
     document::{DocumentView, Inspector},
     review::refusal::{Refusal, Step},
@@ -224,36 +225,25 @@ impl DocumentView {
             self.pii.review.export_identities()
         };
         if identities.is_empty() {
-            self.show_clipboard_notice(
-                "This tab has no names to replace yet. Pseudonymize a document or open a Project first."
-                    .into(),
-                cx,
-            );
+            self.show_clipboard_notice(text::NO_NAMES_TO_REPLACE.into(), cx);
             cx.emit(crate::workspace::TabEvent::Project(
                 crate::workspace::ProjectEvent::MappingMissing,
             ));
             return;
         }
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
-            self.show_clipboard_notice("The clipboard has no text.".into(), cx);
+            self.show_clipboard_notice(text::CLIPBOARD_HAS_NO_TEXT.into(), cx);
             return;
         };
         let (replaced, count) = RestoreMap::new(identities).pseudonymize(&text);
         if count > 0 {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(replaced));
         }
-        let source = self
-            .project
-            .link()
-            .map_or_else(|| "this document".to_string(), |l| format!("“{}”", l.name));
-        let notice = match count {
-            0 => format!("No names from {source} were found in the clipboard. It is unchanged."),
-            n => format!(
-                "Replaced {n} {} from {source} in the clipboard. Names mdoc doesn't know yet \
-                 were not replaced; check before pasting.",
-                if n == 1 { "name" } else { "names" }
-            ),
-        };
+        let source = self.project.link().map_or_else(
+            || text::THIS_DOCUMENT.to_string(),
+            |l| format!("“{}”", l.name),
+        );
+        let notice = text::pseudonymized_clipboard(count, &source);
         self.show_clipboard_notice(notice, cx);
     }
     /// Edit › Restore Clipboard: the shelf's Restore with this
@@ -270,18 +260,14 @@ impl DocumentView {
             self.pii.review.export_identities()
         };
         if identities.is_empty() {
-            self.show_clipboard_notice(
-                "This tab has no names to restore yet. Pseudonymize a document or open a Project first."
-                    .into(),
-                cx,
-            );
+            self.show_clipboard_notice(text::NO_NAMES_TO_RESTORE.into(), cx);
             cx.emit(crate::workspace::TabEvent::Project(
                 crate::workspace::ProjectEvent::MappingMissing,
             ));
             return;
         }
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
-            self.show_clipboard_notice("The clipboard has no text.".into(), cx);
+            self.show_clipboard_notice(text::CLIPBOARD_HAS_NO_TEXT.into(), cx);
             return;
         };
         let restored = crate::shelf::restore_clipboard(&text, identities);
@@ -290,26 +276,11 @@ impl DocumentView {
                 restored.text.clone(),
             ));
         }
-        let source = self
-            .project
-            .link()
-            .map_or_else(|| "this document".to_string(), |l| format!("“{}”", l.name));
-        let plural =
-            |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
-        let notice = match (restored.restored, restored.unrecognised) {
-            (0, 0) => {
-                format!("No aliases from {source} were found in the clipboard. It is unchanged.")
-            }
-            (n, 0) => format!(
-                "Restored {} from {source} in the clipboard.",
-                plural(n, "name", "names")
-            ),
-            (n, m) => format!(
-                "Restored {} from {source} in the clipboard; {} unrecognized, left as is.",
-                plural(n, "name", "names"),
-                plural(m, "alias", "aliases")
-            ),
-        };
+        let source = self.project.link().map_or_else(
+            || text::THIS_DOCUMENT.to_string(),
+            |l| format!("“{}”", l.name),
+        );
+        let notice = text::restored_clipboard(restored.restored, restored.unrecognised, &source);
         self.show_clipboard_notice(notice, cx);
     }
     /// Show `text` as the clipboard notice; showing another restarts the timeout.
@@ -334,7 +305,8 @@ impl DocumentView {
     ) {
         // The reply comes from the menu bar, ⌥⇧⌘V, the More menu or Home's
         // Restore AI reply, each with its own name, so the error names none.
-        if !self.can_copy_markdown() || !self.has_identities_to_restore("Restoring an AI reply", cx)
+        if !self.can_copy_markdown()
+            || !self.has_identities_to_restore(text::RESTORING_AN_AI_REPLY, cx)
         {
             return;
         }
@@ -343,7 +315,7 @@ impl DocumentView {
             .and_then(|item| item.text())
             .unwrap_or_default();
         if text.trim().is_empty() {
-            self.error = Some("The clipboard has no text. Copy the AI's reply first.".into());
+            self.error = Some(text::CLIPBOARD_HAS_NO_REPLY.into());
             cx.notify();
             return;
         }
@@ -362,14 +334,26 @@ impl DocumentView {
         if !self.pii.review.export_identities().is_empty() {
             return true;
         }
-        self.error = Some(format!(
-            "{action} needs a document whose names were replaced with aliases. \
-             Apply replacements, copy the text for the AI, then paste its reply here."
-        ));
+        self.error = Some(text::needs_aliases(action));
         cx.emit(crate::workspace::TabEvent::Project(
             crate::workspace::ProjectEvent::MappingMissing,
         ));
         cx.notify();
         false
+    }
+
+    /// Share's copy button: the step a refusal needs, or Copy for AI.
+    pub(super) fn share_copy(
+        &mut self,
+        step: Option<Step>,
+        copy_for_ai: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match step {
+            Some(step) => cx.emit(crate::workspace::TabEvent::CopyStep(step)),
+            None if copy_for_ai => self.copy_for_ai(&CopyForAi, window, cx),
+            None => {}
+        }
     }
 }

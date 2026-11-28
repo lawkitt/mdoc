@@ -1,20 +1,17 @@
-//! The window: the `Workspace` struct with its tabs, the events its
-//! documents send it (`TabEvent`), and its render. Each initialized tab owns a
-//! retained document view; unopened session records allocate no editor, PDF,
-//! or conversion worker.
+//! The window: the `Workspace` struct with its tabs and the events its
+//! documents send it (`TabEvent`); its render is in `view.rs`, what it carries
+//! out in `actions.rs`. Each initialized tab owns a retained document view;
+//! unopened session records allocate no editor, PDF, or conversion worker.
 use crate::{
-    document::comparison,
-    document::comparison_ui,
     document::{DocumentView, OcrState, known_ocr_state},
-    review::PiiApplyAll,
-    ui,
     ui::style::{self, Theme},
 };
+#[cfg(test)]
+use gpui::div;
 use gpui::{
-    AnyElement, App, Bounds, Context, Entity, EventEmitter, Focusable, Subscription, Window,
-    WindowBounds, WindowOptions, actions, div, prelude::*, px, size,
+    App, Context, Entity, EventEmitter, Focusable, Subscription, Window, actions, prelude::*,
 };
-use mdoc_import::{model_work, ocr};
+use mdoc_import::ocr;
 use mdoc_store::session_store::ThemeChoice;
 use mdoc_store::{
     document_id::DocumentId,
@@ -29,6 +26,8 @@ use std::{
     time::Duration,
 };
 
+mod actions;
+use actions::check_ocr;
 mod ai;
 pub(crate) use ai::companion::{CompanionContent, CompanionProposal, ReviewMark, ReviewStep};
 mod app_actions;
@@ -50,7 +49,6 @@ pub(crate) use projects::projects_ui::{
 };
 mod replies;
 mod saving;
-use saving::docx_queue::DocxJob;
 // The tests read these through `use super::*`.
 use gpui::KeyBinding;
 use palette::PaletteConfirm;
@@ -58,7 +56,7 @@ use palette::PaletteDown;
 use palette::PaletteUp;
 pub(crate) use saving::quit_flow::CloseWatch;
 #[cfg(test)]
-use sidebar::{REVEAL_SLIDE, Reveal};
+use sidebar::state::{REVEAL_SLIDE, Reveal};
 #[cfg(test)]
 use std::collections::VecDeque;
 mod shelf_source;
@@ -72,6 +70,7 @@ mod text;
 pub(crate) use sidebar::navigation_ui::{Back, Forward};
 mod vault;
 pub(crate) use vault::recovery_key::OpenWithRecoveryKey;
+mod view;
 actions!(
     mdoc,
     [
@@ -384,10 +383,8 @@ pub(super) struct Workspace {
     /// Views whose last write failed: their edit is in no file, so eviction
     /// keeps them.
     unsaved: std::collections::HashSet<u64>,
-    /// The tab whose Copy for AI waits for its writes to land before the
-    /// Vault's outbound check runs, with the clipboard's text when it was
-    /// asked.
-    copy_for_ai_waiting: Option<(u64, Option<String>)>,
+    /// What the window keeps for the shelf and its Copy for AI.
+    shelf_source: shelf_source::ShelfSource,
     /// One admission at a time, so a repeat waits for the import before it.
     admitting: bool,
     admit_queue: std::collections::VecDeque<(Vec<PathBuf>, Option<String>)>,
@@ -424,7 +421,6 @@ impl Workspace {
     pub(crate) fn theme_cell(&self) -> Rc<std::cell::Cell<style::Theme>> {
         self.theme.clone()
     }
-
     /// Settings › General › "Show mdoc in the menu bar".
     pub(crate) fn menu_bar_setting(&self) -> bool {
         self.preferences
@@ -433,12 +429,10 @@ impl Workspace {
             .as_ref()
             .is_some_and(|preferences| preferences.general.menu_bar)
     }
-
     /// Every prompt in the app is mdoc's own confirm dialog.
     pub(crate) fn install_prompts(&self, cx: &mut App) {
         crate::ui::confirm_dialog::install(self.theme.clone(), cx);
     }
-
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let mut this = Self::empty(window, cx);
         this.ocr_state = OcrState::Checking;
@@ -535,7 +529,6 @@ impl Workspace {
         }));
         this
     }
-
     pub(super) fn empty(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let preferences = if cfg!(test) {
             settings::Store::in_memory()
@@ -647,7 +640,7 @@ impl Workspace {
             closing_after_write: Default::default(),
             evicting: Default::default(),
             unsaved: Default::default(),
-            copy_for_ai_waiting: None,
+            shelf_source: Default::default(),
             admitting: false,
             admit_queue: Default::default(),
             // Tests name their own; they never touch the real cache.
@@ -755,211 +748,6 @@ impl Workspace {
             );
         this
     }
-
-    fn refresh_model_settings(&mut self, cx: &mut Context<Self>) {
-        let config = match self.preferences.borrow().snapshot() {
-            Ok(p) => p.ocr,
-            Err(e) => {
-                self.notices.post(e.to_string());
-                cx.notify();
-                return;
-            }
-        };
-        let model = settings::Model::Ocr(config.model);
-        let status = self.settings.read(cx).statuses[settings::Model::ALL
-            .iter()
-            .position(|m| *m == model)
-            .unwrap()]
-        .clone();
-        match status {
-            crate::settings::Status::Missing => {
-                self.set_ocr(OcrState::Missing, cx);
-                return;
-            }
-            crate::settings::Status::Damaged(e) | crate::settings::Status::Unavailable(e) => {
-                self.set_ocr(
-                    if ocr::SUPPORTED {
-                        OcrState::Failed(e)
-                    } else {
-                        OcrState::Unsupported
-                    },
-                    cx,
-                );
-                return;
-            }
-            _ => {}
-        }
-        // Parameter-only changes reuse the already checked model; setup publishes
-        // its checked paths directly, so it cannot race a consent continuation.
-        if let OcrState::Ready(installed) = &self.ocr_state
-            && installed.config.model == config.model
-        {
-            let mut installed = installed.clone();
-            installed.config = config;
-            self.set_ocr(OcrState::Ready(installed), cx);
-            return;
-        }
-        let cached = self
-            .settings
-            .read(cx)
-            .ocr_installations
-            .iter()
-            .find(|i| i.config.model == config.model)
-            .cloned();
-        if let Some(mut installed) = cached {
-            installed.config = config;
-            self.set_ocr(OcrState::Ready(installed), cx);
-            return;
-        }
-        if model_work::busy() {
-            return;
-        }
-        let captured = config.clone();
-        let task = cx
-            .background_executor()
-            .spawn(async move { check_ocr(&config) });
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let _ = this.update(cx, |this, cx| {
-                if this
-                    .preferences
-                    .borrow()
-                    .snapshot()
-                    .is_ok_and(|p| p.ocr != captured)
-                {
-                    return;
-                }
-                let state = match result {
-                    Ok(Some(i)) => OcrState::Ready(i),
-                    Ok(None) if ocr::SUPPORTED => OcrState::Missing,
-                    Ok(None) => OcrState::Unsupported,
-                    Err(e) => OcrState::Failed(e),
-                };
-                this.set_ocr(state, cx);
-            });
-        })
-        .detach();
-    }
-
-    pub(super) fn show_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        window.activate_window();
-        self.settings.update(cx, |panel, cx| panel.show(window, cx));
-    }
-    pub(super) fn open_comparison(
-        &mut self,
-        model: settings::Model,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(view) = self.active_view() else {
-            self.notices.post(text::OPEN_BEFORE_COMPARING);
-            cx.notify();
-            return;
-        };
-        let defaults = match self.preferences.borrow().snapshot() {
-            Ok(p) => p,
-            Err(e) => {
-                self.notices.post(e.to_string());
-                cx.notify();
-                return;
-            }
-        };
-        let mut protected: Vec<_> = [
-            view.read(cx).session.source.clone(),
-            view.read(cx).preview.attachment().cloned(),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        let (source, input) = match model {
-            settings::Model::Ocr(_) => {
-                let source = view
-                    .read(cx)
-                    .preview
-                    .attachment()
-                    .cloned()
-                    .or_else(|| view.read(cx).session.source.clone());
-                let Some(source) = source else {
-                    self.notices.post(text::OCR_COMPARISON_NEEDS_PDF);
-                    cx.notify();
-                    return;
-                };
-                (Some(source), None)
-            }
-            settings::Model::Pii(_) => {
-                if !view.read(cx).can_copy_markdown() {
-                    self.notices.post(text::CONVERT_BEFORE_COMPARING);
-                    cx.notify();
-                    return;
-                }
-                (
-                    None,
-                    Some(comparison::Input::Markdown(Arc::new(
-                        view.read(cx).editor.read(cx).text().to_string(),
-                    ))),
-                )
-            }
-        };
-        self.settings
-            .update(cx, |panel, cx| panel.close(window, cx));
-        let owner = cx.entity().downgrade();
-        let theme = self.theme.clone();
-        let panel = self.settings.clone();
-        let source_for_worker = source.clone();
-        if let Some(source) = source {
-            protected.insert(0, source);
-        }
-        let task = cx.background_executor().spawn(async move {
-            let input = match input {
-                Some(i) => i,
-                None => comparison::Input::pdf(source_for_worker.as_ref().unwrap())?,
-            };
-            let hash = input.hash();
-            Ok::<_, String>((input, hash))
-        });
-        let bounds = Bounds::centered(None, size(px(1000.), px(750.)), cx);
-        cx.spawn(async move |this, cx| match task.await {
-            Ok((input, hash)) => {
-                if this.upgrade().is_none() {
-                    return;
-                }
-                let _ = cx.open_window(
-                    WindowOptions {
-                        window_bounds: Some(WindowBounds::Windowed(bounds)),
-                        ..Default::default()
-                    },
-                    move |window, cx| {
-                        window.set_window_title(if matches!(input, comparison::Input::Pdf(_)) {
-                            text::COMPARE_OCR_TITLE
-                        } else {
-                            text::COMPARE_PSEUDONYMIZATION_TITLE
-                        });
-                        let view = cx.new(|cx| {
-                            comparison_ui::View::new(
-                                (input, hash),
-                                defaults,
-                                theme,
-                                owner,
-                                panel,
-                                protected,
-                                cx,
-                            )
-                        });
-                        window.focus(&view.read(cx).focus_handle(cx), cx);
-                        view
-                    },
-                );
-            }
-            Err(e) => {
-                let _ = this.update(cx, |this, cx| {
-                    this.notices.post(e);
-                    cx.notify();
-                });
-            }
-        })
-        .detach();
-    }
-
     /// The live view of `document`, other than `except`: the one named for
     /// it, or one whose view holds it now.
     pub(crate) fn find_document(
@@ -979,7 +767,6 @@ impl Workspace {
             })
             .map(|tab| tab.id())
     }
-
     /// A confirm dialog, the Keychain explainer, a folder sheet or New
     /// Project's sheet keeps focus until answered.
     fn dialog_up(&self, window: &Window) -> bool {
@@ -988,114 +775,6 @@ impl Workspace {
             || self.folder_sheets.open()
             || self.new_project.is_some()
     }
-
-    fn event(&mut self, id: u64, event: &TabEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.tabs.contains(id) {
-            return;
-        }
-        match event {
-            TabEvent::Tabs(TabsEvent::New) if !self.quit_flow.quitting() => {
-                if !self.intake_refused(window, cx) {
-                    self.new_tab(window, cx);
-                }
-            }
-            TabEvent::Tabs(TabsEvent::Open(paths)) => self.open_paths(paths.clone(), window, cx),
-            TabEvent::Reply(event) if !self.quit_flow.quitting() => match event {
-                ReplyEvent::Settled { open } => self.queue_box_save(id, *open, window, cx),
-                ReplyEvent::Pasted(text) => self.queue_pasted_reply(id, text.clone(), window, cx),
-                ReplyEvent::Open(reply) => self.open_reply(reply, window, cx),
-            },
-            TabEvent::Import(ImportEvent::State) => {
-                self.refresh_import(window, cx);
-                // A converted document of a Project gets its names now.
-                self.attach_project(id, cx);
-            }
-            TabEvent::Import(ImportEvent::Ocr(state)) => self.set_ocr(state.clone(), cx),
-            TabEvent::Project(ProjectEvent::Changed) => self.project_changed(id, cx),
-            TabEvent::Project(ProjectEvent::OpenPage) => {
-                let project = (self.tab_view(id))
-                    .and_then(|view| view.read(cx).project.link().map(|link| link.id.clone()));
-                if let Some(project) = project {
-                    self.open_project(&project, window, cx);
-                }
-            }
-            TabEvent::Project(ProjectEvent::MappingMissing) => {
-                if self.vault_banner().is_some() {
-                    self.carry_out_notices(self.notices.show_locked_projects());
-                    cx.notify();
-                }
-            }
-            TabEvent::Project(ProjectEvent::AddTerm(term)) => self.add_project_term(id, term, cx),
-            TabEvent::Project(ProjectEvent::DismissHint(from, into)) => {
-                self.dismiss_project_hint(id, from, into, cx)
-            }
-            TabEvent::Project(ProjectEvent::MoveToNew) => self.move_to_new_project(id, window, cx),
-            TabEvent::Project(ProjectEvent::FinishRename { save }) => {
-                self.finish_rename(*save, window, cx)
-            }
-            TabEvent::Project(ProjectEvent::MoveMenu(at)) => {
-                self.open_move_menu(id, *at, window, cx)
-            }
-            TabEvent::CopyForAi => self.copy_tab_for_ai(id, window, cx),
-            TabEvent::Ask {
-                with,
-                move_to_new,
-                into,
-            } => {
-                let into = into.clone();
-                self.ask_from_tab(id, *with, *move_to_new, into, window, cx)
-            }
-            TabEvent::NamesFound => self.copy_for_ai_after_write(cx),
-            TabEvent::CopyStep(step) => {
-                self.run_tab_step(id, *step, window, cx);
-            }
-            TabEvent::ToggleTheme => self.cycle_theme(window, cx),
-            TabEvent::SourceDisplay(display) => {
-                let display = *display;
-                // Kept for this window when the save fails; the error is logged.
-                let _ = self.update_general(
-                    move |general| {
-                        general.show_comments = display.comments;
-                        general.show_hidden_text = display.hidden_text;
-                    },
-                    cx,
-                );
-                let views: Vec<_> = self
-                    .tabs
-                    .iter()
-                    .filter_map(|tab| tab.view().cloned())
-                    .collect();
-                for view in views {
-                    view.update(cx, |view, cx| view.source_display_changed(window, cx));
-                }
-            }
-            TabEvent::Save(SaveEvent::Changed) => self.autosave(id, window, cx),
-            TabEvent::Import(ImportEvent::Finished) => {
-                self.refresh_import(window, cx);
-                // A converted member of the AI project has text to scan now.
-                self.scan_on_entry(cx);
-            }
-            TabEvent::Docx(DocxEvent::Finished { generation }) => {
-                self.docx_finished(id, *generation, window, cx);
-            }
-            TabEvent::Docx(DocxEvent::Queue {
-                path,
-                generation,
-                cancel,
-            }) => {
-                self.docx_queue.push(DocxJob {
-                    id,
-                    path: path.clone(),
-                    generation: *generation,
-                    cancel: cancel.clone(),
-                });
-                self.pump_docx(window, cx);
-            }
-            _ => {}
-        }
-        cx.notify();
-    }
-
     /// Focus the active document without changing which document is active.
     fn focus_active(&self, window: &mut Window, cx: &mut App) {
         let Some(view) = self.active_view() else {
@@ -1190,383 +869,6 @@ fn window_title(title: String, dev_profile: bool) -> String {
     }
 }
 
-impl Render for Workspace {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Collapsed by a narrowing window, the list's focus moves to the
-        // rail's toggle, as a collapse by the toggle does.
-        if self.sidebar.settle(window.viewport_size().width / px(1.))
-            && self.focus_regions.sidebar().contains_focused(window, cx)
-        {
-            window.focus(&self.rail_toggle_focus, cx);
-            self.sidebar.escape_to(self.rail_toggle_focus.clone());
-        }
-        // The move menu goes with the document it was opened for.
-        if let Some(tab) = self.move_menu
-            && (tab != self.tabs.active() || self.showing_overview(cx))
-        {
-            self.document_menu = None;
-            self.move_menu = None;
-        }
-        // A finished edge drag saves the width it left.
-        if !cx.has_active_drag() && self.sidebar.resizing() {
-            self.end_sidebar_resize(cx);
-        }
-        self.note_region_focus(window, cx);
-        self.reveal_for_keyboard(window, cx);
-        self.end_reveal_slide_later(cx);
-        // A finished or abandoned OS drag leaves no insertion line or reveal.
-        if !cx.has_active_drag() && self.sidebar.dragging() {
-            self.clear_file_drag(window, cx);
-        }
-        let theme = self.theme.get();
-        let palette = theme.pdf_style();
-        let home = self.showing_overview(cx);
-        let title = self
-            .active_view()
-            .filter(|_| !home)
-            .map(|view| view.read(cx).window_title())
-            .unwrap_or_else(|| "mdoc".into());
-        let title = window_title(title, mdoc_store::app_paths::dev_profile().is_some());
-        if title != self.window_title {
-            window.set_window_title(&title);
-            self.window_title = title;
-        }
-        // Window lists the live views: the menu bar is set again only when
-        // they change, and not while this window is borrowed.
-        let views = self.live_view_items(cx);
-        if views != self.live_view_menu {
-            self.live_view_menu = views.clone();
-            cx.defer(move |cx| crate::commands::menus::set_live_views(&views, cx));
-        }
-        if !cx.has_active_drag() && self.home.drop.is_some() {
-            self.home.drop = None;
-        }
-        // Notices wait behind the header's bell; a new one opens it, and so
-        // does a locked or unavailable Vault. A Vault sealed with another key
-        // waits behind it: Home asks for its recovery key.
-        let locked = self.vault_banner().is_some();
-        let needed = locked && self.vault.wrong_key_root().is_none();
-        self.notices.set_recovery_nudge(self.recovery_nudge());
-        let (notices, effect) = self.notices.count(locked, needed);
-        if let Some(effect) = effect {
-            self.carry_out_notices(effect);
-        }
-        self.title.notices.set(notices);
-        // A crash report says what the window showed (no text, no names).
-        crate::app::crash::note_state(text::crash_state(
-            if home {
-                "Home".to_string()
-            } else {
-                self.active_view()
-                    .map(|v| v.read(cx).crash_state(cx))
-                    .unwrap_or_default()
-            },
-            self.tabs.len(),
-            if self.sidebar.choice().unwrap_or(true) {
-                "expanded"
-            } else {
-                "collapsed"
-            },
-            theme,
-            if self.palette.palette.is_some() {
-                ", palette open"
-            } else {
-                ""
-            },
-        ));
-        // Collapsed, headers join the title row: they leave room for the
-        // traffic lights and the expand toggle that sit in it.
-        self.title.detached.set(!self.sidebar.visible());
-        self.title.inset.set(if self.sidebar.visible() {
-            0.
-        } else {
-            (style::TRAFFIC_LIGHT_INSET + style::WORKSPACE_NAV_WIDTH + 12. - RAIL_WIDTH - 16.)
-                .max(0.)
-        });
-        div()
-            .track_focus(&self.focus)
-            .key_context("Workspace")
-            .relative()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(theme.sidebar_bg())
-            .child(self.navigation_mouse(cx))
-            .on_action(cx.listener(|this, _: &Back, window, cx| {
-                this.navigate(true, window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &Forward, window, cx| {
-                this.navigate(false, window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &ui::NextRegion, window, cx| {
-                this.cycle_region(false, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ui::PreviousRegion, window, cx| {
-                this.cycle_region(true, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ui::FocusEditor, window, cx| {
-                this.escape_to_editor(window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &notices::CloseNotices, window, cx| {
-                if this.title.notices_open.get() {
-                    this.close_notices(window, cx);
-                } else {
-                    cx.propagate();
-                }
-            }))
-            .on_action(cx.listener(|this, _: &ui::SidebarPrevious, window, cx| {
-                this.tree_step(-1, window, cx)
-            }))
-            .on_action(
-                cx.listener(|this, _: &ui::SidebarNext, window, cx| this.tree_step(1, window, cx)),
-            )
-            .on_action(cx.listener(|this, _: &ui::SidebarDelete, window, cx| {
-                this.tree_delete_focused(window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ui::SidebarCollapse, window, cx| {
-                this.tree_fold(false, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ui::SidebarExpand, window, cx| {
-                this.tree_fold(true, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ui::SidebarExtendUp, window, cx| {
-                this.tree_extend(-1, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ui::SidebarExtendDown, window, cx| {
-                this.tree_extend(1, window, cx)
-            }))
-            .text_color(palette.header_fg)
-            .on_action(cx.listener(|this, _: &palette::OpenPalette, window, cx| {
-                this.open_palette(window, cx)
-            }))
-            .on_action(
-                cx.listener(|this, _: &home::ShowHome, window, cx| this.show_home(window, cx)),
-            )
-            .on_action(cx.listener(
-                |this, _: &palette::shortcuts_ui::ShowShortcuts, window, cx| {
-                    this.toggle_shortcuts(window, cx)
-                },
-            ))
-            .on_action(cx.listener(|this, _: &home::PasteAsNewTab, window, cx| {
-                this.paste_as_new_tab(window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ToggleNotices, _, cx| {
-                this.title.notices_open.set(!this.title.notices_open.get());
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, action: &PiiApplyAll, window, cx| {
-                if let Some(view) = this.active_view().filter(|_| !this.showing_overview(cx)) {
-                    view.update(cx, |view, cx| view.apply_all_pii(action, window, cx));
-                }
-            }))
-            .on_action(cx.listener(|this, action: &mdoc_editor::Undo, window, cx| {
-                if let Some(view) = this.history_document(window, cx) {
-                    view.update(cx, |view, cx| {
-                        view.editor
-                            .update(cx, |editor, cx| editor.undo(action, window, cx));
-                    });
-                }
-            }))
-            .on_action(cx.listener(|this, action: &mdoc_editor::Redo, window, cx| {
-                if let Some(view) = this.history_document(window, cx) {
-                    view.update(cx, |view, cx| {
-                        view.editor
-                            .update(cx, |editor, cx| editor.redo(action, window, cx));
-                    });
-                }
-            }))
-            // Home's clipboard actions need a document; documents handle them first.
-            .on_action(cx.listener(|this, action: &PasteAiResponse, window, cx| {
-                if let Some(view) = this.clipboard_document(text::PASTE_AI_REPLY, window, cx) {
-                    view.update(cx, |view, cx| view.paste_ai_response(action, window, cx));
-                }
-            }))
-            .on_action(
-                cx.listener(|this, action: &PseudonymizeClipboard, window, cx| {
-                    if let Some(view) =
-                        this.clipboard_document(text::PSEUDONYMIZE_CLIPBOARD, window, cx)
-                    {
-                        view.update(cx, |view, cx| {
-                            view.pseudonymize_clipboard(action, window, cx)
-                        });
-                    }
-                }),
-            )
-            .on_action(cx.listener(|this, action: &RestoreClipboard, window, cx| {
-                if let Some(view) = this.clipboard_document(text::RESTORE_CLIPBOARD, window, cx) {
-                    view.update(cx, |view, cx| view.restore_clipboard(action, window, cx));
-                }
-            }))
-            .on_drag_move(cx.listener(
-                |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
-                    this.home_drag(event, cx)
-                },
-            ))
-            // Nothing is open or closed: Close returns to Home, and the view
-            // stays live for its undo and scroll.
-            .on_action(cx.listener(|this, _: &Close, window, cx| {
-                if !this.quit_flow.quitting() && !this.showing_home(cx) {
-                    this.show_home(window, cx);
-                }
-            }))
-            .on_action(cx.listener(|this, _: &Import, window, cx| {
-                if let Some(view) = this.active_view() {
-                    view.update(cx, |view, cx| view.import(&Import, window, cx));
-                }
-            }))
-            .on_action(cx.listener(|this, _: &SwitchDocument, window, cx| {
-                this.switch_document(false, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &SwitchDocumentBack, window, cx| {
-                this.switch_document(true, window, cx)
-            }))
-            // Esc closes Notices first, wherever focus is: a drop's notice
-            // opens while the document keeps focus.
-            .capture_action(cx.listener(|this, _: &mdoc_editor::Dismiss, window, cx| {
-                if this.title.notices_open.get() {
-                    this.close_notices(window, cx);
-                    cx.stop_propagation();
-                }
-            }))
-            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                this.tab_from_window(false, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                this.tab_from_window(true, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &RetryDocument, window, cx| {
-                if let Some(tab) = this.tabs.get(this.tabs.active())
-                    && let Some(document) = tab.record().document()
-                {
-                    this.load_document(tab.id(), document, tab.record().clone(), window, cx);
-                }
-            }))
-            .when_some(self.document_menu.clone(), |view, (id, position)| {
-                view.child(
-                    gpui::deferred(
-                        gpui::anchored().position(position).snap_to_window().child(
-                            ui::panel("document-context-menu", self.theme.get())
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "document-context-menu".into())
-                                })
-                                .key_context("UiPanel UiMenu")
-                                .track_focus(&self.menu_focus)
-                                .tab_group()
-                                .tab_stop(false)
-                                .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                                    this.close_document_menu(window, cx)
-                                }))
-                                .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                                    ui::cycle(window, cx, Some(&this.menu_focus), false);
-                                    cx.stop_propagation();
-                                }))
-                                .on_action(cx.listener(
-                                    |this, _: &ui::PreviousControl, window, cx| {
-                                        ui::cycle(window, cx, Some(&this.menu_focus), true);
-                                        cx.stop_propagation();
-                                    },
-                                ))
-                                .p_1()
-                                .on_mouse_down_out(cx.listener(
-                                    |this, _: &gpui::MouseDownEvent, _, cx| {
-                                        this.document_menu = None;
-                                        this.move_menu = None;
-                                        cx.notify();
-                                    },
-                                ))
-                                .children(self.document_menu_items(&id, cx)),
-                        ),
-                    )
-                    // Above the sidebar reveal it was opened from.
-                    .with_priority(1),
-                )
-            })
-            .children(self.project_list(cx))
-            .children(self.switcher_view(cx))
-            .children(self.move_toast(cx))
-            .children(self.ai_prompt_view(window, cx))
-            .children(self.project_header_menu(cx))
-            .children(self.project_ask_menu(cx))
-            .children(self.folder_sheet_view(window, cx))
-            .children(self.new_project_view(window, cx))
-            .children(self.keychain_explainer(window, cx))
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.sidebar(cx))
-                    .child(self.card(home, window, cx)),
-            )
-            .children(self.notices_view(window, cx))
-            .children(self.palette_view(cx))
-            .when(self.settings.read(cx).open, |v| {
-                v.child(self.settings.clone())
-            })
-            .children(self.shortcuts_view(window, cx))
-    }
-}
-
-impl Workspace {
-    /// The inset content card on the window ground: workspace bars,
-    /// then Home or the active document.
-    fn card(&mut self, home: bool, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let theme = self.theme.get();
-        let content = if self.reply_page.is_some() {
-            self.reply_page_view(window, cx)
-        } else if self.project_ui.page.is_some() {
-            self.project_page(window, cx)
-        } else if home {
-            self.home_view(window, cx)
-        } else {
-            match self.active_view() {
-                // While the sidebar slides, the document beside it reuses its
-                // last frame unless it changed itself: only a view
-                // notified on its own redraws, so this holds only for the
-                // slide, never as the document's steady state.
-                Some(active)
-                    if self.sidebar.animating(std::time::Instant::now()) && !cx.reduce_motion() =>
-                {
-                    active
-                        .cached(gpui::StyleRefinement::default().size_full())
-                        .into_any_element()
-                }
-                Some(active) => active.into_any_element(),
-                None => div().into_any_element(),
-            }
-        };
-        div()
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            // Expanded: one margin all round. Collapsed: the view's header
-            // fills the title row and it draws its own card below.
-            .when(self.sidebar.visible(), |v| v.p(px(style::CARD_MARGIN)))
-            .when(!self.sidebar.visible(), |v| {
-                v.pr(px(style::CARD_MARGIN)).pb(px(style::CARD_MARGIN))
-            })
-            .child(
-                div()
-                    .id("content-card")
-                    .size_full()
-                    .flex()
-                    .flex_col()
-                    .when(self.sidebar.visible(), |v| ui::card_surface(v, theme))
-                    .when(home && self.project_ui.page.is_none(), |v| {
-                        v.on_drop(
-                            cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
-                                this.home.drop = None;
-                                activate_for_drop(window, cx);
-                                this.open_paths(paths.paths().to_vec(), window, cx);
-                            }),
-                        )
-                    })
-                    .child(div().flex_1().min_h_0().child(content)),
-            )
-            .into_any_element()
-    }
-}
-
 /// The palette, Home, Notices and the shortcuts sheet from the shortcuts
 /// table; moving inside the palette's list stays here. Esc in
 /// `Workspace` is the window's own, below every deeper one: Notices opens
@@ -1581,53 +883,6 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("enter", PaletteConfirm, Some(PALETTE)),
     ]);
     sidebar::switcher_ui::bind_keys(cx);
-}
-
-impl Workspace {
-    // ---- Theme ------------------------------------------------------------
-
-    /// Resolve the theme choice against the OS appearance and repaint every
-    /// open document when the result changes.
-    fn apply_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let theme = style::resolve(self.theme_choice, window.appearance());
-        self.settings
-            .update(cx, |panel, cx| panel.sync_theme(self.theme_choice, cx));
-        if theme == self.theme.get() {
-            return;
-        }
-        self.theme.set(theme);
-        for tab in &self.tabs {
-            if let Some(view) = tab.view() {
-                view.update(cx, |view, cx| {
-                    view.editor.update(cx, |editor, cx| {
-                        editor.set_markdown_style(style::markdown_style(theme), cx)
-                    });
-                    view.sync_pii_theme(cx);
-                    cx.notify();
-                });
-            }
-        }
-        cx.notify();
-    }
-    /// macOS: the Save panel, its alerts and the menus follow the choice
-    /// too. Called when the choice changes, not from the
-    /// appearance observer: setting the appearance notifies it.
-    fn sync_app_appearance(&self, cx: &App) {
-        #[cfg(target_os = "macos")]
-        cx.set_window_appearance(style::app_appearance(self.theme_choice));
-        #[cfg(not(target_os = "macos"))]
-        let _ = cx;
-    }
-    fn cycle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.select_theme(self.theme_choice.next(), window, cx);
-    }
-    fn select_theme(&mut self, choice: ThemeChoice, window: &mut Window, cx: &mut Context<Self>) {
-        self.theme_choice = choice;
-        self.sync_app_appearance(cx);
-        self.apply_theme(window, cx);
-        self.checkpoint(window, cx);
-        cx.notify();
-    }
 }
 
 #[cfg(test)]
@@ -1655,17 +910,5 @@ impl Workspace {
             return None;
         }
         self.active_view()
-    }
-}
-
-/// The background OCR install check. Tests never read the real profile's
-/// installed models.
-fn check_ocr(
-    config: &mdoc_store::settings::OcrConfig,
-) -> Result<Option<mdoc_import::ocr::Installed>, String> {
-    if cfg!(test) {
-        Ok(None)
-    } else {
-        ocr::check_config(config).map_err(|e| e.to_string())
     }
 }

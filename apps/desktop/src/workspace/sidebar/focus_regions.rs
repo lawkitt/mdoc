@@ -4,7 +4,7 @@
 //! window; the workspace view says which region holds focus and carries out
 //! the returned effect.
 use crate::ui;
-use crate::workspace::{Workspace, sidebar, sidebar::Reveal};
+use crate::workspace::{Workspace, sidebar, sidebar::state::Reveal};
 use gpui::{App, Context, Window};
 
 /// Where focus goes, for the workspace view to carry out.

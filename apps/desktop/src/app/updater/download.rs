@@ -14,6 +14,8 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
+use crate::app::text;
+
 /// The macOS release asset for `version`.
 pub fn dmg_name(version: &str) -> String {
     format!("mdoc_{version}_arm64.dmg")
@@ -93,9 +95,7 @@ pub fn file(url: &str, size: u64, sha: &str, path: &Path, progress: &Progress) -
         }
         total += n as u64;
         if total > size {
-            return Err(Stop::Failed(
-                "The update is larger than the release says.".into(),
-            ));
+            return Err(Stop::Failed(text::LARGER_THAN_SAID.into()));
         }
         digest.update(&buf[..n]);
         output.write_all(&buf[..n]).map_err(|e| e.to_string())?;
@@ -108,9 +108,7 @@ pub fn file(url: &str, size: u64, sha: &str, path: &Path, progress: &Progress) -
         .map(|b| format!("{b:02x}"))
         .collect();
     if total != size || found != sha {
-        return Err(Stop::Failed(
-            "The downloaded update doesn't match its published checksum.".into(),
-        ));
+        return Err(Stop::Failed(text::CHECKSUM_MISMATCH.into()));
     }
     Ok(())
 }
@@ -131,7 +129,7 @@ fn get(url: &str) -> Result<ureq::http::Response<ureq::Body>, String> {
     let mut url = url.to_owned();
     for _ in 0..5 {
         if !allowed(&url) {
-            return Err(format!("Refused to download the update from {url}."));
+            return Err(text::refused_download(&url));
         }
         let response = agent
             .get(&url)
@@ -152,13 +150,13 @@ fn get(url: &str) -> Result<ureq::http::Response<ureq::Body>, String> {
             .headers()
             .get("location")
             .and_then(|v| v.to_str().ok())
-            .ok_or("The update server sent a redirect without a location.")?;
+            .ok_or(text::REDIRECT_WITHOUT_LOCATION)?;
         url = url::Url::parse(&url)
             .and_then(|base| base.join(location))
             .map_err(|e| e.to_string())?
             .to_string();
     }
-    Err("The update download redirected too many times.".into())
+    Err(text::TOO_MANY_REDIRECTS.into())
 }
 
 #[cfg(test)]

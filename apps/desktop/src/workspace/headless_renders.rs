@@ -433,7 +433,25 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
 pub(crate) fn run(out: &Path) -> Result<()> {
     // Refuse existing output, so stale pictures cannot masquerade as a successful run.
     std::fs::create_dir(out).map_err(|e| format!("create {}: {e}", out.display()))?;
-    let profile = tempfile::tempdir().map_err(|e| e.to_string())?;
+    // One name in every run, as scenes show paths inside it (the AI
+    // connector's files): a random one changed those screens (#1339).
+    // Another run may hold it, or one that crashed left it: then a random
+    // name, and those screens differ.
+    let profile = match tempfile::Builder::new()
+        .prefix("mdoc-headless-renders")
+        .rand_bytes(0)
+        .tempdir()
+    {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            eprintln!(
+                "{} exists, so this run's profile has a random name",
+                std::env::temp_dir().join("mdoc-headless-renders").display()
+            );
+            tempfile::tempdir()
+        }
+        profile => profile,
+    }
+    .map_err(|e| e.to_string())?;
     mdoc_store::app_paths::isolate(profile.path().to_path_buf()).map_err(|e| e.to_string())?;
     let data_directory = mdoc_store::app_paths::data_local_dir().ok_or("missing data directory")?;
     let cache_directory = mdoc_store::app_paths::cache_dir().ok_or("missing cache directory")?;

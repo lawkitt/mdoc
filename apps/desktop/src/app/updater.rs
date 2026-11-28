@@ -21,6 +21,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use super::text;
+
 pub use download::Progress;
 
 const REPOSITORY: &str = "lawkitt/mdoc";
@@ -104,27 +106,6 @@ pub enum Ineligible {
     NotSigned,
 }
 
-impl Ineligible {
-    pub fn reason(self) -> &'static str {
-        match self {
-            Self::Unsupported => "On this system, install updates from the release page.",
-            Self::NotABundle => "This development build can't update itself.",
-            Self::Translocated => {
-                "Move mdoc to the Applications folder and reopen it to install updates here."
-            }
-            Self::DiskImage => {
-                "mdoc is running from its disk image. Drag it to Applications and reopen it to install updates here."
-            }
-            Self::NotWritable => {
-                "mdoc can't replace itself in its current folder. Install the update from the release page."
-            }
-            Self::NotSigned => {
-                "This build isn't signed by the mdoc developer, so it can't update itself."
-            }
-        }
-    }
-}
-
 /// What the update banner shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BannerKind {
@@ -189,12 +170,12 @@ impl UpdateState {
             return Err("");
         };
         match self.eligibility {
-            None => return Err("Checking whether mdoc can update itself…"),
+            None => return Err(text::CHECKING_ELIGIBILITY),
             Some(Err(why)) => return Err(why.reason()),
             Some(Ok(())) => {}
         }
         if update.dmg.is_none() || update.checksums.is_none() {
-            return Err("This release can't be installed from inside mdoc.");
+            return Err(text::NOT_INSTALLABLE);
         }
         Ok(())
     }
@@ -400,7 +381,7 @@ pub fn start_install(cx: &mut gpui::App) {
                 Ok(staged) => Install::Ready { version, staged },
                 Err(download::Stop::Cancelled) => Install::Idle,
                 Err(download::Stop::Failed(message)) => {
-                    eprintln!("mdoc: update to {version} failed: {message}");
+                    eprintln!("{}", text::update_failed_log(&version, &message));
                     Install::Failed { version, message }
                 }
             };
@@ -482,7 +463,7 @@ pub fn apply_at_quit(cx: &gpui::App) {
     match result {
         Ok(()) => record.installed = Some(version),
         Err(message) => {
-            eprintln!("mdoc: update to {version} failed at quit: {message}");
+            eprintln!("{}", text::update_failed_at_quit_log(&version, &message));
             record.failed = Some(Failure { version, message });
         }
     }
@@ -496,20 +477,20 @@ pub fn apply_at_quit(cx: &gpui::App) {
 /// `just smoke-update`. Same eligibility and gates as the app.
 pub fn self_update() -> Result<String, String> {
     eligibility().map_err(|why| why.reason().to_owned())?;
-    let current = current().ok_or("The app version isn't SemVer.")?;
+    let current = current().ok_or(text::NOT_SEMVER)?;
     let include = includes_prereleases(false);
     let Some(update) = newest(fetch(include)?, &current, include) else {
-        return Ok(format!("mdoc {current} is the latest version."));
+        return Ok(text::latest_version(&current));
     };
     let staged = prepare(&update, &Progress::default()).map_err(|stop| match stop {
-        download::Stop::Cancelled => "Cancelled.".to_owned(),
+        download::Stop::Cancelled => text::CANCELLED.to_owned(),
         download::Stop::Failed(message) => message,
     })?;
     install(&staged, &update.version)?;
     if let Some(dir) = updates_dir() {
         let _ = std::fs::remove_dir_all(dir);
     }
-    Ok(format!("Updated mdoc {current} to {}.", update.version))
+    Ok(text::updated(&current, &update.version))
 }
 
 /// The installed bundle this copy may replace.
@@ -546,13 +527,11 @@ fn install(staged: &std::path::Path, version: &str) -> Result<(), String> {
 /// the app out of it and verify that copy. Returns the staged `.app`.
 fn prepare(update: &UpdateAvailable, progress: &Progress) -> Result<PathBuf, download::Stop> {
     let (Some(dmg), Some(checksums)) = (&update.dmg, &update.checksums) else {
-        return Err("This release can't be installed from inside mdoc."
-            .to_owned()
-            .into());
+        return Err(text::NOT_INSTALLABLE.to_owned().into());
     };
     // Each attempt gets its own folder: a cancelled worker may still be
     // verifying while the user retries, and must not share paths with it.
-    let root = updates_dir().ok_or("No cache folder for the update.".to_owned())?;
+    let root = updates_dir().ok_or(text::NO_CACHE_FOLDER.to_owned())?;
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let dir = tempfile::Builder::new()
         .prefix("attempt-")
@@ -575,7 +554,7 @@ fn stage_into(
 ) -> Result<PathBuf, download::Stop> {
     let name = download::dmg_name(&update.version);
     let sha = download::checksum_for(&download::text(checksums)?, &name)
-        .ok_or_else(|| format!("The release's SHA256SUMS doesn't list {name}."))?;
+        .ok_or_else(|| text::not_in_checksums(&name))?;
     let image = dir.join(&name);
     download::file(&dmg.url, dmg.size, &sha, &image, progress)?;
     if progress.cancel.load(Ordering::Relaxed) {

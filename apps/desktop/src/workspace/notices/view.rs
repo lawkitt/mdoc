@@ -18,12 +18,6 @@ impl Workspace {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let accent = style::markdown_style(theme).alert_warning;
-        let done = |this: &mut Self, cx: &mut Context<Self>| {
-            if let Some(effect) = this.notices.finish_crash() {
-                this.carry_out_notices(effect);
-            }
-            cx.notify();
-        };
         let action = |id: &'static str, label: &'static str| {
             ui::control(id, label, theme, true)
                 .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
@@ -59,10 +53,7 @@ impl Workspace {
                         .when(!open, |v| {
                             v.child(
                                 action("crash-preview", text::SEE_WHAT_WOULD_BE_SENT).on_click(
-                                    cx.listener(|this, _, _, cx| {
-                                        this.notices.preview_crash();
-                                        cx.notify();
-                                    }),
+                                    cx.listener(|this, _, _, cx| this.preview_crash_report(cx)),
                                 ),
                             )
                         })
@@ -71,24 +62,21 @@ impl Workspace {
                                 action("crash-send", text::SEND)
                                     .tooltip(style::tooltip(text::SEND_TIP.into(), theme))
                                     .on_click(cx.listener(move |this, _, _, cx| {
-                                        cx.open_url(&crate::app::crash::issue_url(&send_report));
-                                        done(this, cx);
+                                        this.send_crash_report(&send_report, cx)
                                     })),
                             )
                             .child(
                                 action("crash-copy", text::COPY).on_click(cx.listener(
                                     move |this, _, _, cx| {
-                                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                                            copy_report.clone(),
-                                        ));
-                                        done(this, cx);
+                                        this.copy_crash_report(copy_report.clone(), cx)
                                     },
                                 )),
                             )
                         })
                         .child(
-                            action("crash-dismiss", crate::ui::text::DISMISS)
-                                .on_click(cx.listener(move |this, _, _, cx| done(this, cx))),
+                            action("crash-dismiss", crate::ui::text::DISMISS).on_click(
+                                cx.listener(|this, _, _, cx| this.finish_crash_report(cx)),
+                            ),
                         ),
                 )
                 .when(open, |v| {
@@ -367,16 +355,11 @@ impl Workspace {
                         .child("×")
                         .on_click(|_, _, cx| {
                             cx.stop_propagation();
-                            crate::app::updater::dismiss_banner(cx);
+                            Self::dismiss_update_card(cx);
                         }),
                 )
-                .on_click(cx.listener(move |this, _, window, cx| match banner.kind {
-                    BannerKind::Ready => this.restart_to_update(window, cx),
-                    _ => {
-                        window.activate_window();
-                        this.settings
-                            .update(cx, |panel, cx| panel.show_updates(window, cx));
-                    }
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.open_update_card(banner.kind, window, cx)
                 }))
                 .into_any_element(),
         )

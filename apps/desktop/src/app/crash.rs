@@ -1,7 +1,8 @@
 //! Local crash reports the user may preview and send. A panic hook
 //! writes one masked report; the next launch offers it. Nothing is sent
 //! automatically: Send opens a prefilled GitHub issue in the browser.
-use mdoc_store::crash::{mask, safe_message};
+use super::text::{self, compose};
+use mdoc_store::crash::mask;
 use std::path::PathBuf;
 
 const ISSUES: &str = "https://github.com/lawkitt/mdoc/issues/new";
@@ -53,7 +54,7 @@ pub fn install() {
                 .downcast_ref::<&str>()
                 .map(|s| s.to_string())
                 .or_else(|| info.payload().downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "(no message)".into());
+                .unwrap_or_else(|| text::NO_MESSAGE.into());
             let thread = std::thread::current();
             let backtrace = std::backtrace::Backtrace::force_capture().to_string();
             let mut report = compose(
@@ -69,7 +70,7 @@ pub fn install() {
             );
             if !context.is_empty() {
                 // Context goes before the long backtrace so it survives the URL cut.
-                if let Some(at) = report.find("\n\nBacktrace:") {
+                if let Some(at) = report.find(text::BACKTRACE) {
                     report.insert_str(at, &format!("\n\n{context}"));
                 }
             }
@@ -116,17 +117,13 @@ pub fn error_mode() -> u32 {
 fn context(backtrace: &str, rebuilt: bool, state: String) -> String {
     let mut lines = Vec::new();
     if let Some(frame) = first_own_frame(backtrace) {
-        lines.push(format!("First mdoc frame: {frame}"));
+        lines.push(text::first_frame(frame));
     }
     if rebuilt {
-        lines.push(
-            "The program file changed after launch (rebuilt or updated): \
-             backtrace symbols may be wrong; the panic location above is still right."
-                .to_string(),
-        );
+        lines.push(text::REBUILT.to_string());
     }
     if !state.is_empty() {
-        lines.push(format!("Window: {state}"));
+        lines.push(text::window_state(state));
     }
     lines.join("\n")
 }
@@ -161,7 +158,7 @@ fn first_own_frame(backtrace: &str) -> Option<String> {
         if let Some(relative) =
             relative.filter(|p| p.starts_with("src/") || p.starts_with("crates/"))
         {
-            return Some(format!("{function} at {relative}"));
+            return Some(text::frame(function, relative));
         }
     }
     None
@@ -173,16 +170,6 @@ fn workspace_root() -> &'static str {
     (manifest.strip_suffix("/apps/desktop"))
         .or_else(|| manifest.strip_suffix("\\apps\\desktop"))
         .unwrap_or(manifest)
-}
-
-fn compose(message: &str, location: &str, thread: &str, backtrace: &str) -> String {
-    format!(
-        "mdoc {} — {} {}\nPanic in thread '{thread}' at {location}:\n{}\n\nBacktrace:\n{backtrace}",
-        env!("CARGO_PKG_VERSION"),
-        std::env::consts::OS,
-        std::env::consts::ARCH,
-        safe_message(message),
-    )
 }
 
 /// The pending report, masked again in case an older build wrote it.
@@ -211,14 +198,15 @@ pub fn issue_url(report: &str) -> String {
             cut -= 1;
         }
         body.truncate(cut);
-        body.push_str("\n… (cut; use Copy for the full report)");
+        body.push_str(text::CUT);
     }
-    let body = format!(
-        "<!-- Check that nothing here is confidential before submitting. -->\n\n```\n{body}\n```\n"
-    );
-    url::Url::parse_with_params(ISSUES, [("title", "Crash report"), ("body", body.as_str())])
-        .map(String::from)
-        .unwrap_or_else(|_| ISSUES.into())
+    let body = text::issue_body(body);
+    url::Url::parse_with_params(
+        ISSUES,
+        [("title", text::CRASH_REPORT), ("body", body.as_str())],
+    )
+    .map(String::from)
+    .unwrap_or_else(|_| ISSUES.into())
 }
 
 #[cfg(test)]

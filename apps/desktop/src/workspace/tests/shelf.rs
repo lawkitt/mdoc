@@ -452,7 +452,7 @@ fn a_waiting_copy_for_ai_never_replaces_a_newer_copy(cx: &mut TestAppContext) {
     view.update_in(cx, |view, window, cx| {
         view.copy_for_ai(&crate::review::CopyForAi, window, cx)
     });
-    let waiting = cx.update(|_, cx| tabs.read(cx).copy_for_ai_waiting.is_some());
+    let waiting = cx.update(|_, cx| tabs.read(cx).shelf_source.copy_for_ai_waiting.is_some());
     assert!(waiting, "the copy waits for its write");
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("newer".into()));
     cx.run_until_parked();

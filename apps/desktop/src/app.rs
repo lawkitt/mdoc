@@ -8,4 +8,5 @@ pub(crate) mod self_test;
 pub(crate) mod single_instance;
 #[cfg(any(target_os = "macos", test))]
 pub(crate) mod system_quit;
+pub(crate) mod text;
 pub(crate) mod updater;

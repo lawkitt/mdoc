@@ -84,7 +84,7 @@ pub(crate) const FILTER_SHORTCUTS: &str = "Filter shortcuts";
 pub(crate) const SHORTCUTS: &str = "Shortcuts";
 /// The sheet with no row for the filter.
 pub(crate) const NO_SHORTCUT_MATCHES: &str = "No shortcut matches.";
-/// A sheet row, as a screen reader reads it.
-pub(crate) fn shortcut_row(label: &str, keys: &str) -> String {
-    format!("{label}, {keys}")
+/// A sheet row, as a screen reader reads it: its label, then its keys.
+pub(crate) fn shortcut_row(label: &str, keys: &[String]) -> String {
+    format!("{label}, {}", keys.join(", "))
 }

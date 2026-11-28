@@ -19,11 +19,13 @@ pub(crate) const WHATS_NEW: &str = "What's new";
 pub(crate) const DOCUMENTS_UNAVAILABLE: &str = "Documents are unavailable";
 /// The drop zone's title while nothing dragged over it can be opened.
 pub(crate) const CANT_BE_OPENED: &str = "These files can't be opened";
-/// The drop zone's title while one droppable file is dragged over it.
-pub(crate) const DROP_TO_OPEN: &str = "Drop to open";
-/// The drop zone's title while several droppable files are dragged over it.
+/// The drop zone's title while `n` droppable files (one or more) are
+/// dragged over it.
 pub(crate) fn drop_files(n: usize) -> String {
-    format!("Drop {n} files")
+    match n {
+        1 => "Drop to open".to_string(),
+        n => format!("Drop {n} files"),
+    }
 }
 /// The drop zone's title at rest.
 pub(crate) const DROP_DOCUMENTS_HERE: &str = "Drop documents here";

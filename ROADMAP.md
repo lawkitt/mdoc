@@ -502,24 +502,6 @@ none of the owner's flags is a field of `Workspace`.
     item for saved replies and for the AI project, deliveries and Ask in the
     window. *Blocked by:* item 11. *Done when:* the owner checks hold for
     both folders.
-17. **[Desktop] Owner: the document.** *From
-    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6 and 7.* The owner item
-    for `document/`. *Blocked by:* items 9 and 11. *Done when:* the owner
-    checks hold for the folder.
-18. **[Desktop] Owner: the review.** *From
-    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6 and 7.* The owner item
-    for `review/`, where most of the app's sentences are; refusals stay
-    worded once. *Blocked by:* item 11. *Done when:* the owner checks hold
-    for the folder.
-19. **[Desktop] Owner: Settings.** *From
-    [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6 and 7.* The owner item
-    for `settings/`. *Blocked by:* item 11. *Done when:* the owner checks
-    hold for the folder.
-20. **[Desktop] Owner: the shelf, the AI apps and the app's own folder.**
-    *From [#1319](https://github.com/lawkitt/mdoc/issues/1319), decisions 4, 6 and 7.* The owner
-    item for `shelf/` with the window's shelf owner, `ai/` and `app/`.
-    *Blocked by:* item 11. *Done when:* the owner checks hold for the three
-    folders.
 21. **[Desktop] One sheet.** *From [#1319](https://github.com/lawkitt/mdoc/issues/1319),
     decision 5.* The five modal sheets built by hand (the shortcuts sheet,
     New Project, the Keychain explainer, the folder sheet, the confirm
