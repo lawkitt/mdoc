@@ -396,23 +396,17 @@ impl Workspace {
                     .find(|summary| summary.id == one.as_str())
                     .map(|summary| summary.title)
                     .unwrap_or_default();
-                format!("Delete “{name}”?")
+                super::text::delete_one(name)
             }
-            many => format!("Delete {} documents?", many.len()),
+            many => super::text::delete_many(many.len()),
         };
-        let detail = if documents.len() == 1 {
-            "Its text, original, names and AI replies are deleted from this computer. This \
-             cannot be undone."
-        } else {
-            "Their text, originals, names and AI replies are deleted from this computer. This \
-             cannot be undone."
-        };
+        let detail = super::text::delete_detail(documents.len());
         let answer = window.prompt(
             PromptLevel::Warning,
             &title,
             Some(detail),
             &[
-                gpui::PromptButton::new("Delete"),
+                gpui::PromptButton::new(super::text::DELETE),
                 gpui::PromptButton::cancel(crate::ui::text::CANCEL),
             ],
             cx,
@@ -479,10 +473,7 @@ impl Workspace {
                 for document in &documents {
                     self.moving.remove(document);
                 }
-                self.notices.post(
-                    "A document moved into a Project before it was deleted, so nothing was \
-                     deleted. Choose again.",
-                );
+                self.notices.post(super::text::MOVED_BEFORE_DELETED);
                 self.delete_documents(ids, window, cx);
                 cx.notify();
                 return;
@@ -520,8 +511,7 @@ impl Workspace {
         let now = self.tree_now();
         self.tree.keep_chosen(&now.documents);
         if let Some(error) = failed {
-            self.notices
-                .post(format!("Could not delete every document: {error}"));
+            self.notices.post(super::text::could_not_delete(error));
         }
         self.checkpoint(window, cx);
         cx.notify();
@@ -535,12 +525,12 @@ impl Workspace {
         let palette = theme.pdf_style();
         if self.vault.vault().is_none() {
             return vec![
-                self.section_label("Projects"),
+                self.section_label(super::text::PROJECTS),
                 div()
                     .px_2()
                     .py_1()
                     .text_color(palette.header_muted)
-                    .child("Documents show here once the Vault opens.")
+                    .child(super::text::DOCUMENTS_ONCE_VAULT_OPENS)
                     .into_any_element(),
             ];
         }
@@ -560,7 +550,7 @@ impl Workspace {
                             .pb_1()
                             .text_size(px(12.))
                             .text_color(palette.header_muted)
-                            .child("No Projects yet")
+                            .child(super::text::NO_PROJECTS_YET)
                             .into_any_element()
                     } else {
                         label
@@ -686,7 +676,7 @@ impl Workspace {
         self.tree_row(
             &key,
             format!("tree-project-{id}"),
-            format!("Project {}, {documents} documents", project.name),
+            super::text::project_row(&project.name, documents),
             selected,
             stop,
             cx,
@@ -705,9 +695,9 @@ impl Workspace {
             })
             .tab_stop(false)
             .aria_label(if expanded {
-                "Collapse Project"
+                super::text::COLLAPSE_PROJECT
             } else {
-                "Expand Project"
+                super::text::EXPAND_PROJECT
             })
             .px_1()
             .py_0()
@@ -743,10 +733,7 @@ impl Workspace {
         )
         .when(!menu_open, |v| {
             v.tooltip(style::tooltip(
-                format!(
-                    "Project “{}” · its names are kept in the Vault",
-                    project.name
-                ),
+                super::text::project_row_tooltip(&project.name),
                 theme,
             ))
         })
@@ -826,17 +813,7 @@ impl Workspace {
         let recognized = live.is_some_and(|v| v.recognized());
         let chosen = !member && self.tree.is_chosen(&document.id);
         let title = document.title.clone();
-        let tooltip = format!(
-            "{title}{}{}{}{}",
-            if recognized {
-                "\nRecognized with OCR"
-            } else {
-                ""
-            },
-            if pseudonymized { "\nPseudonymized" } else { "" },
-            if busy { "\nProcessing…" } else { "" },
-            if error { "\nNeeds attention" } else { "" }
-        );
+        let tooltip = super::text::document_tooltip(&title, recognized, pseudonymized, busy, error);
         let menu_open = self.context_menu_open();
         let unfiled = !member;
         self.tree_row(
@@ -973,11 +950,11 @@ impl Workspace {
             .pb_1()
             .text_size(px(11.))
             .text_color(palette.header_muted)
-            .child(div().flex_1().child("Projects"))
+            .child(div().flex_1().child(super::text::PROJECTS))
             .child(
                 ui::header_icon_untipped(
                     "tree-new-project",
-                    "New Project",
+                    super::text::NEW_PROJECT,
                     ui::Icon::Plus,
                     theme,
                     false,
@@ -985,7 +962,7 @@ impl Workspace {
                 .when(!self.context_menu_open(), |v| {
                     v.tooltip(style::tooltip(
                         crate::commands::shortcuts::tip(
-                            "New Project",
+                            super::text::NEW_PROJECT,
                             &crate::workspace::NewProject,
                         ),
                         theme,
@@ -1018,19 +995,19 @@ impl Workspace {
             .pb_1()
             .text_size(px(11.))
             .text_color(palette.header_muted)
-            .child(div().flex_1().child("Unfiled"))
+            .child(div().flex_1().child(super::text::UNFILED))
             .when(chosen > 1, |v| {
                 v.child(
                     ui::control(
                         "tree-delete-chosen",
-                        format!("Delete {chosen}…"),
+                        super::text::delete_chosen(chosen),
                         theme,
                         true,
                     )
                     .when(cfg!(test), |v| {
                         v.debug_selector(|| "tree-delete-chosen".into())
                     })
-                    .aria_label(format!("Delete {chosen} documents"))
+                    .aria_label(super::text::delete_chosen_label(chosen))
                     .px_1()
                     .py_0()
                     .text_color(style::markdown_style(theme).alert_caution)
@@ -1041,19 +1018,28 @@ impl Workspace {
                 )
             })
             .child(
-                ui::header_icon_untipped("tree-new", "New document", ui::Icon::Plus, theme, false)
-                    .track_focus(&self.panel_new_focus)
-                    .when(!self.context_menu_open(), |v| {
-                        v.tooltip(style::tooltip(
-                            crate::commands::shortcuts::tip("New document", &crate::workspace::New),
-                            theme,
-                        ))
-                    })
-                    .when(cfg!(test), |v| v.debug_selector(|| "tree-new".into()))
-                    .size(px(22.))
-                    .on_click(|_, window, cx| {
-                        window.dispatch_action(Box::new(crate::workspace::New), cx)
-                    }),
+                ui::header_icon_untipped(
+                    "tree-new",
+                    super::text::NEW_DOCUMENT,
+                    ui::Icon::Plus,
+                    theme,
+                    false,
+                )
+                .track_focus(&self.panel_new_focus)
+                .when(!self.context_menu_open(), |v| {
+                    v.tooltip(style::tooltip(
+                        crate::commands::shortcuts::tip(
+                            super::text::NEW_DOCUMENT,
+                            &crate::workspace::New,
+                        ),
+                        theme,
+                    ))
+                })
+                .when(cfg!(test), |v| v.debug_selector(|| "tree-new".into()))
+                .size(px(22.))
+                .on_click(|_, window, cx| {
+                    window.dispatch_action(Box::new(crate::workspace::New), cx)
+                }),
             )
             .drag_over::<DocumentDrag>(move |v, _, _, _| v.bg(theme.sidebar_selected()))
             .on_drop(cx.listener(|this, drag: &DocumentDrag, window, cx| {
@@ -1071,9 +1057,9 @@ impl Workspace {
     ) -> AnyElement {
         let palette = self.theme.get().pdf_style();
         let label = if hidden > 0 {
-            format!("Show all ({hidden} more)")
+            super::text::show_all(hidden)
         } else {
-            "Show fewer".to_string()
+            super::text::SHOW_FEWER.to_string()
         };
         self.tree_row(
             &RowKey::ShowAll,
@@ -1189,7 +1175,7 @@ impl Workspace {
                 others.push(
                     row(
                         format!("context-move-{}", p.id),
-                        format!("Move to “{}”", p.name),
+                        super::text::move_to(&p.name),
                     )
                     .map(|v| {
                         ui::reveal_focus(
@@ -1224,32 +1210,34 @@ impl Workspace {
             }
             let new = document.clone();
             items.push(
-                row("context-new-project".into(), "Move to New Project".into())
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.close_document_menu(window, cx);
-                        this.move_document_to_new_project(new.clone(), window, cx);
-                    }))
-                    .into_any_element(),
+                row(
+                    "context-new-project".into(),
+                    super::text::MOVE_TO_NEW_PROJECT.into(),
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.close_document_menu(window, cx);
+                    this.move_document_to_new_project(new.clone(), window, cx);
+                }))
+                .into_any_element(),
             );
             if project.is_some() {
                 let leave = document.clone();
                 items.push(
-                    row("context-leave-project".into(), "Move to Unfiled".into())
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.close_document_menu(window, cx);
-                            this.drop_document(leave.clone(), None, window, cx);
-                        }))
-                        .into_any_element(),
+                    row(
+                        "context-leave-project".into(),
+                        super::text::MOVE_TO_UNFILED.into(),
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.close_document_menu(window, cx);
+                        this.drop_document(leave.clone(), None, window, cx);
+                    }))
+                    .into_any_element(),
                 );
             }
         }
         if project.is_none() && !self.moving.contains(document) && self.move_menu.is_none() {
             let chosen = self.tree.to_delete(document.as_str());
-            let label = if chosen.len() > 1 {
-                format!("Delete {} Documents…", chosen.len())
-            } else {
-                "Delete Document…".to_string()
-            };
+            let label = super::text::delete_documents(chosen.len());
             if !items.is_empty() {
                 items.push(ui::menu_divider(theme).into_any_element());
             }

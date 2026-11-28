@@ -16,6 +16,7 @@ pub(super) mod navigation;
 pub(super) mod navigation_ui;
 pub(super) mod switcher;
 pub(super) mod switcher_ui;
+mod text;
 pub(super) mod tree;
 pub(super) mod tree_ui;
 
@@ -600,9 +601,9 @@ pub(in crate::workspace) fn sidebar_toggle(
     theme: Theme,
 ) -> ui::Control {
     let label = if expanded {
-        "Collapse sidebar"
+        text::COLLAPSE_SIDEBAR
     } else {
-        "Expand sidebar"
+        text::EXPAND_SIDEBAR
     };
     // Quiet, like every other rail and title-bar icon.
     ui::header_icon_untipped("sidebar-toggle", label, ui::Icon::Sidebar, theme, false)
@@ -879,14 +880,14 @@ impl Workspace {
                             .px_4()
                             .py_1()
                             .text_color(style::markdown_style(theme).alert_caution)
-                            .child("These files can't be opened"),
+                            .child(text::FILES_CANNOT_OPEN),
                     )
                 })
                 .child(
                     div()
                         .id("sidebar-tree")
                         .role(gpui::Role::Tree)
-                        .aria_label("Projects and documents")
+                        .aria_label(text::PROJECTS_AND_DOCUMENTS)
                         .track_scroll(&self.sidebar_scroll)
                         .flex_1()
                         .min_h_0()
@@ -946,7 +947,7 @@ impl Workspace {
                         .child(
                             ui::header_icon(
                                 "rail-search",
-                                "Search or run an action",
+                                text::SEARCH_OR_RUN,
                                 ui::Icon::Search,
                                 theme,
                                 false,
@@ -958,7 +959,7 @@ impl Workspace {
                         .child(
                             ui::header_icon(
                                 "rail-home",
-                                "Home",
+                                text::HOME,
                                 ui::Icon::Home,
                                 theme,
                                 self.showing_home(cx),
@@ -980,14 +981,14 @@ impl Workspace {
                         .child(
                             ui::header_icon_untipped(
                                 "sidebar-new-collapsed",
-                                "New document",
+                                text::NEW_DOCUMENT,
                                 ui::Icon::Plus,
                                 theme,
                                 false,
                             )
                             .when(!menu_open, |v| {
                                 v.tooltip(style::tooltip(
-                                    crate::commands::shortcuts::tip("New document", &New),
+                                    crate::commands::shortcuts::tip(text::NEW_DOCUMENT, &New),
                                     theme,
                                 ))
                             })
@@ -1196,7 +1197,7 @@ impl Workspace {
                 crate::ui::focus_ring("sidebar-search", theme)
                     .when(cfg!(test), |v| v.debug_selector(|| "sidebar-search".into()))
                     .role(gpui::Role::Button)
-                    .aria_label("Search or run an action")
+                    .aria_label(text::SEARCH_OR_RUN)
                     .key_context("UiControl")
                     .tab_index(0)
                     .flex()
@@ -1218,12 +1219,12 @@ impl Workspace {
                             .size(px(14.))
                             .text_color(p.header_muted),
                     )
-                    .child(div().flex_1().child("Search…"))
+                    .child(div().flex_1().child(text::SEARCH))
                     .child(div().text_size(px(11.)).child(key(&OpenPalette)))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenPalette), cx)),
             )
             .child(
-                nav_row("sidebar-home", ui::Icon::Home, "Home", theme, home)
+                nav_row("sidebar-home", ui::Icon::Home, text::HOME, theme, home)
                     .track_focus(&self.panel_home_focus)
                     .child(
                         div()
@@ -1275,7 +1276,7 @@ impl Workspace {
                     .items_center()
                     .gap_1()
                     .child(
-                        nav_row("Settings", ui::Icon::Settings, "Settings", theme, false)
+                        nav_row("Settings", ui::Icon::Settings, text::SETTINGS, theme, false)
                             .track_focus(&self.settings_focus)
                             .flex_1()
                             .when(dot, |v| {
@@ -1347,9 +1348,9 @@ impl Workspace {
                         ui::header_icon(
                             "rail-settings",
                             if update {
-                                "Settings — update available"
+                                text::SETTINGS_UPDATE_AVAILABLE
                             } else {
-                                "Settings"
+                                text::SETTINGS
                             },
                             ui::Icon::Settings,
                             theme,

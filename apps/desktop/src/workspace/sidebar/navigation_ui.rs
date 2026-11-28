@@ -72,9 +72,13 @@ impl Workspace {
     }
 
     pub(in crate::workspace) fn navigation_label(&self, backwards: bool, cx: &App) -> String {
-        let direction = if backwards { "Back" } else { "Forward" };
+        let direction = if backwards {
+            super::text::BACK
+        } else {
+            super::text::FORWARD
+        };
         let destination = match self.navigation_target(backwards, cx) {
-            Some(Stop::Home) => Some("Home".into()),
+            Some(Stop::Home) => Some(super::text::HOME.into()),
             Some(Stop::Tab(id)) => self
                 .tabs
                 .get(*id)
@@ -88,12 +92,12 @@ impl Workspace {
                 .summaries()
                 .into_iter()
                 .find(|project| &project.id == id)
-                .map(|project| format!("Project “{}”", project.name)),
+                .map(|project| super::text::project_stop(&project.name)),
             Some(Stop::Reply(id)) => self.reply_title(id).map(|title| format!("“{title}”")),
             None => None,
         };
         match destination {
-            Some(destination) => format!("{direction} to {destination}"),
+            Some(destination) => super::text::stop_toward(direction, destination),
             None => direction.into(),
         }
     }
