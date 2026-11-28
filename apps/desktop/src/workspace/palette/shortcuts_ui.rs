@@ -234,88 +234,56 @@ impl Workspace {
         let height = (window.viewport_size().height - px(144.)).max(px(240.));
         Some(
             gpui::deferred(
-                div()
-                    .id("shortcuts-overlay")
+                ui::sheet_scrim("shortcuts-overlay", theme, 72.)
                     .absolute()
                     .inset_0()
-                    .flex()
-                    .justify_center()
-                    .items_start()
-                    .pt(px(72.))
-                    .bg(theme.scrim())
-                    // A modal: nothing behind it takes the pointer.
-                    .occlude()
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(|this, _, window, cx| this.close_shortcuts(window, cx)),
                     )
                     .child(
-                        ui::panel("shortcuts-sheet", theme)
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "shortcuts-sheet".into())
-                            })
-                            .role(gpui::Role::Dialog)
-                            .aria_label(super::text::KEYBOARD_SHORTCUTS_TITLE)
-                            .key_context(format!("{SHEET} UiPanel").as_str())
-                            .track_focus(&sheet.focus)
-                            .tab_group()
-                            .tab_stop(false)
-                            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
-                                cx.stop_propagation()
-                            })
-                            // Other modal surfaces would take focus they
-                            // cannot give back once the sheet is gone.
-                            .on_action(|_: &crate::workspace::OpenPalette, _, cx| {
-                                cx.stop_propagation()
-                            })
-                            .on_action(|_: &crate::workspace::Settings, _, cx| {
-                                cx.stop_propagation()
-                            })
-                            .on_action(|_: &crate::workspace::OpenProject, _, cx| {
-                                cx.stop_propagation()
-                            })
-                            .on_action(|_: &crate::workspace::NewProject, _, cx| {
-                                cx.stop_propagation()
-                            })
-                            // Taking focus above Settings must not bypass its
-                            // restrictions on document commands.
-                            .when(
-                                self.settings.read(cx).open,
-                                crate::settings::block_document_commands,
-                            )
-                            .on_action(cx.listener(|this, _: &CloseShortcuts, window, cx| {
-                                this.close_shortcuts(window, cx)
-                            }))
-                            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                                if let Some(sheet) = &this.shell.shortcuts {
-                                    ui::cycle(window, cx, Some(&sheet.focus), false);
-                                }
-                                cx.stop_propagation();
-                            }))
-                            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                                if let Some(sheet) = &this.shell.shortcuts {
-                                    ui::cycle(window, cx, Some(&sheet.focus), true);
-                                }
-                                cx.stop_propagation();
-                            }))
-                            .w(px(560.))
-                            .max_w_full()
-                            .h(height)
-                            .p_4()
-                            .flex()
-                            .flex_col()
-                            .gap_3()
-                            .child(ui::card_title(super::text::KEYBOARD_SHORTCUTS_TITLE))
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded_md()
-                                    .border_1()
-                                    .border_color(p.border)
-                                    .child(sheet.filter.clone()),
-                            )
-                            .child(list),
+                        ui::sheet_panel(
+                            "shortcuts-sheet",
+                            theme,
+                            gpui::Role::Dialog,
+                            super::text::KEYBOARD_SHORTCUTS_TITLE,
+                            &sheet.focus,
+                            Some(SHEET),
+                        )
+                        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        // Other modal surfaces would take focus they
+                        // cannot give back once the sheet is gone.
+                        .on_action(|_: &crate::workspace::OpenPalette, _, cx| cx.stop_propagation())
+                        .on_action(|_: &crate::workspace::Settings, _, cx| cx.stop_propagation())
+                        .on_action(|_: &crate::workspace::OpenProject, _, cx| cx.stop_propagation())
+                        .on_action(|_: &crate::workspace::NewProject, _, cx| cx.stop_propagation())
+                        // Taking focus above Settings must not bypass its
+                        // restrictions on document commands.
+                        .when(
+                            self.settings.read(cx).open,
+                            crate::settings::block_document_commands,
+                        )
+                        .on_action(cx.listener(|this, _: &CloseShortcuts, window, cx| {
+                            this.close_shortcuts(window, cx)
+                        }))
+                        .w(px(560.))
+                        .max_w_full()
+                        .h(height)
+                        .p_4()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(ui::card_title(super::text::KEYBOARD_SHORTCUTS_TITLE))
+                        .child(
+                            div()
+                                .px_2()
+                                .py_1()
+                                .rounded_md()
+                                .border_1()
+                                .border_color(p.border)
+                                .child(sheet.filter.clone()),
+                        )
+                        .child(list),
                     ),
             )
             .with_priority(2)

@@ -357,27 +357,21 @@ impl Workspace {
         };
         Some(
             gpui::deferred(
-                div()
+                ui::sheet_scrim("keychain-overlay", theme, 64.)
                     .absolute()
                     .inset_0()
-                    .flex()
-                    .items_start()
-                    .justify_center()
-                    .pt(px(64.))
-                    .bg(theme.scrim())
-                    // A modal, like Settings: nothing behind it takes clicks.
-                    .id("keychain-overlay")
-                    .occlude()
                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
                     .on_mouse_down(gpui::MouseButton::Middle, |_, _, cx| cx.stop_propagation())
                     .child(
-                        ui::panel("keychain-explainer", theme)
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "keychain-explainer".into())
-                            })
-                            .role(gpui::Role::Dialog)
-                            .aria_label("mdoc will ask for Keychain access")
+                        ui::sheet_panel(
+                            "keychain-explainer",
+                            theme,
+                            gpui::Role::Dialog,
+                            "mdoc will ask for Keychain access",
+                            &self.explainer_group,
+                            None,
+                        )
                             .w(px(440.))
                             .p_5()
                             .flex()
@@ -399,19 +393,6 @@ impl Workspace {
                             .on_action(|_: &SwitchDocumentBack, _, _| {})
                             .on_action(|_: &ToggleSidebar, _, _| {})
                             .on_action(|_: &RetryDocument, _, _| {})
-                            // Tab cycles only its own buttons.
-                            .key_context("UiPanel")
-                            .track_focus(&self.explainer_group)
-                            .tab_group()
-                            .tab_stop(false)
-                            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                                ui::cycle(window, cx, Some(&this.explainer_group), false);
-                                cx.stop_propagation();
-                            }))
-                            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                                ui::cycle(window, cx, Some(&this.explainer_group), true);
-                                cx.stop_propagation();
-                            }))
                             .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, window, cx| {
                                 if e.keystroke.key == "escape" {
                                     this.cancel_unlock(window, cx);
