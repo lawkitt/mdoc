@@ -76,10 +76,15 @@ mod tests {
 
     /// Owner folders (and root files) not checked for sentences yet. An owner
     /// item that gives its folder a `text.rs` deletes its line here.
-    const EXEMPT: &[&str] = &["commands", "main", "review", "workspace"];
+    const EXEMPT: &[&str] = &["commands", "main", "workspace"];
 
-    /// Test-only files at the crate root, never checked.
-    const TEST_FILES: &[&str] = &["exits.rs", "perf_tests.rs", "test_support.rs"];
+    /// Test-only files not named `tests.rs`, never checked.
+    const TEST_FILES: &[&str] = &[
+        "exits.rs",
+        "perf_tests.rs",
+        "test_support.rs",
+        "review/mapping/decision_tests.rs",
+    ];
 
     /// CONTEXT.md's avoided words the check skips: their bans are about naming
     /// a Project ("case", "matter") or the Shelf ("tray"), while the app's
@@ -271,7 +276,7 @@ mod tests {
             .into_iter()
             .filter(|path| {
                 let rel = path.strip_prefix(src()).unwrap();
-                !(rel.components().count() == 1 && TEST_FILES.contains(&rel.to_str().unwrap()))
+                !TEST_FILES.iter().any(|file| Path::new(file) == rel)
             })
             .map(|path| {
                 let text = std::fs::read_to_string(&path).unwrap();

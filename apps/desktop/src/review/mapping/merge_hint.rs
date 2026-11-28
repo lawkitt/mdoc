@@ -2,6 +2,7 @@
 //! shorter (or later) identity's header, "Looks like … · Merge ×". Nothing
 //! links without the click; Merge is one undo step.
 use super::{MappingAction, PanelCursor, panel_rows::MENTION_INSET};
+use crate::review::text;
 use crate::{document::DocumentView, ui};
 use gpui::{AnyElement, Context, SharedString, Window, div, prelude::*, px};
 use mdoc_pii::merge_hints::MergeHint;
@@ -113,13 +114,13 @@ impl DocumentView {
                     .min_w_0()
                     .flex_shrink(1.)
                     .truncate()
-                    .child(format!("Looks like {wording}")),
+                    .child(text::looks_like(&wording)),
             )
             .child(div().flex_shrink_0().child("·"))
             .child(
                 ui::link_button(
                     SharedString::from(format!("merge-hint-merge-{from}-{into}")),
-                    "Merge",
+                    text::MERGE,
                     theme,
                     true,
                 )
@@ -127,7 +128,7 @@ impl DocumentView {
                 .when(cfg!(test), |v| {
                     v.debug_selector(move || format!("merge-hint-merge-{from}"))
                 })
-                .aria_label(format!("Merge with {wording}"))
+                .aria_label(text::merge_with(&wording))
                 .px_1()
                 .text_size(px(12.))
                 .on_click(cx.listener(move |this, _, window, cx| {

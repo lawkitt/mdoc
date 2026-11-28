@@ -2,6 +2,7 @@
 //! the Project retired lines the tab up with it again, and alias or category
 //! changes made in another member tab arrive as an edit in this tab's own
 //! history.
+use super::text;
 use crate::{document::DocumentView, document::markdown_search, ui};
 use gpui::{AnyElement, AppContext, Context, Focusable, div, prelude::*, px};
 use mdoc_pii::Category;
@@ -62,7 +63,7 @@ impl DocumentView {
             .is_none()
         {
             self.pii.review.restore_identity_snapshot(old);
-            return Err("The document changed. Try again.".into());
+            return Err(text::DOCUMENT_CHANGED_TRY_AGAIN.into());
         }
         Ok(())
     }
@@ -133,7 +134,7 @@ impl DocumentView {
             })
             .collect();
         if let Err(error) = self.retag_identities(&changes, cx) {
-            self.pii.error = Some(format!("Could not follow a change to the Project: {error}"));
+            self.pii.error = Some(text::could_not_follow(error));
         }
         let missing: Vec<_> = identities
             .iter()
@@ -196,17 +197,12 @@ impl DocumentView {
                         "project-names-toggle",
                         if absent.is_empty() {
                             // Nothing to list: keep only the way to add a name.
-                            format!(
-                                "{} Add a name to “{}”",
-                                if open { "▾" } else { "▸" },
-                                link.name
-                            )
+                            text::add_a_name_to(if open { "▾" } else { "▸" }, &link.name)
                         } else {
-                            format!(
-                                "{} In “{}”, not in this document ({})",
+                            text::in_project_not_here(
                                 if open { "▾" } else { "▸" },
-                                link.name,
-                                absent.len()
+                                &link.name,
+                                absent.len(),
                             )
                         },
                         theme,
@@ -224,7 +220,7 @@ impl DocumentView {
                                 markdown_search::SearchInput::new(cx)
                                     .with_theme(this.theme.clone())
                                     .with_key_context("ProjectName")
-                                    .with_placeholder("Add a name to the Project…")
+                                    .with_placeholder(text::ADD_A_NAME_TO_THE_PROJECT)
                             }));
                         }
                         if let Some(input) = this
