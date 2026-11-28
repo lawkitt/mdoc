@@ -386,10 +386,8 @@ pub(super) struct Workspace {
     /// Views whose last write failed: their edit is in no file, so eviction
     /// keeps them.
     unsaved: std::collections::HashSet<u64>,
-    /// The tab whose Copy for AI waits for its writes to land before the
-    /// Vault's outbound check runs, with the clipboard's text when it was
-    /// asked.
-    copy_for_ai_waiting: Option<(u64, Option<String>)>,
+    /// What the window keeps for the shelf and its Copy for AI.
+    shelf_source: shelf_source::ShelfSource,
     /// One admission at a time, so a repeat waits for the import before it.
     admitting: bool,
     admit_queue: std::collections::VecDeque<(Vec<PathBuf>, Option<String>)>,
@@ -648,7 +646,7 @@ impl Workspace {
             closing_after_write: Default::default(),
             evicting: Default::default(),
             unsaved: Default::default(),
-            copy_for_ai_waiting: None,
+            shelf_source: Default::default(),
             admitting: false,
             admit_queue: Default::default(),
             // Tests name their own; they never touch the real cache.

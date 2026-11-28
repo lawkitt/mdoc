@@ -1,5 +1,7 @@
 //! Searchable replacement overview with inline occurrence context.
 use super::{DropTarget, MappingAction, PanelDrag, PanelFilter, PanelMenu, checklist::Tick};
+pub(super) use crate::review::text::replacement_summary;
+use crate::review::text::{self, SetupCopy};
 use crate::{document::DocumentView, review::APPLIED_ID, ui, ui::style};
 use gpui::{
     AnyElement, App, Context, Hsla, SharedString, Window, div, prelude::*, px, uniform_list,
@@ -11,56 +13,6 @@ use std::{
     ops::Range,
     sync::Arc,
 };
-
-/// The pseudonymization setup card's words. A profile whose model is here
-/// but whose shared runtime is an earlier release's is asked for an update,
-/// not a first setup.
-#[derive(Debug, PartialEq, Eq)]
-struct SetupCopy {
-    title: &'static str,
-    text: &'static str,
-    /// The primary button while setup is needed and nothing failed.
-    action: &'static str,
-    note: String,
-}
-
-impl SetupCopy {
-    fn new(model: Option<settings::Model>, pending: mdoc_import::model_download::Pending) -> Self {
-        let update = pending.runtime_update();
-        let note = match model {
-            Some(m) if update => format!(
-                "{} · {} MB runtime update",
-                crate::app::models::short_name(m),
-                mdoc_import::model_download::megabytes(pending.total())
-            ),
-            Some(m) if pending.total() > 0 => format!(
-                "{} · {}, once",
-                crate::app::models::short_name(m),
-                pending.download_label()
-            ),
-            Some(m) => format!(
-                "{} · runs on this computer",
-                crate::app::models::short_name(m)
-            ),
-            None => String::new(),
-        };
-        if update {
-            Self {
-                title: "Update pseudonymization",
-                text: "The model is already on this computer; this version of mdoc needs a newer shared runtime to run it. Review the whole document before sharing.",
-                action: "Update & scan",
-                note,
-            }
-        } else {
-            Self {
-                title: "Set up pseudonymization",
-                text: "Detects names, organizations and identifiers on this computer. Review the whole document before sharing.",
-                action: "Download & scan",
-                note,
-            }
-        }
-    }
-}
 
 #[derive(Clone)]
 pub(super) struct ReplacementRow {
@@ -438,9 +390,9 @@ impl DocumentView {
         let error = self.pii.error.clone();
         let copy = SetupCopy::new(model, pending);
         let primary = if !needs_setup {
-            "Pseudonymize"
+            text::PSEUDONYMIZE
         } else if error.is_some() {
-            "Retry"
+            text::RETRY
         } else {
             copy.action
         };
@@ -645,9 +597,9 @@ impl DocumentView {
     fn expand_all_control(&self, cx: &mut Context<Self>) -> ui::Control {
         let expanded = self.all_identities_expanded(cx);
         let (label, icon) = if expanded {
-            ("Collapse all identities", ui::Icon::CollapseAll)
+            (text::COLLAPSE_ALL_IDENTITIES, ui::Icon::CollapseAll)
         } else {
-            ("Expand all identities", ui::Icon::ExpandAll)
+            (text::EXPAND_ALL_IDENTITIES, ui::Icon::ExpandAll)
         };
         ui::header_icon(
             "replacement-expand-all",
@@ -670,7 +622,7 @@ impl DocumentView {
         let theme = self.theme.get();
         let filter = self.pii.mapping.filter;
         let open = self.pii.mapping.panel_menu == Some(PanelMenu::Filter);
-        let label = format!("Show: {}", filter.label());
+        let label = text::show_filter(filter.label());
         let button = ui::header_icon_untipped(
             "replacement-filter",
             label.clone(),
@@ -786,19 +738,15 @@ impl DocumentView {
             .notice_visible()
             .then(|| {
                 if let Some((added, _)) = mapping.added_at(history) {
-                    Some((
-                        format!("Added “{}”", added.original),
-                        crate::ui::text::CANCEL,
-                        true,
-                    ))
+                    Some((text::added(&added.original), crate::ui::text::CANCEL, true))
                 } else if let Some(kept) = mapping.kept_at(history) {
-                    Some((format!("Kept {kept}"), "Undo", false))
+                    Some((text::kept(kept), text::UNDO, false))
                 } else if let Some(wording) = mapping.merged_at(history) {
-                    Some((format!("Merged into {wording}"), "Undo", false))
+                    Some((text::merged_into(wording), text::UNDO, false))
                 } else {
                     mapping
                         .applied_at(history)
-                        .map(|n| (format!("Applied {n}"), "Undo", false))
+                        .map(|n| (text::applied(n), text::UNDO, false))
                 }
             })
             .flatten();
@@ -994,7 +942,7 @@ impl DocumentView {
                             div()
                                 .text_size(px(11.))
                                 .text_color(palette.header_muted)
-                                .child("Drop to give it a new alias"),
+                                .child(text::DROP_FOR_A_NEW_ALIAS),
                         )
                         .child(
                             div()
@@ -1064,9 +1012,9 @@ impl DocumentView {
                         .text_size(px(12.))
                         .text_color(palette.header_muted)
                         .child(if searching {
-                            "No matching replacements."
+                            text::NO_MATCHING_REPLACEMENTS
                         } else {
-                            "Nothing found. Select text to add it by hand."
+                            text::NOTHING_FOUND
                         })
                         .into_any_element()
                 };
@@ -1103,7 +1051,7 @@ impl DocumentView {
                                 v.child(
                                     ui::link_button(
                                         "apply-identity-map",
-                                        "Update aliases",
+                                        text::UPDATE_ALIASES,
                                         theme,
                                         !busy,
                                     )
@@ -1116,7 +1064,7 @@ impl DocumentView {
                                 )
                             })
                             .child(
-                                ui::link_button("review-rescan", "↻ Rescan", theme, !busy)
+                                ui::link_button("review-rescan", text::RESCAN, theme, !busy)
                                     .when(cfg!(test), |v| {
                                         v.debug_selector(|| "review-rescan".into())
                                     })
@@ -1173,51 +1121,10 @@ impl DocumentView {
                         div()
                             .text_size(px(11.))
                             .text_color(palette.header_muted)
-                            .child("Review for missed identifiers before sharing."),
+                            .child(text::REVIEW_FOR_MISSED_IDENTIFIERS),
                     ),
             );
         Some(self.panel_actions(panel, cx).into_any_element())
-    }
-}
-
-/// The Replacements footer's summary. A running scan has no counts to give
-/// yet, so it says so instead of "Nothing to replace yet" (#309). What is
-/// left counts `names`, the Review tab's unit, and its `pending` places
-/// when they differ (#1314).
-pub(super) fn replacement_summary(
-    scanning: bool,
-    names: usize,
-    pending: usize,
-    applied: usize,
-    kept: usize,
-) -> String {
-    if scanning {
-        return "Scanning…".into();
-    }
-    let mut parts = Vec::new();
-    if pending > 0 {
-        parts.push(format!("{} to replace", names_in_places(names, pending)));
-    }
-    if applied > 0 {
-        parts.push(format!("{applied} applied"));
-    }
-    if kept > 0 {
-        parts.push(format!("{kept} kept"));
-    }
-    if parts.is_empty() {
-        "Nothing to replace yet".to_string()
-    } else {
-        parts.join(" · ")
-    }
-}
-
-/// "2 names in 3 places", or "2 names" when each appears once (#1314).
-pub(super) fn names_in_places(names: usize, places: usize) -> String {
-    let unit = if names == 1 { "name" } else { "names" };
-    if places == names {
-        format!("{names} {unit}")
-    } else {
-        format!("{names} {unit} in {places} places")
     }
 }
 

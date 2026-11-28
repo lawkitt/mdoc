@@ -21,6 +21,7 @@ pub(crate) use reply::{ReplyBox, SavedReplyRow, reply_marks};
 pub(crate) mod restore;
 pub(crate) mod restored_clipboard;
 mod scan;
+mod text;
 pub(crate) use restore::UNRESOLVED_ID;
 use scan::ScanJob;
 #[cfg(test)]
@@ -413,7 +414,7 @@ impl DocumentView {
                 .update(cx, |e, cx| e.set_active_annotation(None, cx));
         }
         if was_scanning {
-            self.pii.error = Some("Document changed; scan cancelled. Rescan when ready.".into());
+            self.pii.error = Some(text::SCAN_CANCELLED.into());
         }
         self.schedule_pii_discovery(cx);
         self.schedule_edit_scan(cx);
@@ -543,45 +544,44 @@ impl DocumentView {
     /// never its text or name.
     pub(crate) fn crash_state(&self, cx: &App) -> String {
         let kind = if self.lifecycle.source_only() {
-            "source only"
+            text::SOURCE_ONLY
         } else if self.preview.pdf().is_some() {
-            "PDF"
+            text::PDF
         } else if self.preview.source().is_some() {
-            "converted"
+            text::CONVERTED
         } else {
-            "Markdown"
+            text::MARKDOWN
         };
-        let mut parts = vec![format!(
-            "{kind}, {} bytes, zoom {}%",
+        let mut parts = vec![text::crash_kind(
+            kind,
             self.editor.read(cx).text().len(),
-            (self.zoom * 100.).round() as i32
+            (self.zoom * 100.).round() as i32,
         )];
         if self.preview.visible() {
-            parts.push("source shown".into());
+            parts.push(text::SOURCE_SHOWN.into());
         }
         if self.pii.mapping.open {
             parts.push(
                 match self.inspector {
-                    crate::document::Inspector::Review => "Review tab",
-                    crate::document::Inspector::Share => "Share tab",
-                    crate::document::Inspector::Notes => "Notes tab",
+                    crate::document::Inspector::Review => text::REVIEW_TAB,
+                    crate::document::Inspector::Share => text::SHARE_TAB,
+                    crate::document::Inspector::Notes => text::NOTES_TAB,
                 }
                 .into(),
             );
-            parts.push(format!(
-                "{} proposed, {} applied",
+            parts.push(text::crash_counts(
                 self.pii.review.remaining(),
-                self.pii.review.applied().len()
+                self.pii.review.applied().len(),
             ));
         }
         if self.pii.popup.is_some() {
-            parts.push("popup open".into());
+            parts.push(text::POPUP_OPEN.into());
         }
         if self.compare.is_some() {
-            parts.push("before/after view".into());
+            parts.push(text::BEFORE_AFTER_VIEW.into());
         }
         if self.search.open() {
-            parts.push("find open".into());
+            parts.push(text::FIND_OPEN.into());
         }
         parts.join(", ")
     }
@@ -634,7 +634,7 @@ impl DocumentView {
             panel.working == Some(model)
         });
         if !started {
-            self.pii.error = Some("Another model job is running. Retry when it finishes.".into());
+            self.pii.error = Some(text::ANOTHER_MODEL_JOB.into());
             cx.notify();
             return;
         }
@@ -845,8 +845,8 @@ impl DocumentView {
         let open = self.pii.selection_menu.is_some();
         let action = target.map(|target| mdoc_editor::SelectionAction {
             range: selection,
-            label: "Replace".into(),
-            menu_label: "Replace with alias".into(),
+            label: text::REPLACE.into(),
+            menu_label: text::REPLACE_WITH_ALIAS.into(),
             shortcut: if cfg!(target_os = "macos") {
                 "⌘⌥P"
             } else {
