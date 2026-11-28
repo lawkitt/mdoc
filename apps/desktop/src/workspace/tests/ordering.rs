@@ -560,7 +560,7 @@ const JOBS: &[(&str, &str)] = &[
     ("workspace/projects/projects_ui.rs", "write_now"),
     ("workspace/projects/projects_ui.rs", "run_op"),
     ("workspace/projects/projects_ui.rs", "run_delete"),
-    ("workspace/sidebar/tree_ui.rs", "run_delete_documents"),
+    ("workspace/sidebar/actions.rs", "run_delete_documents"),
     ("workspace/replies.rs", "run_reply_save"),
     ("workspace/replies.rs", "run_promote"),
     ("workspace/replies.rs", "run_delete_reply"),
