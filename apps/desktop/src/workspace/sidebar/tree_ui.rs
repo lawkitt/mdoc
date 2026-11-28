@@ -1,17 +1,12 @@
-//! The Vault tree in the window: its rows drawn from the Vault's summaries,
-//! opening a document from its row (the ninth live view is evicted), the
-//! keyboard inside the tree, dragging a document onto a Project or Unfiled,
-//! a document row's menu, and Unfiled's multi-select delete.
+//! The Vault tree's view: its rows drawn from the Vault's summaries, a
+//! document row's menu and the move menu's items; what a click, a drag or a key
+//! on them carries out is in `actions.rs`.
 use crate::workspace::{
-    Tab, Workspace,
-    saving::autosave::{Op, Write},
-    saving::document_writer::Target,
-    saving::live_views::{LIMIT, Weight},
-    sidebar::navigation::{Arrival, Stop},
-    sidebar::tree::{Row, RowKey, Shown, TreeEffect},
+    Workspace,
+    sidebar::tree::{Row, RowKey},
 };
 use crate::{ui, ui::style};
-use gpui::{AnyElement, App, Context, PromptLevel, Window, div, prelude::*, px};
+use gpui::{AnyElement, App, Context, Window, div, prelude::*, px};
 use mdoc_store::document_id::{DocumentId, VaultId};
 use mdoc_vault::{DocumentOrigin, DocumentSummary, ProjectSummary, SourceKind};
 
@@ -52,160 +47,6 @@ pub(in crate::workspace) fn kind_label(document: &DocumentSummary) -> &'static s
 }
 
 impl Workspace {
-    // ---- What the tree shows ------------------------------------------------
-
-    /// The tree as it stands: the window's Projects and the Vault's
-    /// documents, none while the Vault is closed.
-    pub(in crate::workspace) fn tree_now(&self) -> TreeNow {
-        let (projects, documents) = match self.vault.vault() {
-            Some(vault) => (self.projects.summaries(), vault.documents()),
-            None => (Vec::new(), Vec::new()),
-        };
-        let rows = self.tree.rows(&projects, &documents);
-        TreeNow {
-            projects,
-            documents,
-            rows,
-        }
-    }
-
-    /// The Vault document live view `tab` holds, loaded or named.
-    pub(in crate::workspace) fn live_document(&self, tab: &Tab, cx: &App) -> Option<VaultId> {
-        if let Some(view) = tab.view()
-            && let Some(DocumentId::Vault(id)) = view.read(cx).session.document.id()
-        {
-            return Some(id);
-        }
-        tab.record().document.clone()
-    }
-
-    /// What the window shows, as the tree marks it.
-    pub(in crate::workspace) fn tree_shown(&self, cx: &App) -> Shown {
-        if let Some(page) = &self.project_ui.page {
-            return Shown::ProjectPage(page.id().to_string());
-        }
-        if self.showing_home(cx) {
-            return Shown::Nothing;
-        }
-        match self
-            .tabs
-            .active_tab()
-            .and_then(|tab| self.live_document(tab, cx))
-        {
-            Some(id) => Shown::Document(id.as_str().to_string()),
-            None => Shown::Nothing,
-        }
-    }
-
-    /// The tree's rows as keys, in order: what tests and Tab walks compare.
-    #[cfg(test)]
-    pub(in crate::workspace) fn tree_keys(&self) -> Vec<RowKey> {
-        self.tree_now().rows.iter().filter_map(Row::key).collect()
-    }
-
-    // ---- Opening and evicting -----------------------------------------------
-
-    /// A document row was clicked: its live view, or a new one, shows.
-    pub(in crate::workspace) fn open_from_tree(
-        &mut self,
-        document: VaultId,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.quit_flow.quitting() {
-            return;
-        }
-        self.tree
-            .set_cursor(Some(RowKey::Document(document.as_str().to_string())));
-        self.open_vault_document(document, window, cx);
-    }
-
-    /// How eviction weighs live view `tab`: Home's placeholder and a view
-    /// already leaving don't count; a view that works, prompts, waits for a
-    /// write or holds text the Vault doesn't (a New document before its first
-    /// write) stays.
-    fn eviction_weight(&self, tab: &Tab, cx: &App) -> Weight {
-        if self.is_placeholder(tab, cx) || self.closing_after_write.contains(&tab.id()) {
-            return Weight::Ignored;
-        }
-        let Some(view) = tab.view() else {
-            // Never shown since launch: nothing to lose.
-            return Weight::Idle;
-        };
-        let document = self.live_document(tab, cx);
-        let busy = {
-            let view = view.read(cx);
-            view.import.busy()
-                || view.lifecycle.loading()
-                || view.lifecycle.prompting()
-                || view.import.password_prompt().is_some()
-                // Text no document holds yet: a New one before its first
-                // write.
-                || (document.is_none() && !view.editor.read(cx).text().is_empty())
-        };
-        if busy
-            || document.as_ref().is_some_and(|d| self.moving.contains(d))
-            || self.unsaved.contains(&tab.id())
-            || self.write_pending_for(tab.id(), cx)
-            // The companion's Replace all runs in it.
-            || self.ai.replacing_in() == Some(tab.id())
-        {
-            Weight::Busy
-        } else {
-            Weight::Idle
-        }
-    }
-
-    /// A New document left before its first keystroke goes: it never became
-    /// a document, so nothing names it. One typed into and emptied again
-    /// stays, as does Home's placeholder.
-    pub(in crate::workspace) fn drop_if_empty_new(
-        &mut self,
-        id: u64,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if id == self.tabs.active() && !self.tabs.home() && self.project_ui.page.is_none() {
-            return;
-        }
-        let Some(tab) = self.tabs.get(id) else {
-            return;
-        };
-        let Some(view) = tab.view() else {
-            return;
-        };
-        if tab.record().document.is_some() || self.is_placeholder(tab, cx) {
-            return;
-        }
-        let empty = {
-            let view = view.read(cx);
-            view.session.document.id().is_none()
-                && view.preview.source().is_none()
-                && !view.lifecycle.loading()
-                && !view.lifecycle.source_only()
-                && view.editor.read(cx).text().is_empty()
-                && view.lifecycle.edited_at().is_none()
-        };
-        if empty && !self.write_pending_for(id, cx) {
-            self.remove(id, window, cx);
-        }
-    }
-
-    /// Release the least recently viewed views beyond the live limit, each
-    /// once its last text is written.
-    pub(in crate::workspace) fn evict(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.quit_flow.quitting() || !self.ready {
-            return;
-        }
-        let evicted = self
-            .tabs
-            .evictable(LIMIT, |tab| self.eviction_weight(tab, cx));
-        for id in evicted {
-            self.evicting.insert(id);
-            self.close_tab(id, window, cx);
-        }
-    }
-
     // ---- The keyboard --------------------------------------------------------
 
     /// The focus handle of row `key`, made on first use.
@@ -216,331 +57,20 @@ impl Workspace {
             .or_insert_with(|| cx.focus_handle().tab_stop(true))
             .clone()
     }
-
-    /// The row whose focus handle holds focus.
-    pub(in crate::workspace) fn focused_tree_row(&self, window: &Window) -> Option<RowKey> {
-        self.tree_row_focus
-            .borrow()
-            .iter()
-            .find(|(_, focus)| focus.is_focused(window))
-            .map(|(key, _)| key.clone())
-    }
-
-    /// Where F6 enters the tree: the selected row, else the first.
-    pub(in crate::workspace) fn tree_landing(&self, cx: &mut App) -> Option<gpui::FocusHandle> {
-        let now = self.tree_now();
-        let selected = self
-            .tree
-            .selected(&now.rows, &self.tree_shown(cx), &now.documents);
-        let stop = self.tree.stop(&now.rows, selected.as_ref())?;
-        Some(self.tree_focus(&stop, cx))
-    }
-
-    fn carry_out_tree(
-        &mut self,
-        effect: Option<TreeEffect>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match effect {
-            None => {}
-            Some(TreeEffect::Repaint) => {
-                self.checkpoint(window, cx);
-                cx.notify();
-            }
-            Some(TreeEffect::Focus(key)) => {
-                let focus = self.tree_focus(&key, cx);
-                window.focus(&focus, cx);
-                cx.notify();
-            }
-        }
-    }
-
-    /// ↑ / ↓ in the tree.
-    pub(in crate::workspace) fn tree_step(
-        &mut self,
-        delta: isize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(from) = self.focused_tree_row(window) else {
-            return;
-        };
-        let rows = self.tree_now().rows;
-        let effect = self.tree.step(&rows, &from, delta);
-        self.carry_out_tree(effect, window, cx);
-    }
-
-    /// ⇧↑ / ⇧↓ on an Unfiled row: extend the selection.
-    pub(in crate::workspace) fn tree_extend(
-        &mut self,
-        delta: isize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(from) = self.focused_tree_row(window) else {
-            return;
-        };
-        let rows = self.tree_now().rows;
-        let unfiled = |key: &RowKey| {
-            rows.iter().any(|row| {
-                matches!(row, Row::Document { id, project: None } if *key == RowKey::Document(id.clone()))
-            })
-        };
-        if !unfiled(&from) {
-            return self.tree_step(delta, window, cx);
-        }
-        if let RowKey::Document(id) = &from
-            && self.tree.selection().is_empty()
-        {
-            self.tree.choose(id);
-        }
-        let effect = self.tree.step(&rows, &from, delta);
-        if let Some(TreeEffect::Focus(RowKey::Document(to))) = &effect
-            && unfiled(&RowKey::Document(to.clone()))
-        {
-            self.tree.extend_to(&rows, to);
-            self.carry_out_tree(effect, window, cx);
-        }
-    }
-
-    /// → / ← in the tree.
-    pub(in crate::workspace) fn tree_fold(
-        &mut self,
-        open: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(from) = self.focused_tree_row(window) else {
-            return;
-        };
-        let rows = self.tree_now().rows;
-        let effect = if open {
-            self.tree.right(&rows, &from)
-        } else {
-            self.tree.left(&rows, &from)
-        };
-        self.carry_out_tree(effect, window, cx);
-    }
-
-    /// ⌫ / Delete on an Unfiled row: ask to delete the selection, or it.
-    pub(in crate::workspace) fn tree_delete_focused(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(RowKey::Document(id)) = self.focused_tree_row(window) else {
-            return;
-        };
-        if self.project_of(&id).is_some() {
-            return;
-        }
-        let documents = self.tree.to_delete(&id);
-        self.delete_documents(documents, window, cx);
-    }
-
-    /// Esc in the tree clears the Unfiled selection first.
-    pub(in crate::workspace) fn clear_tree_selection(&mut self, cx: &mut Context<Self>) -> bool {
-        let cleared = self.tree.clear_selection();
-        if cleared {
-            cx.notify();
-        }
-        cleared
-    }
-
-    // ---- Moves and deletes ----------------------------------------------------
-
-    /// A document row was dropped on a Project, or on Unfiled for `None`.
-    pub(in crate::workspace) fn drop_document(
-        &mut self,
-        document: VaultId,
-        to: Option<String>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.quit_flow.quitting() || self.project_of(document.as_str()) == to {
-            return;
-        }
-        self.move_document(document, to, window, cx);
-    }
-
-    /// Ask, then delete Unfiled `documents` with their originals, names and
-    /// replies.
-    pub(in crate::workspace) fn delete_documents(
-        &mut self,
-        documents: Vec<String>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Only Unfiled documents are deleted from the tree; one moved into a
-        // Project since it was chosen stays.
-        let unfiled: std::collections::HashSet<String> = (self.tree_now().documents.into_iter())
-            .filter(|summary| summary.project.is_none())
-            .map(|summary| summary.id)
-            .collect();
-        let documents: Vec<VaultId> = (documents.iter())
-            .filter(|id| unfiled.contains(id.as_str()))
-            .filter_map(|id| VaultId::parse(id))
-            .filter(|id| !self.moving.contains(id))
-            .collect();
-        if documents.is_empty() || self.quit_flow.quitting() {
-            return;
-        }
-        #[cfg(test)]
-        {
-            self.asked_to_delete.push_back(documents.clone());
-        }
-        let title = match documents.as_slice() {
-            [one] => {
-                let name = (self.tree_now().documents.into_iter())
-                    .find(|summary| summary.id == one.as_str())
-                    .map(|summary| summary.title)
-                    .unwrap_or_default();
-                format!("Delete “{name}”?")
-            }
-            many => format!("Delete {} documents?", many.len()),
-        };
-        let detail = if documents.len() == 1 {
-            "Its text, original, names and AI replies are deleted from this computer. This \
-             cannot be undone."
-        } else {
-            "Their text, originals, names and AI replies are deleted from this computer. This \
-             cannot be undone."
-        };
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            &title,
-            Some(detail),
-            &[
-                gpui::PromptButton::new("Delete"),
-                gpui::PromptButton::cancel(crate::ui::text::CANCEL),
-            ],
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            if answer.await.ok() != Some(0) {
-                return;
-            }
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.forget_documents(documents, window, cx)
-            });
-        })
-        .detach();
-    }
-
-    /// Delete `documents` once the writes queued before are done; nothing
-    /// writes them meanwhile.
-    pub(in crate::workspace) fn forget_documents(
-        &mut self,
-        documents: Vec<VaultId>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if documents.is_empty() || self.quit_flow.quitting() {
-            return;
-        }
-        for document in &documents {
-            self.moving.insert(document.clone());
-        }
-        self.next_op += 1;
-        let target = Target::Op(self.next_op);
-        // Any document id stands in: the delete names its documents itself.
-        let id = documents[0].clone();
-        self.queue_write(
-            target,
-            Write::Op(id, Op::DeleteDocuments { documents }),
-            window,
-            cx,
-        );
-    }
-
-    /// Run a delete of documents at the head of the writer's queue: their
-    /// live views go unwritten, then their Vault objects.
-    pub(in crate::workspace) fn run_delete_documents(
-        &mut self,
-        documents: Vec<VaultId>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(vault) = self.vault.vault().cloned() else {
-            for document in &documents {
-                self.moving.remove(document);
-            }
-            return;
-        };
-        // Only while every one is still Unfiled, compared under the Vault's
-        // write lock: one moved into a Project since the question (a folder
-        // sheet finishing) stops it, and the question comes again.
-        let ids: Vec<String> = (documents.iter())
-            .map(|document| document.as_str().to_string())
-            .collect();
-        let failed = match vault.delete_unfiled_documents(&ids) {
-            Ok(false) => {
-                for document in &documents {
-                    self.moving.remove(document);
-                }
-                self.notices.post(
-                    "A document moved into a Project before it was deleted, so nothing was \
-                     deleted. Choose again.",
-                );
-                self.delete_documents(ids, window, cx);
-                cx.notify();
-                return;
-            }
-            Ok(true) => None,
-            Err(error) => Some(error),
-        };
-        for document in &documents {
-            // A failure after its record went (its folder's cleanup) still
-            // deleted it; one before keeps it, and its live view and edits.
-            // Only a record known to be gone counts: one that can't be read
-            // for now is missing from the summaries too.
-            let gone = failed.is_none()
-                || matches!(
-                    vault.document(document.as_str()),
-                    Err(mdoc_vault::VaultError::NotFound { .. })
-                );
-            self.moving.remove(document);
-            if !gone {
-                continue;
-            }
-            if let Some(tab) = self.find_document(&DocumentId::Vault(document.clone()), None, cx) {
-                // Home takes a shown document's page.
-                if tab == self.tabs.active() && !self.showing_overview(cx) {
-                    self.show_home_as(Arrival::Replace, window, cx);
-                }
-                self.remove(tab, window, cx);
-            }
-            self.navigation.forget(&Stop::Document(document.clone()));
-        }
-        // Their replies went with them: a page showing one closes, and
-        // documents promoted from them say so.
-        self.drop_gone_reply_page(window, cx);
-        self.refresh_saved_replies(cx);
-        let now = self.tree_now();
-        self.tree.keep_chosen(&now.documents);
-        if let Some(error) = failed {
-            self.notices
-                .post(format!("Could not delete every document: {error}"));
-        }
-        self.checkpoint(window, cx);
-        cx.notify();
-    }
-
     // ---- Drawing ----------------------------------------------------------------
 
     /// The tree's rows for the expanded sidebar or the rail's reveal.
     pub(in crate::workspace) fn tree_view(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
-        if self.vault.vault().is_none() {
+        if !self.tree_has_vault() {
             return vec![
-                self.section_label("Projects"),
+                self.section_label(super::text::PROJECTS),
                 div()
                     .px_2()
                     .py_1()
                     .text_color(palette.header_muted)
-                    .child("Documents show here once the Vault opens.")
+                    .child(super::text::DOCUMENTS_ONCE_VAULT_OPENS)
                     .into_any_element(),
             ];
         }
@@ -560,7 +90,7 @@ impl Workspace {
                             .pb_1()
                             .text_size(px(12.))
                             .text_color(palette.header_muted)
-                            .child("No Projects yet")
+                            .child(super::text::NO_PROJECTS_YET)
                             .into_any_element()
                     } else {
                         label
@@ -598,7 +128,6 @@ impl Workspace {
         }
         elements
     }
-
     /// The common shape of a focusable tree row.
     fn tree_row(
         &self,
@@ -664,7 +193,6 @@ impl Workspace {
             .hover(move |v| v.bg(palette.placeholder_bg))
             .cursor_pointer()
     }
-
     fn tree_project_row(
         &self,
         project: &ProjectSummary,
@@ -686,7 +214,7 @@ impl Workspace {
         self.tree_row(
             &key,
             format!("tree-project-{id}"),
-            format!("Project {}, {documents} documents", project.name),
+            super::text::project_row(&project.name, documents),
             selected,
             stop,
             cx,
@@ -705,9 +233,9 @@ impl Workspace {
             })
             .tab_stop(false)
             .aria_label(if expanded {
-                "Collapse Project"
+                super::text::COLLAPSE_PROJECT
             } else {
-                "Expand Project"
+                super::text::EXPAND_PROJECT
             })
             .px_1()
             .py_0()
@@ -715,9 +243,7 @@ impl Workspace {
                 let id = id.clone();
                 move |this, _, window, cx| {
                     cx.stop_propagation();
-                    this.tree.toggle(&id);
-                    this.checkpoint(window, cx);
-                    cx.notify();
+                    this.toggle_project(&id, window, cx);
                 }
             })),
         )
@@ -743,10 +269,7 @@ impl Workspace {
         )
         .when(!menu_open, |v| {
             v.tooltip(style::tooltip(
-                format!(
-                    "Project “{}” · its names are kept in the Vault",
-                    project.name
-                ),
+                super::text::project_row_tooltip(&project.name),
                 theme,
             ))
         })
@@ -793,7 +316,6 @@ impl Workspace {
         }))
         .into_any_element()
     }
-
     fn tree_document_row(
         &self,
         document: &DocumentSummary,
@@ -826,17 +348,7 @@ impl Workspace {
         let recognized = live.is_some_and(|v| v.recognized());
         let chosen = !member && self.tree.is_chosen(&document.id);
         let title = document.title.clone();
-        let tooltip = format!(
-            "{title}{}{}{}{}",
-            if recognized {
-                "\nRecognized with OCR"
-            } else {
-                ""
-            },
-            if pseudonymized { "\nPseudonymized" } else { "" },
-            if busy { "\nProcessing…" } else { "" },
-            if error { "\nNeeds attention" } else { "" }
-        );
+        let tooltip = super::text::document_tooltip(&title, recognized, pseudonymized, busy, error);
         let menu_open = self.context_menu_open();
         let unfiled = !member;
         self.tree_row(
@@ -866,16 +378,16 @@ impl Workspace {
             div()
                 .flex_1()
                 .min_w_0()
-                .child(crate::workspace::sidebar::middle_truncated(&title)),
+                .child(crate::workspace::sidebar::view::middle_truncated(&title)),
         )
         .when(recognized, |v| {
-            v.child(crate::workspace::sidebar::tab_badge(
+            v.child(crate::workspace::sidebar::view::tab_badge(
                 ui::Icon::Ocr,
                 palette.header_muted,
             ))
         })
         .when(pseudonymized, |v| {
-            v.child(crate::workspace::sidebar::tab_badge(
+            v.child(crate::workspace::sidebar::view::tab_badge(
                 ui::Icon::Anonymous,
                 palette.header_muted,
             ))
@@ -957,7 +469,6 @@ impl Workspace {
         })
         .into_any_element()
     }
-
     /// The Projects label, with New Project.
     fn tree_projects_label(&self) -> AnyElement {
         let theme = self.theme.get();
@@ -973,11 +484,11 @@ impl Workspace {
             .pb_1()
             .text_size(px(11.))
             .text_color(palette.header_muted)
-            .child(div().flex_1().child("Projects"))
+            .child(div().flex_1().child(super::text::PROJECTS))
             .child(
                 ui::header_icon_untipped(
                     "tree-new-project",
-                    "New Project",
+                    super::text::NEW_PROJECT,
                     ui::Icon::Plus,
                     theme,
                     false,
@@ -985,7 +496,7 @@ impl Workspace {
                 .when(!self.context_menu_open(), |v| {
                     v.tooltip(style::tooltip(
                         crate::commands::shortcuts::tip(
-                            "New Project",
+                            super::text::NEW_PROJECT,
                             &crate::workspace::NewProject,
                         ),
                         theme,
@@ -1001,7 +512,6 @@ impl Workspace {
             )
             .into_any_element()
     }
-
     /// Unfiled's label: a drop target for documents, New, and Delete N…
     /// while several rows are chosen.
     fn tree_unfiled_label(&self, chosen: usize, cx: &mut Context<Self>) -> AnyElement {
@@ -1018,19 +528,19 @@ impl Workspace {
             .pb_1()
             .text_size(px(11.))
             .text_color(palette.header_muted)
-            .child(div().flex_1().child("Unfiled"))
+            .child(div().flex_1().child(super::text::UNFILED))
             .when(chosen > 1, |v| {
                 v.child(
                     ui::control(
                         "tree-delete-chosen",
-                        format!("Delete {chosen}…"),
+                        super::text::delete_chosen(chosen),
                         theme,
                         true,
                     )
                     .when(cfg!(test), |v| {
                         v.debug_selector(|| "tree-delete-chosen".into())
                     })
-                    .aria_label(format!("Delete {chosen} documents"))
+                    .aria_label(super::text::delete_chosen_label(chosen))
                     .px_1()
                     .py_0()
                     .text_color(style::markdown_style(theme).alert_caution)
@@ -1041,19 +551,28 @@ impl Workspace {
                 )
             })
             .child(
-                ui::header_icon_untipped("tree-new", "New document", ui::Icon::Plus, theme, false)
-                    .track_focus(&self.panel_new_focus)
-                    .when(!self.context_menu_open(), |v| {
-                        v.tooltip(style::tooltip(
-                            crate::commands::shortcuts::tip("New document", &crate::workspace::New),
-                            theme,
-                        ))
-                    })
-                    .when(cfg!(test), |v| v.debug_selector(|| "tree-new".into()))
-                    .size(px(22.))
-                    .on_click(|_, window, cx| {
-                        window.dispatch_action(Box::new(crate::workspace::New), cx)
-                    }),
+                ui::header_icon_untipped(
+                    "tree-new",
+                    super::text::NEW_DOCUMENT,
+                    ui::Icon::Plus,
+                    theme,
+                    false,
+                )
+                .track_focus(&self.panel_new_focus)
+                .when(!self.context_menu_open(), |v| {
+                    v.tooltip(style::tooltip(
+                        crate::commands::shortcuts::tip(
+                            super::text::NEW_DOCUMENT,
+                            &crate::workspace::New,
+                        ),
+                        theme,
+                    ))
+                })
+                .when(cfg!(test), |v| v.debug_selector(|| "tree-new".into()))
+                .size(px(22.))
+                .on_click(|_, window, cx| {
+                    window.dispatch_action(Box::new(crate::workspace::New), cx)
+                }),
             )
             .drag_over::<DocumentDrag>(move |v, _, _, _| v.bg(theme.sidebar_selected()))
             .on_drop(cx.listener(|this, drag: &DocumentDrag, window, cx| {
@@ -1061,7 +580,6 @@ impl Workspace {
             }))
             .into_any_element()
     }
-
     fn tree_show_all(
         &self,
         hidden: usize,
@@ -1071,9 +589,9 @@ impl Workspace {
     ) -> AnyElement {
         let palette = self.theme.get().pdf_style();
         let label = if hidden > 0 {
-            format!("Show all ({hidden} more)")
+            super::text::show_all(hidden)
         } else {
-            "Show fewer".to_string()
+            super::text::SHOW_FEWER.to_string()
         };
         self.tree_row(
             &RowKey::ShowAll,
@@ -1092,56 +610,6 @@ impl Workspace {
         }))
         .into_any_element()
     }
-
-    // ---- A document row's menu ------------------------------------------------
-
-    /// The document menu from Share, the ⋯ menu or the menu bar: its moves
-    /// alone, at `at` (#1312).
-    pub(in crate::workspace) fn open_move_menu(
-        &mut self,
-        tab: u64,
-        at: gpui::Point<gpui::Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // As the move itself checks: a loaded, converted Vault document
-        // not already moving.
-        if self.quit_flow.quitting() || !self.can_move(tab, cx) {
-            return;
-        }
-        let Some(document) = self.tab_document(tab, cx) else {
-            return;
-        };
-        self.menu_return = window.focused(cx);
-        self.document_menu = Some((document, at));
-        self.move_menu = Some(tab);
-        window.focus(&self.menu_focus, cx);
-        cx.notify();
-    }
-
-    /// The Project menu's Move to Project… (the move menu under the
-    /// header's ⋯) and Move to New Project, for the document shown.
-    pub(in crate::workspace) fn move_from_menu_bar(
-        &mut self,
-        new: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.showing_overview(cx) {
-            return;
-        }
-        let tab = self.tabs.active();
-        let Some(view) = self.tab_view(tab) else {
-            return;
-        };
-        if new {
-            self.move_to_new_project(tab, window, cx);
-        } else {
-            let at = view.read(cx).more_bounds.get().bottom_left();
-            self.open_move_menu(tab, at, window, cx);
-        }
-    }
-
     /// Move to each other Project (scrolling past eight), Move to New
     /// Project, Move to Unfiled for a member, and Delete… on an Unfiled row
     /// of the sidebar.
@@ -1173,7 +641,7 @@ impl Workspace {
                 .child(label)
         };
         let project = self.project_of(document.as_str());
-        let movable = self.vault.vault().is_some() && !self.moving.contains(document);
+        let movable = self.document_movable(document);
         let mut items = Vec::new();
         if movable {
             let mut others = Vec::new();
@@ -1189,7 +657,7 @@ impl Workspace {
                 others.push(
                     row(
                         format!("context-move-{}", p.id),
-                        format!("Move to “{}”", p.name),
+                        super::text::move_to(&p.name),
                     )
                     .map(|v| {
                         ui::reveal_focus(
@@ -1224,32 +692,34 @@ impl Workspace {
             }
             let new = document.clone();
             items.push(
-                row("context-new-project".into(), "Move to New Project".into())
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.close_document_menu(window, cx);
-                        this.move_document_to_new_project(new.clone(), window, cx);
-                    }))
-                    .into_any_element(),
+                row(
+                    "context-new-project".into(),
+                    super::text::MOVE_TO_NEW_PROJECT.into(),
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.close_document_menu(window, cx);
+                    this.move_document_to_new_project(new.clone(), window, cx);
+                }))
+                .into_any_element(),
             );
             if project.is_some() {
                 let leave = document.clone();
                 items.push(
-                    row("context-leave-project".into(), "Move to Unfiled".into())
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.close_document_menu(window, cx);
-                            this.drop_document(leave.clone(), None, window, cx);
-                        }))
-                        .into_any_element(),
+                    row(
+                        "context-leave-project".into(),
+                        super::text::MOVE_TO_UNFILED.into(),
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.close_document_menu(window, cx);
+                        this.drop_document(leave.clone(), None, window, cx);
+                    }))
+                    .into_any_element(),
                 );
             }
         }
         if project.is_none() && !self.moving.contains(document) && self.move_menu.is_none() {
             let chosen = self.tree.to_delete(document.as_str());
-            let label = if chosen.len() > 1 {
-                format!("Delete {} Documents…", chosen.len())
-            } else {
-                "Delete Document…".to_string()
-            };
+            let label = super::text::delete_documents(chosen.len());
             if !items.is_empty() {
                 items.push(ui::menu_divider(theme).into_any_element());
             }
@@ -1264,18 +734,5 @@ impl Workspace {
             );
         }
         items
-    }
-
-    pub(in crate::workspace) fn close_document_menu(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.document_menu = None;
-        self.move_menu = None;
-        if let Some(focus) = self.menu_return.take() {
-            window.focus(&focus, cx);
-        }
-        cx.notify();
     }
 }
