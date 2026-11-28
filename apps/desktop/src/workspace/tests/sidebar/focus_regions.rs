@@ -575,6 +575,7 @@ fn the_open_project_list_takes_focus_traps_tab_and_gives_it_back(cx: &mut TestAp
     let in_list = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
         cx.update(|window, cx| {
             tabs.read(cx)
+                .project_ui
                 .project_list_focus
                 .contains_focused(window, cx)
         })

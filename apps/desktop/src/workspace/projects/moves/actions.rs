@@ -55,7 +55,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.moving.contains(&document) {
+        if self.projects.moving.contains(&document) {
             return;
         }
         // A tab showing it moves it; a tab not loaded yet loads the moved
@@ -118,7 +118,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.moving.contains(&document) || self.vault.vault().is_none() {
+        if self.projects.moving.contains(&document) || self.vault.vault().is_none() {
             return;
         }
         if let Some(tab) = self.find_document(&DocumentId::Vault(document.clone()), None, cx)
@@ -186,7 +186,7 @@ impl Workspace {
         if self.quit_flow.quitting() {
             return;
         }
-        self.moving.insert(document.clone());
+        self.projects.moving.insert(document.clone());
         self.next_op += 1;
         let target = Target::Op(self.next_op);
         self.queue_write(target, Write::Op(document, op), window, cx);
@@ -206,7 +206,7 @@ impl Workspace {
         // An Ask waiting for this move: it asks only once the move landed.
         let ask = self.ai_ask.moved(document.as_str());
         let Some(vault) = self.vault.vault().cloned() else {
-            self.moving.remove(&document);
+            self.projects.moving.remove(&document);
             return Ran::Ended;
         };
         let id = document.as_str();
@@ -221,7 +221,7 @@ impl Workspace {
             && !self.broken_order()
             && let Err(error) = self.write_tab_now(tab, &vault, cx)
         {
-            self.moving.remove(&document);
+            self.projects.moving.remove(&document);
             let title =
                 (self.tab_view(tab)).map_or_else(String::new, |v| v.read(cx).display_name());
             self.notices
@@ -241,7 +241,7 @@ impl Workspace {
             _ => vec![from.clone()],
         };
         if let Err(error) = self.fold_members(&places, cx) {
-            self.moving.remove(&document);
+            self.projects.moving.remove(&document);
             self.notices.post(text::move_names_not_kept(&title, &error));
             cx.notify();
             return Ran::Ended;
@@ -352,7 +352,7 @@ impl Workspace {
                         self.reload_tab(tab, document.clone(), window, cx)
                     }
                     None => {
-                        self.moving.remove(&document);
+                        self.projects.moving.remove(&document);
                     }
                 }
                 // The deleted Project's page gives way to the document's tab,
@@ -372,7 +372,7 @@ impl Workspace {
                         window.focus(&keep, cx);
                     }
                 }
-                if !self.reloading.contains_key(&document) {
+                if !self.projects.reloading.contains_key(&document) {
                     let document = document.clone();
                     cx.defer_in(window, move |this, window, cx| {
                         this.name_moved_project(None, &document, window, cx)
@@ -398,7 +398,7 @@ impl Workspace {
                 }
             }
             Err(error) => {
-                self.moving.remove(&document);
+                self.projects.moving.remove(&document);
                 self.notices.post(text::could_not_move(&title, &error));
                 if let Some(tab) = self.find_document(&DocumentId::Vault(document), None, cx) {
                     self.autosave(tab, window, cx);
@@ -442,7 +442,7 @@ impl Workspace {
     /// A job that started reloads holds the writer until they end: no
     /// later job reads a view a reload is about to replace (ADR 0130).
     pub(in crate::workspace) fn hold_for_reloads(&mut self) -> Ran {
-        if self.reloading.is_empty() {
+        if self.projects.reloading.is_empty() {
             return Ran::Ended;
         }
         self.reloads_hold_writer = true;
@@ -560,7 +560,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let Some(view) = self.tab_view(id) else {
-            self.moving.remove(&document);
+            self.projects.moving.remove(&document);
             return;
         };
         let mut record = self
@@ -575,10 +575,10 @@ impl Workspace {
         });
         match self.load_document(id, DocumentId::Vault(document.clone()), record, window, cx) {
             Some(generation) => {
-                self.reloading.insert(document, generation);
+                self.projects.reloading.insert(document, generation);
             }
             None => {
-                self.moving.remove(&document);
+                self.projects.moving.remove(&document);
             }
         }
     }
@@ -620,12 +620,12 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.reloading.get(document) != Some(&generation) {
+        if self.projects.reloading.get(document) != Some(&generation) {
             return;
         }
-        self.reloading.remove(document);
-        self.moving.remove(document);
-        if self.reloading.is_empty() && std::mem::take(&mut self.reloads_hold_writer) {
+        self.projects.reloading.remove(document);
+        self.projects.moving.remove(document);
+        if self.projects.reloading.is_empty() && std::mem::take(&mut self.reloads_hold_writer) {
             cx.defer_in(window, |this, window, cx| this.advance_writer(window, cx));
         }
     }

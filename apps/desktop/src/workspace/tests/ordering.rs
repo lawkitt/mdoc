@@ -185,7 +185,7 @@ impl Run<'_> {
         // What the question names, as the window asked it.
         let tabs = self.tabs.clone();
         let named: Vec<String> = self.cx.update(|_, cx| {
-            tabs.update(cx, |tabs, _| tabs.asked_to_delete.pop_front())
+            tabs.update(cx, |tabs, _| tabs.projects.asked_to_delete.pop_front())
                 .unwrap_or_default()
                 .iter()
                 .map(|id| id.as_str().to_string())
@@ -334,7 +334,11 @@ impl Run<'_> {
             panic!("the window did not quit: {notice:?}");
         }
         let tabs = self.tabs.clone();
-        (self.cx.cx).update(|cx| tabs.update(cx, |tabs, _| std::mem::take(&mut tabs.exports_seen)))
+        (self.cx.cx).update(|cx| {
+            tabs.update(cx, |tabs, _| {
+                std::mem::take(&mut tabs.projects.exports_seen)
+            })
+        })
     }
 }
 

@@ -222,7 +222,7 @@ impl Workspace {
         self.vault.vault().is_some()
             && self
                 .tab_document(id, cx)
-                .is_some_and(|document| !self.moving.contains(&document))
+                .is_some_and(|document| !self.projects.moving.contains(&document))
             && self.tab_view(id).is_some_and(|view| {
                 let view = view.read(cx);
                 view.lifecycle.ready() && !view.lifecycle.loading() && !view.lifecycle.source_only()
@@ -728,9 +728,11 @@ impl Workspace {
         }
         self.load_projects(cx);
         self.project_ui.list_open = true;
-        self.project_list_return = window.focused(cx).filter(|f| *f != self.project_list_focus);
+        self.project_ui.project_list_return = window
+            .focused(cx)
+            .filter(|f| *f != self.project_ui.project_list_focus);
         // After the palette, if it ran this, has restored its own focus.
-        let focus = self.project_list_focus.clone();
+        let focus = self.project_ui.project_list_focus.clone();
         window.defer(cx, move |window, cx| window.focus(&focus, cx));
         cx.notify();
     }
@@ -742,7 +744,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.project_ui.list_open = false;
-        match self.project_list_return.take() {
+        match self.project_ui.project_list_return.take() {
             Some(focus) => window.focus(&focus, cx),
             None => self.focus_active(window, cx),
         }

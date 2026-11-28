@@ -17,13 +17,16 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let sheet = self.new_project.as_ref()?;
+        let sheet = self.project_ui.new_project.as_ref()?;
         // The sheet keeps focus while it is the top dialog: a document that
         // finishes loading behind it must not take the keyboard.
         let field = sheet.input.read(cx).focus_handle(cx);
         if !self.project_ui.explainer
             && !window.has_active_prompt()
-            && !self.new_project_group.contains_focused(window, cx)
+            && !self
+                .project_ui
+                .new_project_group
+                .contains_focused(window, cx)
         {
             window.focus(&field, cx);
         }
@@ -75,15 +78,25 @@ impl Workspace {
                             .on_action(|_: &crate::workspace::RestoreClipboard, _, _| {})
                             .on_action(|_: &crate::workspace::CheckForUpdates, _, _| {})
                             .key_context("UiPanel")
-                            .track_focus(&self.new_project_group)
+                            .track_focus(&self.project_ui.new_project_group)
                             .tab_group()
                             .tab_stop(false)
                             .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                                ui::cycle(window, cx, Some(&this.new_project_group), false);
+                                ui::cycle(
+                                    window,
+                                    cx,
+                                    Some(&this.project_ui.new_project_group),
+                                    false,
+                                );
                                 cx.stop_propagation();
                             }))
                             .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                                ui::cycle(window, cx, Some(&this.new_project_group), true);
+                                ui::cycle(
+                                    window,
+                                    cx,
+                                    Some(&this.project_ui.new_project_group),
+                                    true,
+                                );
                                 cx.stop_propagation();
                             }))
                             .on_action(cx.listener(|this, _: &ConfirmProjectName, window, cx| {

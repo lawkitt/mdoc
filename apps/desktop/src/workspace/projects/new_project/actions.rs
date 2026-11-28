@@ -22,7 +22,7 @@ impl Workspace {
         if !self.ready || self.quit_flow.quitting() {
             return;
         }
-        if let Some(sheet) = &self.new_project {
+        if let Some(sheet) = &self.project_ui.new_project {
             let focus = sheet.input.read(cx).focus_handle(cx);
             window.focus(&focus, cx);
             return;
@@ -52,7 +52,7 @@ impl Workspace {
         let changes = cx.subscribe(&input, |_, _, _: &SearchInputEvent, cx| cx.notify());
         let focus = input.read(cx).focus_handle(cx);
         window.focus(&focus, cx);
-        self.new_project = Some(NewProjectSheet {
+        self.project_ui.new_project = Some(NewProjectSheet {
             input,
             return_focus,
             _changes: changes,
@@ -66,7 +66,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(sheet) = self.new_project.take() else {
+        let Some(sheet) = self.project_ui.new_project.take() else {
             return;
         };
         match sheet.return_focus {
@@ -83,7 +83,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(sheet) = &self.new_project else {
+        let Some(sheet) = &self.project_ui.new_project else {
             return;
         };
         let name = sheet.input.read(cx).value().trim().to_string();
@@ -159,7 +159,7 @@ impl Workspace {
         name: &str,
         cx: &mut Context<Self>,
     ) {
-        if let Some(sheet) = &self.new_project {
+        if let Some(sheet) = &self.project_ui.new_project {
             sheet.input.update(cx, |input, cx| {
                 input.set_value(name.into(), cx);
                 input.move_to_end(cx);

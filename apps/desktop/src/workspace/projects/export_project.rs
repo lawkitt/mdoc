@@ -207,7 +207,7 @@ impl Workspace {
             .filter_map(|summary| vault.document(&summary.id).ok())
             .map(|d| (d.id, d.title, d.markdown, d.notes))
             .collect();
-        self.exports_seen.push(ExportSeen {
+        self.projects.exports_seen.push(ExportSeen {
             folder,
             names,
             documents,

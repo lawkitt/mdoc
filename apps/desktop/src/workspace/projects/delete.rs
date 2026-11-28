@@ -28,7 +28,7 @@ impl Workspace {
         let members = self.project_members(&project_id);
         #[cfg(test)]
         {
-            self.asked_to_delete.push_back(members.clone());
+            self.projects.asked_to_delete.push_back(members.clone());
         }
         let count = members.len();
         let answer = if count == 0 {
@@ -92,7 +92,7 @@ impl Workspace {
         }
         // What the members show is read when the delete runs.
         for member in &members {
-            self.moving.insert(member.clone());
+            self.projects.moving.insert(member.clone());
         }
         self.next_op += 1;
         let op = Op::Delete {
@@ -118,7 +118,7 @@ impl Workspace {
     ) -> Ran {
         let Some(vault) = self.vault.vault().cloned() else {
             for member in &members {
-                self.moving.remove(member);
+                self.projects.moving.remove(member);
             }
             return Ran::Ended;
         };
@@ -149,7 +149,7 @@ impl Workspace {
                 // alias reconciled on the way is in the text written next.
                 if let Err(error) = self.write_tab_now(tab, &vault, cx) {
                     for member in &members {
-                        self.moving.remove(member);
+                        self.projects.moving.remove(member);
                     }
                     // Its edit is in no file: eviction keeps it.
                     self.unsaved.insert(tab);
@@ -166,7 +166,7 @@ impl Workspace {
             // anything moves; if they can't be, nothing moves.
             if let Err(error) = self.write_now(&vault, &[Some(project_id.clone())]) {
                 for member in &members {
-                    self.moving.remove(member);
+                    self.projects.moving.remove(member);
                 }
                 self.project_ui.mark_unwritten(&project_id);
                 self.notices.post(text::delete_names_not_saved(&error));
@@ -204,7 +204,7 @@ impl Workspace {
                     match documents {
                         ProjectDocuments::MoveToUnfiled => self.reload_tab(tab, member, window, cx),
                         ProjectDocuments::Delete => {
-                            self.moving.remove(&member);
+                            self.projects.moving.remove(&member);
                             self.remove(tab, window, cx);
                         }
                     }
@@ -214,7 +214,7 @@ impl Workspace {
                         .find_document(&DocumentId::Vault(member.clone()), None, cx)
                         .is_none()
                     {
-                        self.moving.remove(member);
+                        self.projects.moving.remove(member);
                     }
                 }
             }
@@ -231,7 +231,7 @@ impl Workspace {
                         // Not written first: one still there keeps its view
                         // and its edits; one gone closes.
                         ProjectDocuments::Delete => {
-                            self.moving.remove(&member);
+                            self.projects.moving.remove(&member);
                             let gone = matches!(
                                 vault.document(member.as_str()),
                                 Err(VaultError::NotFound { .. })
@@ -247,7 +247,7 @@ impl Workspace {
                         .find_document(&DocumentId::Vault(member.clone()), None, cx)
                         .is_none()
                     {
-                        self.moving.remove(member);
+                        self.projects.moving.remove(member);
                     }
                 }
                 self.notices.post(text::could_not_delete(&error));
@@ -271,7 +271,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Ran {
         for member in members {
-            self.moving.remove(member);
+            self.projects.moving.remove(member);
         }
         self.notices.post(text::DELETE_CHANGED);
         self.delete_project(project_id, window, cx);

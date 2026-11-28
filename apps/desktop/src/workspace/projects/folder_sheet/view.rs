@@ -17,8 +17,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let sheet = self.folder_sheets.sheet()?;
-        let focus = self.folder_sheet_focus.as_ref()?;
+        let sheet = self.project_ui.folder_sheets.sheet()?;
+        let focus = self.project_ui.folder_sheet_focus.as_ref()?;
         // The sheet keeps focus while it is the top dialog: a document that
         // finishes loading behind it must not take the keyboard.
         if !self.project_ui.explainer
@@ -173,13 +173,13 @@ impl Workspace {
                             .tab_group()
                             .tab_stop(false)
                             .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                                if let Some(f) = &this.folder_sheet_focus {
+                                if let Some(f) = &this.project_ui.folder_sheet_focus {
                                     ui::cycle(window, cx, Some(&f.group), false);
                                 }
                                 cx.stop_propagation();
                             }))
                             .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                                if let Some(f) = &this.folder_sheet_focus {
+                                if let Some(f) = &this.project_ui.folder_sheet_focus {
                                     ui::cycle(window, cx, Some(&f.group), true);
                                 }
                                 cx.stop_propagation();

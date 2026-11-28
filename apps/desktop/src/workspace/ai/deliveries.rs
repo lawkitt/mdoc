@@ -321,8 +321,8 @@ impl Workspace {
     pub(in crate::workspace) fn drawn_modal_up(&self, window: &Window, cx: &App) -> bool {
         self.settings.read(cx).open
             || window.has_active_prompt()
-            || self.new_project.is_some()
-            || self.folder_sheets.open()
+            || self.project_ui.new_project.is_some()
+            || self.project_ui.folder_sheets.open()
             || self.project_ui.explainer
     }
 

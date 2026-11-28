@@ -113,14 +113,14 @@ impl Workspace {
         let locked = self.projects_locked();
         let panel = ui::panel("project-list", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "project-list".into()))
-            .track_focus(&self.project_list_focus)
+            .track_focus(&self.project_ui.project_list_focus)
             .key_context("UiPanel UiMenu")
             .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                ui::cycle(window, cx, Some(&this.project_list_focus), false);
+                ui::cycle(window, cx, Some(&this.project_ui.project_list_focus), false);
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                ui::cycle(window, cx, Some(&this.project_list_focus), true);
+                ui::cycle(window, cx, Some(&this.project_ui.project_list_focus), true);
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
@@ -138,8 +138,8 @@ impl Workspace {
                 this.project_ui.list_open = false;
                 // Unless the click focused something, focus goes back where
                 // the list was opened from.
-                let list = this.project_list_focus.clone();
-                let back = this.project_list_return.take();
+                let list = this.project_ui.project_list_focus.clone();
+                let back = this.project_ui.project_list_return.take();
                 let weak = cx.entity().downgrade();
                 window.defer(cx, move |window, cx| {
                     if list.contains_focused(window, cx) {

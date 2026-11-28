@@ -26,13 +26,13 @@ impl Workspace {
             cx.notify();
             return;
         }
-        self.folder_sheets.push(pending);
+        self.project_ui.folder_sheets.push(pending);
         self.show_next_folder(window, cx);
     }
 
     /// Show the next waiting folder's sheet, if none shows.
     pub(super) fn show_next_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(pending) = self.folder_sheets.next() else {
+        let Some(pending) = self.project_ui.folder_sheets.next() else {
             return;
         };
         let statuses = pending
@@ -52,8 +52,8 @@ impl Workspace {
         if let Some(first) = rows.first() {
             window.focus(first, cx);
         }
-        self.folder_sheets.show(sheet);
-        self.folder_sheet_focus = Some(SheetFocus {
+        self.project_ui.folder_sheets.show(sheet);
+        self.project_ui.folder_sheet_focus = Some(SheetFocus {
             group: cx.focus_handle(),
             rows,
             scroll: ScrollHandle::new(),
@@ -147,8 +147,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Sheet> {
-        let sheet = self.folder_sheets.take()?;
-        if let Some(focus) = self.folder_sheet_focus.take() {
+        let sheet = self.project_ui.folder_sheets.take()?;
+        if let Some(focus) = self.project_ui.folder_sheet_focus.take() {
             match focus.return_focus {
                 Some(focus) => window.focus(&focus, cx),
                 None => self.focus_active(window, cx),
@@ -164,7 +164,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.folder_sheets.waiting() {
+        if self.project_ui.folder_sheets.waiting() {
             return;
         }
         self.close_folder_sheet(window, cx);
@@ -177,8 +177,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.folder_sheets.waiting()
+        if self.project_ui.folder_sheets.waiting()
             || self
+                .project_ui
                 .folder_sheets
                 .sheet()
                 .is_none_or(|s| s.ticked_count() == 0)
@@ -224,20 +225,21 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.folder_sheets.waiting()
+        if self.project_ui.folder_sheets.waiting()
             || self
+                .project_ui
                 .folder_sheets
                 .sheet()
                 .is_none_or(|s| s.ticked_count() == 0)
         {
             return;
         }
-        let id = self.folder_sheets.sheet().map_or(0, Sheet::id);
+        let id = self.project_ui.folder_sheets.sheet().map_or(0, Sheet::id);
         if !self.vault_key_ready(
             move |this, window, cx| this.folder_project_now(id, window, cx),
             cx,
         ) {
-            self.folder_sheets.set_waiting(true);
+            self.project_ui.folder_sheets.set_waiting(true);
             return;
         }
         self.folder_project_now(id, window, cx);
@@ -250,10 +252,15 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         // Only for the sheet that asked: a later sheet is not answered.
-        if self.folder_sheets.sheet().is_none_or(|s| s.id() != id) {
+        if self
+            .project_ui
+            .folder_sheets
+            .sheet()
+            .is_none_or(|s| s.id() != id)
+        {
             return;
         }
-        self.folder_sheets.set_waiting(false);
+        self.project_ui.folder_sheets.set_waiting(false);
         if self.vault.vault().is_none() {
             return;
         }
@@ -368,7 +375,7 @@ impl Workspace {
 
     /// The explainer's Not now: back to the sheet.
     pub(in crate::workspace) fn folder_key_cancelled(&mut self) {
-        self.folder_sheets.set_waiting(false);
+        self.project_ui.folder_sheets.set_waiting(false);
     }
 
     pub(in crate::workspace) fn toggle_folder_row(
@@ -377,7 +384,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(sheet) = self.folder_sheets.sheet_mut() {
+        if let Some(sheet) = self.project_ui.folder_sheets.sheet_mut() {
             sheet.toggle(index);
         }
         self.focus_folder_row(index, window, cx);
@@ -389,7 +396,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(focus) = &self.folder_sheet_focus
+        if let Some(focus) = &self.project_ui.folder_sheet_focus
             && let Some(row) = focus.rows.get(index)
         {
             window.focus(row, cx);
@@ -400,7 +407,8 @@ impl Workspace {
 
     /// The focused row, if focus is on one.
     pub(in crate::workspace) fn focused_folder_row(&self, window: &Window) -> Option<usize> {
-        self.folder_sheet_focus
+        self.project_ui
+            .folder_sheet_focus
             .as_ref()?
             .rows
             .iter()
@@ -421,6 +429,7 @@ impl Workspace {
         }
         let row = self.focused_folder_row(window);
         let on_group = self
+            .project_ui
             .folder_sheet_focus
             .as_ref()
             .is_some_and(|f| f.group.is_focused(window));
@@ -429,7 +438,7 @@ impl Workspace {
             "enter" if row.is_some() || on_group => self.folder_primary(window, cx),
             "space" if row.is_some() => self.toggle_folder_row(row.unwrap_or(0), window, cx),
             "up" | "down" if row.is_some() => {
-                let next = self.folder_sheets.sheet_mut().and_then(|sheet| {
+                let next = self.project_ui.folder_sheets.sheet_mut().and_then(|sheet| {
                     sheet.set_cursor(row.unwrap_or(0));
                     sheet.step(keystroke.key == "down")
                 });

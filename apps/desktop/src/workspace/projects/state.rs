@@ -37,6 +37,21 @@ pub(in crate::workspace) struct Projects {
     loaded: bool,
     /// How many there are, for the documents' Share tab (#1312).
     count: std::rc::Rc<std::cell::Cell<usize>>,
+    /// Documents a move or a delete is rewriting: their autosaves wait
+    /// until they load again.
+    pub(in crate::workspace) moving: HashSet<mdoc_store::document_id::VaultId>,
+    /// Of those, the ones whose tab loads them again now, with that load's
+    /// generation: an older load ending is not the reload.
+    pub(in crate::workspace) reloading:
+        std::collections::HashMap<mdoc_store::document_id::VaultId, u64>,
+    /// Tests only: the documents each delete question asked about, in the
+    /// order the questions show.
+    #[cfg(test)]
+    pub(in crate::workspace) asked_to_delete:
+        std::collections::VecDeque<Vec<mdoc_store::document_id::VaultId>>,
+    /// Tests only: what each export read, as stored then.
+    #[cfg(test)]
+    pub(in crate::workspace) exports_seen: Vec<super::export_project::ExportSeen>,
 }
 
 impl Projects {

@@ -301,7 +301,7 @@ impl Workspace {
                 || (document.is_none() && !view.editor.read(cx).text().is_empty())
         };
         if busy
-            || document.as_ref().is_some_and(|d| self.moving.contains(d))
+            || document.as_ref().is_some_and(|d| self.projects.moving.contains(d))
             || self.unsaved.contains(&tab.id())
             || self.write_pending_for(tab.id(), cx)
             // The companion's Replace all runs in it.
@@ -515,14 +515,14 @@ impl Workspace {
         let documents: Vec<VaultId> = (documents.iter())
             .filter(|id| unfiled.contains(id.as_str()))
             .filter_map(|id| VaultId::parse(id))
-            .filter(|id| !self.moving.contains(id))
+            .filter(|id| !self.projects.moving.contains(id))
             .collect();
         if documents.is_empty() || self.quit_flow.quitting() {
             return;
         }
         #[cfg(test)]
         {
-            self.asked_to_delete.push_back(documents.clone());
+            self.projects.asked_to_delete.push_back(documents.clone());
         }
         let title = match documents.as_slice() {
             [one] => {
@@ -567,7 +567,7 @@ impl Workspace {
             return;
         }
         for document in &documents {
-            self.moving.insert(document.clone());
+            self.projects.moving.insert(document.clone());
         }
         self.next_op += 1;
         let target = Target::Op(self.next_op);
@@ -590,7 +590,7 @@ impl Workspace {
     ) {
         let Some(vault) = self.vault.vault().cloned() else {
             for document in &documents {
-                self.moving.remove(document);
+                self.projects.moving.remove(document);
             }
             return;
         };
@@ -603,7 +603,7 @@ impl Workspace {
         let failed = match vault.delete_unfiled_documents(&ids) {
             Ok(false) => {
                 for document in &documents {
-                    self.moving.remove(document);
+                    self.projects.moving.remove(document);
                 }
                 self.notices.post(super::text::MOVED_BEFORE_DELETED);
                 self.delete_documents(ids, window, cx);
@@ -623,7 +623,7 @@ impl Workspace {
                     vault.document(document.as_str()),
                     Err(mdoc_vault::VaultError::NotFound { .. })
                 );
-            self.moving.remove(document);
+            self.projects.moving.remove(document);
             if !gone {
                 continue;
             }
@@ -804,8 +804,8 @@ impl Workspace {
         if self.settings.read(cx).open
             || self.project_ui.list_open
             || self.project_ui.explainer
-            || self.folder_sheets.open()
-            || self.new_project.is_some()
+            || self.project_ui.folder_sheets.open()
+            || self.project_ui.new_project.is_some()
             || self.palette.palette.is_some()
             || window.has_active_prompt()
             || self.quit_flow.quitting()
@@ -974,7 +974,7 @@ impl Workspace {
     /// Whether the document menu offers moves: a Vault is open and the
     /// document isn't moving already.
     pub(super) fn document_movable(&self, document: &VaultId) -> bool {
-        self.vault.vault().is_some() && !self.moving.contains(document)
+        self.vault.vault().is_some() && !self.projects.moving.contains(document)
     }
 
     /// A Project's chevron folds or unfolds it, and the session is saved.

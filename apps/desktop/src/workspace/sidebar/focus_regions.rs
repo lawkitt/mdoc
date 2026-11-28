@@ -163,8 +163,8 @@ impl Workspace {
         if self.settings.read(cx).open
             || self.project_ui.list_open
             || self.project_ui.explainer
-            || self.folder_sheets.open()
-            || self.new_project.is_some()
+            || self.project_ui.folder_sheets.open()
+            || self.project_ui.new_project.is_some()
             || self.palette.palette.is_some()
             || self.palette.shortcuts.is_some()
         {

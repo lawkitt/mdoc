@@ -136,7 +136,7 @@ impl Workspace {
             return None;
         };
         let unwritten = view.unsaved(cx)
-            || self.moving.contains(&document)
+            || self.projects.moving.contains(&document)
             || self.write_pending_for(id, cx)
             || view.saved_review() != view.session.document.review
             || super::saving::autosave::ready_unwritten(view, cx)
@@ -182,7 +182,7 @@ impl Workspace {
         };
         // Checked against names the Vault doesn't hold yet, it could leave
         // with one of them as written.
-        let unwritten = self.moving.contains(&id)
+        let unwritten = self.projects.moving.contains(&id)
             || (document.project.as_deref()).is_some_and(|p| self.project_unwritten(p, cx));
         ShelfDocument::of_stored(StoredDocument {
             id,

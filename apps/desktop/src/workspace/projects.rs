@@ -51,7 +51,6 @@ pub(in crate::workspace) struct MoveToast {
     _timeout: gpui::Task<()>,
 }
 
-#[derive(Default)]
 pub(in crate::workspace) struct ProjectsState {
     pub(in crate::workspace) page: Option<crate::workspace::projects::project_page::ProjectPage>,
     pub(in crate::workspace) header_menu: Option<(String, gpui::Point<gpui::Pixels>)>,
@@ -74,11 +73,46 @@ pub(in crate::workspace) struct ProjectsState {
     /// Member loader invocations, including attempts that would fail to read.
     #[cfg(test)]
     pub(in crate::workspace) member_reads: usize,
+    /// The Open Project list holds focus while open, and gives it back on
+    /// close.
+    pub(in crate::workspace) project_list_focus: gpui::FocusHandle,
+    pub(in crate::workspace) project_list_return: Option<gpui::FocusHandle>,
+    /// Dropped folders' sheets, one at a time.
+    pub(in crate::workspace) folder_sheets: folder_sheet::FolderSheets,
+    pub(in crate::workspace) folder_sheet_focus: Option<folder_sheet::SheetFocus>,
+    /// New Project's name question, while it shows.
+    pub(in crate::workspace) new_project: Option<new_project::NewProjectSheet>,
+    pub(in crate::workspace) new_project_group: gpui::FocusHandle,
 }
 
 type AfterUnlock = Box<dyn FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>)>;
 
 impl ProjectsState {
+    /// Nothing open yet: no page, menu, sheet or toast.
+    pub(in crate::workspace) fn new(cx: &mut gpui::App) -> Self {
+        Self {
+            page: None,
+            header_menu: None,
+            ask_menu: None,
+            renaming: None,
+            rename_blur: None,
+            naming: Default::default(),
+            list_open: false,
+            explainer: false,
+            then: None,
+            unwritten: Default::default(),
+            toast: None,
+            #[cfg(test)]
+            member_reads: 0,
+            project_list_focus: cx.focus_handle(),
+            project_list_return: None,
+            folder_sheets: Default::default(),
+            folder_sheet_focus: None,
+            new_project: None,
+            new_project_group: cx.focus_handle(),
+        }
+    }
+
     /// Project `id`'s last write failed: queue it again with the next.
     pub(in crate::workspace) fn mark_unwritten(&mut self, id: &str) {
         self.unwritten.insert(id.to_string());

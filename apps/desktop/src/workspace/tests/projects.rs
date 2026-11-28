@@ -1805,7 +1805,7 @@ fn move_to_new_project_writes_its_settings_with_the_move(cx: &mut TestAppContext
             "{:?}",
             tabs.notices.message()
         );
-        assert!(tabs.moving.is_empty(), "the tab loaded again");
+        assert!(tabs.projects.moving.is_empty(), "the tab loaded again");
     });
     let stored = vault(&tabs, cx).project(&project).unwrap();
     let skip = cx.update(|_, cx| {
@@ -2055,7 +2055,7 @@ fn a_failed_project_delete_keeps_a_surviving_members_edit(cx: &mut TestAppContex
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert!(tabs.tabs.contains(tab), "the tab stays");
-        assert!(tabs.moving.is_empty());
+        assert!(tabs.projects.moving.is_empty());
     });
     assert_eq!(text_of(&view, cx), "Ann wrote, edited.");
     assert!(vault.document(id.as_str()).is_ok());
@@ -2070,12 +2070,12 @@ fn an_older_load_ending_never_ends_a_moves_hold(cx: &mut TestAppContext) {
     let tab = open_applied(&tabs, cx, dir.path(), "a.md", "Ann wrote.", &[]);
     let id = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.reloading.insert(id.clone(), 5);
+        tabs.projects.reloading.insert(id.clone(), 5);
         tabs.reloads_hold_writer = true;
         tabs.move_reload_ended(&id, 4, window, cx);
-        assert!(tabs.reloads_hold_writer && tabs.reloading.contains_key(&id));
+        assert!(tabs.reloads_hold_writer && tabs.projects.reloading.contains_key(&id));
         tabs.move_reload_ended(&id, 5, window, cx);
-        assert!(tabs.reloading.is_empty());
+        assert!(tabs.projects.reloading.is_empty());
     });
     cx.run_until_parked();
     cx.update(|_, cx| assert!(!tabs.read(cx).reloads_hold_writer));

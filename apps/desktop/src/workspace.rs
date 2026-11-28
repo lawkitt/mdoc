@@ -57,8 +57,6 @@ use palette::PaletteUp;
 pub(crate) use saving::quit_flow::CloseWatch;
 #[cfg(test)]
 use sidebar::state::{REVEAL_SLIDE, Reveal};
-#[cfg(test)]
-use std::collections::VecDeque;
 mod shelf_source;
 pub(crate) use self::bind_keys as bind_shell_keys;
 pub(crate) use home::ShowHome;
@@ -240,10 +238,7 @@ pub(super) struct Workspace {
     /// F6 regions the workspace owns, and the control last focused in each
     /// region when F6 left it.
     focus_regions: sidebar::focus_regions::FocusRegions<gpui::FocusHandle>,
-    /// The Open Project list holds focus while open, and gives it back on
-    /// close; the notices popover takes Esc.
-    pub(super) project_list_focus: gpui::FocusHandle,
-    pub(super) project_list_return: Option<gpui::FocusHandle>,
+    /// The notices popover takes Esc.
     pub(super) notices_focus: gpui::FocusHandle,
     tabs: saving::live_views::LiveViews<Entity<DocumentView>>,
     navigation: sidebar::navigation::History,
@@ -312,19 +307,7 @@ pub(super) struct Workspace {
     project_ui: projects::ProjectsState,
     /// The Reply page, when it shows: view state only.
     reply_page: Option<replies::ReplyPage>,
-    /// Dropped folders' sheets, one at a time.
-    folder_sheets: projects::folder_sheet::FolderSheets,
-    folder_sheet_focus: Option<projects::folder_sheet::SheetFocus>,
-    /// New Project's name question, while it shows.
-    new_project: Option<projects::new_project::NewProjectSheet>,
-    new_project_group: gpui::FocusHandle,
     projects: projects::Projects,
-    /// Documents a move or a delete is rewriting: their autosaves wait
-    /// until they load again.
-    moving: std::collections::HashSet<mdoc_store::document_id::VaultId>,
-    /// Of those, the ones whose tab loads them again now, with that load's
-    /// generation: an older load ending is not the reload.
-    reloading: std::collections::HashMap<mdoc_store::document_id::VaultId, u64>,
     /// The running job started reloads and ends once they have (ADR 0130).
     reloads_hold_writer: bool,
     /// Projects a document's save is writing off the main thread: their
@@ -335,13 +318,6 @@ pub(super) struct Workspace {
     /// Tests only: moves run in the order ADR 0130 forbids.
     #[cfg(test)]
     broken_order: bool,
-    /// Tests only: the documents each delete question asked about, in the
-    /// order the questions show.
-    #[cfg(test)]
-    asked_to_delete: VecDeque<Vec<mdoc_store::document_id::VaultId>>,
-    /// Tests only: what each export read, as stored then.
-    #[cfg(test)]
-    exports_seen: Vec<projects::export_project::ExportSeen>,
     /// Moves and deletes in the writer's queue are numbered.
     next_op: u64,
     /// The window, for writes that end after the call that queued them.
@@ -552,8 +528,6 @@ impl Workspace {
                 cx.focus_handle(),
                 cx.focus_handle(),
             ),
-            project_list_focus: cx.focus_handle(),
-            project_list_return: None,
             notices_focus: cx.focus_handle(),
             tabs: saving::live_views::LiveViews::default(),
             navigation: Default::default(),
@@ -607,24 +581,14 @@ impl Workspace {
             docx_queue: saving::docx_queue::DocxQueue::default(),
             quit_flow: saving::quit_flow::QuitFlow::default(),
             session_writer: saving::session_writer::SessionWriter::new(None),
-            project_ui: Default::default(),
+            project_ui: projects::ProjectsState::new(cx),
             reply_page: None,
-            folder_sheets: Default::default(),
-            folder_sheet_focus: None,
-            new_project: None,
-            new_project_group: cx.focus_handle(),
             projects: Default::default(),
-            moving: Default::default(),
-            reloading: Default::default(),
             reloads_hold_writer: false,
             projects_saving: Default::default(),
             quit_waits_for_session: false,
             #[cfg(test)]
             broken_order: false,
-            #[cfg(test)]
-            asked_to_delete: VecDeque::new(),
-            #[cfg(test)]
-            exports_seen: Vec::new(),
             next_op: 0,
             window_handle: window.window_handle(),
             vault: Default::default(),
@@ -772,8 +736,8 @@ impl Workspace {
     fn dialog_up(&self, window: &Window) -> bool {
         window.has_active_prompt()
             || self.project_ui.explainer
-            || self.folder_sheets.open()
-            || self.new_project.is_some()
+            || self.project_ui.folder_sheets.open()
+            || self.project_ui.new_project.is_some()
     }
     /// Focus the active document without changing which document is active.
     fn focus_active(&self, window: &mut Window, cx: &mut App) {
@@ -898,8 +862,8 @@ impl Workspace {
             || self.settings.read(cx).open
             || self.project_ui.list_open
             || self.project_ui.explainer
-            || self.folder_sheets.open()
-            || self.new_project.is_some()
+            || self.project_ui.folder_sheets.open()
+            || self.project_ui.new_project.is_some()
             || self.palette.palette.is_some()
             || self.palette.shortcuts.is_some()
             || window

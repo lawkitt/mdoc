@@ -138,7 +138,7 @@ impl Workspace {
         }
         self.reply_page = None;
         self.project_ui.list_open = false;
-        self.project_list_return = None;
+        self.project_ui.project_list_return = None;
         self.end_rename(true, cx);
         let input = |cx: &mut gpui::Context<SearchInput>, placeholder, context| {
             SearchInput::new(cx)

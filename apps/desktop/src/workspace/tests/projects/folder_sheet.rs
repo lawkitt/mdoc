@@ -25,6 +25,7 @@ fn drop_paths(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, paths: Vec<P
 fn sheet_rows(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<(String, Status, bool)> {
     cx.update(|_, cx| {
         tabs.read(cx)
+            .project_ui
             .folder_sheets
             .sheet()
             .expect("a folder sheet shows")
@@ -36,7 +37,7 @@ fn sheet_rows(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<(Stri
 }
 
 fn sheet_open(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
-    cx.update(|_, cx| tabs.read(cx).folder_sheets.open())
+    cx.update(|_, cx| tabs.read(cx).project_ui.folder_sheets.open())
 }
 
 fn focused_row(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<usize> {
@@ -100,7 +101,7 @@ fn a_dropped_folder_shows_its_files_before_anything_opens(cx: &mut TestAppContex
             no_documents(tabs),
             "nothing opens before the sheet is answered"
         );
-        let sheet = tabs.folder_sheets.sheet().unwrap();
+        let sheet = tabs.project_ui.folder_sheets.sheet().unwrap();
         assert_eq!(sheet.name(), "Petrova v Northwind");
         assert_eq!(sheet.skipped(), Some("1 subfolder, 1 hidden file skipped"));
         assert_eq!(sheet.primary_label(), "Open as New Project");
@@ -180,7 +181,7 @@ fn one_folder_opens_at_most_twenty_new_tabs(cx: &mut TestAppContext) {
     });
     draw(cx);
     cx.update(|_, cx| {
-        let sheet = tabs.read(cx).folder_sheets.sheet().unwrap();
+        let sheet = tabs.read(cx).project_ui.folder_sheets.sheet().unwrap();
         assert!(sheet.refused());
         assert!(!sheet.rows()[CAP].ticked);
     });
@@ -190,7 +191,7 @@ fn one_folder_opens_at_most_twenty_new_tabs(cx: &mut TestAppContext) {
         tabs.toggle_folder_row(CAP, window, cx);
     });
     cx.update(|_, cx| {
-        let sheet = tabs.read(cx).folder_sheets.sheet().unwrap();
+        let sheet = tabs.read(cx).project_ui.folder_sheets.sheet().unwrap();
         assert!(!sheet.refused());
         assert!(sheet.rows()[CAP].ticked && !sheet.rows()[0].ticked);
     });
@@ -211,7 +212,16 @@ fn the_refusal_reads_up_to_twenty_files_at_a_time(cx: &mut TestAppContext) {
     });
     draw(cx);
     assert_eq!(CAP_NOTE, "Up to 20 files at a time");
-    cx.update(|_, cx| assert!(tabs.read(cx).folder_sheets.sheet().unwrap().refused()));
+    cx.update(|_, cx| {
+        assert!(
+            tabs.read(cx)
+                .project_ui
+                .folder_sheets
+                .sheet()
+                .unwrap()
+                .refused()
+        )
+    });
 }
 
 #[gpui::test]
@@ -224,7 +234,7 @@ fn a_folder_with_files_in_a_project_adds_to_it(cx: &mut TestAppContext) {
     std::fs::write(dir.path().join("memo.md"), "A memo").unwrap();
     drop_paths(&tabs, cx, vec![dir.path().to_path_buf()]);
     cx.update(|_, cx| {
-        let sheet = tabs.read(cx).folder_sheets.sheet().unwrap();
+        let sheet = tabs.read(cx).project_ui.folder_sheets.sheet().unwrap();
         assert_eq!(sheet.primary_label(), "Add to “contract”");
     });
     assert_eq!(
@@ -265,7 +275,7 @@ fn a_folder_dropped_on_a_project_row_adds_to_that_project(cx: &mut TestAppContex
     drag_files(cx, &[path], header.center());
     drop_files(cx, header.center());
     cx.update(|_, cx| {
-        let sheet = tabs.read(cx).folder_sheets.sheet().unwrap();
+        let sheet = tabs.read(cx).project_ui.folder_sheets.sheet().unwrap();
         assert_eq!(sheet.primary_label(), "Add to “contract”");
     });
     click_toolbar(cx, "folder-primary");
@@ -367,7 +377,12 @@ fn an_open_file_in_another_project_stays_there(cx: &mut TestAppContext) {
     drop_paths(&tabs, cx, vec![dir.path().to_path_buf()]);
     cx.update(|_, cx| {
         assert_eq!(
-            tabs.read(cx).folder_sheets.sheet().unwrap().primary_label(),
+            tabs.read(cx)
+                .project_ui
+                .folder_sheets
+                .sheet()
+                .unwrap()
+                .primary_label(),
             "Add to “Other”"
         );
     });
@@ -401,13 +416,21 @@ fn several_folders_get_their_sheets_in_turn(cx: &mut TestAppContext) {
     assert_eq!(tab_names(&tabs, cx), ["loose"]);
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert_eq!(tabs.folder_sheets.sheet().unwrap().name(), "First");
-        assert_eq!(tabs.folder_sheets.queued(), 1);
+        assert_eq!(
+            tabs.project_ui.folder_sheets.sheet().unwrap().name(),
+            "First"
+        );
+        assert_eq!(tabs.project_ui.folder_sheets.queued(), 1);
     });
     click_toolbar(cx, "folder-cancel");
     cx.update(|_, cx| {
         assert_eq!(
-            tabs.read(cx).folder_sheets.sheet().unwrap().name(),
+            tabs.read(cx)
+                .project_ui
+                .folder_sheets
+                .sheet()
+                .unwrap()
+                .name(),
             "Second"
         );
     });
@@ -439,7 +462,12 @@ fn the_sheet_works_from_the_keyboard(cx: &mut TestAppContext) {
     draw(cx);
     assert_eq!(focused_row(&tabs, cx), None);
     cx.update(|window, cx| {
-        let focus = tabs.read(cx).folder_sheet_focus.as_ref().unwrap();
+        let focus = tabs
+            .read(cx)
+            .project_ui
+            .folder_sheet_focus
+            .as_ref()
+            .unwrap();
         assert!(focus.group.contains_focused(window, cx));
     });
     cx.simulate_keystrokes("shift-tab");
@@ -565,7 +593,7 @@ fn a_deferred_drop_keeps_its_project_header(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("escape");
     wait(cx, 200);
     cx.update(|_, cx| {
-        let sheet = tabs.read(cx).folder_sheets.sheet().unwrap();
+        let sheet = tabs.read(cx).project_ui.folder_sheets.sheet().unwrap();
         assert_eq!(sheet.primary_label(), "Add to “contract”");
     });
 }

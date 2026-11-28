@@ -634,7 +634,7 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                let moved = this.reloading.get(&loading) == Some(&generation);
+                let moved = this.projects.reloading.get(&loading) == Some(&generation);
                 this.move_reload_ended(&loading, generation, window, cx);
                 if !this.tabs.contains(id) {
                     // Its viewing copy may have been made after the tab went.

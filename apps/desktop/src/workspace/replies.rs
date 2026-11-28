@@ -143,7 +143,7 @@ impl Workspace {
         };
         // Its aliases are the document's as it shows them; a move waiting
         // to run would read them in another mapping.
-        if self.moving.contains(&document) {
+        if self.projects.moving.contains(&document) {
             self.notices.post(
                 "The AI reply was not saved: its document is moving. Paste the reply again once \
                  the move is done."
@@ -218,7 +218,8 @@ impl Workspace {
         let tab = match &save {
             ReplySave::Box { tab, .. } | ReplySave::Pasted { tab, .. } => *tab,
         };
-        let moving = (self.tab_document(tab, cx)).is_some_and(|d| self.moving.contains(&d));
+        let moving =
+            (self.tab_document(tab, cx)).is_some_and(|d| self.projects.moving.contains(&d));
         if !moving && let Err(error) = self.write_tab_now(tab, &vault, cx) {
             self.unsaved.insert(tab);
             let open = match &save {
@@ -245,7 +246,7 @@ impl Workspace {
                 };
                 // A move of it waits behind this save: it loads again with
                 // its new aliases, and its next autosave queues the box.
-                if self.moving.contains(&document) {
+                if self.projects.moving.contains(&document) {
                     return;
                 }
                 let (saved, unsaved, title) = view.read_with(cx, |view, _| {

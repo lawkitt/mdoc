@@ -717,7 +717,8 @@ impl Workspace {
                 );
             }
         }
-        if project.is_none() && !self.moving.contains(document) && self.move_menu.is_none() {
+        if project.is_none() && !self.projects.moving.contains(document) && self.move_menu.is_none()
+        {
             let chosen = self.tree.to_delete(document.as_str());
             let label = super::text::delete_documents(chosen.len());
             if !items.is_empty() {
