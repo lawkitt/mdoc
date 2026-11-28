@@ -15,6 +15,6 @@ pub(super) mod view;
 pub(in crate::workspace) use state::Sidebar;
 #[cfg(test)]
 pub(in crate::workspace) use state::{DEFAULT_WIDTH, MAX_WIDTH, MIN_WIDTH};
-pub(in crate::workspace) use view::can_drop_files;
+pub(in crate::workspace) use view::{SidebarControls, can_drop_files};
 #[cfg(test)]
 pub(in crate::workspace) use view::{middle_cut, split_extension};

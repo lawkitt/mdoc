@@ -79,7 +79,7 @@ impl Workspace {
                                 v.debug_selector(|| "recency-switcher".into())
                             })
                             .key_context(SWITCHER_CONTEXT)
-                            .track_focus(&self.switcher_focus)
+                            .track_focus(&self.sidebar_controls.switcher_focus)
                             .role(gpui::Role::ListBox)
                             .aria_label(super::text::RECENT_DOCUMENTS)
                             .w(px(360.))

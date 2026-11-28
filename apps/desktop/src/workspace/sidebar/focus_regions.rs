@@ -193,9 +193,9 @@ impl Workspace {
                     // container in window Tab order. Enter its first control
                     // explicitly, so Shift+Tab leaves from the region's edge.
                     let toggle = if self.sidebar.reveal() == Reveal::Hidden {
-                        &self.rail_toggle_focus
+                        &self.sidebar_controls.rail_toggle_focus
                     } else {
-                        &self.panel_toggle_focus
+                        &self.sidebar_controls.panel_toggle_focus
                     };
                     window.focus(toggle, cx);
                 } else {
@@ -216,10 +216,10 @@ impl Workspace {
     pub(in crate::workspace) fn sidebar_landing(&self, cx: &mut App) -> Option<gpui::FocusHandle> {
         let list = self.sidebar.visible() || self.sidebar.reveal() == Reveal::Shown;
         if !list {
-            return Some(self.rail_home_focus.clone());
+            return Some(self.sidebar_controls.rail_home_focus.clone());
         }
         if self.showing_home(cx) {
-            return Some(self.panel_home_focus.clone());
+            return Some(self.sidebar_controls.panel_home_focus.clone());
         }
         self.tree_landing(cx)
     }

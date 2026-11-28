@@ -84,7 +84,12 @@ pub(in crate::workspace::headless_renders) fn scenes(
         window.focus(&w.focus, cx);
     })?;
     d.capture("navigation-middle")?;
-    let (back, forward) = d.change(|w, _, _| (w.back_focus.clone(), w.forward_focus.clone()))?;
+    let (back, forward) = d.change(|w, _, _| {
+        (
+            w.sidebar_controls.back_focus.clone(),
+            w.sidebar_controls.forward_focus.clone(),
+        )
+    })?;
     d.focus_pair("navigation-back", back)?;
     d.focus_pair("navigation-forward", forward)?;
     d.change(|w, _, cx| {
@@ -109,7 +114,7 @@ fn document_menu(d: &mut Driver) -> Result<()> {
         let position = gpui::point(px(48.), px(230.));
         w.menu_return = window.focused(cx);
         window.focus(&w.menu_focus, cx);
-        w.document_menu = Some((document, position));
+        w.sidebar_controls.document_menu = Some((document, position));
         cx.notify();
         Ok::<_, String>(())
     })??;

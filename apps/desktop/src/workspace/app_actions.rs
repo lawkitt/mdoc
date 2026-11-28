@@ -88,11 +88,12 @@ pub(crate) fn bind(cx: &mut App) {
         this.carry_out_sidebar(Some(effect), window, cx);
         // Keep keyboard focus on the toggle that replaces the clicked one.
         let visible = this.sidebar.visible();
-        if visible && this.rail_toggle_focus.is_focused(window) {
-            window.focus(&this.panel_toggle_focus, cx);
-        } else if !visible && this.panel_toggle_focus.is_focused(window) {
-            window.focus(&this.rail_toggle_focus, cx);
-            this.sidebar.escape_to(this.rail_toggle_focus.clone());
+        if visible && this.sidebar_controls.rail_toggle_focus.is_focused(window) {
+            window.focus(&this.sidebar_controls.panel_toggle_focus, cx);
+        } else if !visible && this.sidebar_controls.panel_toggle_focus.is_focused(window) {
+            window.focus(&this.sidebar_controls.rail_toggle_focus, cx);
+            this.sidebar
+                .escape_to(this.sidebar_controls.rail_toggle_focus.clone());
         }
         cx.notify();
     });

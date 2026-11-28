@@ -249,20 +249,11 @@ pub(super) struct Workspace {
     pub(super) notices_focus: gpui::FocusHandle,
     tabs: saving::live_views::LiveViews<Entity<DocumentView>>,
     navigation: sidebar::navigation::History,
-    back_focus: gpui::FocusHandle,
-    forward_focus: gpui::FocusHandle,
     /// Each shown tab's event and change subscriptions, dropped with it.
     tab_subscriptions: std::collections::HashMap<u64, Vec<Subscription>>,
     sidebar: sidebar::Sidebar<gpui::FocusHandle>,
-    reveal_focus: gpui::FocusHandle,
-    rail_toggle_focus: gpui::FocusHandle,
-    rail_new_focus: gpui::FocusHandle,
-    panel_toggle_focus: gpui::FocusHandle,
-    panel_new_focus: gpui::FocusHandle,
-    /// Home's row in the collapsed rail and the expanded list: where F6
-    /// enters the sidebar on Home.
-    rail_home_focus: gpui::FocusHandle,
-    panel_home_focus: gpui::FocusHandle,
+    /// The sidebar's focus handles, scrolls and open menus.
+    sidebar_controls: sidebar::SidebarControls,
     menu_focus: gpui::FocusHandle,
     /// The Keychain explainer's Continue, focused when it opens.
     explainer_focus: gpui::FocusHandle,
@@ -271,17 +262,10 @@ pub(super) struct Workspace {
     explainer_group: gpui::FocusHandle,
     explainer_return: Option<gpui::FocusHandle>,
     menu_return: Option<gpui::FocusHandle>,
-    sidebar_scroll: gpui::ScrollHandle,
-    /// Each tree row's focus handle, by row.
-    tree_row_focus:
-        std::cell::RefCell<std::collections::HashMap<sidebar::tree::RowKey, gpui::FocusHandle>>,
     /// The tree's expansion, Show all and Unfiled selection.
     tree: sidebar::tree::VaultTree,
-    /// The recency switcher while ⌃Tab holds it open, its focus, and where
-    /// focus returns when it is cancelled.
+    /// The recency switcher while ⌃Tab holds it open.
     switcher: Option<sidebar::switcher::Switcher>,
-    switcher_focus: gpui::FocusHandle,
-    switcher_return: Option<gpui::FocusHandle>,
     preferences: settings::Shared,
     settings: Entity<crate::settings::Panel>,
     settings_subscription: Option<Subscription>,
@@ -297,16 +281,6 @@ pub(super) struct Workspace {
     /// Opens wait in `pending_open` for a dialog to be answered.
     awaiting_prompt: bool,
     notices: notices::Notices,
-    /// A document row's menu: its document, and where it opened.
-    document_menu: Option<(mdoc_store::document_id::VaultId, gpui::Point<gpui::Pixels>)>,
-    /// The document menu opened from Share, the ⋯ menu or the menu bar:
-    /// moves only, no Delete, for the tab it was opened from; it closes
-    /// once that tab no longer shows (#1312).
-    move_menu: Option<u64>,
-    /// Its Project rows' focus, and its list's scroll, so Tab reveals the
-    /// row it reaches.
-    move_row_focus: std::cell::RefCell<std::collections::HashMap<String, gpui::FocusHandle>>,
-    move_menu_scroll: gpui::ScrollHandle,
     import_busy: Arc<AtomicBool>,
     docx_queue: saving::docx_queue::DocxQueue,
     quit_flow: saving::quit_flow::QuitFlow,
@@ -558,17 +532,9 @@ impl Workspace {
             notices_focus: cx.focus_handle(),
             tabs: saving::live_views::LiveViews::default(),
             navigation: Default::default(),
-            back_focus: cx.focus_handle().tab_stop(true),
-            forward_focus: cx.focus_handle().tab_stop(true),
             tab_subscriptions: std::collections::HashMap::new(),
             sidebar,
-            reveal_focus: cx.focus_handle(),
-            rail_toggle_focus: cx.focus_handle().tab_stop(true),
-            rail_new_focus: cx.focus_handle().tab_stop(true),
-            panel_toggle_focus: cx.focus_handle().tab_stop(true),
-            panel_new_focus: cx.focus_handle().tab_stop(true),
-            rail_home_focus: cx.focus_handle().tab_stop(true),
-            panel_home_focus: cx.focus_handle().tab_stop(true),
+            sidebar_controls: sidebar::SidebarControls::new(cx),
             menu_focus: cx.focus_handle(),
             // Continue's own handle, so it must say it is a Tab stop.
             explainer_focus: cx.focus_handle().tab_stop(true),
@@ -576,12 +542,8 @@ impl Workspace {
             explainer_group: cx.focus_handle(),
             explainer_return: None,
             menu_return: None,
-            sidebar_scroll: gpui::ScrollHandle::new(),
-            tree_row_focus: Default::default(),
             tree: Default::default(),
             switcher: None,
-            switcher_focus: cx.focus_handle(),
-            switcher_return: None,
             preferences,
             settings: panel.clone(),
             settings_subscription: None,
@@ -600,10 +562,6 @@ impl Workspace {
             pending_open: Vec::new(),
             awaiting_prompt: false,
             notices: Default::default(),
-            document_menu: None,
-            move_menu: None,
-            move_row_focus: Default::default(),
-            move_menu_scroll: Default::default(),
             import_busy: Arc::new(AtomicBool::new(false)),
             docx_queue: saving::docx_queue::DocxQueue::default(),
             quit_flow: saving::quit_flow::QuitFlow::default(),

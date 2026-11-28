@@ -120,12 +120,12 @@ fn keyboard_reveal_escape_restores_the_rail_control(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
     collapse(&tabs, cx);
-    let opener = cx.update(|_, cx| tabs.read(cx).rail_home_focus.clone());
+    let opener = cx.update(|_, cx| tabs.read(cx).sidebar_controls.rail_home_focus.clone());
     reveal_by_keyboard(cx, &opener);
     cx.update(|window, cx| {
         let tabs = tabs.read(cx);
         assert_eq!(tabs.sidebar.reveal(), Reveal::Shown);
-        assert!(tabs.panel_home_focus.is_focused(window));
+        assert!(tabs.sidebar_controls.panel_home_focus.is_focused(window));
         assert_eq!(tabs.sidebar.choice(), Some(false), "a reveal never pins");
     });
     cx.simulate_keystrokes("escape");
@@ -138,11 +138,16 @@ fn keyboard_reveal_escape_restores_the_rail_control(cx: &mut TestAppContext) {
     draw(cx);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden));
     // The toggle reveals too, at the reveal's own toggle.
-    let toggle = cx.update(|_, cx| tabs.read(cx).rail_toggle_focus.clone());
+    let toggle = cx.update(|_, cx| tabs.read(cx).sidebar_controls.rail_toggle_focus.clone());
     reveal_by_keyboard(cx, &toggle);
     cx.update(|window, cx| {
         assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown);
-        assert!(tabs.read(cx).panel_toggle_focus.is_focused(window));
+        assert!(
+            tabs.read(cx)
+                .sidebar_controls
+                .panel_toggle_focus
+                .is_focused(window)
+        );
     });
 }
 
@@ -168,7 +173,13 @@ fn the_rail_holds_no_documents_and_hover_reveals_the_tree(cx: &mut TestAppContex
     reveal_by_hover(&tabs, cx);
     let overlay = cx.debug_bounds("sidebar-reveal").unwrap();
     assert_eq!(overlay.size.width, px(PANEL_WIDTH));
-    let editor_left = cx.update(|_, cx| tabs.read(cx).sidebar_scroll.bounds().left());
+    let editor_left = cx.update(|_, cx| {
+        tabs.read(cx)
+            .sidebar_controls
+            .sidebar_scroll
+            .bounds()
+            .left()
+    });
     assert!(
         editor_left < px(40.),
         "reveal overlays from the window edge"
@@ -255,7 +266,7 @@ fn new_sits_on_unfiled_and_a_row_menu_holds_the_reveal(cx: &mut TestAppContext) 
     cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown));
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    cx.update(|_, cx| assert!(tabs.read(cx).document_menu.is_none()));
+    cx.update(|_, cx| assert!(tabs.read(cx).sidebar_controls.document_menu.is_none()));
     hover(cx, gpui::point(px(850.), px(500.)));
     wait(cx, 1000);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden));
@@ -311,7 +322,7 @@ fn keyboard_reveals_the_shown_row_in_a_long_collapsed_tree(cx: &mut TestAppConte
     cx.run_until_parked();
     let last = cx.update(|_, cx| tabs.read(cx).tabs.active());
     draw(cx);
-    let toggle = cx.update(|_, cx| tabs.read(cx).rail_toggle_focus.clone());
+    let toggle = cx.update(|_, cx| tabs.read(cx).sidebar_controls.rail_toggle_focus.clone());
     reveal_by_keyboard(cx, &toggle);
     let mut reached = false;
     for _ in 0..45 {
@@ -331,7 +342,7 @@ fn keyboard_reveals_the_shown_row_in_a_long_collapsed_tree(cx: &mut TestAppConte
     }
     .unwrap();
     cx.update(|_, cx| {
-        let viewport = tabs.read(cx).sidebar_scroll.bounds();
+        let viewport = tabs.read(cx).sidebar_controls.sidebar_scroll.bounds();
         assert!(
             bounds.top() >= viewport.top() && bounds.bottom() <= viewport.bottom(),
             "row={bounds:?}, viewport={viewport:?}"
@@ -388,7 +399,7 @@ fn sidebar_context_menu_dismisses_the_rows_tooltip(cx: &mut TestAppContext) {
         cx.simulate_mouse_up(click, gpui::MouseButton::Right, Default::default());
         cx.run_until_parked();
         draw(cx);
-        assert!(cx.update(|_, cx| tabs.read(cx).document_menu.is_some()));
+        assert!(cx.update(|_, cx| tabs.read(cx).sidebar_controls.document_menu.is_some()));
         assert!(
             cx.debug_bounds(tip).is_none(),
             "the menu's opening dismisses the tooltip (drift={drift:?})"
@@ -415,7 +426,7 @@ fn sidebar_context_menu_dismisses_the_rows_tooltip(cx: &mut TestAppContext) {
         cx.simulate_mouse_up(away, gpui::MouseButton::Left, Default::default());
         cx.run_until_parked();
         draw(cx);
-        assert!(cx.update(|_, cx| tabs.read(cx).document_menu.is_none()));
+        assert!(cx.update(|_, cx| tabs.read(cx).sidebar_controls.document_menu.is_none()));
     }
 }
 
@@ -572,7 +583,9 @@ fn the_refusal_shows_above_a_long_tree(cx: &mut TestAppContext) {
     cx.run_until_parked();
     tabs.update(cx, |tabs, cx| {
         tabs.tree.toggle_show_all();
-        tabs.sidebar_scroll.set_offset(gpui::point(px(0.), px(0.)));
+        tabs.sidebar_controls
+            .sidebar_scroll
+            .set_offset(gpui::point(px(0.), px(0.)));
         cx.notify();
     });
     draw(cx);
@@ -734,7 +747,7 @@ fn dragging_the_sidebar_edge_resizes_it_within_its_range_and_saves_the_width(
         assert_eq!(tabs.sidebar.width(), 300.);
         assert!(!tabs.sidebar.resizing());
         // The list is as wide as the sidebar.
-        assert!(tabs.sidebar_scroll.bounds().size.width > px(280.));
+        assert!(tabs.sidebar_controls.sidebar_scroll.bounds().size.width > px(280.));
     });
     assert_eq!(saved_sidebar_width(&tabs, cx), Some(300));
     // Past either end it stops at the range.
@@ -771,12 +784,12 @@ fn a_window_narrower_than_900_collapses_the_sidebar_until_it_widens(cx: &mut Tes
 
     // Keyboard focus in the tree moves to the rail's toggle when the
     // window narrows, and does not reveal the tree.
-    let row = cx.update(|_, cx| tabs.read(cx).panel_home_focus.clone());
+    let row = cx.update(|_, cx| tabs.read(cx).sidebar_controls.panel_home_focus.clone());
     cx.update(|window, cx| window.focus(&row, cx));
     assert!(!resize(cx, 800.));
     cx.update(|window, cx| {
         let tabs = tabs.read(cx);
-        assert!(tabs.rail_toggle_focus.is_focused(window));
+        assert!(tabs.sidebar_controls.rail_toggle_focus.is_focused(window));
         assert_eq!(tabs.sidebar.reveal(), Reveal::Hidden);
     });
     assert!(resize(cx, 1000.));

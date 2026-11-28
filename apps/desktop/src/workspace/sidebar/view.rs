@@ -13,6 +13,67 @@ use gpui::{Animation, AnimationExt, AnyElement, App, Context, Window, div, px};
 use mdoc_import::import;
 use mdoc_store::session_store::ThemeChoice;
 
+/// The sidebar's controls in the window: the focus handles of its buttons,
+/// rows and menus, its scroll, and the menus open over it.
+pub(in crate::workspace) struct SidebarControls {
+    pub(in crate::workspace) back_focus: gpui::FocusHandle,
+    pub(in crate::workspace) forward_focus: gpui::FocusHandle,
+    pub(in crate::workspace) reveal_focus: gpui::FocusHandle,
+    pub(in crate::workspace) rail_toggle_focus: gpui::FocusHandle,
+    pub(in crate::workspace) rail_new_focus: gpui::FocusHandle,
+    pub(in crate::workspace) panel_toggle_focus: gpui::FocusHandle,
+    pub(in crate::workspace) panel_new_focus: gpui::FocusHandle,
+    /// Home's row in the collapsed rail and the expanded list: where F6
+    /// enters the sidebar on Home.
+    pub(in crate::workspace) rail_home_focus: gpui::FocusHandle,
+    pub(in crate::workspace) panel_home_focus: gpui::FocusHandle,
+    pub(in crate::workspace) sidebar_scroll: gpui::ScrollHandle,
+    /// Each tree row's focus handle, by row.
+    pub(in crate::workspace) tree_row_focus:
+        std::cell::RefCell<std::collections::HashMap<super::tree::RowKey, gpui::FocusHandle>>,
+    /// The recency switcher's focus, and where focus returns when it is
+    /// cancelled.
+    pub(in crate::workspace) switcher_focus: gpui::FocusHandle,
+    pub(in crate::workspace) switcher_return: Option<gpui::FocusHandle>,
+    /// A document row's menu: its document, and where it opened.
+    pub(in crate::workspace) document_menu:
+        Option<(mdoc_store::document_id::VaultId, gpui::Point<gpui::Pixels>)>,
+    /// The document menu opened from Share, the ⋯ menu or the menu bar:
+    /// moves only, no Delete, for the tab it was opened from; it closes
+    /// once that tab no longer shows (#1312).
+    pub(in crate::workspace) move_menu: Option<u64>,
+    /// Its Project rows' focus, and its list's scroll, so Tab reveals the
+    /// row it reaches.
+    pub(in crate::workspace) move_row_focus:
+        std::cell::RefCell<std::collections::HashMap<String, gpui::FocusHandle>>,
+    pub(in crate::workspace) move_menu_scroll: gpui::ScrollHandle,
+}
+
+impl SidebarControls {
+    /// The handles as the window first had them: no menu open.
+    pub(in crate::workspace) fn new(cx: &mut App) -> Self {
+        Self {
+            back_focus: cx.focus_handle().tab_stop(true),
+            forward_focus: cx.focus_handle().tab_stop(true),
+            reveal_focus: cx.focus_handle(),
+            rail_toggle_focus: cx.focus_handle().tab_stop(true),
+            rail_new_focus: cx.focus_handle().tab_stop(true),
+            panel_toggle_focus: cx.focus_handle().tab_stop(true),
+            panel_new_focus: cx.focus_handle().tab_stop(true),
+            rail_home_focus: cx.focus_handle().tab_stop(true),
+            panel_home_focus: cx.focus_handle().tab_stop(true),
+            sidebar_scroll: gpui::ScrollHandle::new(),
+            tree_row_focus: Default::default(),
+            switcher_focus: cx.focus_handle(),
+            switcher_return: None,
+            document_menu: None,
+            move_menu: None,
+            move_row_focus: Default::default(),
+            move_menu_scroll: Default::default(),
+        }
+    }
+}
+
 /// A drag of the expanded sidebar's edge; the sidebar itself follows it.
 #[derive(Clone)]
 pub(in crate::workspace) struct SidebarResize;
@@ -204,7 +265,11 @@ impl Workspace {
                             .flex()
                             .items_center()
                             .gap_1()
-                            .child(sidebar_toggle(&self.panel_toggle_focus, expanded, theme))
+                            .child(sidebar_toggle(
+                                &self.sidebar_controls.panel_toggle_focus,
+                                expanded,
+                                theme,
+                            ))
                             .when(expanded || revealed, |v| {
                                 v.child(self.navigation_buttons(cx))
                             })
@@ -228,7 +293,7 @@ impl Workspace {
                         .id("sidebar-tree")
                         .role(gpui::Role::Tree)
                         .aria_label(text::PROJECTS_AND_DOCUMENTS)
-                        .track_scroll(&self.sidebar_scroll)
+                        .track_scroll(&self.sidebar_controls.sidebar_scroll)
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
@@ -304,7 +369,13 @@ impl Workspace {
                                 theme,
                                 self.showing_home(cx),
                             )
-                            .track_focus(&self.rail_home_focus.clone().tab_stop(!revealed))
+                            .track_focus(
+                                &self
+                                    .sidebar_controls
+                                    .rail_home_focus
+                                    .clone()
+                                    .tab_stop(!revealed),
+                            )
                             .when(cfg!(test), |v| v.debug_selector(|| "rail-home".into()))
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.show_home(window, cx)),
@@ -332,7 +403,13 @@ impl Workspace {
                                     theme,
                                 ))
                             })
-                            .track_focus(&self.rail_new_focus.clone().tab_stop(!revealed))
+                            .track_focus(
+                                &self
+                                    .sidebar_controls
+                                    .rail_new_focus
+                                    .clone()
+                                    .tab_stop(!revealed),
+                            )
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "sidebar-new-collapsed".into())
                             })
@@ -369,7 +446,11 @@ impl Workspace {
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(sidebar_toggle(&self.rail_toggle_focus, false, theme))
+                        .child(sidebar_toggle(
+                            &self.sidebar_controls.rail_toggle_focus,
+                            false,
+                            theme,
+                        ))
                         .child(self.navigation_buttons(cx)),
                 ))
             })
@@ -438,7 +519,7 @@ impl Workspace {
                     .w(px(to))
                     .when(cfg!(test), |v| v.debug_selector(|| "sidebar-reveal".into()))
                     .key_context("UiPanel UiMenu")
-                    .track_focus(&self.reveal_focus)
+                    .track_focus(&self.sidebar_controls.reveal_focus)
                     // Ahead of the editor in tab order, as the rail it covers.
                     .tab_index(-1)
                     .tab_group()
@@ -556,7 +637,7 @@ impl Workspace {
             )
             .child(
                 nav_row("sidebar-home", ui::Icon::Home, text::HOME, theme, home)
-                    .track_focus(&self.panel_home_focus)
+                    .track_focus(&self.sidebar_controls.panel_home_focus)
                     .child(
                         div()
                             .text_size(px(11.))

@@ -15,15 +15,16 @@ impl Render for Workspace {
         if self.sidebar.settle(window.viewport_size().width / px(1.))
             && self.focus_regions.sidebar().contains_focused(window, cx)
         {
-            window.focus(&self.rail_toggle_focus, cx);
-            self.sidebar.escape_to(self.rail_toggle_focus.clone());
+            window.focus(&self.sidebar_controls.rail_toggle_focus, cx);
+            self.sidebar
+                .escape_to(self.sidebar_controls.rail_toggle_focus.clone());
         }
         // The move menu goes with the document it was opened for.
-        if let Some(tab) = self.move_menu
+        if let Some(tab) = self.sidebar_controls.move_menu
             && (tab != self.tabs.active() || self.showing_overview(cx))
         {
-            self.document_menu = None;
-            self.move_menu = None;
+            self.sidebar_controls.document_menu = None;
+            self.sidebar_controls.move_menu = None;
         }
         // A finished edge drag saves the width it left.
         if !cx.has_active_drag() && self.sidebar.resizing() {
@@ -248,46 +249,53 @@ impl Render for Workspace {
                     this.load_document(tab.id(), document, tab.record().clone(), window, cx);
                 }
             }))
-            .when_some(self.document_menu.clone(), |view, (id, position)| {
-                view.child(
-                    gpui::deferred(
-                        gpui::anchored().position(position).snap_to_window().child(
-                            ui::panel("document-context-menu", self.theme.get())
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "document-context-menu".into())
-                                })
-                                .key_context("UiPanel UiMenu")
-                                .track_focus(&self.menu_focus)
-                                .tab_group()
-                                .tab_stop(false)
-                                .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                                    this.close_document_menu(window, cx)
-                                }))
-                                .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                                    ui::cycle(window, cx, Some(&this.menu_focus), false);
-                                    cx.stop_propagation();
-                                }))
-                                .on_action(cx.listener(
-                                    |this, _: &ui::PreviousControl, window, cx| {
-                                        ui::cycle(window, cx, Some(&this.menu_focus), true);
-                                        cx.stop_propagation();
-                                    },
-                                ))
-                                .p_1()
-                                .on_mouse_down_out(cx.listener(
-                                    |this, _: &gpui::MouseDownEvent, _, cx| {
-                                        this.document_menu = None;
-                                        this.move_menu = None;
-                                        cx.notify();
-                                    },
-                                ))
-                                .children(self.document_menu_items(&id, cx)),
-                        ),
+            .when_some(
+                self.sidebar_controls.document_menu.clone(),
+                |view, (id, position)| {
+                    view.child(
+                        gpui::deferred(
+                            gpui::anchored().position(position).snap_to_window().child(
+                                ui::panel("document-context-menu", self.theme.get())
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "document-context-menu".into())
+                                    })
+                                    .key_context("UiPanel UiMenu")
+                                    .track_focus(&self.menu_focus)
+                                    .tab_group()
+                                    .tab_stop(false)
+                                    .on_action(cx.listener(
+                                        |this, _: &ui::CloseMenu, window, cx| {
+                                            this.close_document_menu(window, cx)
+                                        },
+                                    ))
+                                    .on_action(cx.listener(
+                                        |this, _: &ui::NextControl, window, cx| {
+                                            ui::cycle(window, cx, Some(&this.menu_focus), false);
+                                            cx.stop_propagation();
+                                        },
+                                    ))
+                                    .on_action(cx.listener(
+                                        |this, _: &ui::PreviousControl, window, cx| {
+                                            ui::cycle(window, cx, Some(&this.menu_focus), true);
+                                            cx.stop_propagation();
+                                        },
+                                    ))
+                                    .p_1()
+                                    .on_mouse_down_out(cx.listener(
+                                        |this, _: &gpui::MouseDownEvent, _, cx| {
+                                            this.sidebar_controls.document_menu = None;
+                                            this.sidebar_controls.move_menu = None;
+                                            cx.notify();
+                                        },
+                                    ))
+                                    .children(self.document_menu_items(&id, cx)),
+                            ),
+                        )
+                        // Above the sidebar reveal it was opened from.
+                        .with_priority(1),
                     )
-                    // Above the sidebar reveal it was opened from.
-                    .with_priority(1),
-                )
-            })
+                },
+            )
             .children(self.project_list(cx))
             .children(self.switcher_view(cx))
             .children(self.move_toast(cx))
