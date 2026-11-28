@@ -1,9 +1,8 @@
-//! The recency switcher in the window: `⌃Tab` opens it over the live views,
-//! more `⌃Tab`s move on, and releasing `⌃` (or Enter, or a click) shows the
-//! pick; Esc or a click outside leaves things as they were.
+//! The recency switcher's view over the live views, and its keys; what
+//! `⌃Tab`, releasing `⌃`, Enter or Esc carries out is in `actions.rs`.
 use crate::ui;
-use crate::workspace::{Workspace, sidebar::switcher::Switcher};
-use gpui::{AnyElement, App, Context, KeyBinding, Window, actions, div, prelude::*, px};
+use crate::workspace::Workspace;
+use gpui::{AnyElement, App, Context, KeyBinding, actions, div, prelude::*, px};
 
 actions!(mdoc_switcher, [SwitcherUp, SwitcherDown, SwitcherConfirm]);
 
@@ -21,119 +20,6 @@ pub(in crate::workspace) fn bind_keys(cx: &mut App) {
 }
 
 impl Workspace {
-    /// `⌃Tab` / `⌃⇧Tab`: open the switcher, or move its pick.
-    pub(in crate::workspace) fn switch_document(
-        &mut self,
-        backwards: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.quit_flow.quitting() {
-            return;
-        }
-        if let Some(switcher) = &mut self.switcher {
-            switcher.step(if backwards { -1 } else { 1 });
-            cx.notify();
-            return;
-        }
-        if self.dialog_up(window)
-            || self.settings.read(cx).open
-            || self.shell.palette.is_some()
-            || self.project_ui.list_open
-        {
-            return;
-        }
-        let views = self.tabs.recent(|tab| {
-            if self.is_placeholder(tab, cx) {
-                crate::workspace::saving::live_views::Weight::Ignored
-            } else {
-                crate::workspace::saving::live_views::Weight::Idle
-            }
-        });
-        let shown = !self.showing_overview(cx);
-        let Some(switcher) = Switcher::open(views, shown, backwards) else {
-            return;
-        };
-        self.switcher = Some(switcher);
-        self.switcher_return = window.focused(cx);
-        window.focus(&self.switcher_focus, cx);
-        cx.notify();
-    }
-
-    /// Show the switcher's pick.
-    pub(in crate::workspace) fn confirm_switcher(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(switcher) = self.switcher.take() else {
-            return;
-        };
-        self.switcher_return = None;
-        let picked = switcher.picked();
-        if self.tabs.contains(picked) {
-            self.activate(picked, window, cx);
-        }
-        cx.notify();
-    }
-
-    /// The live views as the Window menu lists them: by title, in the
-    /// order they opened (#1160). Which one is shown is left out, so
-    /// switching documents leaves the menu bar as it is.
-    pub(in crate::workspace) fn live_view_items(
-        &self,
-        cx: &App,
-    ) -> Vec<crate::commands::menus::LiveViewItem> {
-        let mut views: Vec<_> = (self.tabs.iter())
-            .filter(|tab| !self.is_placeholder(tab, cx))
-            .map(|tab| crate::commands::menus::LiveViewItem {
-                id: tab.id(),
-                title: crate::workspace::tab_label(tab, cx).name.into(),
-            })
-            .collect();
-        views.sort_by_key(|view| view.id);
-        views
-    }
-
-    /// Window › a live view's title: the window comes forward and shows
-    /// it, as Back and the switcher would. Nothing moves under a dialog,
-    /// sheet, Settings, the palette or the Project list, or while
-    /// quitting; one no longer live does nothing.
-    pub(in crate::workspace) fn show_live_view(
-        &mut self,
-        id: u64,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.quit_flow.quitting()
-            || self.modal_up(window, cx)
-            || self.shell.palette.is_some()
-            || self.project_ui.list_open
-            || self.switcher.is_some()
-            || !self.tabs.contains(id)
-        {
-            return;
-        }
-        crate::shelf::menu_bar::reveal_window(window, cx);
-        self.activate(id, window, cx);
-        cx.notify();
-    }
-
-    /// Esc or a click outside: nothing changes.
-    pub(in crate::workspace) fn cancel_switcher(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.switcher.take().is_none() {
-            return;
-        }
-        if let Some(focus) = self.switcher_return.take() {
-            window.focus(&focus, cx);
-        }
-        cx.notify();
-    }
-
     pub(in crate::workspace) fn switcher_view(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let switcher = self.switcher.as_ref()?;
         let theme = self.theme.get();
@@ -261,19 +147,5 @@ impl Workspace {
             .with_priority(2)
             .into_any_element(),
         )
-    }
-}
-
-#[cfg(test)]
-impl Workspace {
-    /// Show the next most recent live view, as a quick `⌃Tab` does.
-    pub(in crate::workspace) fn show_next_recent(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(next) = self.tabs.iter().nth(1).map(|tab| tab.id()) {
-            self.activate(next, window, cx);
-        }
     }
 }
